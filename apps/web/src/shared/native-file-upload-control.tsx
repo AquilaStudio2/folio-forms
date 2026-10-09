@@ -72,16 +72,13 @@ export const NativeFileUploadControl = ({
       </div>
       {error && (
         <Alert variant="destructive">
-          <AlertCircle className="h-4 w-4 "/>
+          <AlertCircle className="h-4 w-4 " />
           <AlertTitle>อัปโหลดไฟล์ไม่สำเร็จ</AlertTitle>
           <AlertDescription>{error}</AlertDescription>
         </Alert>
       )}
 
-      <p className="text-xs text-gray-500">
-         (รองรับไฟล์ขนาดไม่เกิน
-        50 MB เท่านั้น)
-      </p>
+      <p className="text-xs text-gray-500">(รองรับไฟล์ขนาดไม่เกิน 50 MB เท่านั้น)</p>
     </div>
   );
 };
