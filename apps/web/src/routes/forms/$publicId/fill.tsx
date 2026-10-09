@@ -324,6 +324,22 @@ const FillRoute = () => {
     reauthResolverRef.current?.(allowed);
     reauthResolverRef.current = null;
   };
+  const reopenOnlyOfficeResponseForNewEntry = async (): Promise<void> => {
+    const result = await apiPost<{
+      editorConfigUrl?: string;
+      fillMethod: FillMethod;
+      response?: { id: string };
+    }>(`/api/forms/${publicId}/start`, {
+      responseId: activeResponseId,
+    });
+    if (result.fillMethod !== "onlyoffice" || !result.editorConfigUrl) {
+      throw new Error("Document editor configuration is unavailable");
+    }
+    setActiveResponseId(result.response?.id ?? activeResponseId);
+    setEditorConfigUrl(result.editorConfigUrl);
+    setEditorRevision((value) => value + 1);
+    setDirty(false);
+  };
   // oxlint-disable-next-line complexity -- Applies bridge updates, operation state, and save/export transitions.
   const handleBridgeMessage = async (message: EditorBridgeMessage) => {
     if (message.type === "dirty-state") {
@@ -374,11 +390,10 @@ const FillRoute = () => {
     if (message.action === "submit") {
       const submissionId = message.operation?.result?.submissionId;
       if (submissionId) {
-        allowNavigationRef.current = true;
-        await navigate({
-          params: { submissionId },
-          to: "/receipt/$submissionId",
-        });
+        await reopenOnlyOfficeResponseForNewEntry();
+        setError(null);
+        setOperationError(null);
+        setSuccess("ส่งแบบฟอร์มเรียบร้อยแล้ว คุณสามารถกรอกคำตอบใหม่ได้ทันที");
         return;
       }
     }
@@ -460,6 +475,35 @@ const FillRoute = () => {
     setOperationError(null);
   };
 
+  const reopenNativeResponseForNewEntry = async (): Promise<void> => {
+    const result = await apiPost<{
+      editorConfigUrl?: string;
+      fillMethod: FillMethod;
+      response?: { id: string };
+    }>(`/api/forms/${publicId}/start`, {
+      responseId: activeResponseId,
+    });
+    if (result.fillMethod !== "native" || !result.editorConfigUrl) {
+      throw new Error("Native form configuration is unavailable");
+    }
+    const config = await apiGet<
+      NativeEditorConfig | { fillMethod: "onlyoffice" }
+    >(result.editorConfigUrl);
+    setActiveResponseId(result.response?.id ?? activeResponseId);
+    setNativePictureFiles({});
+    setPictureInputKey((key) => key + 1);
+    if (config.fillMethod === "native") {
+      setNativeConfig(config);
+      setNativeValues(nativeValuesFromConfig(config));
+    } else {
+      setNativeConfig(null);
+      setNativeValues({});
+    }
+    setEditorConfigUrl(result.editorConfigUrl);
+    setDirty(false);
+    setOperationError(null);
+  };
+
   const finishNativeSaveExit = async (): Promise<void> => {
     const intent = exitIntent;
     setSaveBeforeExit(false);
@@ -487,11 +531,8 @@ const FillRoute = () => {
       if (typeof submissionId !== "string") {
         throw new TypeError("The submitted receipt is unavailable");
       }
-      allowNavigationRef.current = true;
-      await navigate({
-        params: { submissionId },
-        to: "/receipt/$submissionId",
-      });
+      await reopenNativeResponseForNewEntry();
+      setSuccess("ส่งแบบฟอร์มเรียบร้อยแล้ว คุณสามารถกรอกคำตอบใหม่ได้ทันที");
       return;
     }
     await refreshNativeResponse(configUrl);
