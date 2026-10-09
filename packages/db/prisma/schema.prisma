@@ -30,6 +30,7 @@ enum FieldType {
   dropdown
   combo
   picture
+  attachment
 }
 
 enum PrefillPolicy {

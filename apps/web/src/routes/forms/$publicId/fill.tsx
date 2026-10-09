@@ -488,10 +488,10 @@ const FillRoute = () => {
         throw new TypeError("The submitted receipt is unavailable");
       }
       allowNavigationRef.current = true;
-      await navigate({
-        params: { submissionId },
-        to: "/receipt/$submissionId",
-      });
+      // await navigate({
+      //   params: { submissionId },
+      //   to: "/receipt/$submissionId",
+      // });
       return;
     }
     await refreshNativeResponse(configUrl);
