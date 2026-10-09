@@ -241,7 +241,33 @@ export const runNativeResubmit = async (
       method: "POST",
     })
   );
-  expect(await submittedStartResponse.json()).toMatchObject({
-    submissionId: submitBody.submissionId,
+  expect(submittedStartResponse.status).toBe(200);
+  const submittedStart = (await submittedStartResponse.json()) as {
+    editorConfigUrl?: string;
+    fillMethod?: string;
+    response?: { id?: string; status?: string };
+    submissionId?: string;
+  };
+  // Resubmitting the same form reopens the SAME Response for editing
+  // (seeded from the latest Submission) instead of handing back a receipt.
+  expect(submittedStart.submissionId).toBeUndefined();
+  expect(submittedStart.fillMethod).toBe("native");
+  expect(submittedStart.response?.id).toBe(responseId);
+  expect(submittedStart.response?.status).toBe("draft");
+  if (!submittedStart.editorConfigUrl) {
+    throw new Error("The reopened native config URL was not returned");
+  }
+  const reopenedConfig = await getNativeConfig(
+    app,
+    submittedStart.editorConfigUrl,
+    userBearer
+  );
+  expect(reopenedConfig).toMatchObject({
+    data: {
+      category: "stored_value",
+      custom_category: " ",
+      empty_category: "",
+      full_name: "Trusted\nPrefill",
+    },
   });
 };

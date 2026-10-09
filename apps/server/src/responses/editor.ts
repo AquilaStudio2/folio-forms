@@ -53,14 +53,15 @@ export async function correctionEditorConfig(
         take: 1,
       },
       prefillSnapshot: true,
-      submission: true,
+      submissions: { orderBy: { createdAt: "desc" }, take: 1 },
     },
     where: { id: responseId },
   });
+  const submission = response?.submissions[0];
   if (
     !response ||
     response.status !== ResponseStatus.submitted ||
-    !response.submission
+    !submission
   ) {
     fail(404, "not_found", "Submitted Response was not found");
   }
@@ -73,9 +74,8 @@ export async function correctionEditorConfig(
   }
   const latest = response.corrections[0];
   const baseRevision = latest?.revision ?? 0;
-  const baseDocumentKey =
-    latest?.documentKey ?? response.submission.documentKey;
-  const sourceObjectKey = latest?.objectKey ?? response.submission.objectKey;
+  const baseDocumentKey = latest?.documentKey ?? submission.documentKey;
+  const sourceObjectKey = latest?.objectKey ?? submission.objectKey;
   if (!(await objectExists(sourceObjectKey))) {
     fail(409, "document_unavailable", "Response document is unavailable");
   }
@@ -199,16 +199,21 @@ export async function correctionEditorConfig(
         },
         take: 1,
       },
-      submission: { select: { documentKey: true, objectKey: true } },
+      submissions: {
+        orderBy: { createdAt: "desc" },
+        select: { documentKey: true, objectKey: true },
+        take: 1,
+      },
     },
     where: { id: response.id },
   });
   const currentLatest = currentRevision?.corrections[0];
+  const currentSubmission = currentRevision?.submissions[0];
   const currentBaseRevision = currentLatest?.revision ?? 0;
   const currentBaseDocumentKey =
-    currentLatest?.documentKey ?? currentRevision?.submission?.documentKey;
+    currentLatest?.documentKey ?? currentSubmission?.documentKey;
   const currentSourceObjectKey =
-    currentLatest?.objectKey ?? currentRevision?.submission?.objectKey;
+    currentLatest?.objectKey ?? currentSubmission?.objectKey;
   if (
     currentBaseRevision !== baseRevision ||
     currentBaseDocumentKey !== baseDocumentKey ||

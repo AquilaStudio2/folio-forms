@@ -123,7 +123,6 @@ const FillRoute = () => {
   const [operationError, setOperationError] = useState<string | null>(null);
   const [operation, setOperation] = useState<Operation | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
-  const [submittedReceipt, setSubmittedReceipt] = useState<string | null>(null);
   const [dirty, setDirty] = useState(false);
   const [exitIntent, setExitIntent] = useState<ExitIntent | null>(null);
   const [saveBeforeExit, setSaveBeforeExit] = useState(false);
@@ -260,12 +259,6 @@ const FillRoute = () => {
           responseId: activeResponseId,
         });
         if (result.submissionId) {
-          if (result.fillMethod === "native") {
-            if (!cancelled) {
-              setSubmittedReceipt(result.submissionId);
-            }
-            return;
-          }
           await navigate({
             params: { submissionId: result.submissionId },
             to: "/receipt/$submissionId",
@@ -495,7 +488,10 @@ const FillRoute = () => {
         throw new TypeError("The submitted receipt is unavailable");
       }
       allowNavigationRef.current = true;
-      setSubmittedReceipt(submissionId);
+      await navigate({
+        params: { submissionId },
+        to: "/receipt/$submissionId",
+      });
       return;
     }
     await refreshNativeResponse(configUrl);
@@ -633,7 +629,6 @@ const FillRoute = () => {
       </div>
     );
   }
-
 
   const operationBusy =
     operation?.status === "pending" || operation?.status === "processing";

@@ -352,7 +352,7 @@ model Response {
   owner             User              @relation("ResponseOwner", fields: [userId], references: [id], onDelete: Restrict)
   publishedTemplate PublishedTemplate @relation(fields: [publishedTemplateId], references: [id], onDelete: Restrict)
   prefillSnapshot   PrefillSnapshot?
-  submission        Submission?
+  submissions       Submission[]
   corrections       Correction[]
   handoffs          Handoff[]
   operations        Operation[]
@@ -382,7 +382,7 @@ model PrefillSnapshot {
 
 model Submission {
   id          String   @id @default(uuid()) @db.Uuid
-  responseId  String   @unique @map("response_id") @db.Uuid
+  responseId  String   @map("response_id") @db.Uuid
   formId      String   @map("form_id") @db.Uuid
   userId      String   @map("user_id")
   data        Json
@@ -396,6 +396,7 @@ model Submission {
   corrections Correction[]
   operations  Operation[]
 
+  @@index([responseId, createdAt])
   @@index([formId, createdAt])
   @@index([userId, createdAt])
   @@map("submissions")
