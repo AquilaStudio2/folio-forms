@@ -476,7 +476,7 @@ export const runOfficePictureResponse = async (
     { "X-Editor-Capability": pictureSubmitBody.operationCapability }
   );
   expect(pictureSubmitOperation.status).toBe("completed");
-  const pictureSubmission = await prisma.submission.findUniqueOrThrow({
+  const pictureSubmission = await prisma.submission.findFirstOrThrow({
     select: { data: true, objectKey: true, responseId: true },
     where: { responseId: pictureResponseId },
   });

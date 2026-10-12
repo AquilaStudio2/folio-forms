@@ -4,8 +4,11 @@ services:
       - "127.0.0.1:5433:5432"
 
   rustfs:
+    environment:
+      RUSTFS_CONSOLE_ENABLE: "true"
     ports:
       - "127.0.0.1:9000:9000"
+      - "127.0.0.1:9001:9001"
 
   onlyoffice:
     ports:

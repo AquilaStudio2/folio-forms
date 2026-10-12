@@ -157,7 +157,7 @@ export async function redeemPrefillHandoff(
           handoffUnavailable();
         }
         const currentResponse = await tx.response.findUnique({
-          include: { prefillSnapshot: true, submission: true },
+          include: { prefillSnapshot: true },
           where: {
             formId_userId: { formId: currentForm.id, userId: identity.id },
           },

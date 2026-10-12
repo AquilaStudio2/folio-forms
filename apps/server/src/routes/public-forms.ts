@@ -88,6 +88,16 @@ export function registerPublicFormRoutes(
         return userEditorConfig(form, identity, responseId, requestedAction);
       }
     )
+    .get("/api/forms/:publicId/my-submissions", async ({ request, params }) => {
+      const identity = await requireIdentity(request);
+      const form = await findFormByPublicId(params.publicId);
+      const submissions = await prisma.submission.findMany({
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true, id: true },
+        where: { formId: form.id, userId: identity.id },
+      });
+      return { submissions };
+    })
     .post("/api/forms/:publicId/start", async ({ request, params, set }) => {
       const identity = await requireIdentity(request);
       const form = await findFormByPublicId(params.publicId);
@@ -102,11 +112,15 @@ export function registerPublicFormRoutes(
       const hasPrefillConfiguration =
         (prefillConfiguration?.fields.length ?? 0) > 0;
       const existing = await prisma.response.findUnique({
-        include: { prefillSnapshot: true, submission: true },
+        include: {
+          prefillSnapshot: true,
+          submissions: { orderBy: { createdAt: "desc" }, take: 1 },
+        },
         where: {
           formId_userId: { formId: form.id, userId: identity.id },
         },
       });
+      const latestSubmission = existing?.submissions[0] ?? null;
       if (
         !publishedTemplate?.objectKey ||
         !publishedTemplate.documentKey ||
@@ -122,33 +136,33 @@ export function registerPublicFormRoutes(
           "This form is not accepting new responses"
         );
       }
-      if (existing?.status === ResponseStatus.submitted) {
-        if (pendingClaimToken) {
-          try {
-            await consumeSubmittedPrefillHandoff(
-              form,
-              identity,
-              pendingClaimToken,
-              existing.id,
-              handoffClock
-            );
-            set.headers["Set-Cookie"] = pendingClaimCookie("", 0);
-          } catch (error) {
-            set.headers["Set-Cookie"] = pendingClaimCookie("", 0);
-            throw error;
-          }
+      // A handoff claim arriving for an already-submitted response means the
+      // external system wants a receipt, not another editing pass.
+      if (existing?.status === ResponseStatus.submitted && pendingClaimToken) {
+        try {
+          await consumeSubmittedPrefillHandoff(
+            form,
+            identity,
+            pendingClaimToken,
+            existing.id,
+            handoffClock
+          );
+          set.headers["Set-Cookie"] = pendingClaimCookie("", 0);
+        } catch (error) {
+          set.headers["Set-Cookie"] = pendingClaimCookie("", 0);
+          throw error;
         }
-        if (!existing.submission) {
+        if (!latestSubmission) {
           fail(500, "internal_error", "The submitted receipt is unavailable");
         }
         return {
           fillMethod: form.fillMethod,
-          receiptUrl: `/receipt/${existing.submission.id}`,
+          receiptUrl: `/receipt/${latestSubmission.id}`,
           response: responseSummary(existing, {
-            submissionId: existing.submission.id,
-            submittedAt: existing.submission.createdAt,
+            submissionId: latestSubmission.id,
+            submittedAt: latestSubmission.createdAt,
           }),
-          submissionId: existing.submission.id,
+          submissionId: latestSubmission.id,
         };
       }
       if (existing?.status === ResponseStatus.submitting) {
@@ -211,14 +225,31 @@ export function registerPublicFormRoutes(
         };
       }
 
-      if (!(await objectExists(publishedTemplate.objectKey))) {
+      // Reopening a submitted response (e.g. resubmitting a native form)
+      // seeds the new draft from the last Submission instead of a blank
+      // template, so the user picks up editing where they left off.
+      const reopeningSubmitted = existing?.status === ResponseStatus.submitted;
+      if (reopeningSubmitted && !latestSubmission) {
+        fail(500, "internal_error", "The submitted receipt is unavailable");
+      }
+      const sourceObjectKey =
+        reopeningSubmitted && latestSubmission
+          ? latestSubmission.objectKey
+          : publishedTemplate.objectKey;
+      if (!(await objectExists(sourceObjectKey))) {
         fail(
           409,
           "document_unavailable",
-          "The published document artifact is unavailable"
+          reopeningSubmitted
+            ? "Response document artifact is unavailable"
+            : "The published document artifact is unavailable"
         );
       }
-      const document = await readObject(publishedTemplate.objectKey);
+      const document = await readObject(sourceObjectKey);
+      const draftDataSeed =
+        reopeningSubmitted && latestSubmission
+          ? jsonValue(latestSubmission.data)
+          : Prisma.DbNull;
       const responseId = existing?.id ?? crypto.randomUUID();
       const draftObjectKey = objectKey(
         "responses",
@@ -271,13 +302,6 @@ export function registerPublicFormRoutes(
             ) {
               fail(409, "stale_form", "The form was published while starting");
             }
-            if (current?.status === ResponseStatus.submitted) {
-              fail(
-                409,
-                "already_submitted",
-                "You have already submitted this form"
-              );
-            }
             if (current?.status === ResponseStatus.submitting) {
               fail(
                 409,
@@ -298,7 +322,7 @@ export function registerPublicFormRoutes(
             if (!current) {
               await tx.response.create({
                 data: {
-                  draftData: Prisma.DbNull,
+                  draftData: draftDataSeed,
                   draftDocumentKey,
                   draftObjectKey,
                   form: { connect: { id: form.id } },
@@ -327,7 +351,7 @@ export function registerPublicFormRoutes(
             });
             const updated = await tx.response.updateMany({
               data: {
-                draftData: Prisma.DbNull,
+                draftData: draftDataSeed,
                 draftDocumentKey,
                 draftObjectKey,
                 publishedTemplateId: lockedForm.publishedTemplate.id,

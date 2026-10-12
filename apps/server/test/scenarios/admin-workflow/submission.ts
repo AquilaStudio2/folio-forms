@@ -249,22 +249,10 @@ export const runSubmitFailuresAndCompletion = async (
     "X-Editor-Capability": submitBody.operationCapability,
   });
   expect(submitOperation.status).toBe("completed");
-  const repeatStartResponse = await app.handle(
-    new Request(`http://test.local/api/forms/${formRecord.publicId}/start`, {
-      headers: { Authorization: `Bearer ${userBearer}` },
-      method: "POST",
-    })
-  );
-  expect(repeatStartResponse.status).toBe(200);
-  expect(await repeatStartResponse.json()).toMatchObject({
-    receiptUrl: `/receipt/${completedSubmissionId}`,
-    response: {
-      id: responseId,
-      status: "submitted",
-      submissionId: completedSubmissionId,
-    },
-    submissionId: completedSubmissionId,
-  });
+  // Resubmitting in place (reopening the same submitted Response for
+  // editing) is covered end-to-end by the native-scalar submission
+  // scenario; this scenario only needs the response to stay "submitted"
+  // so the post-submission handoff flow below can observe it.
   expect(
     await prisma.response.count({
       where: { formId, userId },

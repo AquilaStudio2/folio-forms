@@ -273,7 +273,7 @@ export const runResponseErasure = async (
     }
   );
   const pictureSubmissionBeforeDeletion =
-    await prisma.submission.findUniqueOrThrow({
+    await prisma.submission.findFirstOrThrow({
       select: { id: true, objectKey: true },
       where: { responseId: pictureResponseId },
     });
@@ -401,11 +401,12 @@ export const runResponseErasure = async (
     },
     where: { id: responseId },
   });
-  const mainSubmissionBeforeDeletion =
-    await prisma.submission.findUniqueOrThrow({
+  const mainSubmissionBeforeDeletion = await prisma.submission.findFirstOrThrow(
+    {
       select: { id: true, objectKey: true },
       where: { responseId },
-    });
+    }
+  );
   const mainDeletionResponse = await accountRequest(
     app,
     "DELETE",

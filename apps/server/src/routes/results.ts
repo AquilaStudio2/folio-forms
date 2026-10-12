@@ -136,7 +136,11 @@ export function registerResultRoutes(
           },
           form: { select: { publicId: true, title: true } },
           owner: { select: { email: true } },
-          submission: { select: { createdAt: true, id: true } },
+          submissions: {
+            orderBy: { createdAt: "desc" },
+            select: { createdAt: true, id: true },
+            take: 1,
+          },
         },
         orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
         take: adminResultPageSize + 1,
@@ -172,22 +176,23 @@ export function registerResultRoutes(
               },
             },
           },
-          submission: true,
+          submissions: { orderBy: { createdAt: "desc" }, take: 1 },
         },
         where: { id: params.id },
       });
       if (!response) {
         fail(404, "not_found", "Response was not found");
       }
+      const submission = response.submissions[0];
       const submitted = response.status === ResponseStatus.submitted;
       if (!submitted && selector !== "latest") {
         fail(404, "not_found", "Submission revision was not found");
       }
       const latestCorrection = submitted ? response.corrections[0] : undefined;
       const selected = submitted
-        ? response.submission
+        ? submission
           ? selectedSubmissionRevision(
-              { ...response.submission, corrections: response.corrections },
+              { ...submission, corrections: response.corrections },
               selector
             )
           : fail(404, "not_found", "Response was not found")
@@ -264,8 +269,8 @@ export function registerResultRoutes(
           latestCorrectionNumber: latestCorrection?.revision ?? null,
           revision: submitted ? (selected?.revision ?? 0) : null,
           state: submitted ? "submitted" : "draft",
-          submissionId: response.submission?.id ?? null,
-          submittedAt: response.submission?.createdAt ?? null,
+          submissionId: submission?.id ?? null,
+          submittedAt: submission?.createdAt ?? null,
           updatedAt: response.updatedAt,
           userEmail: response.owner.email,
         },
@@ -282,13 +287,14 @@ export function registerResultRoutes(
           include: {
             corrections: { orderBy: { revision: "desc" } },
             form: { select: { publicId: true } },
-            submission: true,
+            submissions: { orderBy: { createdAt: "desc" }, take: 1 },
           },
           where: { id: params.id },
         });
+        const submission = response?.submissions[0];
         if (
           !response ||
-          (response.status === ResponseStatus.submitted && !response.submission)
+          (response.status === ResponseStatus.submitted && !submission)
         ) {
           fail(404, "not_found", "Response was not found");
         }
@@ -297,9 +303,9 @@ export function registerResultRoutes(
           fail(404, "not_found", "Submission revision was not found");
         }
         const selected =
-          submitted && response.submission
+          submitted && submission
             ? selectedSubmissionRevision(
-                { ...response.submission, corrections: response.corrections },
+                { ...submission, corrections: response.corrections },
                 selector
               )
             : undefined;
@@ -327,9 +333,7 @@ export function registerResultRoutes(
           },
           targetId:
             selectedCorrection?.id ??
-            (submitted
-              ? (response.submission?.id ?? response.id)
-              : response.id),
+            (submitted ? (submission?.id ?? response.id) : response.id),
           targetType: selectedCorrection
             ? "correction"
             : submitted
@@ -365,14 +369,15 @@ export function registerResultRoutes(
               take: 1,
             },
             prefillSnapshot: true,
-            submission: true,
+            submissions: { orderBy: { createdAt: "desc" }, take: 1 },
           },
           where: { id: params.id },
         });
+        const submission = response?.submissions[0];
         if (
           !response ||
           response.status !== ResponseStatus.submitted ||
-          !response.submission
+          !submission
         ) {
           fail(404, "not_found", "Submitted Response was not found");
         }
@@ -386,7 +391,7 @@ export function registerResultRoutes(
         const latest = response.corrections[0];
         const currentRevision = latest?.revision ?? 0;
         const currentDocumentKey =
-          latest?.documentKey ?? response.submission.documentKey;
+          latest?.documentKey ?? submission.documentKey;
         const capabilityScope = {
           documentKey: input.documentKey,
           formId: form.id,
@@ -424,9 +429,7 @@ export function registerResultRoutes(
         }
         const baseRevision = workspaceLease.workspaceBaseRevision;
         const baseDocumentKey = workspaceLease.workspaceBaseDocumentKey;
-        const previousData = jsonRecord(
-          latest?.data ?? response.submission.data
-        );
+        const previousData = jsonRecord(latest?.data ?? submission.data);
         const data = await normalizeResponseData(
           form,
           response,
@@ -470,7 +473,7 @@ export function registerResultRoutes(
             : {}),
           responseId: response.id,
           stagedObjectKey,
-          submissionId: response.submission.id,
+          submissionId: submission.id,
           workspaceDocumentKey: workspaceLease.workspaceDocumentKey,
           workspaceObjectKey: workspaceLease.workspaceObjectKey,
         };
@@ -485,7 +488,7 @@ export function registerResultRoutes(
           ownerUserId: identity.id,
           responseId: response.id,
           stagingObjectKey: stagedObjectKey,
-          submissionId: response.submission.id,
+          submissionId: submission.id,
           targetId: response.id,
           targetType: OperationTargetType.correction,
           type: operationTypeForAction["save-correction"],
