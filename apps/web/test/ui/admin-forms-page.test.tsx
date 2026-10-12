@@ -113,6 +113,14 @@ const advance = async (milliseconds: number) => {
 const searchInput = () =>
   screen.getByRole("searchbox", { name: "ค้นหาแบบฟอร์ม" });
 
+const searchStatus = () => {
+  const status = document.querySelector("#form-search-help");
+  if (!status) {
+    throw new Error("Search status must describe the search input");
+  }
+  return status;
+};
+
 const paginationNav = () =>
   screen.getByRole("navigation", { name: "แบ่งหน้ารายการแบบฟอร์ม" });
 
@@ -128,6 +136,228 @@ beforeEach(() => {
   fetchMock.mockImplementation(async () => Response.json(payload()));
   vi.stubGlobal("fetch", fetchMock);
   localStorage.setItem(SESSION_KEY, "admin-test-token");
+});
+
+describe("inline search feedback", () => {
+  it("shows progress during the initial request without announcing a false empty catalog", async () => {
+    const initial = deferredResponse();
+    fetchMock.mockReturnValueOnce(initial.promise);
+    await mount();
+    expect(searchStatus()).toHaveTextContent("กำลังค้นหา…");
+    expect(searchStatus()).not.toHaveTextContent("ไม่พบแบบฟอร์ม");
+    expect(searchStatus().querySelector("svg")).toHaveAttribute(
+      "aria-hidden",
+      "true"
+    );
+    expect(searchInput()).toBeEnabled();
+    expect(
+      screen.queryByRole("heading", { name: /ยังไม่มีแบบฟอร์ม/u })
+    ).not.toBeInTheDocument();
+    initial.resolve(Response.json(payload([form(1)], 1, 12)));
+    await flush();
+    expect(searchStatus()).toHaveTextContent("พบ 12 แบบฟอร์ม");
+    expect(searchStatus().querySelector("svg")).toBeNull();
+  });
+
+  it("keeps input focus when the old request fails while a newer draft waits for debounce", async () => {
+    await mount();
+    const old = deferredResponse();
+    fetchMock.mockReturnValueOnce(old.promise);
+    vi.useFakeTimers();
+    searchInput().focus();
+    fireEvent.change(searchInput(), { target: { value: "old" } });
+    await advance(3000);
+    fireEvent.change(searchInput(), { target: { value: "new draft" } });
+    expect(searchInput()).toHaveFocus();
+    expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
+    old.resolve(Response.json({ error: "internal_error" }, { status: 500 }));
+    await flush();
+    expect(searchInput()).toHaveFocus();
+    expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
+    expect(searchStatus()).not.toHaveTextContent("ค้นหาไม่สำเร็จ");
+    expect(searchStatus().querySelector("svg")).toBeNull();
+    await advance(2999);
+    expectQuery({ page: "1", search: "old" });
+    await advance(1);
+    expectQuery({ page: "1", search: "new draft" });
+    expect(searchStatus()).toHaveTextContent("พบ 1 แบบฟอร์ม");
+    expect(searchInput()).toHaveFocus();
+  });
+
+  it("announces waiting, actual network progress and server totals in one polite live region", async () => {
+    await mount();
+    expect(searchInput()).toHaveAttribute(
+      "aria-describedby",
+      "form-search-help"
+    );
+    expect(searchStatus()).toHaveAttribute("role", "status");
+    expect(searchStatus()).toHaveAttribute("aria-live", "polite");
+    expect(searchStatus()).toHaveAttribute("aria-atomic", "true");
+    const searching = deferredResponse();
+    fetchMock.mockReturnValueOnce(searching.promise);
+    vi.useFakeTimers();
+    fireEvent.change(searchInput(), { target: { value: "energy" } });
+    expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
+    expect(searchStatus().querySelector("svg")).toBeNull();
+    await advance(2999);
+    expect(getRequests()).toHaveLength(1);
+    expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
+    await advance(1);
+    expectQuery({ page: "1", search: "energy" });
+    expect(searchStatus()).toHaveTextContent("กำลังค้นหา…");
+    const spinner = searchStatus().querySelector("svg");
+    expect(spinner).not.toBeNull();
+    expect(spinner).toHaveAttribute("aria-hidden", "true");
+    expect(
+      within(searchStatus()).queryByRole("status")
+    ).not.toBeInTheDocument();
+    expect(searchInput()).toBeEnabled();
+    expect(screen.getByRole("button", { name: "ล้างคำค้น" })).toBeEnabled();
+    searching.resolve(Response.json(payload([form(5)], 1, 23)));
+    await flush();
+    expect(searchStatus()).toHaveTextContent("พบ 23 แบบฟอร์ม");
+    expect(searchStatus()).not.toHaveTextContent("กำลังค้นหา");
+    expect(searchStatus().querySelector("svg")).toBeNull();
+  });
+
+  it("reports no matches after the search completes rather than a stale old total", async () => {
+    await mount();
+    fetchMock.mockImplementation(async () => Response.json(payload([])));
+    vi.useFakeTimers();
+    fireEvent.change(searchInput(), { target: { value: "missing" } });
+    expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
+    await advance(3000);
+    expect(searchStatus()).toHaveTextContent("ไม่พบแบบฟอร์ม");
+    expect(searchStatus()).not.toHaveTextContent("พบ 1 แบบฟอร์ม");
+    expect(searchStatus().querySelector("svg")).toBeNull();
+    expect(screen.getByRole("heading", { name: /ไม่พบแบบฟอร์ม/u })).toBeVisible();
+  });
+
+  it.each(["success", "failure"])(
+    "clears an in-flight search immediately and ignores its stale %s",
+    async (outcome) => {
+      await mount();
+      const searching = deferredResponse();
+      fetchMock.mockReturnValueOnce(searching.promise);
+      vi.useFakeTimers();
+      fireEvent.change(searchInput(), { target: { value: "obsolete" } });
+      await advance(3000);
+      expect(searchStatus()).toHaveTextContent("กำลังค้นหา…");
+      fireEvent.click(screen.getByRole("button", { name: "ล้างคำค้น" }));
+      await flush();
+      expectQuery({ page: "1" });
+      expect(searchInput()).toHaveValue("");
+      expect(searchInput()).toHaveFocus();
+      expect(screen.getByLabelText("ค้นหา", { exact: true })).toBeVisible();
+      expect(screen.getByText("Form 1", { exact: true })).toBeVisible();
+      searching.resolve(
+        outcome === "success"
+          ? Response.json(payload([form(99)], 1, 99))
+          : Response.json({ error: "internal_error" }, { status: 500 })
+      );
+      await flush();
+      expect(searchStatus()).not.toHaveTextContent("พบ 99 แบบฟอร์ม");
+      expect(searchStatus()).not.toHaveTextContent("กำลังค้นหา");
+      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+      expect(
+        screen.queryByText("Form 99", { exact: true })
+      ).not.toBeInTheDocument();
+      expect(screen.getByText("Form 1", { exact: true })).toBeVisible();
+    }
+  );
+
+  it("shows waiting for newly typed text while an older network request is pending or finishes", async () => {
+    await mount();
+    const old = deferredResponse();
+    const current = deferredResponse();
+    fetchMock
+      .mockReturnValueOnce(old.promise)
+      .mockReturnValueOnce(current.promise);
+    vi.useFakeTimers();
+    fireEvent.change(searchInput(), { target: { value: "old" } });
+    await advance(3000);
+    expect(searchStatus()).toHaveTextContent("กำลังค้นหา…");
+    fireEvent.change(searchInput(), { target: { value: "new" } });
+    expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
+    expect(searchStatus().querySelector("svg")).toBeNull();
+    old.resolve(Response.json(payload([form(88)], 1, 88)));
+    await flush();
+    expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
+    expect(searchStatus()).not.toHaveTextContent("พบ 88 แบบฟอร์ม");
+    await advance(2999);
+    expectQuery({ page: "1", search: "old" });
+    await advance(1);
+    expectQuery({ page: "1", search: "new" });
+    expect(searchStatus()).toHaveTextContent("กำลังค้นหา…");
+    current.resolve(Response.json(payload([form(2)], 1, 2)));
+    await flush();
+    expect(searchStatus()).toHaveTextContent("พบ 2 แบบฟอร์ม");
+  });
+
+  it("replaces old counts and search errors with waiting as soon as the input changes", async () => {
+    await mount();
+    fetchMock.mockImplementation(async () =>
+      Response.json(payload([form(1)], 1, 14))
+    );
+    vi.useFakeTimers();
+    fireEvent.change(searchInput(), { target: { value: "working" } });
+    await advance(3000);
+    expect(searchStatus()).toHaveTextContent("พบ 14 แบบฟอร์ม");
+    fetchMock.mockResolvedValueOnce(
+      Response.json({ error: "internal_error" }, { status: 500 })
+    );
+    fireEvent.change(searchInput(), { target: { value: "broken" } });
+    expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
+    expect(searchStatus()).not.toHaveTextContent("พบ 14 แบบฟอร์ม");
+    await advance(3000);
+    expect(searchStatus()).not.toHaveTextContent("กำลังค้นหา");
+    expect(searchStatus()).not.toHaveTextContent("พบ 14 แบบฟอร์ม");
+    expect(screen.getByRole("alert")).toBeVisible();
+    fireEvent.change(searchInput(), { target: { value: "retry" } });
+    expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
+    await advance(3000);
+    expect(searchStatus()).toHaveTextContent("พบ 14 แบบฟอร์ม");
+  });
+
+  it("uses all matched records for the result count when moving between result pages", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const page = Number(new URL(String(input)).searchParams.get("page"));
+      return Response.json(payload([form(page)], page, 25));
+    });
+    await mount();
+    vi.useFakeTimers();
+    fireEvent.change(searchInput(), { target: { value: "energy" } });
+    await advance(3000);
+    expect(searchStatus()).toHaveTextContent("พบ 25 แบบฟอร์ม");
+    fireEvent.click(screen.getByRole("button", { name: "หน้าถัดไป" }));
+    await flush();
+    expectQuery({ page: "2", search: "energy" });
+    expect(searchStatus()).toHaveTextContent("พบ 25 แบบฟอร์ม");
+    expect(
+      screen.getByText(/หน้า 2 จาก 3$/u, {
+        selector: "p:not(#form-search-help)",
+      })
+    ).toBeVisible();
+  });
+
+  it("avoids a pending indication for whitespace and keeps IME text pending until committed", async () => {
+    await mount();
+    vi.useFakeTimers();
+    fireEvent.change(searchInput(), { target: { value: "   " } });
+    expect(searchStatus()).not.toHaveTextContent("รอค้นหา");
+    await advance(3000);
+    expect(getRequests()).toHaveLength(1);
+    fireEvent.compositionStart(searchInput());
+    fireEvent.change(searchInput(), { target: { value: "พล" } });
+    expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
+    await advance(3000);
+    expect(getRequests()).toHaveLength(1);
+    fireEvent.change(searchInput(), { target: { value: "พลังงาน" } });
+    fireEvent.compositionEnd(searchInput(), { data: "พลังงาน" });
+    await advance(3000);
+    expectQuery({ page: "1", search: "พลังงาน" });
+    expect(searchStatus()).toHaveTextContent("พบ 1 แบบฟอร์ม");
+  });
 });
 
 describe("admin form catalog", () => {
@@ -164,7 +394,11 @@ describe("admin form catalog", () => {
     expect(
       screen.getByRole("combobox", { name: "สถานะแบบฟอร์ม" })
     ).toHaveTextContent("ทั้งหมด");
-    expect(screen.getByText(/หน้า 1 จาก 3$/u)).toBeVisible();
+    expect(
+      screen.getByText(/หน้า 1 จาก 3$/u, {
+        selector: "p:not(#form-search-help)",
+      })
+    ).toBeVisible();
   });
 
   it("waits exactly three seconds after the last edit and trims the shared search parameter", async () => {
@@ -245,10 +479,18 @@ describe("admin form catalog", () => {
       screen.getByRole("button", { exact: true, name: "ไปหน้า 4" })
     );
     await flush();
-    expect(screen.getByText(/หน้า 4 จาก 4$/u)).toBeVisible();
+    expect(
+      screen.getByText(/หน้า 4 จาก 4$/u, {
+        selector: "p:not(#form-search-help)",
+      })
+    ).toBeVisible();
     await chooseStatus(label);
     expectQuery({ page: "1", status: value });
-    expect(screen.getByText(/หน้า 1 จาก 4$/u)).toBeVisible();
+    expect(
+      screen.getByText(/หน้า 1 จาก 4$/u, {
+        selector: "p:not(#form-search-help)",
+      })
+    ).toBeVisible();
   });
 
   it("uses the dropdown with keyboard controls and returns focus on Escape", async () => {
@@ -335,7 +577,11 @@ describe("admin form catalog", () => {
       within(paginationNav()).getByRole("button", { name: "หน้าถัดไป" })
     );
     await flush();
-    expect(screen.getByText(/หน้า 2 จาก 3$/u)).toBeVisible();
+    expect(
+      screen.getByText(/หน้า 2 จาก 3$/u, {
+        selector: "p:not(#form-search-help)",
+      })
+    ).toBeVisible();
     expectQuery({ page: "2" });
     fireEvent.click(
       within(paginationNav()).getByRole("button", {
@@ -344,7 +590,11 @@ describe("admin form catalog", () => {
       })
     );
     await flush();
-    expect(screen.getByText(/หน้า 3 จาก 3$/u)).toBeVisible();
+    expect(
+      screen.getByText(/หน้า 3 จาก 3$/u, {
+        selector: "p:not(#form-search-help)",
+      })
+    ).toBeVisible();
     expect(
       within(paginationNav()).getByRole("button", { name: "หน้าถัดไป" })
     ).toBeDisabled();
@@ -371,7 +621,11 @@ describe("admin form catalog", () => {
       )
     );
     await mount();
-    expect(screen.getByText(/หน้า 1 จาก 1$/u)).toBeVisible();
+    expect(
+      screen.getByText(/หน้า 1 จาก 1$/u, {
+        selector: "p:not(#form-search-help)",
+      })
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "หน้าถัดไป" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "หน้าก่อนหน้า" })).toBeDisabled();
   });
@@ -394,7 +648,11 @@ describe("admin form catalog", () => {
     fetchMock.mockImplementation(async () => Response.json(payload([])));
     await mount();
     expect(screen.getByText(/ยังไม่มีแบบฟอร์ม/u)).toBeVisible();
-    expect(screen.getByText(/หน้า 1 จาก 1$/u)).toBeVisible();
+    expect(
+      screen.getByText(/หน้า 1 จาก 1$/u, {
+        selector: "p:not(#form-search-help)",
+      })
+    ).toBeVisible();
     expect(screen.getByRole("button", { name: "หน้าถัดไป" })).toBeDisabled();
   });
 
@@ -404,7 +662,7 @@ describe("admin form catalog", () => {
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "no matches" } });
     await advance(3000);
-    expect(screen.getByText(/ไม่พบแบบฟอร์ม/u)).toBeVisible();
+    expect(screen.getByRole("heading", { name: /ไม่พบแบบฟอร์ม/u })).toBeVisible();
     expect(
       screen.queryByText("Form 1", { exact: true })
     ).not.toBeInTheDocument();
@@ -557,7 +815,11 @@ describe("admin form catalog", () => {
       screen.getByRole("button", { exact: true, name: "ไปหน้า 4" })
     );
     await flush();
-    expect(screen.getByText(/หน้า 4 จาก 4$/u)).toBeVisible();
+    expect(
+      screen.getByText(/หน้า 4 จาก 4$/u, {
+        selector: "p:not(#form-search-help)",
+      })
+    ).toBeVisible();
     fireEvent.click(
       screen.getByRole("button", { exact: true, name: "ลบแบบร่าง" })
     );
@@ -575,7 +837,11 @@ describe("admin form catalog", () => {
           init?.method === "DELETE"
       )
     ).toBe(true);
-    expect(screen.getByText(/หน้า 3 จาก 3$/u)).toBeVisible();
+    expect(
+      screen.getByText(/หน้า 3 จาก 3$/u, {
+        selector: "p:not(#form-search-help)",
+      })
+    ).toBeVisible();
     expect(screen.getByText("Form 3", { exact: true })).toBeVisible();
     expect(screen.getByText("ลบแบบฟอร์มร่างเรียบร้อยแล้ว")).toBeVisible();
     expect(
@@ -609,7 +875,11 @@ describe("admin form catalog", () => {
       screen.getByRole("button", { exact: true, name: "ยืนยันการลบ" })
     );
     await flush();
-    expect(screen.getByText(/หน้า 3 จาก 3$/u)).toBeVisible();
+    expect(
+      screen.getByText(/หน้า 3 จาก 3$/u, {
+        selector: "p:not(#form-search-help)",
+      })
+    ).toBeVisible();
     expectQuery({ page: "3" });
     total = 31;
     fireEvent.click(
@@ -617,7 +887,11 @@ describe("admin form catalog", () => {
     );
     await flush();
     expectQuery({ page: "3" });
-    expect(screen.getByText(/หน้า 3 จาก 4$/u)).toBeVisible();
+    expect(
+      screen.getByText(/หน้า 3 จาก 4$/u, {
+        selector: "p:not(#form-search-help)",
+      })
+    ).toBeVisible();
   });
 
   it("pauses a pending search while deleting and resumes it after completion", async () => {

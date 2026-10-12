@@ -38,6 +38,7 @@ import type { FormStatus, FormSummary } from "@/lib/api";
 
 import { catalogPageNumbers } from "./catalog";
 import type { FormCatalogQuery } from "./catalog";
+import { SearchStatus } from "./search-status";
 import { useFormCatalog } from "./use-form-catalog";
 
 const CatalogNotice = ({
@@ -126,6 +127,7 @@ export const AdminFormsPage = () => {
     reload: load,
   } = useFormCatalog(query, onPageClamp);
   const { forms, pagination } = data;
+  const waitingForSearch = composing || searchInput.trim() !== query.search;
   const error = loadError
     ? formsErrorMessage(
         loadError,
@@ -165,10 +167,17 @@ export const AdminFormsPage = () => {
   }, [changeQuery, composing, query.search, removingPublicId, searchInput]);
 
   useEffect(() => {
-    if (error || mutationError || success) {
+    if (
+      mutationError ||
+      success ||
+      (error &&
+        !loading &&
+        !waitingForSearch &&
+        document.activeElement !== searchRef.current)
+    ) {
       feedbackRef.current?.focus();
     }
-  }, [error, mutationError, success]);
+  }, [error, loading, mutationError, success, waitingForSearch]);
 
   useEffect(() => {
     if (confirmingPublicId) {
@@ -242,12 +251,12 @@ export const AdminFormsPage = () => {
     );
   } else if (loading) {
     formsContent = (
-      <div
-        className="grid min-h-56 place-items-center gap-3"
-        aria-busy="true"
-        role="status"
-      >
-        <Spinner />
+      <div className="grid min-h-56 place-items-center gap-3" aria-busy="true">
+        <Spinner
+          role="presentation"
+          aria-hidden="true"
+          aria-label={undefined}
+        />
         <span className="text-sm text-[var(--ink-soft)]">
           กำลังโหลดรายการแบบฟอร์ม…
         </span>
@@ -449,9 +458,14 @@ export const AdminFormsPage = () => {
                 </span>
               )}
             </div>
-            <p id="form-search-help" className="text-xs text-muted-foreground">
-              ค้นหาจากชื่อและคำอธิบายหลังหยุดพิมพ์ 3 วินาที
-            </p>
+            <SearchStatus
+              waiting={waitingForSearch}
+              loading={loading}
+              error={Boolean(error)}
+              total={pagination.total}
+              page={pagination.page}
+              totalPages={pagination.totalPages}
+            />
           </div>
           <div className="space-y-2 sm:w-48 sm:pb-6">
             <Label htmlFor="form-status">สถานะแบบฟอร์ม</Label>
@@ -495,10 +509,7 @@ export const AdminFormsPage = () => {
       </section>
       {!loading && !error ? (
         <div className="mt-5 space-y-3">
-          <p
-            className="text-center text-sm text-muted-foreground"
-            role="status"
-          >
+          <p className="text-center text-sm text-muted-foreground">
             {pagination.total === 0
               ? "0 รายการ"
               : `แสดง ${(pagination.page - 1) * pagination.pageSize + 1}–${Math.min(pagination.page * pagination.pageSize, pagination.total)} จาก ${pagination.total} รายการ`}

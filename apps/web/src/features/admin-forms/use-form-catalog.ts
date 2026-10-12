@@ -17,6 +17,7 @@ export const useFormCatalog = (
     pagination: { page: 1, pageSize: 10, total: 0, totalPages: 1 },
   });
   const [loading, setLoading] = useState(true);
+  const [settledPath, setSettledPath] = useState<string | null>(null);
   const [error, setError] = useState<unknown>(null);
   const requestId = useRef(0);
   const controller = useRef<AbortController | null>(null);
@@ -49,6 +50,7 @@ export const useFormCatalog = (
       }
     } finally {
       if (requestId.current === id && latestPath.current === requestedPath) {
+        setSettledPath(requestedPath);
         setLoading(false);
       }
     }
@@ -62,5 +64,11 @@ export const useFormCatalog = (
     };
   }, [path, reload]);
 
-  return { data, error, loading, reload };
+  const requestPending = loading || settledPath !== path;
+  return {
+    data,
+    error: requestPending ? null : error,
+    loading: requestPending,
+    reload,
+  };
 };
