@@ -88,6 +88,16 @@ export function registerPublicFormRoutes(
         return userEditorConfig(form, identity, responseId, requestedAction);
       }
     )
+    .get("/api/forms/:publicId/my-submissions", async ({ request, params }) => {
+      const identity = await requireIdentity(request);
+      const form = await findFormByPublicId(params.publicId);
+      const submissions = await prisma.submission.findMany({
+        orderBy: { createdAt: "desc" },
+        select: { createdAt: true, id: true },
+        where: { formId: form.id, userId: identity.id },
+      });
+      return { submissions };
+    })
     .post("/api/forms/:publicId/start", async ({ request, params, set }) => {
       const identity = await requireIdentity(request);
       const form = await findFormByPublicId(params.publicId);
