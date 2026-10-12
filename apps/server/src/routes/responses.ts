@@ -51,7 +51,7 @@ export function registerResponseRoutes(
             take: 1,
           },
           form: true,
-          submission: true,
+          submissions: { orderBy: { createdAt: "desc" }, take: 1 },
         },
         orderBy: { updatedAt: "desc" },
         where: { userId: identity.id },
@@ -62,8 +62,8 @@ export function registerResponseRoutes(
             formPublicId: response.form.publicId,
             formTitle: response.form.title,
             latestCorrectionNumber: response.corrections[0]?.revision ?? null,
-            submissionId: response.submission?.id,
-            submittedAt: response.submission?.createdAt,
+            submissionId: response.submissions[0]?.id,
+            submittedAt: response.submissions[0]?.createdAt,
           })
         ),
       };
@@ -77,14 +77,15 @@ export function registerResponseRoutes(
           publishedTemplate: {
             include: { manifest: { include: { fields: true } } },
           },
-          submission: true,
+          submissions: { orderBy: { createdAt: "desc" }, take: 1 },
         },
         where: { id: params.id },
       });
+      const submission = response?.submissions[0];
       if (
         !response ||
         response.status !== ResponseStatus.submitted ||
-        !response.submission
+        !submission
       ) {
         fail(404, "not_found", "Submitted Response was not found");
       }
@@ -101,9 +102,7 @@ export function registerResponseRoutes(
       const actorById = new Map(
         actors.map((actor) => [actor.id, actor] as const)
       );
-      const originalAvailable = await objectExists(
-        response.submission.objectKey
-      );
+      const originalAvailable = await objectExists(submission.objectKey);
       const pictureFields =
         response.publishedTemplate.manifest?.fields.filter(
           (field) => field.type === FieldType.picture
@@ -111,7 +110,7 @@ export function registerResponseRoutes(
       const originalPictures =
         originalAvailable && pictureFields.length > 0
           ? responsePicturePresence(
-              await readObject(response.submission.objectKey),
+              await readObject(submission.objectKey),
               pictureFields
             )
           : null;
@@ -139,7 +138,7 @@ export function registerResponseRoutes(
         actorId: identity.id,
         outcome: AuditOutcome.success,
         safeMetadata: { revision: 0, state: "submitted" },
-        targetId: response.submission.id,
+        targetId: submission.id,
         targetType: "submission",
       });
       for (const correction of response.corrections) {
@@ -161,8 +160,8 @@ export function registerResponseRoutes(
           {
             actorEmail: null,
             actorName: null,
-            createdAt: response.submission.createdAt,
-            data: jsonRecord(response.submission.data),
+            createdAt: submission.createdAt,
+            data: jsonRecord(submission.data),
             document: {
               available: originalAvailable,
               state: "submission",

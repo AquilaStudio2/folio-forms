@@ -1,6 +1,7 @@
 import type { FormEvent } from "react";
 
 import { Button, Card, Input, Textarea } from "@/components/ui";
+import { NativeFileUploadControl } from "@/shared/native-file-upload-control";
 
 export interface NativeFormField {
   tag: string;
@@ -249,6 +250,19 @@ const NativeFieldControl = ({
       );
     }
     case "text": {
+      if (field.tag === "upload_file") {
+        return (
+          <NativeFileUploadControl
+            fieldId={fieldId}
+            required={field.required}
+            disabled={operationBusy || locked}
+            onFileChange={(file) => {
+              console.log("Selected file:", file);
+            }}
+          />
+        );
+      }
+
       return (
         <Textarea
           aria-describedby={describedBy}
@@ -403,21 +417,23 @@ export const NativeForm = ({
         </p>
       </div>
       <form className="space-y-5" onSubmit={handleSubmit}>
-        {fields.map((field) => (
-          <NativeField
-            field={field}
-            fieldId={`native-field-${field.position}`}
-            key={field.tag}
-            locked={lockedFields[field.tag] === true}
-            onChange={onChange}
-            onPictureChange={onPictureChange}
-            operationBusy={operationBusy}
-            pictureFiles={pictureFiles}
-            pictureInputKey={pictureInputKey}
-            pictures={pictures}
-            value={values[field.tag]}
-          />
-        ))}
+        <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
+          {fields.map((field) => (
+            <NativeField
+              field={field}
+              fieldId={`native-field-${field.position}`}
+              key={field.tag}
+              locked={lockedFields[field.tag] === true}
+              onChange={onChange}
+              onPictureChange={onPictureChange}
+              operationBusy={operationBusy}
+              pictureFiles={pictureFiles}
+              pictureInputKey={pictureInputKey}
+              pictures={pictures}
+              value={values[field.tag]}
+            />
+          ))}
+        </div>
         <div className="flex flex-wrap gap-2 border-t border-[var(--line)] pt-4">
           <Button
             disabled={operationBusy}

@@ -29,12 +29,12 @@ interface ResponseDeletionResult {
 
 function responseDeletionPrefixes(
   responseId: string,
-  submissionId: string | null,
+  submissionIds: readonly string[],
   operationPrefixes: readonly string[]
 ): string[] {
   return [
     `responses/${responseId}/`,
-    ...(submissionId ? [`submissions/${submissionId}/`] : []),
+    ...submissionIds.map((submissionId) => `submissions/${submissionId}/`),
     ...operationPrefixes,
   ];
 }
@@ -104,7 +104,7 @@ export async function deleteResponseData({
       const response = await tx.response.findUnique({
         include: {
           corrections: { orderBy: { revision: "asc" } },
-          submission: true,
+          submissions: true,
         },
         where: { id: responseId },
       });
@@ -145,8 +145,16 @@ export async function deleteResponseData({
         where: {
           OR: [
             { responseId: response.id },
-            ...(response.submission
-              ? [{ submissionId: response.submission.id }]
+            ...(response.submissions.length > 0
+              ? [
+                  {
+                    submissionId: {
+                      in: response.submissions.map(
+                        (submission) => submission.id
+                      ),
+                    },
+                  },
+                ]
               : []),
             ...(response.corrections.length > 0
               ? [
@@ -195,7 +203,7 @@ export async function deleteResponseData({
 
       const candidateKeys = [
         response.draftObjectKey,
-        response.submission?.objectKey,
+        ...response.submissions.map((submission) => submission.objectKey),
         ...response.corrections.map((correction) => correction.objectKey),
         ...leases.map((lease) => lease.workspaceObjectKey),
         ...operations.flatMap((operation) => {
@@ -221,7 +229,7 @@ export async function deleteResponseData({
       ];
       const prefixes = responseDeletionPrefixes(
         response.id,
-        response.submission?.id ?? null,
+        response.submissions.map((submission) => submission.id),
         linkedObjectPrefixes
       );
       for (const key of uniqueObjectKeys(candidateKeys)) {
@@ -311,8 +319,16 @@ export async function deleteResponseData({
         where: {
           OR: [
             { responseId: response.id },
-            ...(response.submission
-              ? [{ submissionId: response.submission.id }]
+            ...(response.submissions.length > 0
+              ? [
+                  {
+                    submissionId: {
+                      in: response.submissions.map(
+                        (submission) => submission.id
+                      ),
+                    },
+                  },
+                ]
               : []),
             ...(correctionIds.length > 0
               ? [{ correctionId: { in: correctionIds } }]

@@ -51,11 +51,8 @@ const ReceiptRoute = () => {
           returnUrl: string;
           submission: Submission;
         }>(`/api/submissions/${submissionId}/data`);
-        if (!payload.submission.responseId) {
-          throw new Error("Response is unavailable");
-        }
         const history = await apiGet<ResponseRevisionsResponse>(
-          `/api/responses/${payload.submission.responseId}/corrections`
+          `/api/submissions/${submissionId}/corrections`
         );
         if (!cancelled) {
           setViewRevision(history.latestRevision);

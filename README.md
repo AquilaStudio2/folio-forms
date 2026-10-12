@@ -272,14 +272,14 @@ The plugin applies prefill through ONLYOFFICE's command API, then restricts resp
 
 - Better Auth `User`, `Session`, `Account`, and `Verification` models.
 - Forms, Template Drafts, immutable Published Templates, Field Manifests, and Prefill Configuration.
-- One Response per User/Form, immutable Submissions, Prefill snapshots, and append-only Corrections.
+- One Response per User/Form, immutable Submissions (a Response can accumulate more than one over time as the User resubmits), Prefill snapshots, and append-only Corrections.
 - Handoffs, pending claims, Operations, callback claims, Editor Leases, and durable Object Cleanup Intents.
 - immutable Audit Events, login-failure windows, and Deletion Tombstones.
 
 Database constraints enforce:
 
 - Normalized unique account email and opaque Form public IDs.
-- One Response per User/Form and one Submission per Response.
+- One Response per User/Form; a Response may have many Submissions, each immutable once created.
 - Immutable published contracts and monotonic Correction revisions.
 - One active Operation and one Editor Lease per target.
 - Accepted lifecycle, ownership, document-reference, and expiry invariants.

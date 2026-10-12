@@ -21,7 +21,7 @@ function externalPrefillStatus(handoff: {
   response?: {
     corrections: { revision: number }[];
     status: ResponseStatus;
-    submission: { createdAt: Date } | null;
+    submissions: { createdAt: Date }[];
   } | null;
 }): {
   consumedAt: string | null;
@@ -50,7 +50,8 @@ function externalPrefillStatus(handoff: {
     latestCorrectionNumber: handoff.response?.corrections[0]?.revision ?? null,
     reservedAt: handoff.reservedAt?.toISOString() ?? null,
     status,
-    submittedAt: handoff.response?.submission?.createdAt.toISOString() ?? null,
+    submittedAt:
+      handoff.response?.submissions[0]?.createdAt.toISOString() ?? null,
     updatedAt: handoff.updatedAt.toISOString(),
   };
 }
@@ -84,7 +85,11 @@ export async function pollPrefillHandoffStatus(
           take: 1,
         },
         status: true,
-        submission: { select: { createdAt: true } },
+        submissions: {
+          orderBy: { createdAt: "desc" as const },
+          select: { createdAt: true },
+          take: 1,
+        },
       },
     },
   } as const;

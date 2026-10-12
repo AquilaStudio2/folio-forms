@@ -23,7 +23,7 @@ DOCX remains the canonical Form template and output. A Google-Forms-like page ad
 ## Operating Context
 
 - Admin prepares a Template Draft, then publishes it for new Responses.
-- A User's Response can hold a Draft and produce one Submission.
+- A User's Response can hold a Draft and produce one or more Submissions over time: submitting reopens the Response as a Draft seeded from that Submission, so the User can fill in and submit again without starting a new Response.
 - An Admin uploads a PDF into the AI chat or describes a Form in text, iterates on the result in the same chat, and previews a generated DOCX read-only. The source PDF remains available to the agent throughout the active session, including later edit requests. The final DOCX contains static text and tagged content controls; the Admin downloads it, uploads it through the existing Form flow, and finishes editing it in ONLYOFFICE.
 
 ## Capabilities and Constraints
@@ -43,6 +43,7 @@ DOCX remains the canonical Form template and output. A Google-Forms-like page ad
 - Provide an in-page, body-sized ONLYOFFICE mode on every editor surface; do not invoke browser fullscreen.
 - Render User receipts as a stacked label/value list, never JSON. Admin result detail has read-only DOCX and Field-table tabs, one revision selector for both, and a separate Correction action. Support Drafts and Submissions; retain DOCX/PDF downloads but remove JSON UI actions.
 - Default User Receipt and Admin results to the latest revision; let both select every stored revision, including the original and intermediate Corrections. Field values, read-only DOCX view, and downloads must match the selected revision.
+- On the native fill page, selected Forms (matched by title against a server-side allowlist) show a table below the submit button listing the User's own Submission history for that Form, each linking to its Receipt.
 - Let Admins copy temporary passwords after user creation and password reset.
 - Serve the SPA with `joseluisq/static-web-server` on internal port 80 and preserve the SPA fallback.
 - Breaking changes are acceptable during development.
