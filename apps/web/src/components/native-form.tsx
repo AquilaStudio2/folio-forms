@@ -1,7 +1,6 @@
 import type { FormEvent } from "react";
 
 import { Button, Card, Input, Textarea } from "@/components/ui";
-import { NativeFileUploadControl } from "@/shared/native-file-upload-control";
 
 export interface NativeFormField {
   tag: string;
@@ -250,19 +249,6 @@ const NativeFieldControl = ({
       );
     }
     case "text": {
-      if (field.tag === "upload_file") {
-        return (
-          <NativeFileUploadControl
-            fieldId={fieldId}
-            required={field.required}
-            disabled={operationBusy || locked}
-            onFileChange={(file) => {
-              console.log("Selected file:", file);
-            }}
-          />
-        );
-      }
-
       return (
         <Textarea
           aria-describedby={describedBy}
