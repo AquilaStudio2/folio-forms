@@ -12,7 +12,11 @@ import {
   DOCX_CONTENT_TYPE,
   putObject,
 } from "../../../src/storage";
-import { jsonHeaders, waitForOperation } from "../../fixtures/http";
+import {
+  findAdminForm,
+  jsonHeaders,
+  waitForOperation,
+} from "../../fixtures/http";
 import type { EditorConfigBody } from "../../fixtures/http";
 import type { FieldConfigurationOutput } from "./editor-access";
 import {
@@ -93,22 +97,11 @@ export const runDraftLifecycle = async (
   if (!responseId) {
     throw new Error("The response was not started");
   }
-  const draftCountListResponse = await app.handle(
-    new Request("http://test.local/api/admin/forms", {
-      headers: { Authorization: `Bearer ${adminBearer}` },
-    })
-  );
-  expect(draftCountListResponse.status).toBe(200);
-  const draftCountList = (await draftCountListResponse.json()) as {
-    forms?: {
-      activeDraftCount: number;
-      publicId: string;
-      submissionCount: number;
-    }[];
-  };
-  expect(
-    draftCountList.forms?.find((form) => form.publicId === formPublicId)
-  ).toMatchObject({ activeDraftCount: 1, submissionCount: 0 });
+  const draftCountList = await findAdminForm(app, adminBearer, formPublicId);
+  expect(draftCountList).toMatchObject({
+    activeDraftCount: 1,
+    submissionCount: 0,
+  });
   const formLifecycleBeforeResponseGuard = await prisma.form.findUnique({
     select: { status: true, version: true },
     where: { id: formId },

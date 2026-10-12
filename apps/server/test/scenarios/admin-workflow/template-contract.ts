@@ -24,7 +24,7 @@ import {
   contentControlDocument,
   contentControl,
 } from "../../fixtures/documents";
-import { waitForOperation } from "../../fixtures/http";
+import { findAdminForm, waitForOperation } from "../../fixtures/http";
 import type { EditorConfigBody } from "../../fixtures/http";
 import type {
   EditorAccessOutput,
@@ -180,18 +180,8 @@ export const runPrimaryPublication = async (
     result: { publicId: formPublicId, version: 1 },
   });
   expect(JSON.stringify(publishOperation)).not.toContain(formId);
-  const publishedListResponse = await app.handle(
-    new Request("http://test.local/api/admin/forms", {
-      headers: { Authorization: `Bearer ${adminBearer}` },
-    })
-  );
-  expect(publishedListResponse.status).toBe(200);
-  const publishedList = (await publishedListResponse.json()) as {
-    forms?: { publicId: string; status: string; version: number }[];
-  };
-  expect(
-    publishedList.forms?.find((form) => form.publicId === formPublicId)
-  ).toMatchObject({ status: "published", version: 1 });
+  const publishedList = await findAdminForm(app, adminBearer, formPublicId);
+  expect(publishedList).toMatchObject({ status: "published", version: 1 });
   const publishedManifestRecord = await prisma.publishedTemplate.findUnique({
     include: {
       manifest: { include: { fields: { orderBy: { tag: "asc" } } } },

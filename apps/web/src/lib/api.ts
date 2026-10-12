@@ -419,7 +419,10 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   return body as T;
 };
 
-export const apiGet = <T>(path: string) => request<T>(path);
+export const apiGet = <T>(
+  path: string,
+  options?: Pick<RequestInit, "signal">
+) => request<T>(path, options);
 export const apiGetBlob = async (path: string): Promise<Blob> => {
   const token = getToken();
   const response = await fetch(`${API_ORIGIN}${path}`, {

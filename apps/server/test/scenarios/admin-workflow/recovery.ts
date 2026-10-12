@@ -16,7 +16,11 @@ import {
   objectKey,
 } from "../../../src/storage";
 import { docxFixture } from "../../fixtures/documents";
-import { jsonHeaders, persistCallbackClaim } from "../../fixtures/http";
+import {
+  findAdminForm,
+  jsonHeaders,
+  persistCallbackClaim,
+} from "../../fixtures/http";
 import type { FormLifecycleOutput } from "./form-lifecycle";
 import type { PrefillEntryOutput } from "./prefill-entry";
 import type { BootstrapAndCreationOutput } from "./setup";
@@ -235,22 +239,12 @@ export const runDiscardAndRestart = async (
     })
   );
   expect(discardRestartResponse.status).toBe(200);
-  const unarchivedFormListResponse = await app.handle(
-    new Request("http://test.local/api/admin/forms", {
-      headers: { Authorization: `Bearer ${adminBearer}` },
-    })
+  const unarchivedFormListBody = await findAdminForm(
+    app,
+    adminBearer,
+    formPublicId
   );
-  const unarchivedFormListBody = (await unarchivedFormListResponse.json()) as {
-    forms?: {
-      activeDraftCount: number;
-      publicId: string;
-      status: string;
-      submissionCount: number;
-    }[];
-  };
-  expect(
-    unarchivedFormListBody.forms?.find((form) => form.publicId === formPublicId)
-  ).toMatchObject({
+  expect(unarchivedFormListBody).toMatchObject({
     activeDraftCount: 0,
     publicId: formPublicId,
     status: "published",
