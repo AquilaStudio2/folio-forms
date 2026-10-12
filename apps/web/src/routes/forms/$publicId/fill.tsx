@@ -1,13 +1,14 @@
 // oxlint-disable unicorn/filename-case -- TanStack Router requires this dynamic route filename.
 import {
   createFileRoute,
+  Link,
   Navigate,
   useBlocker,
   useNavigate,
   useParams,
   useSearch,
 } from "@tanstack/react-router";
-import { ArrowLeft, CheckCircle2, Monitor } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, CheckCircle2, Monitor } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { LegacySsoSwitchButton } from "@/components/legacy-sso-switch-button";
@@ -31,6 +32,7 @@ import {
   apiDelete,
   apiGet,
   apiPost,
+  formatDateTime,
   safeReturnPath,
 } from "@/lib/api";
 import type { FillMethod, Operation } from "@/lib/api";
@@ -96,6 +98,17 @@ interface PublicForm {
   fillMethod: FillMethod;
 }
 
+// Forms whose native fill page shows a history table of the user's own
+// past submissions below the submit button. Add titles here to opt in.
+const NATIVE_SUBMISSION_HISTORY_FORM_TITLES = new Set([
+  "แบบฟอร์มรายงานผลการปฏิบัติงาน (พลังงานจังหวัด)",
+]);
+
+interface SubmissionHistoryEntry {
+  id: string;
+  createdAt: string;
+}
+
 // oxlint-disable-next-line complexity -- Coordinates the public form editor, draft lifecycle, and exit confirmation.
 const FillRoute = () => {
   const { publicId } = useParams({ from: "/forms/$publicId/fill" });
@@ -132,6 +145,10 @@ const FillRoute = () => {
   );
   const [clearDirtyRequest, setClearDirtyRequest] = useState(0);
   const [discardBusy, setDiscardBusy] = useState(false);
+  const [submissionHistory, setSubmissionHistory] = useState<
+    SubmissionHistoryEntry[]
+  >([]);
+  const [submissionHistoryRequest, setSubmissionHistoryRequest] = useState(0);
   const startErrorRef = useRef<HTMLDivElement>(null);
   const exportSaveResolverRef = useRef<{
     reject: (reason?: unknown) => void;
@@ -320,9 +337,53 @@ const FillRoute = () => {
     startAttempt,
     user,
   ]);
+  const showSubmissionHistory =
+    form !== null &&
+    form.fillMethod === "native" &&
+    NATIVE_SUBMISSION_HISTORY_FORM_TITLES.has(form.title);
+  useEffect(() => {
+    if (!(user && showSubmissionHistory)) {
+      return;
+    }
+    let cancelled = false;
+    const loadSubmissionHistory = async () => {
+      try {
+        const payload = await apiGet<{ submissions: SubmissionHistoryEntry[] }>(
+          `/api/forms/${publicId}/my-submissions`
+        );
+        if (!cancelled) {
+          setSubmissionHistory(payload.submissions);
+        }
+      } catch {
+        if (!cancelled) {
+          setSubmissionHistory([]);
+        }
+      }
+    };
+    void loadSubmissionHistory();
+    return () => {
+      cancelled = true;
+    };
+  }, [publicId, showSubmissionHistory, submissionHistoryRequest, user]);
   const resolveReauthentication = (allowed: boolean): void => {
     reauthResolverRef.current?.(allowed);
     reauthResolverRef.current = null;
+  };
+  const reopenOnlyOfficeResponseForNewEntry = async (): Promise<void> => {
+    const result = await apiPost<{
+      editorConfigUrl?: string;
+      fillMethod: FillMethod;
+      response?: { id: string };
+    }>(`/api/forms/${publicId}/start`, {
+      responseId: activeResponseId,
+    });
+    if (result.fillMethod !== "onlyoffice" || !result.editorConfigUrl) {
+      throw new Error("Document editor configuration is unavailable");
+    }
+    setActiveResponseId(result.response?.id ?? activeResponseId);
+    setEditorConfigUrl(result.editorConfigUrl);
+    setEditorRevision((value) => value + 1);
+    setDirty(false);
   };
   // oxlint-disable-next-line complexity -- Applies bridge updates, operation state, and save/export transitions.
   const handleBridgeMessage = async (message: EditorBridgeMessage) => {
@@ -374,11 +435,10 @@ const FillRoute = () => {
     if (message.action === "submit") {
       const submissionId = message.operation?.result?.submissionId;
       if (submissionId) {
-        allowNavigationRef.current = true;
-        await navigate({
-          params: { submissionId },
-          to: "/receipt/$submissionId",
-        });
+        await reopenOnlyOfficeResponseForNewEntry();
+        setError(null);
+        setOperationError(null);
+        setSuccess("ส่งแบบฟอร์มเรียบร้อยแล้ว คุณสามารถกรอกคำตอบใหม่ได้ทันที");
         return;
       }
     }
@@ -460,6 +520,35 @@ const FillRoute = () => {
     setOperationError(null);
   };
 
+  const reopenNativeResponseForNewEntry = async (): Promise<void> => {
+    const result = await apiPost<{
+      editorConfigUrl?: string;
+      fillMethod: FillMethod;
+      response?: { id: string };
+    }>(`/api/forms/${publicId}/start`, {
+      responseId: activeResponseId,
+    });
+    if (result.fillMethod !== "native" || !result.editorConfigUrl) {
+      throw new Error("Native form configuration is unavailable");
+    }
+    const config = await apiGet<
+      NativeEditorConfig | { fillMethod: "onlyoffice" }
+    >(result.editorConfigUrl);
+    setActiveResponseId(result.response?.id ?? activeResponseId);
+    setNativePictureFiles({});
+    setPictureInputKey((key) => key + 1);
+    if (config.fillMethod === "native") {
+      setNativeConfig(config);
+      setNativeValues(nativeValuesFromConfig(config));
+    } else {
+      setNativeConfig(null);
+      setNativeValues({});
+    }
+    setEditorConfigUrl(result.editorConfigUrl);
+    setDirty(false);
+    setOperationError(null);
+  };
+
   const finishNativeSaveExit = async (): Promise<void> => {
     const intent = exitIntent;
     setSaveBeforeExit(false);
@@ -487,11 +576,9 @@ const FillRoute = () => {
       if (typeof submissionId !== "string") {
         throw new TypeError("The submitted receipt is unavailable");
       }
-      allowNavigationRef.current = true;
-      await navigate({
-        params: { submissionId },
-        to: "/receipt/$submissionId",
-      });
+      await reopenNativeResponseForNewEntry();
+      setSubmissionHistoryRequest((value) => value + 1);
+      setSuccess("ส่งแบบฟอร์มเรียบร้อยแล้ว คุณสามารถกรอกคำตอบใหม่ได้ทันที");
       return;
     }
     await refreshNativeResponse(configUrl);
@@ -896,43 +983,102 @@ const FillRoute = () => {
           </div>
         </div>
         {nativeConfig ? (
-          <NativeForm
-            fields={nativeConfig.fields}
-            lockedFields={nativeConfig.lockedFields}
-            operationBusy={
-              operationBusy ||
-              nativeSaving ||
-              Boolean(exportAfterSave) ||
-              saveBeforeExit
-            }
-            values={nativeValues}
-            pictures={nativeConfig.pictures}
-            pictureFiles={nativePictureFiles}
-            pictureInputKey={pictureInputKey}
-            onChange={(tag, value) => {
-              setNativeValues((current) => ({ ...current, [tag]: value }));
-              setDirty(true);
-              setOperationError(null);
-            }}
-            onPictureChange={(tag, file) => {
-              setNativePictureFiles((current) => {
-                if (file) {
-                  return { ...current, [tag]: file };
-                }
-                return Object.fromEntries(
-                  Object.entries(current).filter(
-                    ([currentTag]) => currentTag !== tag
-                  )
-                );
-              });
-              setDirty(true);
-              setOperationError(null);
-            }}
-            onExportDocx={() => saveAndExport("docx")}
-            onExportPdf={() => saveAndExport("pdf")}
-            onSave={() => saveNativeResponse("save-draft")}
-            onSubmit={() => saveNativeResponse("submit")}
-          />
+          <>
+            <NativeForm
+              fields={nativeConfig.fields}
+              lockedFields={nativeConfig.lockedFields}
+              operationBusy={
+                operationBusy ||
+                nativeSaving ||
+                Boolean(exportAfterSave) ||
+                saveBeforeExit
+              }
+              values={nativeValues}
+              pictures={nativeConfig.pictures}
+              pictureFiles={nativePictureFiles}
+              pictureInputKey={pictureInputKey}
+              onChange={(tag, value) => {
+                setNativeValues((current) => ({ ...current, [tag]: value }));
+                setDirty(true);
+                setOperationError(null);
+              }}
+              onPictureChange={(tag, file) => {
+                setNativePictureFiles((current) => {
+                  if (file) {
+                    return { ...current, [tag]: file };
+                  }
+                  return Object.fromEntries(
+                    Object.entries(current).filter(
+                      ([currentTag]) => currentTag !== tag
+                    )
+                  );
+                });
+                setDirty(true);
+                setOperationError(null);
+              }}
+              onExportDocx={() => saveAndExport("docx")}
+              onExportPdf={() => saveAndExport("pdf")}
+              onSave={() => saveNativeResponse("save-draft")}
+              onSubmit={() => saveNativeResponse("submit")}
+            />
+            {showSubmissionHistory ? (
+              <div className="mt-6 overflow-hidden rounded-[10px] border border-[var(--line)] bg-[var(--paper)]">
+                <div className="border-b border-[var(--line)] px-4 py-3 text-sm font-semibold">
+                  ประวัติการส่งแบบฟอร์มของคุณ
+                </div>
+                {submissionHistory.length === 0 ? (
+                  <div className="px-4 py-6 text-center text-sm text-[var(--ink-soft)]">
+                    ยังไม่มีประวัติการส่งแบบฟอร์ม
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-sm">
+                      <caption className="sr-only">
+                        ประวัติการส่งแบบฟอร์มของคุณ
+                      </caption>
+                      <thead className="border-b border-[var(--line)] bg-[var(--paper-soft)] text-xs uppercase tracking-[0.12em] text-[var(--ink-soft)]">
+                        <tr>
+                          <th className="px-4 py-3" scope="col">
+                            ลำดับ
+                          </th>
+                          <th className="px-4 py-3" scope="col">
+                            วันที่ส่ง
+                          </th>
+                          <th className="px-4 py-3" scope="col">
+                            <span className="sr-only">ดูใบรับคำตอบ</span>
+                          </th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {submissionHistory.map((entry, index) => (
+                          <tr
+                            className="border-b border-[var(--line)] last:border-0"
+                            key={entry.id}
+                          >
+                            <td className="px-4 py-3 text-[var(--ink-soft)]">
+                              {submissionHistory.length - index}
+                            </td>
+                            <td className="px-4 py-3">
+                              {formatDateTime(entry.createdAt)}
+                            </td>
+                            <td className="px-4 py-3 text-right">
+                              <Link
+                                className="inline-flex items-center gap-1 font-semibold text-[var(--accent)] underline-offset-4 hover:underline"
+                                params={{ submissionId: entry.id }}
+                                to="/receipt/$submissionId"
+                              >
+                                ดูใบรับคำตอบ <ArrowUpRight size={15} />
+                              </Link>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </>
         ) : (
           <>
             <div className="mb-4 rounded-[10px] border border-[var(--accent)]/35 bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--ink)]">

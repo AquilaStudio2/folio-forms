@@ -124,10 +124,11 @@ export function adminResultSummary(response: {
   id: string;
   owner: { email: string };
   status: ResponseStatus;
-  submission: { createdAt: Date; id: string } | null;
+  submissions: { createdAt: Date; id: string }[];
   updatedAt: Date;
 }): JsonRecord {
   const submitted = response.status === ResponseStatus.submitted;
+  const submission = response.submissions[0] ?? null;
   return {
     createdAt: response.createdAt,
     formPublicId: response.form.publicId,
@@ -135,8 +136,8 @@ export function adminResultSummary(response: {
     id: response.id,
     latestCorrectionNumber: response.corrections[0]?.revision ?? null,
     state: submitted ? "submitted" : "draft",
-    submissionId: response.submission?.id ?? null,
-    submittedAt: response.submission?.createdAt ?? null,
+    submissionId: submission?.id ?? null,
+    submittedAt: submission?.createdAt ?? null,
     updatedAt: response.updatedAt,
     userEmail: response.owner.email,
   };

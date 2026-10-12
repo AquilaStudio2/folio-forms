@@ -145,6 +145,31 @@ export function nativeRunPropertiesXml(
   let fontElementEnd: number | null = null;
   let fontElementName: string | null = null;
   let fontOpeningTag = "";
+  const setAttribute = (openingTag: string, attributeName: string): string => {
+    let replaced = false;
+    const updated = openingTag.replaceAll(
+      nativeXmlAttributePattern,
+      (
+        match,
+        whitespace: string,
+        name: string,
+        assignment: string,
+        quote: string
+      ) => {
+        if (name !== attributeName) {
+          return match;
+        }
+        replaced = true;
+        return `${whitespace}${name}${assignment}${quote}${htmlEscape(font)}${quote}`;
+      }
+    );
+    return replaced
+      ? updated
+      : updated.replace(
+          nativeXmlTagEndPattern,
+          ` ${attributeName}="${htmlEscape(font)}"$<selfClosing>>`
+        );
+  };
   const parser = new SaxesParser({ position: true, xmlns: false });
   parser.on("opentag", (tag) => {
     const localName = tag.name.slice(tag.name.lastIndexOf(":") + 1);
@@ -165,34 +190,6 @@ export function nativeRunPropertiesXml(
     const prefix = tag.name.includes(":")
       ? tag.name.slice(0, tag.name.lastIndexOf(":") + 1)
       : "";
-    const setAttribute = (
-      openingTag: string,
-      attributeName: string
-    ): string => {
-      let replaced = false;
-      const updated = openingTag.replaceAll(
-        nativeXmlAttributePattern,
-        (
-          match,
-          whitespace: string,
-          name: string,
-          assignment: string,
-          quote: string
-        ) => {
-          if (name !== attributeName) {
-            return match;
-          }
-          replaced = true;
-          return `${whitespace}${name}${assignment}${quote}${htmlEscape(font)}${quote}`;
-        }
-      );
-      return replaced
-        ? updated
-        : updated.replace(
-            nativeXmlTagEndPattern,
-            ` ${attributeName}="${htmlEscape(font)}"$<selfClosing>>`
-          );
-    };
     fontOpeningTag = runProperties.slice(fontElementStart, fontElementOpenEnd);
     let fontAttributePrefix =
       fontAttributeNames?.ascii?.slice(

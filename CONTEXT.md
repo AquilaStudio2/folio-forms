@@ -50,7 +50,7 @@ A tagged content control in a Form. Its Title/Alias is the user-facing label; it
 
 ## Response
 
-A User's single attempt to fill a Form. A User can have at most one Response for a Form. A Response may hold a Draft and may produce one Submission.
+A User's single attempt to fill a Form. A User can have at most one Response for a Form. A Response may hold a Draft and may produce one or more Submissions over time: submitting again after a Submission reopens the Response as a Draft seeded from that Submission's data and document, so the User can edit and submit again without starting a new Response.
 
 ## Draft
 
@@ -58,11 +58,11 @@ A manually saved, resumable Response state containing both the current document 
 
 ## Submission
 
-The immutable completed result of a Response. A Submission consists of extracted field data, a filled DOCX, and a PDF. It exists only when all three artifacts were persisted successfully.
+An immutable completed result of a Response, recorded each time that Response is submitted. A Submission consists of extracted field data, a filled DOCX, and a PDF. It exists only when all three artifacts were persisted successfully. A Response accumulates its Submissions in order; each remains individually readable (receipt, export, Correction history) no matter how many times the Response has since been reopened and resubmitted.
 
 ## Correction
 
-An Admin-authored revision to a submitted Response. It records changed Field values, a reason, and a revised document while preserving the original Submission.
+An Admin-authored revision to a specific Submission. It records changed Field values, a reason, and a revised document while preserving the original Submission. A Correction can only be added while its Response is currently in the submitted state for that same Submission; once the User reopens the Response to submit again, new Corrections on the earlier Submission are blocked until it becomes submitted again, though its existing history remains viewable.
 
 ## Operation
 

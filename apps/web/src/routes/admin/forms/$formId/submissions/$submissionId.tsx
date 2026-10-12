@@ -32,10 +32,10 @@ const SubmissionDetailRoute = () => {
 
   useEffect(() => {
     let cancelled = false;
-    const loadHistory = async (responseId: string) => {
+    const loadHistory = async () => {
       try {
         const payload = await apiGet<ResponseRevisionsResponse>(
-          `/api/responses/${responseId}/corrections`
+          `/api/submissions/${submissionId}/corrections`
         );
         if (!cancelled) {
           setHistory(payload.revisions);
@@ -59,9 +59,7 @@ const SubmissionDetailRoute = () => {
           return;
         }
         setSubmission(payload.submission);
-        if (payload.submission.responseId) {
-          void loadHistory(payload.submission.responseId);
-        }
+        void loadHistory();
       } catch (caughtError) {
         if (!cancelled) {
           setError(

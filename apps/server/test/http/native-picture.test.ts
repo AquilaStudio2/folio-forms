@@ -441,7 +441,7 @@ test("Ticket 08 native Picture uploads survive response workflows", async () => 
       "X-Editor-Capability": submit.operationCapability,
     })
   ).toMatchObject({ status: "completed" });
-  const submission = await prisma.submission.findUniqueOrThrow({
+  const submission = await prisma.submission.findFirstOrThrow({
     select: { data: true, objectKey: true },
     where: { responseId },
   });

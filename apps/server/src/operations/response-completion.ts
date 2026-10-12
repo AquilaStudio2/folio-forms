@@ -278,15 +278,16 @@ export async function completeCorrectionOperation(
     fail(500, "invalid_operation", "Correction metadata is incomplete");
   }
   const response = await prisma.response.findUnique({
-    include: { submission: true },
     where: { id: responseId },
   });
-  const submission = response?.submission;
+  const submission = await prisma.submission.findUnique({
+    where: { id: submissionId },
+  });
   if (
     !response ||
     response.status !== ResponseStatus.submitted ||
     !submission ||
-    submission.id !== submissionId
+    submission.responseId !== responseId
   ) {
     fail(409, "stale_operation", "The Submission is no longer correctable");
   }
@@ -314,11 +315,12 @@ export async function completeCorrectionOperation(
             orderBy: { revision: "desc" },
             take: 1,
           },
-          submission: true,
         },
         where: { id: response.id },
       });
-      const currentSubmission = current?.submission;
+      const currentSubmission = await tx.submission.findUnique({
+        where: { id: submissionId },
+      });
       const latest = current?.corrections[0];
       const currentRevision = latest?.revision ?? 0;
       const currentDocumentKey =
@@ -327,7 +329,7 @@ export async function completeCorrectionOperation(
         !current ||
         current.status !== ResponseStatus.submitted ||
         !currentSubmission ||
-        currentSubmission.id !== submissionId ||
+        currentSubmission.responseId !== current.id ||
         currentRevision !== baseRevision ||
         currentDocumentKey !== baseDocumentKey
       ) {
