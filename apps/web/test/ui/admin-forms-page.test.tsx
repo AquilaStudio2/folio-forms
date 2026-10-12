@@ -166,7 +166,7 @@ describe("inline search feedback", () => {
     vi.useFakeTimers();
     searchInput().focus();
     fireEvent.change(searchInput(), { target: { value: "old" } });
-    await advance(3000);
+    await advance(2000);
     fireEvent.change(searchInput(), { target: { value: "new draft" } });
     expect(searchInput()).toHaveFocus();
     expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
@@ -176,7 +176,7 @@ describe("inline search feedback", () => {
     expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
     expect(searchStatus()).not.toHaveTextContent("ค้นหาไม่สำเร็จ");
     expect(searchStatus().querySelector("svg")).toBeNull();
-    await advance(2999);
+    await advance(1999);
     expectQuery({ page: "1", search: "old" });
     await advance(1);
     expectQuery({ page: "1", search: "new draft" });
@@ -199,7 +199,7 @@ describe("inline search feedback", () => {
     fireEvent.change(searchInput(), { target: { value: "energy" } });
     expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
     expect(searchStatus().querySelector("svg")).toBeNull();
-    await advance(2999);
+    await advance(1999);
     expect(getRequests()).toHaveLength(1);
     expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
     await advance(1);
@@ -226,7 +226,7 @@ describe("inline search feedback", () => {
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "missing" } });
     expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
-    await advance(3000);
+    await advance(2000);
     expect(searchStatus()).toHaveTextContent("ไม่พบแบบฟอร์ม");
     expect(searchStatus()).not.toHaveTextContent("พบ 1 แบบฟอร์ม");
     expect(searchStatus().querySelector("svg")).toBeNull();
@@ -241,7 +241,7 @@ describe("inline search feedback", () => {
       fetchMock.mockReturnValueOnce(searching.promise);
       vi.useFakeTimers();
       fireEvent.change(searchInput(), { target: { value: "obsolete" } });
-      await advance(3000);
+      await advance(2000);
       expect(searchStatus()).toHaveTextContent("กำลังค้นหา…");
       fireEvent.click(screen.getByRole("button", { name: "ล้างคำค้น" }));
       await flush();
@@ -275,7 +275,7 @@ describe("inline search feedback", () => {
       .mockReturnValueOnce(current.promise);
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "old" } });
-    await advance(3000);
+    await advance(2000);
     expect(searchStatus()).toHaveTextContent("กำลังค้นหา…");
     fireEvent.change(searchInput(), { target: { value: "new" } });
     expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
@@ -284,7 +284,7 @@ describe("inline search feedback", () => {
     await flush();
     expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
     expect(searchStatus()).not.toHaveTextContent("พบ 88 แบบฟอร์ม");
-    await advance(2999);
+    await advance(1999);
     expectQuery({ page: "1", search: "old" });
     await advance(1);
     expectQuery({ page: "1", search: "new" });
@@ -301,7 +301,7 @@ describe("inline search feedback", () => {
     );
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "working" } });
-    await advance(3000);
+    await advance(2000);
     expect(searchStatus()).toHaveTextContent("พบ 14 แบบฟอร์ม");
     fetchMock.mockResolvedValueOnce(
       Response.json({ error: "internal_error" }, { status: 500 })
@@ -309,13 +309,13 @@ describe("inline search feedback", () => {
     fireEvent.change(searchInput(), { target: { value: "broken" } });
     expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
     expect(searchStatus()).not.toHaveTextContent("พบ 14 แบบฟอร์ม");
-    await advance(3000);
+    await advance(2000);
     expect(searchStatus()).not.toHaveTextContent("กำลังค้นหา");
     expect(searchStatus()).not.toHaveTextContent("พบ 14 แบบฟอร์ม");
     expect(screen.getByRole("alert")).toBeVisible();
     fireEvent.change(searchInput(), { target: { value: "retry" } });
     expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
-    await advance(3000);
+    await advance(2000);
     expect(searchStatus()).toHaveTextContent("พบ 14 แบบฟอร์ม");
   });
 
@@ -327,7 +327,7 @@ describe("inline search feedback", () => {
     await mount();
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "energy" } });
-    await advance(3000);
+    await advance(2000);
     expect(searchStatus()).toHaveTextContent("พบ 25 แบบฟอร์ม");
     fireEvent.click(screen.getByRole("button", { name: "หน้าถัดไป" }));
     await flush();
@@ -345,16 +345,16 @@ describe("inline search feedback", () => {
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "   " } });
     expect(searchStatus()).not.toHaveTextContent("รอค้นหา");
-    await advance(3000);
+    await advance(2000);
     expect(getRequests()).toHaveLength(1);
     fireEvent.compositionStart(searchInput());
     fireEvent.change(searchInput(), { target: { value: "พล" } });
     expect(searchStatus()).toHaveTextContent("รอค้นหาหลังหยุดพิมพ์…");
-    await advance(3000);
+    await advance(2000);
     expect(getRequests()).toHaveLength(1);
     fireEvent.change(searchInput(), { target: { value: "พลังงาน" } });
     fireEvent.compositionEnd(searchInput(), { data: "พลังงาน" });
-    await advance(3000);
+    await advance(2000);
     expectQuery({ page: "1", search: "พลังงาน" });
     expect(searchStatus()).toHaveTextContent("พบ 1 แบบฟอร์ม");
   });
@@ -401,14 +401,14 @@ describe("admin form catalog", () => {
     ).toBeVisible();
   });
 
-  it("waits exactly three seconds after the last edit and trims the shared search parameter", async () => {
+  it("waits exactly two seconds after the last edit and trims the shared search parameter", async () => {
     await mount();
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "  EnErGy  " } });
-    await advance(2999);
+    await advance(1999);
     expect(getRequests()).toHaveLength(1);
     fireEvent.change(searchInput(), { target: { value: "  EnErGy report  " } });
-    await advance(2999);
+    await advance(1999);
     expect(getRequests()).toHaveLength(1);
     await advance(1);
     expect(getRequests()).toHaveLength(2);
@@ -424,7 +424,7 @@ describe("admin form catalog", () => {
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "test" } });
     fireEvent.keyDown(searchInput(), { code: "Enter", key: "Enter" });
-    await advance(2999);
+    await advance(1999);
     expect(getRequests()).toHaveLength(1);
     await advance(1);
     expectQuery({ page: "1", search: "test" });
@@ -434,7 +434,7 @@ describe("admin form catalog", () => {
     await mount();
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "   " } });
-    await advance(3000);
+    await advance(2000);
     expect(getRequests()).toHaveLength(1);
     expectQuery({ page: "1" });
   });
@@ -444,7 +444,7 @@ describe("admin form catalog", () => {
     vi.useFakeTimers();
     const term = "พลังงาน & 50%_test";
     fireEvent.change(searchInput(), { target: { value: term } });
-    await advance(3000);
+    await advance(2000);
     expectQuery({ page: "1", search: term });
   });
 
@@ -461,7 +461,7 @@ describe("admin form catalog", () => {
     expectQuery({ page: "4" });
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "needle" } });
-    await advance(3000);
+    await advance(2000);
     expectQuery({ page: "1", search: "needle" });
   });
 
@@ -516,7 +516,7 @@ describe("admin form catalog", () => {
     await mount();
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "energy" } });
-    await advance(3000);
+    await advance(2000);
     vi.useRealTimers();
     await chooseStatus("ร่าง");
     expectQuery({ page: "1", search: "energy", status: "draft" });
@@ -534,7 +534,7 @@ describe("admin form catalog", () => {
     await chooseStatus("เผยแพร่แล้ว");
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "energy" } });
-    await advance(3000);
+    await advance(2000);
     fireEvent.change(searchInput(), { target: { value: "pending search" } });
     const requestsBeforeClear = getRequests().length;
     fireEvent.click(screen.getByRole("button", { name: "ล้างคำค้น" }));
@@ -544,7 +544,7 @@ describe("admin form catalog", () => {
     expect(searchInput()).toHaveValue("");
     expect(searchInput()).toHaveFocus();
     expect(screen.getByLabelText("ค้นหา", { exact: true })).toBeVisible();
-    await advance(3000);
+    await advance(2000);
     expect(getRequests()).toHaveLength(requestsBeforeClear + 1);
   });
 
@@ -552,9 +552,9 @@ describe("admin form catalog", () => {
     await mount();
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "energy" } });
-    await advance(3000);
+    await advance(2000);
     fireEvent.change(searchInput(), { target: { value: "" } });
-    await advance(2999);
+    await advance(1999);
     expectQuery({ page: "1", search: "energy" });
     await advance(1);
     expectQuery({ page: "1" });
@@ -661,7 +661,7 @@ describe("admin form catalog", () => {
     fetchMock.mockImplementation(async () => Response.json(payload([])));
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "no matches" } });
-    await advance(3000);
+    await advance(2000);
     expect(screen.getByRole("heading", { name: /ไม่พบแบบฟอร์ม/u })).toBeVisible();
     expect(
       screen.queryByText("Form 1", { exact: true })
@@ -676,7 +676,7 @@ describe("admin form catalog", () => {
     );
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "energy" } });
-    await advance(3000);
+    await advance(2000);
     expect(screen.getByRole("alert")).toHaveTextContent(/ไม่สามารถ|ระบบ/u);
     fireEvent.click(screen.getByRole("button", { name: /ลองโหลดอีกครั้ง/u }));
     await flush();
@@ -705,9 +705,9 @@ describe("admin form catalog", () => {
     );
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "old" } });
-    await advance(3000);
+    await advance(2000);
     fireEvent.change(searchInput(), { target: { value: "new" } });
-    await advance(3000);
+    await advance(2000);
     expect(screen.getByText("Latest match")).toBeVisible();
     old.resolve(Response.json(payload([form(88, { title: "Stale match" })])));
     await flush();
@@ -725,9 +725,9 @@ describe("admin form catalog", () => {
     );
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "old" } });
-    await advance(3000);
+    await advance(2000);
     fireEvent.change(searchInput(), { target: { value: "new" } });
-    await advance(3000);
+    await advance(2000);
     old.resolve(Response.json({ error: "internal_error" }, { status: 500 }));
     await flush();
     expect(screen.getByText("Latest match")).toBeVisible();
@@ -739,7 +739,7 @@ describe("admin form catalog", () => {
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "never sent" } });
     unmount();
-    await advance(3000);
+    await advance(2000);
     expect(getRequests()).toHaveLength(1);
   });
 
@@ -751,7 +751,7 @@ describe("admin form catalog", () => {
     expect(oldSignal?.aborted).toBe(false);
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "current" } });
-    await advance(3000);
+    await advance(2000);
     expect(oldSignal?.aborted).toBe(true);
     const activeSignal = getRequests().at(-1)?.[1]?.signal;
     expect(activeSignal?.aborted).toBe(false);
@@ -766,11 +766,11 @@ describe("admin form catalog", () => {
     vi.useFakeTimers();
     fireEvent.compositionStart(searchInput());
     fireEvent.change(searchInput(), { target: { value: "พล" } });
-    await advance(3000);
+    await advance(2000);
     expect(getRequests()).toHaveLength(1);
     fireEvent.change(searchInput(), { target: { value: "พลังงาน" } });
     fireEvent.compositionEnd(searchInput(), { data: "พลังงาน" });
-    await advance(2999);
+    await advance(1999);
     expect(getRequests()).toHaveLength(1);
     await advance(1);
     expectQuery({ page: "1", search: "พลังงาน" });
@@ -904,7 +904,7 @@ describe("admin form catalog", () => {
     await mount();
     vi.useFakeTimers();
     fireEvent.change(searchInput(), { target: { value: "new filter" } });
-    await advance(2000);
+    await advance(1000);
     fireEvent.click(
       screen.getByRole("button", { exact: true, name: "ลบแบบร่าง" })
     );
@@ -912,13 +912,13 @@ describe("admin form catalog", () => {
       screen.getByRole("button", { exact: true, name: "ยืนยันการลบ" })
     );
     expect(searchInput()).toBeDisabled();
-    await advance(3000);
+    await advance(2000);
     expect(getRequests()).toHaveLength(1);
     deleting.resolve(Response.json({ deleted: true }));
     await flush();
     expectQuery({ page: "1" });
     expect(searchInput()).toBeEnabled();
-    await advance(3000);
+    await advance(2000);
     expectQuery({ page: "1", search: "new filter" });
   });
 

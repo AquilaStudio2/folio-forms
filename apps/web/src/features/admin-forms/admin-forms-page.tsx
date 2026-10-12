@@ -162,7 +162,7 @@ export const AdminFormsPage = () => {
     }
     const timer = window.setTimeout(() => {
       changeQuery({ page: 1, search: searchInput.trim() });
-    }, 3000);
+    }, 2000);
     return () => window.clearTimeout(timer);
   }, [changeQuery, composing, query.search, removingPublicId, searchInput]);
 
