@@ -8,7 +8,13 @@ import {
   useParams,
   useSearch,
 } from "@tanstack/react-router";
-import { ArrowLeft, ArrowUpRight, CheckCircle2, Monitor } from "lucide-react";
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  CheckCircle2,
+  Download,
+  Monitor,
+} from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { LegacySsoSwitchButton } from "@/components/legacy-sso-switch-button";
@@ -32,6 +38,7 @@ import {
   apiDelete,
   apiGet,
   apiPost,
+  downloadArtifact,
   formatDateTime,
   safeReturnPath,
 } from "@/lib/api";
@@ -149,6 +156,7 @@ const FillRoute = () => {
     SubmissionHistoryEntry[]
   >([]);
   const [submissionHistoryRequest, setSubmissionHistoryRequest] = useState(0);
+  const [exportingSubmissions, setExportingSubmissions] = useState(false);
   const startErrorRef = useRef<HTMLDivElement>(null);
   const exportSaveResolverRef = useRef<{
     reject: (reason?: unknown) => void;
@@ -365,6 +373,20 @@ const FillRoute = () => {
       cancelled = true;
     };
   }, [publicId, showSubmissionHistory, submissionHistoryRequest, user]);
+  const handleExportSubmissions = async () => {
+    setExportingSubmissions(true);
+    setError(null);
+    try {
+      await downloadArtifact(
+        `/api/forms/${publicId}/my-submissions/export`,
+        `${publicId}-submissions.json`
+      );
+    } catch {
+      setError("ไม่สามารถดาวน์โหลดข้อมูลที่ส่งได้ กรุณาลองใหม่");
+    } finally {
+      setExportingSubmissions(false);
+    }
+  };
   const resolveReauthentication = (allowed: boolean): void => {
     reauthResolverRef.current?.(allowed);
     reauthResolverRef.current = null;
@@ -1023,8 +1045,21 @@ const FillRoute = () => {
             />
             {showSubmissionHistory ? (
               <div className="mt-6 overflow-hidden rounded-[10px] border border-[var(--line)] bg-[var(--paper)]">
-                <div className="border-b border-[var(--line)] px-4 py-3 text-sm font-semibold">
+                <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3 text-sm font-semibold">
                   ประวัติการส่งแบบฟอร์มของคุณ
+                  <Button
+                    disabled={
+                      exportingSubmissions || submissionHistory.length === 0
+                    }
+                    onClick={handleExportSubmissions}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    <Download size={15} />
+                    {exportingSubmissions
+                      ? "กำลังดาวน์โหลด…"
+                      : "ดาวน์โหลดข้อมูลที่ส่งทั้งหมด"}
+                  </Button>
                 </div>
                 {submissionHistory.length === 0 ? (
                   <div className="px-4 py-6 text-center text-sm text-[var(--ink-soft)]">
