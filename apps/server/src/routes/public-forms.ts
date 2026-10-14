@@ -98,6 +98,24 @@ export function registerPublicFormRoutes(
       });
       return { submissions };
     })
+    .get(
+      "/api/forms/:publicId/my-submissions/export",
+      async ({ request, params }) => {
+        const identity = await requireIdentity(request);
+        const form = await findFormByPublicId(params.publicId);
+        const submissions = await prisma.submission.findMany({
+          orderBy: { createdAt: "desc" },
+          select: { createdAt: true, data: true, id: true },
+          where: { formId: form.id, userId: identity.id },
+        });
+        return new Response(JSON.stringify(submissions, null, 2), {
+          headers: {
+            "Content-Disposition": `attachment; filename="${form.publicId}-submissions.json"`,
+            "Content-Type": "application/json; charset=utf-8",
+          },
+        });
+      }
+    )
     .post("/api/forms/:publicId/start", async ({ request, params, set }) => {
       const identity = await requireIdentity(request);
       const form = await findFormByPublicId(params.publicId);
