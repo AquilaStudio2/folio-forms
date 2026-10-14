@@ -7,6 +7,7 @@ import type { createApp } from "../../../src/app";
 import { readObject, objectExists } from "../../../src/storage";
 import { docxFixture } from "../../fixtures/documents";
 import {
+  findAdminForm,
   jsonHeaders,
   formCreationRequest,
   createCredentialFixture,
@@ -586,23 +587,12 @@ export const runFormLifecycle = async (
       title: secretFormTitle,
     },
   });
-  const archivedFormListResponse = await app.handle(
-    new Request("http://test.local/api/admin/forms", {
-      headers: { Authorization: `Bearer ${adminBearer}` },
-    })
+  const archivedFormListBody = await findAdminForm(
+    app,
+    adminBearer,
+    formPublicId
   );
-  expect(archivedFormListResponse.status).toBe(200);
-  const archivedFormListBody = (await archivedFormListResponse.json()) as {
-    forms?: {
-      activeDraftCount: number;
-      publicId: string;
-      status: string;
-      submissionCount: number;
-    }[];
-  };
-  expect(
-    archivedFormListBody.forms?.find((form) => form.publicId === formPublicId)
-  ).toMatchObject({
+  expect(archivedFormListBody).toMatchObject({
     activeDraftCount: 1,
     publicId: formPublicId,
     status: "archived",

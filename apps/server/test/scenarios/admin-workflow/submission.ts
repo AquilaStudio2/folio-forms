@@ -9,6 +9,7 @@ import { createApp } from "../../../src/app";
 import { readObject, DOCX_CONTENT_TYPE } from "../../../src/storage";
 import type { EditorConfigBody } from "../../fixtures/http";
 import {
+  findAdminForm,
   jsonHeaders,
   createCredentialFixture,
   bearerFor,
@@ -392,22 +393,15 @@ export const runSubmitFailuresAndCompletion = async (
   expect(await immutableDraftResponse.json()).toMatchObject({
     error: "stale_response",
   });
-  const submittedCountListResponse = await app.handle(
-    new Request("http://test.local/api/admin/forms", {
-      headers: { Authorization: `Bearer ${adminBearer}` },
-    })
+  const submittedCountList = await findAdminForm(
+    app,
+    adminBearer,
+    formPublicId
   );
-  expect(submittedCountListResponse.status).toBe(200);
-  const submittedCountList = (await submittedCountListResponse.json()) as {
-    forms?: {
-      activeDraftCount: number;
-      publicId: string;
-      submissionCount: number;
-    }[];
-  };
-  expect(
-    submittedCountList.forms?.find((form) => form.publicId === formPublicId)
-  ).toMatchObject({ activeDraftCount: 0, submissionCount: 1 });
+  expect(submittedCountList).toMatchObject({
+    activeDraftCount: 0,
+    submissionCount: 1,
+  });
   const ownerOperationVisibilityResponse = await app.handle(
     new Request(`http://test.local/api/operations/${submitBody.operationId}`, {
       headers: { Authorization: `Bearer ${userBearer}` },

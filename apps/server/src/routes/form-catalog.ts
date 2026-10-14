@@ -16,6 +16,7 @@ import type { FormAuditAction } from "../audit/events";
 import { requireIdentity, requireAdmin } from "../auth/identity";
 import { contentHash } from "../digests";
 import { validateTemplatePackage } from "../documents/package";
+import { listAdminForms } from "../forms/catalog";
 import {
   formDto,
   supportsNativeTemplate,
@@ -58,26 +59,7 @@ export function registerFormCatalogRoutes(
     .get("/api/admin/forms", async ({ request }) => {
       const identity = await requireIdentity(request);
       requireAdmin(identity);
-      const items = await prisma.form.findMany({
-        include: {
-          _count: {
-            select: {
-              responses: { where: { status: ResponseStatus.draft } },
-              submissions: true,
-            },
-          },
-          publishedTemplate: true,
-          templateDraft: true,
-        },
-        orderBy: { updatedAt: "desc" },
-      });
-      const forms = items.map((item) =>
-        formDto(item, {
-          activeDraftCount: item._count.responses,
-          submissionCount: item._count.submissions,
-        })
-      );
-      return { forms };
+      return listAdminForms(new URL(request.url).searchParams);
     })
     .patch("/api/admin/forms/:publicId", async ({ request, params }) => {
       const identity = await requireIdentity(request);

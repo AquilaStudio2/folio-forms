@@ -202,6 +202,38 @@ export const bearerFor = async (
   return token;
 };
 
+// oxlint-disable no-await-in-loop -- Follow the catalog's pages in order when finding a lifecycle fixture.
+export const findAdminForm = async (
+  app: ReturnType<typeof createApp>,
+  authorization: string,
+  publicId: string
+): Promise<Record<string, unknown> | undefined> => {
+  let page = 1;
+  let totalPages = 1;
+  do {
+    const response = await app.handle(
+      new Request(`http://test.local/api/admin/forms?page=${page}`, {
+        headers: { Authorization: `Bearer ${authorization}` },
+      })
+    );
+    expect(response.status).toBe(200);
+    const body = (await response.json()) as {
+      forms: Record<string, unknown>[];
+      pagination: { totalPages: number };
+    };
+    expect(Number.isSafeInteger(body.pagination.totalPages)).toBe(true);
+    expect(body.pagination.totalPages).toBeGreaterThanOrEqual(1);
+    const form = body.forms.find((item) => item.publicId === publicId);
+    if (form) {
+      return form;
+    }
+    ({ totalPages } = body.pagination);
+    page += 1;
+  } while (page <= totalPages);
+  return undefined;
+};
+// oxlint-enable no-await-in-loop
+
 // oxlint-disable no-await-in-loop -- Preserve the original HTTP test's sequential operation polling.
 export const waitForOperation = async (
   app: ReturnType<typeof createApp>,

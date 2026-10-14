@@ -19,6 +19,7 @@ import {
   templatePackageContentTypesNamespace,
   templatePackageRelationshipNamespace,
   templateRelationshipPartPath,
+  templateWordDrawingNamespaces,
   templateWordNamespaces,
   templateWordStrictNamespace,
   templateXmlElement,
@@ -253,6 +254,25 @@ function addNativePicturePackageParts(
   return relationshipId;
 }
 
+function nativePictureExtent(
+  dimensions: ResponsePictureDimensions,
+  existingExtent: { cx: number; cy: number } | null
+): { cx: number; cy: number } {
+  const nativeCx = dimensions.width * 9525;
+  const nativeCy = dimensions.height * 9525;
+  if (!existingExtent) {
+    return { cx: nativeCx, cy: nativeCy };
+  }
+  const scale = Math.min(
+    existingExtent.cx / nativeCx,
+    existingExtent.cy / nativeCy
+  );
+  return {
+    cx: Math.max(1, Math.round(nativeCx * scale)),
+    cy: Math.max(1, Math.round(nativeCy * scale)),
+  };
+}
+
 function nativePictureDrawing(
   tag: string,
   block: boolean,
@@ -260,7 +280,8 @@ function nativePictureDrawing(
   contentNamespace: string,
   relationshipId: string,
   drawingId: number,
-  dimensions: ResponsePictureDimensions
+  dimensions: ResponsePictureDimensions,
+  existingExtent: { cx: number; cy: number } | null
 ): string {
   const strict = contentNamespace === templateWordStrictNamespace;
   const drawingNamespace = strict
@@ -275,8 +296,7 @@ function nativePictureDrawing(
   const relationshipNamespace = strict
     ? "http://purl.oclc.org/ooxml/officeDocument/relationships"
     : "http://schemas.openxmlformats.org/officeDocument/2006/relationships";
-  const cx = dimensions.width * 9525;
-  const cy = dimensions.height * 9525;
+  const { cx, cy } = nativePictureExtent(dimensions, existingExtent);
   const drawing =
     `<${wordPrefix}drawing xmlns:a="${drawingNamespace}" xmlns:pic="${pictureNamespace}" xmlns:wp="${wordDrawingNamespace}" xmlns:r="${relationshipNamespace}">` +
     `<wp:inline distT="0" distB="0" distL="0" distR="0"><wp:extent cx="${cx}" cy="${cy}"/>` +
@@ -343,6 +363,7 @@ export function overlayNativeResponsePictures(
       contentSelfClosing: boolean;
       contentStart: number | null;
       contentTokenStart: number | null;
+      existingExtent: { cx: number; cy: number } | null;
       inPropertiesDepth: number;
       picture: boolean;
       relationshipIds: string[];
@@ -370,6 +391,7 @@ export function overlayNativeResponsePictures(
           contentSelfClosing: false,
           contentStart: null,
           contentTokenStart: null,
+          existingExtent: null,
           inPropertiesDepth: 0,
           picture: false,
           relationshipIds: [],
@@ -428,6 +450,26 @@ export function overlayNativeResponsePictures(
             );
             if (relationshipId) {
               frame.relationshipIds.push(relationshipId);
+            }
+            if (
+              !frame.existingExtent &&
+              tag.local === "extent" &&
+              templateWordDrawingNamespaces.has(tag.uri)
+            ) {
+              const cx = Number(
+                templateAttribute(templateXmlElement(tag), "cx")
+              );
+              const cy = Number(
+                templateAttribute(templateXmlElement(tag), "cy")
+              );
+              if (
+                Number.isFinite(cx) &&
+                Number.isFinite(cy) &&
+                cx > 0 &&
+                cy > 0
+              ) {
+                frame.existingExtent = { cx, cy };
+              }
             }
           }
         }
@@ -492,7 +534,8 @@ export function overlayNativeResponsePictures(
               frame.contentNamespace,
               relationshipId,
               drawingId,
-              upload.dimensions
+              upload.dimensions,
+              frame.existingExtent
             );
             if (
               frame.contentSelfClosing &&
