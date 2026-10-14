@@ -384,7 +384,7 @@ Each pending list entry includes `reviewedGeneration` as a decimal string or `nu
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/admin/forms` | List lifecycle state plus active Draft and Submission counts |
+| `GET` | `/api/admin/forms?search=&status=&page=` | Search title or description, filter lifecycle status, and return 10 Forms per page with Draft/Submission counts |
 | `DELETE` | `/api/admin/forms/:publicId` | Remove a never-published Draft without Response data |
 | `POST` | `/api/admin/forms` | Create from the starter or an uploaded validated DOCX |
 | `GET` | `/api/admin/forms/:publicId` | Read safe form detail and counts |
@@ -395,6 +395,10 @@ Each pending list entry includes `reviewedGeneration` as a decimal string or `nu
 | `POST` | `/api/admin/forms/:publicId/save` | Save the Template Draft through an asynchronous Operation |
 | `POST` | `/api/admin/forms/:publicId/publish` | Publish a validated template |
 | `GET` | `/api/admin/forms/:publicId/submissions` | List all submissions for a form |
+
+The Form catalog defaults to page 1 with no search or status filter. `search` matches a literal substring in either title or description, ignoring case; surrounding whitespace is trimmed. Omit `status` or use `all` to include every status, or choose `draft`, `published`, or `archived`. `page` must be a positive integer. Responses include `{ forms, pagination: { page, pageSize: 10, total, totalPages } }`. An empty result reports page 1 of 1; a page beyond the last result is clamped to the last available page. Ordering is `updatedAt DESC, id DESC`. Invalid or repeated search/status/page parameters return HTTP 400.
+
+The Admin catalog applies search after typing stops for 2 seconds. Inline feedback distinguishes waiting for typing to stop, an active request with a spinner, and the total matched Forms or no matches. A polite, atomic status region announces completion and the current page without moving focus away from search; request errors also preserve focus while typing. The right-hand Lucide search icon becomes a clear button after a search is applied; clearing restores page 1 and preserves the selected status. Changing search/status resets the page, while paging and refresh preserve both. Deleting the last Form on the last page moves to the previous available page. The catalog uses shadcn/ui controls and preserves the existing application colors.
 
 ### Submission artifacts
 
@@ -458,7 +462,7 @@ apps/
     src/onlyoffice.ts      ONLYOFFICE URLs, HMAC tokens, force-save, PDF conversion
     src/storage.ts         Private RustFS object primitives
     Dockerfile             Production API image
-    test/http/             Eleven serial HTTP suites
+    test/http/             Twelve serial HTTP suites
     test/fixtures/         Explicit app dependencies and caller-owned mock cleanup
     test/scenarios/        Typed steps within the original Admin and native journeys
   web/
@@ -529,13 +533,16 @@ docker compose --env-file .env.production -f compose.yaml down
 
 Run `bun run --cwd apps/server test:http` and `bun run --cwd apps/server test:storage` against an isolated PostgreSQL database and disposable private RustFS bucket.
 
-For the complete source suite, use the HTTP script to build the Prefill mock once and run all eleven HTTP suites serially. Keep the remaining source paths explicit so generated `dist` tests are not included:
+For the complete source suite, use the HTTP script to build the Prefill mock once and run all twelve HTTP suites serially. Keep the remaining source paths explicit so generated `dist` tests are not included:
 
 ```bash
 bun run --cwd apps/server test:http
 bun run --cwd apps/server test:storage
+bun run --cwd apps/web test:ui
 bun test --timeout 120000 ./apps/web/test/form-lifecycle.test.ts ./apps/onlyoffice-plugin/test/save-lifecycle.test.js ./apps/onlyoffice-plugin/test/prefill-values.test.js ./apps/onlyoffice-plugin/test/bridge-capabilities.test.js ./apps/onlyoffice-plugin/test/field-config.test.js ./apps/onlyoffice-plugin/test/control-mapping.test.js ./apps/prefill-mock/test/mock.test.ts
 ```
+
+Run the catalog tests independently with `bun run --cwd apps/server test:catalog` against an isolated migrated PostgreSQL database, and `bun run --cwd apps/web test:ui` for the interactive UI suite. UI tests mock HTTP and use controlled timers for the 2-second debounce, including stale responses, search cancellation, status/page transitions, deletion, and accessible keyboard controls. Catalog HTTP tests exercise real database search/pagination and authentication; they do not require a running document editor or object-storage service. Provide the required server environment variables, including test secrets and placeholder storage settings. The backend suite uses unique fixture IDs and accounts for retained immutable history so it can be rerun on the same disposable database.
 
 Provide the same isolated database and storage environment to both commands. Use a fresh disposable database for each full run; the scenarios retain records, including paginated account-link fixtures and immutable audit history. Set `DOCUMENT_WORKER_URL` to a running isolated document worker to exercise the Python-worker scenario.
 
