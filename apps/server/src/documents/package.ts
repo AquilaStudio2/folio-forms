@@ -46,6 +46,11 @@ export const templateDrawingMlNamespaces = new Set([
   "http://schemas.openxmlformats.org/drawingml/2006/main",
 ]);
 
+export const templateWordDrawingNamespaces = new Set([
+  "http://purl.oclc.org/ooxml/drawingml/wordprocessingDrawing",
+  "http://schemas.openxmlformats.org/drawingml/2006/wordprocessingDrawing",
+]);
+
 export const templateOfficeRelationshipNamespaces = new Set([
   "http://purl.oclc.org/ooxml/officeDocument/relationships",
   "http://schemas.openxmlformats.org/officeDocument/2006/relationships",
