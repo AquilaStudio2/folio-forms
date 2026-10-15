@@ -164,6 +164,9 @@ export const parseFieldSelectionMessage = (
   return value as unknown as FieldSelectionBridgeMessage;
 };
 
+const isValidOperationResult = (value: Record<string, unknown>): boolean =>
+  value.submissionId === undefined || typeof value.submissionId === "string";
+
 export const parseOperationMessage = (
   value: unknown,
   bridgeId: string
@@ -191,10 +194,7 @@ export const parseOperationMessage = (
       if (!isRecord(value.operation.result)) {
         return null;
       }
-      if (
-        value.operation.result.submissionId !== undefined &&
-        typeof value.operation.result.submissionId !== "string"
-      ) {
+      if (!isValidOperationResult(value.operation.result)) {
         return null;
       }
     }

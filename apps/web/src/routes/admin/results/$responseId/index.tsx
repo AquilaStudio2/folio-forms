@@ -260,7 +260,10 @@ const AdminResultDetailRoute = () => {
     }
   };
 
-  const download = async (format: "docx" | "pdf", revision: number) => {
+  const download = async (
+    format: "docx" | "xlsx" | "pdf",
+    revision: number
+  ) => {
     if (!result?.submissionId || downloading) {
       return;
     }
@@ -445,11 +448,13 @@ const AdminResultDetailRoute = () => {
               </Link>
               <Button
                 disabled={downloading !== null || !selectedRevisionRecord}
-                onClick={() => download("docx", selectedRevision)}
+                onClick={() =>
+                  download(result.documentKind ?? "docx", selectedRevision)
+                }
                 variant="secondary"
               >
                 <FileText size={16} />
-                DOCX
+                {(result.documentKind ?? "docx").toUpperCase()}
               </Button>
               <Button
                 disabled={downloading !== null || !selectedRevisionRecord}
@@ -500,6 +505,7 @@ const AdminResultDetailRoute = () => {
             fields={displayedFields}
             fieldsError={displayedFieldsError}
             pictures={displayedPictures}
+            spreadsheetContract={result.spreadsheetContract}
           />
         </Card>
       </div>

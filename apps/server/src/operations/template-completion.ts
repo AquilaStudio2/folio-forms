@@ -12,6 +12,11 @@ import { contentHash } from "../digests";
 import type { ParsedTemplateField } from "../documents/fields";
 import { parseTemplateFields } from "../documents/fields";
 import { validateFieldRulePointer } from "../forms/field-rules";
+import {
+  spreadsheetDraftBindings,
+  spreadsheetScalarManifestFields,
+  spreadsheetManifestFieldData,
+} from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Operation, DraftFieldRule } from "../model-types";
@@ -62,7 +67,13 @@ export async function completeTemplateOperation(
           objectKey: metadata.finalObjectKey,
           updatedAt: new Date(),
         },
-        where: { documentKey, id: templateDraft.id },
+        where: {
+          documentKey,
+          id: templateDraft.id,
+          ...(form.documentKind === "xlsx"
+            ? { bindingRevision: metadata.bindingRevision }
+            : {}),
+        },
       });
       if (updated.count !== 1) {
         fail(
@@ -102,9 +113,14 @@ export async function completeTemplateOperation(
   return { cleanupObjectKeys };
 }
 
+type PublishedFieldRule = Pick<
+  DraftFieldRule,
+  "tag" | "required" | "prefillPointer" | "prefillPolicy"
+>;
+
 function publishedContractFields(
   controls: ParsedTemplateField[],
-  draftRules: DraftFieldRule[]
+  draftRules: PublishedFieldRule[]
 ): {
   manifestFields: {
     label: string;
@@ -126,7 +142,7 @@ function publishedContractFields(
   }[];
 } {
   const controlsByTag = new Map(controls.map((field) => [field.tag, field]));
-  const rulesByTag = new Map<string, DraftFieldRule>();
+  const rulesByTag = new Map<string, PublishedFieldRule>();
   for (const rule of draftRules) {
     if (rulesByTag.has(rule.tag) || !controlsByTag.has(rule.tag)) {
       fail(
@@ -215,7 +231,8 @@ export async function completePublishOperation(
   ) {
     fail(500, "invalid_operation", "Publish metadata is incomplete");
   }
-  const controls = parseTemplateFields(bytes);
+  const docxControls =
+    form.documentKind === "docx" ? parseTemplateFields(bytes) : [];
   const hash = contentHash(bytes);
   const result = {
     documentKey: publishedKey,
@@ -256,18 +273,40 @@ export async function completePublishOperation(
       if (
         currentForm.version !== form.version ||
         !currentForm.templateDraft ||
-        currentForm.templateDraft.documentKey !== documentKey
+        currentForm.templateDraft.documentKey !== documentKey ||
+        (form.documentKind === "xlsx" &&
+          currentForm.templateDraft.bindingRevision !==
+            metadata.bindingRevision)
       ) {
         fail(409, "stale_operation", "The form changed while publishing");
       }
-      const draftRules = await tx.draftFieldRule.findMany({
-        orderBy: { tag: "asc" },
-        where: { templateDraftId: currentForm.templateDraft.id },
-      });
-      const { manifestFields, prefillFields } = publishedContractFields(
-        controls,
-        draftRules
-      );
+      const bindings =
+        form.documentKind === "xlsx"
+          ? await spreadsheetDraftBindings(currentForm.templateDraft.id, tx)
+          : null;
+      const controls = bindings
+        ? spreadsheetScalarManifestFields(bindings)
+        : docxControls;
+      let draftRules: PublishedFieldRule[] = [];
+      if (form.documentKind === "docx") {
+        draftRules = await tx.draftFieldRule.findMany({
+          orderBy: { tag: "asc" },
+          where: { templateDraftId: currentForm.templateDraft.id },
+        });
+      }
+      if (bindings) {
+        draftRules = bindings.fields.map((field) => ({
+          prefillPointer: field.prefillPointer,
+          prefillPolicy: field.prefillPolicy,
+          required: field.required,
+          tag: field.key,
+        }));
+      }
+      const contractFields = publishedContractFields(controls, draftRules);
+      const manifestFields = bindings
+        ? spreadsheetManifestFieldData(bindings)
+        : contractFields.manifestFields;
+      const { prefillFields } = contractFields;
       const publishedTemplate = await tx.publishedTemplate.create({
         data: {
           contentHash: hash,

@@ -26,6 +26,7 @@ import {
   manifestFieldsWithDocumentMetadata,
   receiptField,
 } from "../forms/query";
+import { spreadsheetBindingsForTemplate } from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 import {
   validateId,
@@ -134,7 +135,7 @@ export function registerResultRoutes(
             select: { revision: true },
             take: 1,
           },
-          form: { select: { publicId: true, title: true } },
+          form: { select: { documentKind: true, publicId: true, title: true } },
           owner: { select: { email: true } },
           submissions: {
             orderBy: { createdAt: "desc" },
@@ -165,7 +166,7 @@ export function registerResultRoutes(
           corrections: {
             orderBy: { revision: "desc" },
           },
-          form: { select: { publicId: true, title: true } },
+          form: { select: { documentKind: true, publicId: true, title: true } },
           owner: { select: { email: true } },
           publishedTemplate: {
             include: {
@@ -235,11 +236,13 @@ export function registerResultRoutes(
       const manifest = publishedTemplate?.manifest;
       const manifestFields =
         manifest && publishedTemplate
-          ? await manifestFieldsWithDocumentMetadata(
-              publishedTemplate.objectKey,
-              manifest.displayMetadataVersion,
-              manifest.fields
-            )
+          ? response.form.documentKind === "xlsx"
+            ? manifest.fields
+            : await manifestFieldsWithDocumentMetadata(
+                publishedTemplate.objectKey,
+                manifest.displayMetadataVersion,
+                manifest.fields
+              )
           : [];
       return {
         result: {
@@ -262,12 +265,31 @@ export function registerResultRoutes(
                 ? "submission"
                 : "draft",
           },
-          fields: manifestFields.map(receiptField),
+          documentKind: response.form.documentKind,
+          fields: manifestFields
+            .filter(
+              (field) =>
+                response.form.documentKind !== "xlsx" ||
+                (field.type !== "table" &&
+                  field.binding !== null &&
+                  typeof field.binding === "object" &&
+                  "anchor" in field.binding)
+            )
+            .map(receiptField),
           formPublicId: response.form.publicId,
           formTitle: response.form.title,
           id: response.id,
           latestCorrectionNumber: latestCorrection?.revision ?? null,
           revision: submitted ? (selected?.revision ?? 0) : null,
+          spreadsheetContract:
+            response.form.documentKind === "xlsx"
+              ? {
+                  ...(await spreadsheetBindingsForTemplate(
+                    response.publishedTemplateId
+                  )),
+                  locations: {},
+                }
+              : null,
           state: submitted ? "submitted" : "draft",
           submissionId: submission?.id ?? null,
           submittedAt: submission?.createdAt ?? null,
@@ -286,7 +308,7 @@ export function registerResultRoutes(
         const response = await prisma.response.findUnique({
           include: {
             corrections: { orderBy: { revision: "desc" } },
-            form: { select: { publicId: true } },
+            form: { select: { documentKind: true, publicId: true } },
             submissions: { orderBy: { createdAt: "desc" }, take: 1 },
           },
           where: { id: params.id },
@@ -340,10 +362,15 @@ export function registerResultRoutes(
               ? "submission"
               : "response",
         });
-        return readOnlyViewerConfig(documentKey, response.form.publicId, {
-          id: identity.id,
-          name: identity.name,
-        });
+        return readOnlyViewerConfig(
+          documentKey,
+          response.form.publicId,
+          {
+            id: identity.id,
+            name: identity.name,
+          },
+          response.form.documentKind
+        );
       }
     )
     .get(
@@ -430,13 +457,16 @@ export function registerResultRoutes(
         const baseRevision = workspaceLease.workspaceBaseRevision;
         const baseDocumentKey = workspaceLease.workspaceBaseDocumentKey;
         const previousData = jsonRecord(latest?.data ?? submission.data);
-        const data = await normalizeResponseData(
-          form,
-          response,
-          { ...previousData, ...input.data },
-          true,
-          true
-        );
+        const data =
+          form.documentKind === "xlsx"
+            ? {}
+            : await normalizeResponseData(
+                form,
+                response,
+                { ...previousData, ...input.data },
+                true,
+                true
+              );
         if (await activeOperationForResponse(response.id)) {
           fail(
             409,
@@ -450,25 +480,27 @@ export function registerResultRoutes(
           operationId,
           "correction",
           crypto.randomUUID(),
-          "docx"
+          form.documentKind
         );
         const metadata: OperationMetadata = {
           action: "save-correction",
           baseDocumentKey,
           baseRevision,
           data,
+          documentKind: form.documentKind,
           finalObjectKey: objectKey(
             "responses",
             response.id,
             "corrections",
             crypto.randomUUID(),
-            "docx"
+            form.documentKind
           ),
           formId: form.id,
           nextDocumentKey: `correction-${response.id}-${crypto.randomUUID()}`,
           publicId: form.publicId,
           reason: input.reason,
-          ...(form.fillMethod === FillMethod.onlyoffice
+          ...(form.documentKind !== "xlsx" &&
+          form.fillMethod === FillMethod.onlyoffice
             ? callbackFieldMetadata(data, input.data, response.prefillSnapshot)
             : {}),
           responseId: response.id,

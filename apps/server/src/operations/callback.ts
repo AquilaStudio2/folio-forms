@@ -14,6 +14,10 @@ import {
   validateTemplatePackage,
   validateOfficeRelationshipsBytes,
 } from "../documents/package";
+import {
+  XLSX_CONTENT_TYPE,
+  readSpreadsheetWorkbook,
+} from "../documents/spreadsheets/workbook";
 import { supportsNativeTemplate } from "../forms/query";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import { maxTemplateUploadBytes } from "../http/input";
@@ -34,6 +38,7 @@ import {
   completeCorrectionOperation,
   completeSubmitOperation,
 } from "./response-completion";
+import { prepareSpreadsheetOperation } from "./spreadsheet-document";
 import {
   completeTemplateOperation,
   completePublishOperation,
@@ -202,7 +207,24 @@ export async function finalizeCallback(
   let completion: OperationCompletion | undefined;
 
   try {
+    const form = await prisma.form.findUnique({
+      select: { documentKind: true },
+      where: { id: metadata.formId },
+    });
+    if (!form) {
+      throw new Error("Form is unavailable");
+    }
+    metadata.documentKind = form.documentKind;
+    if (form.documentKind === "xlsx") {
+      bytes = await prepareSpreadsheetOperation(metadata, bytes, () =>
+        prisma.operation.updateMany({
+          data: { updatedAt: new Date() },
+          where: { id: operation.id, status: OperationStatus.processing },
+        })
+      );
+    }
     if (
+      form.documentKind !== "xlsx" &&
       (metadata.action === "save-draft" ||
         metadata.action === "save-correction" ||
         metadata.action === "submit") &&
@@ -279,15 +301,25 @@ export async function finalizeCallback(
       }
     }
 
-    if (metadata.action === "save-template") {
+    if (form.documentKind === "xlsx") {
+      readSpreadsheetWorkbook(bytes);
+    } else if (metadata.action === "save-template") {
       validateTemplatePackage(bytes);
     } else if (metadata.action === "publish") {
       validateTemplateControls(bytes);
     } else {
       validateOfficeRelationshipsBytes(bytes);
     }
-    await putObject(metadata.stagedObjectKey, bytes, DOCX_CONTENT_TYPE);
-    await putObject(metadata.finalObjectKey, bytes, DOCX_CONTENT_TYPE);
+    await putObject(
+      metadata.stagedObjectKey,
+      bytes,
+      form.documentKind === "xlsx" ? XLSX_CONTENT_TYPE : DOCX_CONTENT_TYPE
+    );
+    await putObject(
+      metadata.finalObjectKey,
+      bytes,
+      form.documentKind === "xlsx" ? XLSX_CONTENT_TYPE : DOCX_CONTENT_TYPE
+    );
 
     if (metadata.action === "save-template") {
       completion = await completeTemplateOperation(operation, metadata, bytes);

@@ -13,7 +13,7 @@ export interface NativeEditorConfig {
   responseId: string;
 }
 
-export type ExportFormat = "docx" | "pdf";
+export type ExportFormat = "docx" | "xlsx" | "pdf";
 
 export const nativeValuesFromConfig = (
   config: NativeEditorConfig
@@ -48,6 +48,9 @@ export const draftSaveSuccessMessage = (
 ): string => {
   if (exportFormat === "docx") {
     return "บันทึกและดาวน์โหลด DOCX แล้ว";
+  }
+  if (exportFormat === "xlsx") {
+    return "บันทึกและดาวน์โหลด XLSX แล้ว";
   }
   if (exportFormat === "pdf") {
     return "บันทึกและดาวน์โหลด PDF แล้ว";

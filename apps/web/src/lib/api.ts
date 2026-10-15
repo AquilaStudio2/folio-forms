@@ -7,18 +7,21 @@ export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
   readonly sessionRevoked: boolean;
+  readonly userMessage?: string;
 
   constructor(
     status: number,
     code: string,
     message: string,
-    sessionRevoked = false
+    sessionRevoked = false,
+    userMessage?: string
   ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
     this.sessionRevoked = sessionRevoked;
+    this.userMessage = userMessage;
   }
 }
 
@@ -89,9 +92,40 @@ export interface AdminLegacyAccountLinkMutationResponse {
   ok: true;
 }
 
+export type DocumentKind = "docx" | "xlsx";
+export interface SpreadsheetResultField {
+  id: string;
+  key: string;
+  label: string;
+  type: "text" | "number" | "date" | "dropdown" | "boolean";
+  required: boolean;
+  computed: boolean;
+  options: string[];
+}
+export interface SpreadsheetResultContract {
+  version: 1;
+  fields: SpreadsheetResultField[];
+  table: {
+    id: string;
+    key: string;
+    label: string;
+    columns: (SpreadsheetResultField & { offset: number })[];
+  } | null;
+  locations: Record<
+    string,
+    {
+      sheet: string;
+      firstRow: number;
+      lastRow: number;
+      firstColumn: number;
+      lastColumn: number;
+    }
+  >;
+}
 export type FormStatus = "draft" | "published" | "archived";
 export type FillMethod = "onlyoffice" | "native";
 export interface FormSummary {
+  documentKind?: DocumentKind;
   publicId: string;
   title: string;
   description: string;
@@ -109,6 +143,7 @@ export type FormDetail = FormSummary & {
   editorConfigUrl: string;
 };
 export interface Submission {
+  documentKind?: DocumentKind;
   id: string;
   responseId?: string;
   formPublicId?: string;
@@ -127,7 +162,9 @@ export type ReceiptFieldType =
   | "date"
   | "dropdown"
   | "combo"
-  | "picture";
+  | "picture"
+  | "number"
+  | "boolean";
 export interface ReceiptField {
   label: string;
   options: { displayText: string; value: string }[];
@@ -188,6 +225,8 @@ export interface AdminAuditListResponse {
   nextCursor: string | null;
 }
 export interface AdminResultDetail extends AdminResult {
+  documentKind?: DocumentKind;
+  spreadsheetContract?: SpreadsheetResultContract | null;
   correction: {
     createdAt: string;
     reason: string;
@@ -208,6 +247,7 @@ export interface Operation {
   id: string;
   status: "pending" | "processing" | "completed" | "failed";
   error?: string;
+  errorMessage?: string;
   result?: Record<string, unknown>;
 }
 export const formatDate = (value: string | Date | undefined) => {
@@ -378,7 +418,16 @@ export const legacySsoReturnPath = (
     : pathname;
 };
 
-const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
+interface RequestOptions {
+  timeoutMs?: number;
+}
+
+// oxlint-disable-next-line complexity -- Authenticated transport handles timeout and error decoding together.
+const request = async <T>(
+  path: string,
+  init: RequestInit = {},
+  options: RequestOptions = {}
+): Promise<T> => {
   const headers = new Headers(init.headers);
   if (
     !(typeof FormData !== "undefined" && init.body instanceof FormData) &&
@@ -390,12 +439,35 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
   if (token) {
     headers.set("Authorization", `Bearer ${token}`);
   }
-  const response = await fetch(`${API_ORIGIN}${path}`, {
-    ...init,
-    credentials: "include",
-    headers,
-  });
-  const text = await response.text();
+  const controller =
+    options.timeoutMs === undefined ? null : new AbortController();
+  const timer = controller
+    ? setTimeout(() => controller.abort(), options.timeoutMs)
+    : undefined;
+  let { signal } = init;
+  if (controller) {
+    signal = init.signal
+      ? AbortSignal.any([init.signal, controller.signal])
+      : controller.signal;
+  }
+  let response: Response;
+  let text: string;
+  try {
+    response = await fetch(`${API_ORIGIN}${path}`, {
+      ...init,
+      credentials: "include",
+      headers,
+      signal,
+    });
+    text = await response.text();
+  } catch (error) {
+    if (controller?.signal.aborted) {
+      throw new ApiError(408, "request_timeout", "Request timed out");
+    }
+    throw error;
+  } finally {
+    clearTimeout(timer);
+  }
   let body: ApiErrorBody | T | string | null = null;
   if (text) {
     try {
@@ -413,7 +485,8 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
       response.status,
       code,
       fallbackMessage,
-      errorBody?.sessionRevoked === true
+      errorBody?.sessionRevoked === true,
+      typeof errorBody?.message === "string" ? errorBody.message : undefined
     );
   }
   return body as T;
@@ -421,8 +494,8 @@ const request = async <T>(path: string, init: RequestInit = {}): Promise<T> => {
 
 export const apiGet = <T>(
   path: string,
-  options?: Pick<RequestInit, "signal">
-) => request<T>(path, options);
+  options?: Pick<RequestInit, "signal"> & RequestOptions
+) => request<T>(path, options, options);
 export const apiGetBlob = async (path: string): Promise<Blob> => {
   const token = getToken();
   const response = await fetch(`${API_ORIGIN}${path}`, {
@@ -442,15 +515,20 @@ export const apiGetBlob = async (path: string): Promise<Blob> => {
 export const apiPost = <T>(
   path: string,
   body?: unknown,
-  editorCapability?: string
+  editorCapability?: string,
+  options?: RequestOptions
 ) =>
-  request<T>(path, {
-    body: JSON.stringify(body ?? {}),
-    headers: editorCapability
-      ? { "X-Editor-Capability": editorCapability }
-      : undefined,
-    method: "POST",
-  });
+  request<T>(
+    path,
+    {
+      body: JSON.stringify(body ?? {}),
+      headers: editorCapability
+        ? { "X-Editor-Capability": editorCapability }
+        : undefined,
+      method: "POST",
+    },
+    options
+  );
 
 export const apiPostFormData = <T>(
   path: string,
@@ -602,9 +680,11 @@ export const waitForOperation = async (
   operationId: string,
   onUpdate?: (operation: Operation) => void
 ) => {
-  for (let attempt = 0; attempt < 300; attempt += 1) {
+  const deadline = Date.now() + 300_000;
+  for (let attempt = 0; attempt < 300 && Date.now() < deadline; attempt += 1) {
     const payload = await apiGet<Operation | { operation: Operation }>(
-      `/api/operations/${operationId}`
+      `/api/operations/${operationId}`,
+      { timeoutMs: Math.min(15_000, deadline - Date.now()) }
     );
     const operation = "operation" in payload ? payload.operation : payload;
     onUpdate?.(operation);
@@ -612,15 +692,21 @@ export const waitForOperation = async (
       return operation;
     }
     if (operation.status === "failed") {
-      throw new Error(
-        operation.error ?? "The operation failed. Your draft is still safe."
+      throw new ApiError(
+        422,
+        operation.error ?? "operation_failed",
+        operation.errorMessage ?? "The operation failed.",
+        false,
+        operation.errorMessage
       );
     }
     await new Promise<void>((resolve) => {
       setTimeout(resolve, 1000);
     });
   }
-  throw new Error(
+  throw new ApiError(
+    408,
+    "operation_timeout",
     "The operation is taking longer than expected. Check back shortly."
   );
 };

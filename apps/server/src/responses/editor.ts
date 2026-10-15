@@ -10,6 +10,10 @@ import { createResponseAudit } from "../audit/events";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Identity } from "../auth/identity";
 import { onlyOfficeFieldTagAliases } from "../documents/office-values";
+import {
+  readSpreadsheetWorkbook,
+  XLSX_CONTENT_TYPE,
+} from "../documents/spreadsheets/workbook";
 import { actionEditorCapability } from "../editor/authorization";
 import type {
   EditorLeaseGrant,
@@ -23,6 +27,7 @@ import {
   editorLeaseBridge,
 } from "../editor/leases";
 import { nativeFields } from "../forms/query";
+import { spreadsheetContractForTemplate } from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 import { validateId, jsonRecord } from "../http/input";
 import type { FormWithDocuments } from "../model-types";
@@ -40,6 +45,7 @@ import {
   readObject,
   DOCX_CONTENT_TYPE,
 } from "../storage";
+import { initializeSpreadsheetResponse } from "./spreadsheet-document";
 
 export async function correctionEditorConfig(
   responseId: string,
@@ -129,7 +135,7 @@ export async function correctionEditorConfig(
         response.id,
         "correction-workspaces",
         crypto.randomUUID(),
-        "docx"
+        form.documentKind
       ),
     };
     const workspaceCleanupAfter = new Date(Date.now() + operationTimeoutMs);
@@ -144,7 +150,7 @@ export async function correctionEditorConfig(
     await putObject(
       workspace.objectKey,
       await readObject(sourceObjectKey),
-      DOCX_CONTENT_TYPE
+      form.documentKind === "xlsx" ? XLSX_CONTENT_TYPE : DOCX_CONTENT_TYPE
     );
     try {
       lease = await claimEditorLease(
@@ -243,6 +249,15 @@ export async function correctionEditorConfig(
   return editorConfig(
     {
       action: "correction",
+      documentKind: form.documentKind,
+      ...(form.documentKind === "xlsx"
+        ? {
+            spreadsheetBindings: await spreadsheetContractForTemplate(
+              response.publishedTemplateId,
+              readSpreadsheetWorkbook(await readObject(sourceObjectKey))
+            ),
+          }
+        : {}),
       capabilities: {
         "save-correction": actionEditorCapability(
           identity,
@@ -256,11 +271,12 @@ export async function correctionEditorConfig(
       prefill: lockedPrefillForSnapshot(response.prefillSnapshot),
       publicId: form.publicId,
       responseId: response.id,
-      tagAliases: form.publishedTemplate?.objectKey
-        ? onlyOfficeFieldTagAliases(
-            await readObject(form.publishedTemplate.objectKey)
-          )
-        : {},
+      tagAliases:
+        form.documentKind !== "xlsx" && form.publishedTemplate?.objectKey
+          ? onlyOfficeFieldTagAliases(
+              await readObject(form.publishedTemplate.objectKey)
+            )
+          : {},
     },
     identity
   );
@@ -276,7 +292,7 @@ export async function userEditorConfig(
   if (!publishedTemplate?.objectKey || !publishedTemplate.documentKey) {
     fail(409, "not_published", "This form has no published document");
   }
-  const response = responseId
+  let response = responseId
     ? await prisma.response.findFirst({
         include: { prefillSnapshot: true },
         where: {
@@ -318,6 +334,12 @@ export async function userEditorConfig(
     capabilityScope.targetId,
     form.id
   );
+  if (form.documentKind === "xlsx") {
+    response = await initializeSpreadsheetResponse(response);
+  }
+  if (!response.draftObjectKey || !response.draftDocumentKey) {
+    fail(409, "document_unavailable", "Response document is unavailable");
+  }
   if (form.fillMethod === FillMethod.native) {
     const nativeFieldConfig = await nativeFields(
       publishedTemplate.id,
@@ -373,7 +395,18 @@ export async function userEditorConfig(
             lease
           ),
         },
-        documentKey: response.draftDocumentKey,
+        documentKey: response.draftDocumentKey as string,
+        documentKind: form.documentKind,
+        ...(form.documentKind === "xlsx"
+          ? {
+              spreadsheetBindings: await spreadsheetContractForTemplate(
+                response.publishedTemplateId,
+                readSpreadsheetWorkbook(
+                  await readObject(response.draftObjectKey)
+                )
+              ),
+            }
+          : {}),
         lease: editorLeaseBridge(lease),
         prefill: snapshot
           ? requestedAction === "fill"
@@ -385,9 +418,12 @@ export async function userEditorConfig(
           : undefined,
         publicId: form.publicId,
         responseId: response.id,
-        tagAliases: onlyOfficeFieldTagAliases(
-          await readObject(publishedTemplate.objectKey)
-        ),
+        tagAliases:
+          form.documentKind === "xlsx"
+            ? {}
+            : onlyOfficeFieldTagAliases(
+                await readObject(publishedTemplate.objectKey)
+              ),
       },
       identity
     ),

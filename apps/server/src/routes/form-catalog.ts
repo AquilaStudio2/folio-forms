@@ -16,12 +16,20 @@ import type { FormAuditAction } from "../audit/events";
 import { requireIdentity, requireAdmin } from "../auth/identity";
 import { contentHash } from "../digests";
 import { validateTemplatePackage } from "../documents/package";
+import { blankSpreadsheet } from "../documents/spreadsheets/blank";
+import { withSpreadsheetExportSnapshot } from "../documents/spreadsheets/export-snapshot";
+import { unprotectSpreadsheet } from "../documents/spreadsheets/protection";
+import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
 import { listAdminForms } from "../forms/catalog";
 import {
   formDto,
   supportsNativeTemplate,
   findFormByPublicId,
 } from "../forms/query";
+import {
+  spreadsheetBindingsFromFields,
+  spreadsheetDraftFieldData,
+} from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 import {
   asRecord,
@@ -43,6 +51,7 @@ import {
   DOCX_CONTENT_TYPE,
   objectExists,
   readObject,
+  streamObject,
   objectKey,
 } from "../storage";
 import {
@@ -53,7 +62,7 @@ import type { RouteDependencies } from "./dependencies";
 
 export function registerFormCatalogRoutes(
   app: Elysia,
-  _dependencies: Pick<RouteDependencies, never>
+  dependencies: Pick<RouteDependencies, "onlyOffice">
 ): void {
   app
     .get("/api/admin/forms", async ({ request }) => {
@@ -111,6 +120,16 @@ export function registerFormCatalogRoutes(
             );
           }
           if (input.fillMethod !== undefined) {
+            if (
+              current.documentKind === "xlsx" &&
+              input.fillMethod === FillMethod.native
+            ) {
+              fail(
+                409,
+                "native_fill_unsupported",
+                "Excel forms use ONLYOFFICE for filling"
+              );
+            }
             if (input.fillMethod !== current.fillMethod) {
               const activeOperation = await tx.operation.findFirst({
                 select: { id: true },
@@ -256,7 +275,11 @@ export function registerFormCatalogRoutes(
           if (!(await objectExists(sourceDocument.objectKey))) {
             fail(409, "document_unavailable", "The Form DOCX is unavailable");
           }
-          const sourceBytes = await readObject(sourceDocument.objectKey);
+          const originalBytes = await readObject(sourceDocument.objectKey);
+          const sourceBytes =
+            source.documentKind === "xlsx"
+              ? unprotectSpreadsheet(originalBytes)
+              : originalBytes;
           const duplicateId = crypto.randomUUID();
           const duplicatePublicId = crypto.randomUUID().replaceAll("-", "");
           duplicateObjectKey = objectKey(
@@ -264,48 +287,63 @@ export function registerFormCatalogRoutes(
             duplicateId,
             "template-draft",
             crypto.randomUUID(),
-            "docx"
+            source.documentKind
           );
           const duplicateDocumentKey = `template-${crypto.randomUUID()}`;
           const sourcePrefillFields =
             source.publishedTemplate?.prefillConfiguration?.fields ?? [];
           const sourceRules =
-            source.publishedTemplate?.manifest?.fields.map((field) => {
-              const prefill = sourcePrefillFields.find(
-                (candidate) => candidate.tag === field.tag
-              );
-              return {
-                prefillPointer: prefill?.pointer ?? null,
-                prefillPolicy: prefill?.policy ?? field.prefillPolicy,
-                required: field.required,
-                tag: field.tag,
-              };
-            }) ??
-            source.templateDraft?.fieldRules.map((field) => ({
-              prefillPointer: field.prefillPointer,
-              prefillPolicy: field.prefillPolicy,
-              required: field.required,
-              tag: field.tag,
-            })) ??
-            [];
+            source.documentKind === "xlsx"
+              ? spreadsheetDraftFieldData(
+                  spreadsheetBindingsFromFields(
+                    source.publishedTemplate?.manifest?.fields ??
+                      source.templateDraft?.fieldRules ??
+                      [],
+                    source.publishedTemplate ? sourcePrefillFields : undefined
+                  )
+                )
+              : (source.publishedTemplate?.manifest?.fields.map((field) => {
+                  const prefill = sourcePrefillFields.find(
+                    (candidate) => candidate.tag === field.tag
+                  );
+                  return {
+                    prefillPointer: prefill?.pointer ?? null,
+                    prefillPolicy: prefill?.policy ?? field.prefillPolicy,
+                    required: field.required,
+                    tag: field.tag,
+                  };
+                }) ??
+                source.templateDraft?.fieldRules.map((field) => ({
+                  prefillPointer: field.prefillPointer,
+                  prefillPolicy: field.prefillPolicy,
+                  required: field.required,
+                  tag: field.tag,
+                })) ??
+                []);
           await prisma.objectCleanupIntent.create({
             data: {
               cleanupAfter: new Date(Date.now() + objectCleanupIntentGraceMs),
               objectKey: duplicateObjectKey,
             },
           });
-          await putObject(duplicateObjectKey, sourceBytes, DOCX_CONTENT_TYPE);
+          await putObject(
+            duplicateObjectKey,
+            sourceBytes,
+            source.documentKind === "xlsx"
+              ? XLSX_CONTENT_TYPE
+              : DOCX_CONTENT_TYPE
+          );
           const duplicate = await prisma.$transaction(async (tx) => {
             const created = await tx.form.create({
               data: {
                 creator: { connect: { id: identity.id } },
                 description: source.description,
+                documentKind: source.documentKind,
                 id: duplicateId,
                 publicId: duplicatePublicId,
                 templateDraft: {
                   create: {
-                    contentHash:
-                      sourceDocument.contentHash ?? contentHash(sourceBytes),
+                    contentHash: contentHash(sourceBytes),
                     documentKey: duplicateDocumentKey,
                     fieldRules: { create: sourceRules },
                     objectKey: duplicateObjectKey as string,
@@ -583,7 +621,9 @@ export function registerFormCatalogRoutes(
           const input = await readTemplateCreationInput(request);
           source = input.source;
           let templateBytes: Uint8Array | undefined = input.templateBytes;
-          if (input.source === "blank") {
+          if (input.source === "blank" && input.documentKind === "xlsx") {
+            templateBytes = blankSpreadsheet();
+          } else if (input.source === "blank") {
             const sourcePath = await findTemplateSource();
             if (sourcePath) {
               templateBytes = await readTemplateSourceBytes(sourcePath);
@@ -604,7 +644,7 @@ export function registerFormCatalogRoutes(
             id,
             "template-draft",
             crypto.randomUUID(),
-            "docx"
+            input.documentKind
           );
           const templateDocumentKey = `template-${crypto.randomUUID()}`;
           await prisma.objectCleanupIntent.create({
@@ -613,12 +653,19 @@ export function registerFormCatalogRoutes(
               objectKey: templateObjectKey,
             },
           });
-          await putObject(templateObjectKey, templateBytes, DOCX_CONTENT_TYPE);
+          await putObject(
+            templateObjectKey,
+            templateBytes,
+            input.documentKind === "xlsx"
+              ? XLSX_CONTENT_TYPE
+              : DOCX_CONTENT_TYPE
+          );
           const form = await prisma.$transaction(async (tx) => {
             const created = await tx.form.create({
               data: {
                 creator: { connect: { id: identity.id } },
                 description: input.description,
+                documentKind: input.documentKind,
                 id,
                 publicId,
                 templateDraft: {
@@ -674,6 +721,52 @@ export function registerFormCatalogRoutes(
       },
       { parse: "none" }
     )
+    .get(
+      "/api/admin/forms/:publicId/template/:format",
+      async ({ request, params }) => {
+        requireAdmin(await requireIdentity(request));
+        const form = await findFormByPublicId(params.publicId);
+        if (
+          form.documentKind !== "xlsx" ||
+          !["xlsx", "pdf"].includes(params.format)
+        ) {
+          fail(404, "not_found", "Template export was not found");
+        }
+        const template = form.publishedTemplate ?? form.templateDraft;
+        if (!template || !(await objectExists(template.objectKey))) {
+          fail(
+            409,
+            "document_unavailable",
+            "The saved Excel template is unavailable"
+          );
+        }
+        const headers = {
+          "Cache-Control": "no-store",
+          "Content-Disposition": `attachment; filename="template-${form.publicId}.${params.format}"`,
+          "Content-Type":
+            params.format === "xlsx" ? XLSX_CONTENT_TYPE : "application/pdf",
+        };
+        if (params.format === "xlsx") {
+          return new Response(streamObject(template.objectKey), { headers });
+        }
+        try {
+          return new Response(
+            await withSpreadsheetExportSnapshot(
+              await readObject(template.objectKey),
+              (key) =>
+                dependencies.onlyOffice.convertDocxToPdf(key, true, "xlsx")
+            ),
+            { headers }
+          );
+        } catch {
+          fail(
+            502,
+            "pdf_conversion_failed",
+            "สร้าง PDF ไม่สำเร็จ ไฟล์ Excel ที่บันทึกไว้ยังอยู่ กรุณาลองใหม่"
+          );
+        }
+      }
+    )
     .get("/api/admin/forms/:publicId", async ({ request, params }) => {
       const identity = await requireIdentity(request);
       requireAdmin(identity);
@@ -693,7 +786,7 @@ export function registerFormCatalogRoutes(
           })
         : null;
       const nativeFillAvailable =
-        manifest && form.publishedTemplate
+        form.documentKind === "docx" && manifest && form.publishedTemplate
           ? await supportsNativeTemplate(
               form.publishedTemplate.objectKey,
               manifest.fields

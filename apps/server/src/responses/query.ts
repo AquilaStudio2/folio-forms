@@ -305,6 +305,15 @@ export async function receiptManifestFields(
   if (!manifest || !publishedTemplate) {
     return [];
   }
+  if (submission.form.documentKind === "xlsx") {
+    return manifest.fields.filter(
+      (field) =>
+        field.type !== "table" &&
+        field.binding !== null &&
+        typeof field.binding === "object" &&
+        "anchor" in field.binding
+    );
+  }
   return await manifestFieldsWithDocumentMetadata(
     publishedTemplate.objectKey,
     manifest.displayMetadataVersion,

@@ -100,6 +100,7 @@ class DraftSaveError extends Error {
 }
 
 interface PublicForm {
+  documentKind?: "docx" | "xlsx";
   title: string;
   description?: string;
   fillMethod: FillMethod;
@@ -133,6 +134,7 @@ const FillRoute = () => {
   >({});
   const [pictureInputKey, setPictureInputKey] = useState(0);
   const [nativeSaving, setNativeSaving] = useState(false);
+  const [editorCommandReady, setEditorCommandReady] = useState(false);
   const [editorRevision, setEditorRevision] = useState(0);
   const [activeResponseId, setActiveResponseId] = useState(responseId);
   const [loading, setLoading] = useState(true);
@@ -146,6 +148,9 @@ const FillRoute = () => {
   const [dirty, setDirty] = useState(false);
   const [exitIntent, setExitIntent] = useState<ExitIntent | null>(null);
   const [saveBeforeExit, setSaveBeforeExit] = useState(false);
+  const [editorAction, setEditorAction] = useState<"save-draft" | "submit">(
+    "save-draft"
+  );
   const [saveRequest, setSaveRequest] = useState(0);
   const [exportAfterSave, setExportAfterSave] = useState<ExportFormat | null>(
     null
@@ -434,9 +439,10 @@ const FillRoute = () => {
       setSaveBeforeExit(false);
       setExportAfterSave(null);
       setOperationError(
-        message.action === "save-draft"
-          ? "บันทึกฉบับร่างไม่สำเร็จ กรุณาลองใหม่"
-          : (message.error ?? "การดำเนินการกับเอกสารไม่สำเร็จ กรุณาลองใหม่")
+        message.error ??
+          (message.action === "save-draft"
+            ? "บันทึกฉบับร่างไม่สำเร็จ กรุณาลองใหม่"
+            : "การดำเนินการกับเอกสารไม่สำเร็จ กรุณาลองใหม่")
       );
       setSuccess(null);
       if (message.action === "save-draft" && exitIntent === "reauth") {
@@ -767,9 +773,14 @@ const FillRoute = () => {
       void saveNativeResponse("save-draft", { exitAfterSave: true });
       return;
     }
+    if (!editorCommandReady) {
+      setOperationError("ตัวแก้ไขยังไม่พร้อม กรุณารอให้เชื่อมต่อแล้วลองใหม่");
+      return;
+    }
     setSaveBeforeExit(true);
     setOperationError(null);
     setSuccess(null);
+    setEditorAction("save-draft");
     setSaveRequest((value) => value + 1);
   };
   const saveAndExport = (format: ExportFormat) => {
@@ -783,6 +794,10 @@ const FillRoute = () => {
     }
     if (nativeConfig) {
       void saveNativeResponse("save-draft", { exportFormat: format });
+      return;
+    }
+    if (!editorCommandReady) {
+      setOperationError("ตัวแก้ไขยังไม่พร้อม กรุณารอให้เชื่อมต่อแล้วลองใหม่");
       return;
     }
     const saveCompletion = createDeferred<boolean>();
@@ -816,6 +831,22 @@ const FillRoute = () => {
       }
     };
     completeExport();
+    setEditorAction("save-draft");
+    setSaveRequest((value) => value + 1);
+  };
+  const runSpreadsheetAction = (action: "save-draft" | "submit") => {
+    if (
+      !editorCommandReady ||
+      !activeResponseId ||
+      saveFlowBusy ||
+      discardBusy
+    ) {
+      return;
+    }
+    setOperationError(null);
+    setSuccess(null);
+    setOperation({ id: "editor-action", status: "pending" });
+    setEditorAction(action);
     setSaveRequest((value) => value + 1);
   };
   const cancelExit = () => {
@@ -1116,27 +1147,58 @@ const FillRoute = () => {
           </>
         ) : (
           <>
-            <div className="mb-4 rounded-[10px] border border-[var(--accent)]/35 bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--ink)]">
-              <strong>ใช้แท็บ Form ในตัวแก้ไขเอกสาร</strong>{" "}
-              เพื่อเลือกบันทึกฉบับร่างหรือส่งคำตอบ ระบบจะแสดงความคืบหน้าที่นี่
-            </div>
+            {form.documentKind === "xlsx" ? null : (
+              <div className="mb-4 rounded-[10px] border border-[var(--accent)]/35 bg-[var(--accent-soft)] px-4 py-3 text-sm text-[var(--ink)]">
+                <strong>ใช้แท็บ Form ในตัวแก้ไขเอกสาร</strong>{" "}
+                เพื่อเลือกบันทึกฉบับร่างหรือส่งคำตอบ ระบบจะแสดงความคืบหน้าที่นี่
+              </div>
+            )}
             <div className="mb-4 flex flex-wrap items-center justify-end gap-3 rounded-[10px] border border-[var(--line)] bg-[var(--paper)] px-4 py-3">
+              {form.documentKind === "xlsx" ? (
+                <>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    size="sm"
+                    onClick={() => runSpreadsheetAction("save-draft")}
+                    disabled={
+                      !editorCommandReady || saveFlowBusy || discardBusy
+                    }
+                  >
+                    บันทึกฉบับร่าง
+                  </Button>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => runSpreadsheetAction("submit")}
+                    disabled={
+                      !editorCommandReady || saveFlowBusy || discardBusy
+                    }
+                  >
+                    ส่งคำตอบ
+                  </Button>
+                </>
+              ) : null}
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
-                onClick={() => saveAndExport("docx")}
-                disabled={saveFlowBusy || discardBusy}
+                onClick={() =>
+                  saveAndExport(form.documentKind === "xlsx" ? "xlsx" : "docx")
+                }
+                disabled={!editorCommandReady || saveFlowBusy || discardBusy}
               >
-                {exportAfterSave === "docx" ? <Spinner /> : null}
-                บันทึกและดาวน์โหลด DOCX
+                {exportAfterSave === (form.documentKind ?? "docx") ? (
+                  <Spinner />
+                ) : null}
+                บันทึกและดาวน์โหลด {(form.documentKind ?? "docx").toUpperCase()}
               </Button>
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
                 onClick={() => saveAndExport("pdf")}
-                disabled={saveFlowBusy || discardBusy}
+                disabled={!editorCommandReady || saveFlowBusy || discardBusy}
               >
                 {exportAfterSave === "pdf" ? <Spinner /> : null}
                 บันทึกและดาวน์โหลด PDF
@@ -1148,7 +1210,9 @@ const FillRoute = () => {
                 configUrl={editorConfigUrl ?? undefined}
                 onBridgeMessage={handleBridgeMessage}
                 onDirtyChange={setDirty}
+                onCommandReadyChange={setEditorCommandReady}
                 revision={editorRevision}
+                saveAction={editorAction}
                 saveRequest={saveRequest}
                 title={`กรอกแบบฟอร์ม ${form.title}`}
               />

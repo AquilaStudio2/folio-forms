@@ -153,10 +153,11 @@ const SubmissionDetailRoute = () => {
   const selectedRevisionRecord = history.find(
     (revision) => revision.revision === selectedRevision
   );
-  const downloadDocx = async () => {
+  const documentKind = submission.documentKind ?? "docx";
+  const downloadDocument = async () => {
     await downloadArtifact(
-      `/api/submissions/${submissionId}/docx?revision=${selectedRevision}`,
-      `${submissionId}-${selectedRevision}.docx`
+      `/api/submissions/${submissionId}/${documentKind}?revision=${selectedRevision}`,
+      `${submissionId}-${selectedRevision}.${documentKind}`
     );
   };
 
@@ -213,11 +214,11 @@ const SubmissionDetailRoute = () => {
         <div className="flex gap-2">
           <button
             disabled={!selectedRevisionRecord}
-            onClick={downloadDocx}
+            onClick={downloadDocument}
             className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-[var(--line-strong)] bg-[var(--paper)] px-3 text-sm font-semibold hover:border-[var(--ink)]"
           >
             <FileText size={15} />
-            DOCX
+            {documentKind.toUpperCase()}
           </button>
           <button
             disabled={!selectedRevisionRecord}

@@ -4,6 +4,7 @@ import type { Elysia } from "elysia";
 
 import { requireIdentity } from "../auth/identity";
 import { databaseErrorCode } from "../db-errors";
+import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
 import { findFormByPublicId } from "../forms/query";
 import { fail } from "../http/errors";
 import { jsonRecord } from "../http/input";
@@ -65,6 +66,7 @@ export function registerPublicFormRoutes(
       return {
         form: {
           description: form.description ?? "",
+          documentKind: form.documentKind,
           fillMethod: form.fillMethod,
           publicId: form.publicId,
           published: Boolean(
@@ -174,6 +176,7 @@ export function registerPublicFormRoutes(
           fail(500, "internal_error", "The submitted receipt is unavailable");
         }
         return {
+          documentKind: form.documentKind,
           fillMethod: form.fillMethod,
           receiptUrl: `/receipt/${latestSubmission.id}`,
           response: responseSummary(existing, {
@@ -204,6 +207,7 @@ export function registerPublicFormRoutes(
           await deleteObjects(redeemed.cleanupObjectKeys);
           set.headers["Set-Cookie"] = pendingClaimCookie("", 0);
           return {
+            documentKind: form.documentKind,
             editorConfigUrl: `/api/forms/${form.publicId}/editor-config?responseId=${redeemed.response.id}&action=fill`,
             fillMethod: form.fillMethod,
             prefill: {
@@ -236,6 +240,7 @@ export function registerPublicFormRoutes(
           );
         }
         return {
+          documentKind: form.documentKind,
           editorConfigUrl: `/api/forms/${form.publicId}/editor-config?responseId=${existing.id}&action=${existing.draftData ? "draft" : "fill"}`,
           fillMethod: form.fillMethod,
           prefill: existing.draftData ? null : undefined,
@@ -274,13 +279,17 @@ export function registerPublicFormRoutes(
         responseId,
         "draft",
         crypto.randomUUID(),
-        "docx"
+        form.documentKind
       );
       const draftDocumentKey = `response-${responseId}-${crypto.randomUUID()}`;
       const snapshotId = crypto.randomUUID();
       let unusedDraftObjectKey: string | undefined;
       try {
-        await putObject(draftObjectKey, document, DOCX_CONTENT_TYPE);
+        await putObject(
+          draftObjectKey,
+          document,
+          form.documentKind === "xlsx" ? XLSX_CONTENT_TYPE : DOCX_CONTENT_TYPE
+        );
         const response = await prisma.$transaction(
           async (tx) => {
             const [lockedFormRow] = await tx.$queryRaw<{ id: string }[]>(
@@ -350,6 +359,8 @@ export function registerPublicFormRoutes(
                     connect: { id: lockedForm.publishedTemplate.id },
                   },
                   publishedVersion: form.version,
+                  spreadsheetInitialized:
+                    form.documentKind === "xlsx" && reopeningSubmitted,
                   status: ResponseStatus.draft,
                 },
               });
@@ -374,6 +385,8 @@ export function registerPublicFormRoutes(
                 draftObjectKey,
                 publishedTemplateId: lockedForm.publishedTemplate.id,
                 publishedVersion: form.version,
+                spreadsheetInitialized:
+                  form.documentKind === "xlsx" && reopeningSubmitted,
                 status: ResponseStatus.draft,
                 updatedAt: new Date(),
               },
@@ -391,6 +404,7 @@ export function registerPublicFormRoutes(
         }
         await deleteObjects([existing?.draftObjectKey, unusedDraftObjectKey]);
         return {
+          documentKind: form.documentKind,
           editorConfigUrl: `/api/forms/${form.publicId}/editor-config?responseId=${response.id}&action=${response.draftData ? "draft" : "fill"}`,
           fillMethod: form.fillMethod,
           prefill: response.draftData ? null : { data: {}, editableFields: {} },
@@ -412,6 +426,7 @@ export function registerPublicFormRoutes(
             (await objectExists(current.draftObjectKey))
           ) {
             return {
+              documentKind: form.documentKind,
               editorConfigUrl: `/api/forms/${form.publicId}/editor-config?responseId=${current.id}&action=${current.draftData ? "draft" : "fill"}`,
               fillMethod: form.fillMethod,
               prefill: current.draftData

@@ -46,7 +46,9 @@ interface FormMutationResponse {
 
 interface AdminEditorConfig {
   bridge?: {
-    capabilities?: Partial<Record<"publish" | "save-template", string>>;
+    capabilities?: Partial<
+      Record<"publish" | "save-template" | "configure-fields", string>
+    >;
   };
   config?: {
     document?: {
@@ -66,6 +68,18 @@ const formStatusDetails = {
 const detailErrorMessage = (caughtError: unknown, fallback: string): string => {
   if (caughtError instanceof ApiError) {
     switch (caughtError.code) {
+      case "request_timeout":
+      case "operation_timeout": {
+        return "ยังยืนยันผลการบันทึกไม่ได้ กรุณารอสักครู่แล้วตรวจสอบอีกครั้ง เก็บหน้าตัวแก้ไขนี้ไว้เพื่อรักษาการเปลี่ยนแปลง";
+      }
+      case "invalid_template":
+      case "invalid_spreadsheet":
+      case "operation_failed": {
+        return (
+          caughtError.userMessage ??
+          "ตรวจสอบช่องข้อมูล ชื่อรหัสที่ไม่ซ้ำ และช่วงเซลล์ที่กำหนด แล้วลองบันทึกอีกครั้ง"
+        );
+      }
       case "editor_in_use": {
         return "เอกสารนี้กำลังถูกแก้ไขโดยผู้ใช้รายอื่น กรุณารอแล้วลองใหม่";
       }
@@ -112,7 +126,7 @@ const detailErrorMessage = (caughtError: unknown, fallback: string): string => {
         return "ระบบไม่สามารถดำเนินการได้ กรุณาลองใหม่อีกครั้ง";
       }
       default: {
-        break;
+        return caughtError.userMessage ?? fallback;
       }
     }
   }
@@ -121,7 +135,8 @@ const detailErrorMessage = (caughtError: unknown, fallback: string): string => {
 
 const loadFormDetail = async (publicId: string): Promise<FormDetail> => {
   const payload = await apiGet<FormDetailResponse>(
-    `/api/admin/forms/${publicId}`
+    `/api/admin/forms/${publicId}`,
+    { timeoutMs: 30_000 }
   );
   return {
     ...payload.form,
@@ -223,6 +238,19 @@ const FormEditorRoute = () => {
     };
   }, [publicId, reloadToken]);
 
+  useEffect(() => {
+    if (operationStatus !== "pending" && operationStatus !== "processing") {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      setOperationStatus("failed");
+      setError(
+        "ยังยืนยันผลการบันทึกไม่ได้ กรุณารอสักครู่แล้วตรวจสอบอีกครั้ง เก็บหน้าตัวแก้ไขนี้ไว้เพื่อรักษาการเปลี่ยนแปลง"
+      );
+    }, 330_000);
+    return () => window.clearTimeout(timer);
+  }, [operationStatus]);
+
   if (loading) {
     return (
       <div
@@ -275,15 +303,20 @@ const FormEditorRoute = () => {
     fillMethodHelp = "This method applies to new and existing Draft responses.";
   }
 
-  const refreshFormAfterOperation = async () => {
+  const refreshFormAfterOperation = async (action: "save" | "publish") => {
+    if (action === "publish") {
+      setForm((current) =>
+        current ? { ...current, status: "published" } : current
+      );
+    }
     try {
       setForm(await loadFormDetail(publicId));
-    } catch (refreshError) {
+    } catch {
+      setNotice(null);
       setError(
-        detailErrorMessage(
-          refreshError,
-          "ดำเนินการสำเร็จแล้ว แต่โหลดข้อมูลล่าสุดไม่สำเร็จ กรุณาลองใหม่"
-        )
+        action === "publish"
+          ? "เผยแพร่แบบฟอร์มสำเร็จแล้ว แต่โหลดข้อมูลล่าสุดไม่สำเร็จ กรุณาโหลดหน้าใหม่เพื่อตรวจสอบ"
+          : "บันทึกแบบร่างสำเร็จแล้ว แต่โหลดข้อมูลล่าสุดไม่สำเร็จ กรุณาโหลดหน้าใหม่เพื่อตรวจสอบ"
       );
     }
   };
@@ -297,7 +330,9 @@ const FormEditorRoute = () => {
     setError(null);
     setNotice(null);
     try {
-      const editorConfig = await apiGet<AdminEditorConfig>(editorConfigUrl);
+      const editorConfig = await apiGet<AdminEditorConfig>(editorConfigUrl, {
+        timeoutMs: 30_000,
+      });
       const documentKey = editorConfig.config?.document?.key;
       if (typeof documentKey !== "string" || !documentKey) {
         throw new Error("document_key_unavailable");
@@ -310,7 +345,8 @@ const FormEditorRoute = () => {
       const result = await apiPost<{ operationId?: string }>(
         `/api/admin/forms/${publicId}/${action}`,
         { documentKey },
-        capability
+        capability,
+        { timeoutMs: 30_000 }
       );
       if (result.operationId) {
         await waitForOperation(result.operationId, (operation) => {
@@ -327,7 +363,7 @@ const FormEditorRoute = () => {
           ? "เผยแพร่แบบฟอร์มแล้ว คำตอบใหม่จะใช้เอกสารฉบับนี้"
           : "บันทึกแบบร่างเรียบร้อยแล้ว"
       );
-      await refreshFormAfterOperation();
+      await refreshFormAfterOperation(action);
     } catch (caughtError) {
       setOperationStatus("failed");
       setError(
@@ -520,9 +556,10 @@ const FormEditorRoute = () => {
     );
     if (message.status === "failed") {
       setError(
-        message.action === "publish"
-          ? "เผยแพร่แบบฟอร์มไม่สำเร็จ กรุณาลองใหม่"
-          : "บันทึกแบบร่างไม่สำเร็จ กรุณาลองใหม่"
+        message.error ??
+          (message.action === "publish"
+            ? "เผยแพร่แบบฟอร์มไม่สำเร็จ กรุณาลองใหม่"
+            : "บันทึกแบบร่างไม่สำเร็จ กรุณาลองใหม่")
       );
       setNotice(null);
       return;
@@ -541,7 +578,9 @@ const FormEditorRoute = () => {
         ? "เผยแพร่แบบฟอร์มแล้ว คำตอบใหม่จะใช้เอกสารฉบับนี้"
         : "บันทึกแบบร่างเรียบร้อยแล้ว"
     );
-    await refreshFormAfterOperation();
+    await refreshFormAfterOperation(
+      message.action === "publish" ? "publish" : "save"
+    );
   };
 
   const copyLink = async () => {
@@ -712,6 +751,7 @@ const FormEditorRoute = () => {
         </Notice>
       )}
       <FormMetadataPanel
+        documentKind={loadedForm.documentKind ?? "docx"}
         title={title}
         description={description}
         metadataBusy={metadataBusy}

@@ -41,6 +41,7 @@ let searchMarker = "";
 let baselineTotal = 0;
 
 interface CatalogForm {
+  documentKind: "docx" | "xlsx";
   activeDraftCount: number;
   createdAt: string;
   description: string;
@@ -500,6 +501,7 @@ test("DTO preserves metadata and counts only draft Responses plus every Submissi
     activeDraftCount: 2,
     createdAt: updated.createdAt.toISOString(),
     description: updated.description ?? "",
+    documentKind: "docx",
     fillMethod: "native",
     hasTemplateDraft: true,
     publicId: target.publicId,

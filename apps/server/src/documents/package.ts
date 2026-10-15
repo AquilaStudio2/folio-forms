@@ -143,7 +143,7 @@ export function templateAttribute(
   )?.value;
 }
 
-function readTemplateArchive(
+export function readTemplateArchive(
   bytes: Uint8Array,
   include: (archivePath: string) => boolean
 ): Record<string, Uint8Array> {
@@ -239,7 +239,7 @@ function isExternalRelationshipTarget(target: string | undefined): boolean {
   );
 }
 
-function validateOfficeRelationships(
+export function validateOfficeRelationships(
   archive: Record<string, Uint8Array>
 ): void {
   for (const archivePath of Object.keys(archive)) {

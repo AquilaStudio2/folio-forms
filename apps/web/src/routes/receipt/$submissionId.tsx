@@ -11,6 +11,7 @@ import { Card, Notice, Spinner } from "@/components/ui";
 import { ApiError, apiGet, downloadArtifact, formatDate } from "@/lib/api";
 import type {
   ReceiptField,
+  SpreadsheetResultContract,
   ResponseRevisionsResponse,
   Submission,
 } from "@/lib/api";
@@ -32,6 +33,9 @@ const receiptErrorMessage = (error: unknown): string => {
 const ReceiptRoute = () => {
   const { submissionId } = useParams({ from: "/receipt/$submissionId" });
   const [submission, setSubmission] = useState<Submission | null>(null);
+  const [spreadsheetContract, setSpreadsheetContract] =
+    useState<SpreadsheetResultContract | null>(null);
+  const [documentKind, setDocumentKind] = useState<"docx" | "xlsx">("docx");
   const [fields, setFields] = useState<ReceiptField[]>([]);
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [revisions, setRevisions] = useState<
@@ -48,6 +52,8 @@ const ReceiptRoute = () => {
         const payload = await apiGet<{
           data: Record<string, unknown>;
           fields: ReceiptField[];
+          documentKind?: "docx" | "xlsx";
+          spreadsheetContract?: SpreadsheetResultContract | null;
           returnUrl: string;
           submission: Submission;
         }>(`/api/submissions/${submissionId}/data`);
@@ -58,6 +64,8 @@ const ReceiptRoute = () => {
           setViewRevision(history.latestRevision);
           setData(payload.data);
           setFields(payload.fields);
+          setSpreadsheetContract(payload.spreadsheetContract ?? null);
+          setDocumentKind(payload.documentKind ?? "docx");
           setRevisions(history.revisions);
           setReturnUrl(payload.returnUrl);
           setSubmission(payload.submission);
@@ -114,7 +122,7 @@ const ReceiptRoute = () => {
   const revisionQuery = `?revision=${selectedRevision}`;
   const revisionSuffix =
     selectedRevision > 0 ? `-revision-${selectedRevision}` : "";
-  const download = async (format: "docx" | "pdf") => {
+  const download = async (format: "docx" | "xlsx" | "pdf") => {
     await downloadArtifact(
       `/api/submissions/${submissionId}/${format}${revisionQuery}`,
       `${submissionId}${revisionSuffix}.${format}`
@@ -170,11 +178,11 @@ const ReceiptRoute = () => {
             </select>
             <button
               type="button"
-              onClick={() => download("docx")}
+              onClick={() => download(documentKind)}
               className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-[var(--line-strong)] bg-[var(--paper)] px-3 text-sm font-semibold hover:border-[var(--ink)]"
             >
               <FileText size={15} />
-              DOCX
+              {documentKind.toUpperCase()}
             </button>
             <button
               type="button"
@@ -205,6 +213,7 @@ const ReceiptRoute = () => {
               data={displayedData}
               fields={fields}
               pictures={selectedPictures}
+              spreadsheetContract={spreadsheetContract}
             />
           </div>
         </Card>

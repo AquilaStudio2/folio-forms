@@ -25,7 +25,7 @@ export function createOperations(
   const { setStatus, isInitializationPending } = callbacks;
   let actionInFlight = false;
 
-  function actionRequest(action, data, reason) {
+  function actionRequest(action, data, reason, rowChange) {
     const documentKey = requireOption(options.documentKey, "documentKey");
 
     if (action === ACTIONS.SAVE_TEMPLATE || action === ACTIONS.PUBLISH) {
@@ -49,6 +49,9 @@ export function createOperations(
         canonicalDateFields: data.canonicalDateFields,
         data: data.data,
         documentKey,
+        ...(options.documentKind === "xlsx"
+          ? { fillMethod: "onlyoffice", ...(rowChange ? { rowChange } : {}) }
+          : {}),
       };
 
       if (options.responseId) {
@@ -80,8 +83,8 @@ export function createOperations(
     throw new Error(`Unsupported form action: ${action || "none"}`);
   }
 
-  async function postAction(action, data, reason, capability) {
-    const request = actionRequest(action, data, reason);
+  async function postAction(action, data, reason, capability, rowChange) {
+    const request = actionRequest(action, data, reason, rowChange);
     const result = await api.requestJson(
       request.path,
       {
@@ -134,9 +137,26 @@ export function createOperations(
 
   function operationFailureMessage(payload, operationId) {
     const operation = isRecord(payload?.operation) ? payload.operation : {};
-    const detail = payload?.error ?? payload?.message ?? operation.error;
+    const detail =
+      operation.errorMessage ??
+      payload?.message ??
+      payload?.error ??
+      operation.error;
+    const validationErrors = operation.result?.validationErrors;
+    const diagnostics = Array.isArray(validationErrors)
+      ? validationErrors
+          .filter(
+            (error) => isRecord(error) && typeof error.message === "string"
+          )
+          .map((error) =>
+            error.address ? `${error.address}: ${error.message}` : error.message
+          )
+          .join("; ")
+      : "";
 
-    return detail ? String(detail) : `การดำเนินการ ${operationId} ไม่สำเร็จ`;
+    return [detail || `การดำเนินการ ${operationId} ไม่สำเร็จ`, diagnostics]
+      .filter(Boolean)
+      .join(" — ");
   }
 
   async function pollOperation(operationId, label, operationCapability) {
@@ -196,7 +216,7 @@ export function createOperations(
     throw new Error(`การดำเนินการ ${id} ใช้เวลานานเกินไป`);
   }
 
-  async function runAction(action, reason = "") {
+  async function runAction(action, reason = "", rowChange = null) {
     if (actionInFlight || isInitializationPending()) {
       setStatus("มีการดำเนินการของฟอร์มกำลังทำงานอยู่", "pending");
       return { ignored: true, ok: false };
@@ -216,18 +236,26 @@ export function createOperations(
       let data;
 
       if (needsData) {
-        if (prefill.shouldApplyRuntimePrefill()) {
-          await prefill.ensurePrefill();
-        } else if (
-          options.action === ACTIONS.DRAFT ||
-          options.action === ACTIONS.CORRECTION
-        ) {
-          await office.restrictEditorToForms();
+        if (options.documentKind === "xlsx") {
+          data = { data: {} };
+        } else {
+          if (prefill.shouldApplyRuntimePrefill()) {
+            await prefill.ensurePrefill();
+          } else if (
+            options.action === ACTIONS.DRAFT ||
+            options.action === ACTIONS.CORRECTION
+          ) {
+            await office.restrictEditorToForms();
+          }
+          await office.freezeEditor();
+          editorFrozen = true;
+          setStatus(`กำลังอ่านข้อมูลของ ${actionLabel(action)}…`, "pending");
+          data = await office.extractFormDataPromise();
         }
-        await office.freezeEditor();
-        editorFrozen = true;
-        setStatus(`กำลังอ่านข้อมูลของ ${actionLabel(action)}…`, "pending");
-        data = await office.extractFormDataPromise();
+        if (options.documentKind === "xlsx") {
+          await office.freezeEditor();
+          editorFrozen = true;
+        }
       }
       if (!needsData) {
         await office.freezeEditor();
@@ -241,7 +269,8 @@ export function createOperations(
         action,
         data,
         correctionReason,
-        capability
+        capability,
+        rowChange
       );
       operationId = operationIdFromResponse(response);
       bridge.notifyParent(action, "pending", operationId, response);
@@ -291,7 +320,10 @@ export function createOperations(
       if (editorFrozen) {
         try {
           await office.executeMethodResult("SetEditingRestrictions", [
-            options.action === ACTIONS.TEMPLATE_EDIT ? "none" : "forms",
+            options.documentKind === "xlsx" ||
+            options.action === ACTIONS.TEMPLATE_EDIT
+              ? "none"
+              : "forms",
           ]);
         } catch {
           setStatus("ไม่สามารถคืนค่าการแก้ไขเฉพาะช่องกรอกได้", "error");

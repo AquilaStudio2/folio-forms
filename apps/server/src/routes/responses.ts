@@ -13,6 +13,7 @@ import {
 } from "../audit/events";
 import { requireIdentity, requireAdmin } from "../auth/identity";
 import { responsePicturePresence } from "../documents/pictures";
+import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
 import { fail } from "../http/errors";
 import {
   validateId,
@@ -74,6 +75,7 @@ export function registerResponseRoutes(
       const response = await prisma.response.findUnique({
         include: {
           corrections: { orderBy: { revision: "desc" } },
+          form: true,
           publishedTemplate: {
             include: { manifest: { include: { fields: true } } },
           },
@@ -104,9 +106,11 @@ export function registerResponseRoutes(
       );
       const originalAvailable = await objectExists(submission.objectKey);
       const pictureFields =
-        response.publishedTemplate.manifest?.fields.filter(
-          (field) => field.type === FieldType.picture
-        ) ?? [];
+        response.form.documentKind === "xlsx"
+          ? []
+          : (response.publishedTemplate.manifest?.fields.filter(
+              (field) => field.type === FieldType.picture
+            ) ?? []);
       const originalPictures =
         originalAvailable && pictureFields.length > 0
           ? responsePicturePresence(
@@ -196,11 +200,13 @@ export function registerResponseRoutes(
         if (
           params.format !== "json" &&
           params.format !== "docx" &&
+          params.format !== "xlsx" &&
           params.format !== "pdf"
         ) {
           fail(404, "not_found", "Draft export was not found");
         }
         const response = await prisma.response.findUnique({
+          include: { form: { select: { documentKind: true } } },
           where: { id: params.id },
         });
         if (!response) {
@@ -229,17 +235,24 @@ export function registerResponseRoutes(
         if (!(await objectExists(response.draftObjectKey))) {
           fail(404, "document_unavailable", "Draft document is unavailable");
         }
-        if (params.format === "docx") {
+        if (params.format === "docx" || params.format === "xlsx") {
+          if (params.format !== response.form.documentKind) {
+            fail(404, "not_found", "This document format is unavailable");
+          }
           return new Response(streamObject(response.draftObjectKey), {
             headers: {
-              "Content-Disposition": `attachment; filename="response-${response.id}.docx"`,
-              "Content-Type": DOCX_CONTENT_TYPE,
+              "Content-Disposition": `attachment; filename="response-${response.id}.${response.form.documentKind}"`,
+              "Content-Type":
+                response.form.documentKind === "xlsx"
+                  ? XLSX_CONTENT_TYPE
+                  : DOCX_CONTENT_TYPE,
             },
           });
         }
         const pdf = await onlyOffice.convertDocxToPdf(
           response.draftDocumentKey,
-          true
+          true,
+          response.form.documentKind
         );
         set.headers["Content-Disposition"] =
           `attachment; filename="response-${response.id}.pdf"`;

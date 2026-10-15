@@ -31,6 +31,8 @@ export type OperationErrorCode =
   | "operation_timeout"
   | "pdf_conversion_failed";
 export interface OperationMetadata extends JsonRecord {
+  documentKind?: "docx" | "xlsx";
+  bindingRevision?: number;
   action: OperationAction;
   baseDocumentKey?: string;
   baseRevision?: number;

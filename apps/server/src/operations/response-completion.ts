@@ -43,7 +43,9 @@ export async function completeDraftOperation(
   ) {
     fail(409, "stale_operation", "The response is no longer editable");
   }
-  await validateResponseDocument(response.publishedTemplateId, bytes, false);
+  if (metadata.documentKind !== "xlsx") {
+    await validateResponseDocument(response.publishedTemplateId, bytes, false);
+  }
   const nextDocumentKey = metadata.nextDocumentKey ?? documentKey;
   const result = {
     documentKey: nextDocumentKey,
@@ -112,7 +114,9 @@ export async function completeSubmitOperation(
       "The response is no longer pending submission"
     );
   }
-  await validateResponseDocument(response.publishedTemplateId, bytes, true);
+  if (metadata.documentKind !== "xlsx") {
+    await validateResponseDocument(response.publishedTemplateId, bytes, true);
+  }
 
   const submissionDocumentKey = metadata.submissionDocumentKey ?? documentKey;
   const result = {
@@ -291,7 +295,9 @@ export async function completeCorrectionOperation(
   ) {
     fail(409, "stale_operation", "The Submission is no longer correctable");
   }
-  await validateResponseDocument(response.publishedTemplateId, bytes, true);
+  if (metadata.documentKind !== "xlsx") {
+    await validateResponseDocument(response.publishedTemplateId, bytes, true);
+  }
   const cleanupObjectKeys = [
     metadata.stagedObjectKey,
     metadata.workspaceObjectKey,

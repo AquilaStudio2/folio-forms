@@ -15,20 +15,36 @@ export function createOffice(options) {
   /**
    * Call an Office command and expose a Promise for the iframe-side flow.
    */
-  function callCommandResult(command) {
+  function callCommandResult(command, recalculate = false) {
     return new Promise((resolve, reject) => {
+      const timeout = window.setTimeout(
+        () => reject(new Error("ตัวแก้ไขไม่ตอบสนอง กรุณาลองอีกครั้งก่อนปิดหน้านี้")),
+        15_000
+      );
       try {
-        window.Asc.plugin.callCommand(command, false, false, resolve);
+        window.Asc.plugin.callCommand(command, false, recalculate, (result) => {
+          window.clearTimeout(timeout);
+          resolve(result);
+        });
       } catch (error) {
+        window.clearTimeout(timeout);
         reject(error);
       }
     });
   }
   function executeMethodResult(method, args) {
     return new Promise((resolve, reject) => {
+      const timeout = window.setTimeout(
+        () => reject(new Error("ตัวแก้ไขไม่ตอบสนอง กรุณาลองอีกครั้งก่อนปิดหน้านี้")),
+        15_000
+      );
       try {
-        window.Asc.plugin.executeMethod(method, args, resolve);
+        window.Asc.plugin.executeMethod(method, args, (result) => {
+          window.clearTimeout(timeout);
+          resolve(result);
+        });
       } catch (error) {
+        window.clearTimeout(timeout);
         reject(error);
       }
     });

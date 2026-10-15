@@ -24,7 +24,10 @@ interface CreateFormResponse {
   form: FormSummary;
 }
 
-const createFormErrorMessage = (caughtError: unknown): string => {
+const createFormErrorMessage = (
+  caughtError: unknown,
+  documentKind: "docx" | "xlsx"
+): string => {
   if (caughtError instanceof ApiError) {
     if (
       caughtError.status === 413 ||
@@ -40,7 +43,9 @@ const createFormErrorMessage = (caughtError: unknown): string => {
         return "ไฟล์ DOCX ไม่ถูกต้อง กรุณาตรวจสอบไฟล์แล้วลองใหม่";
       }
       case "blank_template_unavailable": {
-        return "ยังไม่สามารถสร้างแบบฟอร์มเปล่าได้ กรุณาเลือกอัปโหลดไฟล์ DOCX";
+        return documentKind === "xlsx"
+          ? "ยังไม่สามารถสร้าง Excel เปล่าได้ กรุณาลองใหม่หรือติดต่อผู้ดูแลระบบ"
+          : "ยังไม่สามารถสร้างแบบฟอร์มเปล่าได้ กรุณาเลือกอัปโหลดไฟล์ DOCX";
       }
       case "unauthorized": {
         return "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่";
@@ -58,6 +63,7 @@ const createFormErrorMessage = (caughtError: unknown): string => {
 
 const NewFormRoute = () => {
   const navigate = useNavigate();
+  const [documentKind, setDocumentKind] = useState<"docx" | "xlsx">("docx");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [source, setSource] = useState<TemplateSource>("blank");
@@ -93,6 +99,12 @@ const NewFormRoute = () => {
       setError("ไฟล์มีขนาดใหญ่เกิน 25 MiB");
       return;
     }
+    if (file && !file.name.toLowerCase().endsWith(".docx")) {
+      setTemplate(null);
+      event.target.value = "";
+      setError("รองรับเฉพาะไฟล์ DOCX");
+      return;
+    }
     setTemplate(file);
     setError(null);
   };
@@ -108,7 +120,7 @@ const NewFormRoute = () => {
       setError("กรุณาระบุชื่อแบบฟอร์ม");
       return;
     }
-    if (source === "upload" && !template) {
+    if (documentKind === "docx" && source === "upload" && !template) {
       setError("กรุณาเลือกไฟล์ DOCX สำหรับต้นแบบ");
       return;
     }
@@ -118,8 +130,9 @@ const NewFormRoute = () => {
     const formData = new FormData();
     formData.append("title", trimmedTitle);
     formData.append("description", description.trim());
-    formData.append("source", source);
-    if (source === "upload" && template) {
+    formData.append("source", documentKind === "xlsx" ? "blank" : source);
+    formData.append("documentKind", documentKind);
+    if (documentKind === "docx" && source === "upload" && template) {
       formData.append("template", template, template.name);
     }
 
@@ -135,7 +148,7 @@ const NewFormRoute = () => {
         to: "/admin/forms/$formId",
       });
     } catch (caughtError) {
-      setError(createFormErrorMessage(caughtError));
+      setError(createFormErrorMessage(caughtError, documentKind));
     } finally {
       setBusy(false);
     }
@@ -158,7 +171,7 @@ const NewFormRoute = () => {
         </span>
         <h1 className="text-3xl font-bold tracking-[-0.04em]">สร้างแบบฟอร์ม</h1>
         <p className="mt-2 text-[var(--ink-soft)]">
-          เริ่มจากแบบฟอร์มเปล่าหรืออัปโหลดไฟล์ DOCX แล้วแก้ไขต่อในตัวแก้ไข
+          เริ่มจากแบบฟอร์ม Word หรือ Excel แล้วแก้ไขต่อในตัวแก้ไข
         </p>
       </div>
       <Card className="p-6 sm:p-8">
@@ -222,60 +235,90 @@ const NewFormRoute = () => {
             </p>
           </div>
           <fieldset>
-            <legend className="text-sm font-semibold">ต้นแบบเริ่มต้น</legend>
-            <div className="mt-2 grid gap-3 sm:grid-cols-2">
-              <label
-                className={`flex cursor-pointer items-start gap-3 rounded-[10px] border p-4 ${
-                  source === "blank"
-                    ? "border-[var(--ink)] bg-[var(--accent-soft)]"
-                    : "border-[var(--line-strong)] bg-[var(--paper)]"
-                }`}
-              >
-                <input
-                  className="mt-1 size-4 accent-[var(--ink)]"
-                  type="radio"
-                  name="source"
-                  value="blank"
-                  checked={source === "blank"}
-                  disabled={busy}
-                  onChange={() => selectSource("blank")}
-                />
-                <span>
-                  <span className="block font-semibold">แบบฟอร์มเปล่า</span>
-                  <span className="mt-1 block text-sm text-[var(--ink-soft)]">
-                    สร้างจากต้นแบบว่างของระบบ
-                  </span>
-                </span>
-              </label>
-              <label
-                className={`flex cursor-pointer items-start gap-3 rounded-[10px] border p-4 ${
-                  source === "upload"
-                    ? "border-[var(--ink)] bg-[var(--accent-soft)]"
-                    : "border-[var(--line-strong)] bg-[var(--paper)]"
-                }`}
-              >
-                <input
-                  className="mt-1 size-4 accent-[var(--ink)]"
-                  type="radio"
-                  name="source"
-                  value="upload"
-                  checked={source === "upload"}
-                  disabled={busy}
-                  onChange={() => selectSource("upload")}
-                />
-                <span>
-                  <span className="flex items-center gap-2 font-semibold">
-                    <Upload size={15} />
-                    อัปโหลดไฟล์ DOCX
-                  </span>
-                  <span className="mt-1 block text-sm text-[var(--ink-soft)]">
-                    ใช้เอกสารที่มีช่องข้อมูลอยู่แล้ว
-                  </span>
-                </span>
-              </label>
+            <legend className="text-sm font-semibold">ชนิดเอกสาร</legend>
+            <div className="mt-2 flex gap-6">
+              {(["docx", "xlsx"] as const).map((kind) => (
+                <label className="flex items-center gap-2" key={kind}>
+                  <input
+                    type="radio"
+                    name="documentKind"
+                    value={kind}
+                    checked={documentKind === kind}
+                    disabled={busy}
+                    onChange={() => {
+                      setDocumentKind(kind);
+                      setSource("blank");
+                      setTemplate(null);
+                      setError(null);
+                    }}
+                  />
+                  {kind === "docx" ? "Word (DOCX)" : "Excel (XLSX)"}
+                </label>
+              ))}
             </div>
+            {documentKind === "xlsx" ? (
+              <p className="mt-2 text-sm text-[var(--ink-soft)]">
+                รองรับหนึ่งชีต หนึ่งตารางรายการ และช่องเดี่ยวตามตำแหน่งที่กำหนด
+              </p>
+            ) : null}
           </fieldset>
-          {source === "upload" ? (
+          {documentKind === "docx" ? (
+            <fieldset>
+              <legend className="text-sm font-semibold">ต้นแบบเริ่มต้น</legend>
+              <div className="mt-2 grid gap-3 sm:grid-cols-2">
+                <label
+                  className={`flex cursor-pointer items-start gap-3 rounded-[10px] border p-4 ${
+                    source === "blank"
+                      ? "border-[var(--ink)] bg-[var(--accent-soft)]"
+                      : "border-[var(--line-strong)] bg-[var(--paper)]"
+                  }`}
+                >
+                  <input
+                    className="mt-1 size-4 accent-[var(--ink)]"
+                    type="radio"
+                    name="source"
+                    value="blank"
+                    checked={source === "blank"}
+                    disabled={busy}
+                    onChange={() => selectSource("blank")}
+                  />
+                  <span>
+                    <span className="block font-semibold">แบบฟอร์มเปล่า</span>
+                    <span className="mt-1 block text-sm text-[var(--ink-soft)]">
+                      สร้างจากต้นแบบว่างของระบบ
+                    </span>
+                  </span>
+                </label>
+                <label
+                  className={`flex cursor-pointer items-start gap-3 rounded-[10px] border p-4 ${
+                    source === "upload"
+                      ? "border-[var(--ink)] bg-[var(--accent-soft)]"
+                      : "border-[var(--line-strong)] bg-[var(--paper)]"
+                  }`}
+                >
+                  <input
+                    className="mt-1 size-4 accent-[var(--ink)]"
+                    type="radio"
+                    name="source"
+                    value="upload"
+                    checked={source === "upload"}
+                    disabled={busy}
+                    onChange={() => selectSource("upload")}
+                  />
+                  <span>
+                    <span className="flex items-center gap-2 font-semibold">
+                      <Upload size={15} />
+                      อัปโหลดไฟล์ DOCX
+                    </span>
+                    <span className="mt-1 block text-sm text-[var(--ink-soft)]">
+                      ใช้เอกสารที่มีช่องข้อมูลอยู่แล้ว
+                    </span>
+                  </span>
+                </label>
+              </div>
+            </fieldset>
+          ) : null}
+          {documentKind === "docx" && source === "upload" ? (
             <div>
               <label
                 className="block text-sm font-semibold"

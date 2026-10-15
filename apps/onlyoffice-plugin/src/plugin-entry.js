@@ -12,6 +12,7 @@ import {
   normalizePrefill,
   hasPrefillValues,
 } from "./prefill.js";
+import { initializeSpreadsheet } from "./spreadsheet.js";
 import { isRecord, firstString, actionLabel, errorMessage } from "./values.js";
 
 let runtimeOptions = {};
@@ -75,6 +76,10 @@ function normalizeRuntimeOptions() {
     apiBase: firstString(options.apiBase)?.replace(/\/+$/, ""),
     bridgeId: firstString(options.bridgeId),
     documentKey: firstString(options.documentKey),
+    documentKind: options.documentKind === "xlsx" ? "xlsx" : "docx",
+    spreadsheetBindings: isRecord(options.spreadsheetBindings)
+      ? options.spreadsheetBindings
+      : {},
     formId: firstString(options.formId),
     operationCapability: firstString(options.operationCapability),
     operationId: firstString(options.operationId),
@@ -320,11 +325,18 @@ function exposeFormBridge() {
 
 function initializePlugin() {
   if (pluginInitialized) {
+    if (runtimeOptions.documentKind === "xlsx") {
+      void window.FormBridge?.refreshSelection?.();
+    }
     return;
   }
 
   pluginInitialized = true;
   runtimeOptions = normalizeRuntimeOptions();
+  if (runtimeOptions.documentKind === "xlsx") {
+    initializeSpreadsheet(runtimeOptions, setStatus);
+    return;
+  }
   office = createOffice(runtimeOptions);
   api = createApi(runtimeOptions);
   prefill = createPrefill(runtimeOptions, office);

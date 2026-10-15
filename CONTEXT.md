@@ -22,11 +22,15 @@ An authenticated Legacy Identity awaiting an Admin's review of current identity 
 
 ## Form
 
-A shareable questionnaire-like document owned by the application. A Form has a title, description, Template Draft, optional Published Template, and one stable share link.
+A shareable questionnaire-like document owned by the application. A Form has a title, description, immutable document kind (DOCX or XLSX), Template Draft, optional Published Template, and one stable share link. Each Form has its own field keys and responses.
+
+XLSX Forms start from a blank workbook; importing an XLSX template is not supported. DOCX Forms may start blank or from an uploaded DOCX. Spreadsheet layout and formatting use the native editor; the field-settings panel supplies the application-specific mapping between cells and response data.
+
+Creating a repeating table adds cell borders across the selected range, including an explicitly selected header row. Added response rows inherit the prototype row's formatting while input values are cleared without removing borders. Admins can download the saved Excel template as XLSX or PDF; unsaved editor changes are included only after saving the Template Draft.
 
 ## Fill Method
 
-An Admin-selected Form setting that routes all current and new Responses through either the native web form or ONLYOFFICE. Changing the method does not change the shared Fields or saved DOCX.
+An Admin-selected DOCX Form setting that routes all current and new Responses through either the native web form or ONLYOFFICE. Changing the method does not change the shared Fields or saved DOCX. XLSX Forms use ONLYOFFICE.
 
 ## AI Authoring Session
 
@@ -40,13 +44,23 @@ The external model gateway used by AI Authoring Sessions. Folio calls it server-
 
 The editable document an Admin is currently preparing. Saving it does not change the document available through the Form's share link.
 
+An XLSX Template Draft may contain unfinished field or table configuration so an Admin can save work in progress. Its configuration uses the shared Draft Field Rules, with optional label/type/options/order and placement-only binding metadata. DOCX draft metadata remains in content controls and uses its existing rules. Publication requires a complete, valid Spreadsheet Contract.
+
 ## Published Template
 
-The current document used to start new Responses. Publishing replaces the previous Published Template and invalidates every unsubmitted Draft for that Form. Published Templates have no user-visible history.
+The immutable document and field contract used to start new Responses. A published Form cannot be structurally edited or republished; changing its structure requires duplicating it into a new Form, including its document and field configuration.
 
 ## Field
 
-A tagged content control in a Form. Its Title/Alias is the user-facing label; its Tag is the stable identity in prefill and extracted data; its Placeholder guides entry. If the Title/Alias is blank, use the Tag as the label. Field tags must be present and unique within a Form.
+A mapped input in a Form. For DOCX, it is a tagged content control: its Title/Alias is the user-facing label, its Tag is the stable identity in prefill and extracted data, and its Placeholder guides entry. If the Title/Alias is blank, use the Tag as the label. For XLSX, a Field maps a cell or complete merged cell to a key, label, type, and rules through a named range. Keys must be unique within their containing object and may be reused by different Forms.
+
+## Excel Binding
+
+The placement-only JSON attached to a shared Draft Field Rule or Manifest Field. One `ExcelBinding` TypeScript union and its validation schemas in `apps/server/src/forms/excel-binding.ts` define scalar `{id, anchor, computed}`, table `{id, anchor}`, and column `{id, offset, computed}` metadata. Both lifecycle stages use these definitions for reads and writes; common field configuration stays in the normal field columns. It is stored in the existing nullable `binding` column, not a new database model. DOCX bindings remain null.
+
+## Spreadsheet Contract
+
+The XLSX field configuration reconstructed from shared Manifest Fields, frozen at publication, and the existing published Prefill Fields. It is not stored as a separate JSON contract. Scalar, table and column definitions share the normal tag/label/type/options/rule columns; binding metadata contains only stable identities, named anchors, column offsets and computed flags. Column tags use `tableKey.columnKey`, while answer JSON retains nested table arrays. Saved results reference the published fields through their Response; current cell positions come from named ranges in each saved workbook rather than copied contract snapshots. Form.documentKind selects DOCX or XLSX processing without repeating the kind on every field or answer. The contract defines scalar Fields and one repeating table in one editable worksheet. The table has a named body range and stable column keys; each nonempty input row becomes one object in the table's array. Wholly empty input rows are skipped, while zero and false count as data. Formula-only rows do not become records. System-managed hidden option data supports dropdowns without becoming an editable worksheet or response field.
 
 ## Response
 
@@ -58,7 +72,7 @@ A manually saved, resumable Response state containing both the current document 
 
 ## Submission
 
-An immutable completed result of a Response, recorded each time that Response is submitted. A Submission consists of extracted field data, a filled DOCX, and a PDF. It exists only when all three artifacts were persisted successfully. A Response accumulates its Submissions in order; each remains individually readable (receipt, export, Correction history) no matter how many times the Response has since been reopened and resubmitted.
+An immutable completed result of a Response, recorded each time that Response is submitted. A Submission exists when its extracted field data and filled DOCX or XLSX were persisted successfully together. PDF exports are generated on demand from the saved document; PDF conversion failure does not remove a completed Submission. A Response accumulates its Submissions in order; each remains individually readable (receipt, export, Correction history) no matter how many times the Response has since been reopened and resubmitted.
 
 ## Correction
 
