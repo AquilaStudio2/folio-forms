@@ -3,6 +3,7 @@ import { prisma } from "@onlyoffice/db";
 import { spreadsheetColumnName } from "../documents/spreadsheets/contract";
 import type { SpreadsheetRange } from "../documents/spreadsheets/contract";
 import { processSpreadsheet } from "../documents/spreadsheets/engine";
+import { resetSpreadsheetPicturePlaceholders } from "../documents/spreadsheets/pictures";
 import {
   protectSpreadsheet,
   unprotectSpreadsheet,
@@ -116,7 +117,13 @@ export const initializeSpreadsheetResponse = async (
   const locked = new Set(
     Object.keys(locks).filter((key) => locks[key] === true)
   );
-  const bytes = protectSpreadsheet(result.workbook, state, locked);
+  const bytes = protectSpreadsheet(
+    resetSpreadsheetPicturePlaceholders(result.workbook, state, {
+      lockPosition: true,
+    }),
+    state,
+    locked
+  );
   const nextObjectKey = objectKey(
     "responses",
     response.id,

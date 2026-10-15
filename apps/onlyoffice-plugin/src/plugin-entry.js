@@ -80,6 +80,9 @@ function normalizeRuntimeOptions() {
     spreadsheetBindings: isRecord(options.spreadsheetBindings)
       ? options.spreadsheetBindings
       : {},
+    spreadsheetPictureFrames: Array.isArray(options.spreadsheetPictureFrames)
+      ? options.spreadsheetPictureFrames
+      : [],
     formId: firstString(options.formId),
     operationCapability: firstString(options.operationCapability),
     operationId: firstString(options.operationId),

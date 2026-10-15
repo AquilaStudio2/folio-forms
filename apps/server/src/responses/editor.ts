@@ -28,6 +28,7 @@ import {
 } from "../editor/leases";
 import { nativeFields } from "../forms/query";
 import { spreadsheetContractForTemplate } from "../forms/spreadsheet-fields";
+import { spreadsheetPictureFramesForTemplate } from "../forms/spreadsheet-picture-frames";
 import { fail } from "../http/errors";
 import { validateId, jsonRecord } from "../http/input";
 import type { FormWithDocuments } from "../model-types";
@@ -256,6 +257,9 @@ export async function correctionEditorConfig(
               response.publishedTemplateId,
               readSpreadsheetWorkbook(await readObject(sourceObjectKey))
             ),
+            spreadsheetPictureFrames: await spreadsheetPictureFramesForTemplate(
+              response.publishedTemplateId
+            ),
           }
         : {}),
       capabilities: {
@@ -405,6 +409,10 @@ export async function userEditorConfig(
                   await readObject(response.draftObjectKey)
                 )
               ),
+              spreadsheetPictureFrames:
+                await spreadsheetPictureFramesForTemplate(
+                  response.publishedTemplateId
+                ),
             }
           : {}),
         lease: editorLeaseBridge(lease),

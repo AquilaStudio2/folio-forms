@@ -601,6 +601,7 @@ export function registerFormAuthoringRoutes(
         return {
           submissions: submissions.map((submission) =>
             submissionSummary(submission, {
+              documentKind: submission.form.documentKind,
               formPublicId: submission.form.publicId,
               formTitle: submission.form.title,
               userEmail: submission.owner.email,

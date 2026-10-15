@@ -29,6 +29,14 @@ export const spreadsheetBindingSchema = z
           prefillPolicy: z
             .enum(["editable", "lock_when_available"])
             .default("editable"),
+          type: z.enum([
+            "text",
+            "number",
+            "date",
+            "dropdown",
+            "boolean",
+            "picture",
+          ]),
         })
         .strict()
     ),
@@ -51,7 +59,22 @@ export const spreadsheetBindingSchema = z
     version: z.literal(1),
   })
   .strict()
+  // oxlint-disable-next-line complexity -- Validate identity uniqueness and type-specific field rules together.
   .superRefine((bindings, context) => {
+    for (const field of bindings.fields) {
+      if (
+        field.type === "picture" &&
+        (field.computed ||
+          field.prefillPointer !== null ||
+          field.prefillPolicy !== "editable" ||
+          field.options.length > 0)
+      ) {
+        context.addIssue({
+          code: "custom",
+          message: "Picture fields cannot use formulas, Prefill, or options",
+        });
+      }
+    }
     const rootKeys = bindings.fields.map((field) => field.key);
     if (bindings.table) {
       rootKeys.push(bindings.table.key);

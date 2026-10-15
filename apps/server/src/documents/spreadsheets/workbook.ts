@@ -18,6 +18,7 @@ import type {
   SpreadsheetField,
   SpreadsheetColumn,
 } from "./contract";
+import { readSpreadsheetPictures } from "./picture-reader";
 
 const mainNamespace =
   "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -506,6 +507,7 @@ export const extractSpreadsheetData = (
 } => {
   const data: Record<string, unknown> = {};
   const errors: { address: string; message: string }[] = [];
+  const pictures = readSpreadsheetPictures(workbook, contract);
   const read = (
     address: string,
     field: SpreadsheetField | SpreadsheetColumn
@@ -530,6 +532,15 @@ export const extractSpreadsheetData = (
   };
   for (const field of contract.fields) {
     const range = contract.locations[field.anchor] as SpreadsheetRange;
+    if (field.type === "picture") {
+      if (required && field.required && !pictures.has(field.id)) {
+        errors.push({
+          address: `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`,
+          message: `Required picture: ${field.label}`,
+        });
+      }
+      continue;
+    }
     data[field.key] = read(
       `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`,
       field

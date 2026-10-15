@@ -4,6 +4,7 @@ import { Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
+import { DocumentKindBadge } from "@/components/document-kind-badge";
 import { Badge, Button, Card, Input, Notice, Spinner } from "@/components/ui";
 import { ApiError, apiGet, formatDate } from "@/lib/api";
 import type {
@@ -327,7 +328,12 @@ const AdminResultsRoute = () => {
                     key={result.id}
                   >
                     <td className="px-5 py-4">
-                      <div className="font-semibold">{result.formTitle}</div>
+                      <div className="flex flex-wrap items-center gap-2">
+                        <span className="font-semibold">
+                          {result.formTitle}
+                        </span>
+                        <DocumentKindBadge documentKind={result.documentKind} />
+                      </div>
                       <div className="mt-1 font-mono text-xs text-[var(--ink-soft)]">
                         {result.formPublicId}
                       </div>

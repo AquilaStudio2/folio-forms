@@ -27,6 +27,7 @@ import {
   pluginIndexResponse,
   pluginOrigins,
   pluginScriptResponse,
+  pluginSettingsIconResponse,
 } from "../plugin-assets";
 import { nativePdfDocument } from "../responses/native-document";
 import { DOCX_CONTENT_TYPE, objectExists, streamObject } from "../storage";
@@ -106,6 +107,8 @@ export function registerOnlyOfficeRoutes(
               "onChangeContentControl",
               "onTargetPositionChanged",
             ],
+            icons:
+              "resources/%theme-type%(light|dark)/settings.%extension%(svg)",
             initData: "",
             initDataType: "none",
             initOnSelectionChanged: true,
@@ -125,6 +128,12 @@ export function registerOnlyOfficeRoutes(
     .get("/onlyoffice-plugin/", pluginIndexResponse)
     .get("/onlyoffice-plugin/index.html", pluginIndexResponse)
     .get("/onlyoffice-plugin/plugin.js", pluginScriptResponse)
+    .get("/onlyoffice-plugin/resources/light/settings.svg", () =>
+      pluginSettingsIconResponse("light")
+    )
+    .get("/onlyoffice-plugin/resources/dark/settings.svg", () =>
+      pluginSettingsIconResponse("dark")
+    )
     .post(
       "/onlyoffice/callback",
       async ({ request }) => {

@@ -361,6 +361,94 @@ describe("inline search feedback", () => {
 });
 
 describe("admin form catalog", () => {
+  it("renders each template's document kind", async () => {
+    fetchMock.mockResolvedValueOnce(
+      Response.json(
+        payload([
+          form(1, { documentKind: "docx" }),
+          form(2, { documentKind: "xlsx" }),
+        ])
+      )
+    );
+    await mount();
+    for (const [title, label] of [
+      ["Form 1", "DOCX"],
+      ["Form 2", "Excel (XLSX)"],
+    ]) {
+      const row = screen
+        .getByRole("heading", { name: title })
+        .closest("div.min-w-0")?.parentElement?.parentElement;
+      expect(row).toHaveTextContent(label);
+    }
+  });
+
+  it("resets the page for document kind changes and preserves search and status across pagination", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const page = Number(new URL(String(input)).searchParams.get("page"));
+      return Response.json(
+        payload([form(page, { documentKind: "xlsx" })], page, 25)
+      );
+    });
+    await mount();
+    vi.useFakeTimers();
+    fireEvent.change(searchInput(), { target: { value: "energy" } });
+    await advance(2000);
+    vi.useRealTimers();
+    await chooseStatus("เผยแพร่แล้ว");
+    fireEvent.click(screen.getByRole("button", { name: "หน้าถัดไป" }));
+    await flush();
+    expectQuery({ page: "2", search: "energy", status: "published" });
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: "ประเภทเอกสาร" }));
+    await user.click(
+      screen.getByRole("option", { exact: true, name: "Excel (XLSX)" })
+    );
+    await flush();
+    expectQuery({
+      documentKind: "xlsx",
+      page: "1",
+      search: "energy",
+      status: "published",
+    });
+    fireEvent.click(screen.getByRole("button", { name: "หน้าถัดไป" }));
+    await flush();
+    expectQuery({
+      documentKind: "xlsx",
+      page: "2",
+      search: "energy",
+      status: "published",
+    });
+    await user.click(screen.getByRole("combobox", { name: "ประเภทเอกสาร" }));
+    await user.click(screen.getByRole("option", { exact: true, name: "DOCX" }));
+    await flush();
+    expectQuery({
+      documentKind: "docx",
+      page: "1",
+      search: "energy",
+      status: "published",
+    });
+    await user.click(screen.getByRole("combobox", { name: "ประเภทเอกสาร" }));
+    await user.click(
+      screen.getByRole("option", { exact: true, name: "ทั้งหมด" })
+    );
+    await flush();
+    expectQuery({ page: "1", search: "energy", status: "published" });
+  });
+
+  it("shows a filtered empty state when only document kind is selected", async () => {
+    await mount();
+    fetchMock.mockResolvedValueOnce(Response.json(payload([])));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole("combobox", { name: "ประเภทเอกสาร" }));
+    await user.click(
+      screen.getByRole("option", { exact: true, name: "Excel (XLSX)" })
+    );
+    await flush();
+    expect(
+      screen.getByRole("heading", { name: "ไม่พบแบบฟอร์มที่ตรงกับการค้นหา" })
+    ).toBeVisible();
+  });
+
   it("loads page one with no filters and renders all ten returned records", async () => {
     fetchMock.mockImplementation(async () =>
       Response.json(

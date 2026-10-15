@@ -97,7 +97,7 @@ export interface SpreadsheetResultField {
   id: string;
   key: string;
   label: string;
-  type: "text" | "number" | "date" | "dropdown" | "boolean";
+  type: "text" | "number" | "date" | "dropdown" | "boolean" | "picture";
   required: boolean;
   computed: boolean;
   options: string[];
@@ -193,6 +193,7 @@ export interface ResponseRevisionsResponse {
 }
 export type AdminResultState = "draft" | "submitted";
 export interface AdminResult {
+  documentKind?: DocumentKind;
   createdAt: string;
   formPublicId: string;
   formTitle: string;

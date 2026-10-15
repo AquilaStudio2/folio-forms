@@ -12,7 +12,9 @@ export const createHarness = ({
   action = "fill",
   documentKind = "docx",
   spreadsheetBindings = { fields: [], table: null, version: 1 },
+  spreadsheetPictureFrames = [],
   spreadsheetSelection,
+  browserGlobals = {},
   capabilityResponses = [],
   clipboard,
   controls = [],
@@ -28,6 +30,7 @@ export const createHarness = ({
   const bridgeId = "bridge-test-1";
   const messages = [];
   const messageListeners = [];
+  const windowEventListeners = new Map();
   const editorEvents = new Map();
   const elements = new Map();
   const requests = [];
@@ -240,6 +243,7 @@ export const createHarness = ({
         publicId: "public-id",
         responseId: "response-id",
         spreadsheetBindings,
+        spreadsheetPictureFrames,
         tagAliases,
         targetId: "target-id",
       },
@@ -279,6 +283,9 @@ export const createHarness = ({
       if (type === "message") {
         messageListeners.push(listener);
       }
+      const callbacks = windowEventListeners.get(type) || [];
+      callbacks.push(listener);
+      windowEventListeners.set(type, callbacks);
     },
     clearTimeout(timer) {
       if (timer) {
@@ -456,6 +463,7 @@ export const createHarness = ({
     },
   };
   const context = {
+    ...browserGlobals,
     AbortController,
     Api,
     Asc: window.Asc,
@@ -485,6 +493,11 @@ export const createHarness = ({
     emitEditorEvent(name, value) {
       for (const callback of editorEvents.get(name) || []) {
         callback(value);
+      }
+    },
+    emitWindowEvent(type) {
+      for (const listener of windowEventListeners.get(type) || []) {
+        listener();
       }
     },
     expireCapabilityRequests() {
@@ -522,6 +535,17 @@ export const createHarness = ({
     parentOrigin,
     parentWindow,
     requests,
+    async runPictureGuardTimer() {
+      const timer = timers.find(
+        (item) => item.milliseconds === 750 && !item.cancelled
+      );
+      if (!timer) {
+        return false;
+      }
+      timer.cancelled = true;
+      await timer.callback();
+      return true;
+    },
     saveCalls,
     setSelection(nextSelection) {
       selectionState.currentControl = nextSelection?.currentControl;

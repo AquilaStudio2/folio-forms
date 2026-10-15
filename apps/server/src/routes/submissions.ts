@@ -7,7 +7,10 @@ import { requireIdentity } from "../auth/identity";
 import { responsePicturePresence } from "../documents/pictures";
 import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
 import { receiptField } from "../forms/query";
-import { spreadsheetBindingsForTemplate } from "../forms/spreadsheet-fields";
+import {
+  spreadsheetPicturePresence,
+  spreadsheetBindingsForTemplate,
+} from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 import { jsonRecord, validateId } from "../http/input";
 import {
@@ -109,14 +112,16 @@ export function registerSubmissionRoutes(
       );
       const originalAvailable = await objectExists(submission.objectKey);
       const pictureFields =
+        submission.response?.publishedTemplate?.manifest?.fields.filter(
+          (field) => field.type === FieldType.picture
+        ) ?? [];
+      const picturePresence =
         submission.form.documentKind === "xlsx"
-          ? []
-          : (submission.response?.publishedTemplate?.manifest?.fields.filter(
-              (field) => field.type === FieldType.picture
-            ) ?? []);
+          ? spreadsheetPicturePresence
+          : responsePicturePresence;
       const originalPictures =
         originalAvailable && pictureFields.length > 0
-          ? responsePicturePresence(
+          ? picturePresence(
               await readObject(submission.objectKey),
               pictureFields
             )
@@ -126,7 +131,7 @@ export function registerSubmissionRoutes(
         const documentAvailable = await objectExists(correction.objectKey);
         const pictures =
           documentAvailable && pictureFields.length > 0
-            ? responsePicturePresence(
+            ? picturePresence(
                 await readObject(correction.objectKey),
                 pictureFields
               )

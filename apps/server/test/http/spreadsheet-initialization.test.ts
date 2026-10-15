@@ -6,6 +6,10 @@ import { Prisma, prisma } from "@onlyoffice/db";
 import { tokenDigest } from "../../src/digests";
 import { spreadsheetBindingSchema } from "../../src/documents/spreadsheets/contract";
 import {
+  overlaySpreadsheetPictures,
+  readSpreadsheetPictures,
+} from "../../src/documents/spreadsheets/pictures";
+import {
   readSpreadsheetWorkbook,
   resolveSpreadsheetContract,
   XLSX_CONTENT_TYPE,
@@ -49,11 +53,23 @@ const bindings = spreadsheetBindingSchema.parse({
       prefillPointer: "/account/active",
       prefillPolicy: "lock_when_available",
     },
+    {
+      id: "folio_photo",
+      anchor: "folio_photo",
+      key: "photo",
+      label: "Photo",
+      type: "picture",
+      required: true,
+    },
   ],
   table: null,
   version: 1,
 });
-const names = { folio_active: "'Form'!$B$1", folio_score: "'Form'!$A$1" };
+const names = {
+  folio_active: "'Form'!$B$1",
+  folio_score: "'Form'!$A$1",
+  folio_photo: "'Form'!$C$1",
+};
 const bytes = fixtureWorkbook({ cells: [], merges: [], names });
 const contract = resolveSpreadsheetContract(
   bindings,
@@ -103,11 +119,13 @@ beforeAll(async () => {
     data: {
       configurationHash: id,
       fields: {
-        create: bindings.fields.map((field) => ({
-          tag: field.key,
-          pointer: field.prefillPointer as string,
-          policy: field.prefillPolicy,
-        })),
+        create: bindings.fields
+          .filter((field) => field.prefillPointer)
+          .map((field) => ({
+            tag: field.key,
+            pointer: field.prefillPointer as string,
+            policy: field.prefillPolicy,
+          })),
       },
       formId: id,
     },
@@ -241,6 +259,70 @@ test("initialization commits canonical bytes and retires the superseded object",
       },
     })
   ).toBe(0);
+});
+
+test("legacy template photos become empty frames once, and resumed drafts retain user replacements", async () => {
+  const response = await draft();
+  const png = Uint8Array.from(
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6FoUAAAAASUVORK5CYII=",
+      "base64"
+    )
+  );
+  const images = new Map([
+    ["folio_photo", { bytes: png, height: 952_500, width: 952_500 }],
+  ]);
+  const legacyTemplate = overlaySpreadsheetPictures(bytes, contract, images);
+  await putObject(
+    response.draftObjectKey as string,
+    legacyTemplate,
+    XLSX_CONTENT_TYPE
+  );
+  const prepared = await initializeSpreadsheetResponse(response, {
+    processSpreadsheet: () =>
+      Promise.resolve({
+        workbook: overlaySpreadsheetPictures(
+          initializedBytes,
+          contract,
+          images
+        ),
+      }),
+  });
+  objects.push(prepared.draftObjectKey as string);
+  const savedBytes = await readObject(prepared.draftObjectKey as string);
+  const saved = readSpreadsheetWorkbook(savedBytes);
+  expect(readSpreadsheetPictures(saved, contract).size).toBe(0);
+  expect(
+    readSpreadsheetPictures(saved, contract, { includePlaceholders: true }).get(
+      "folio_photo"
+    )
+  ).toMatchObject({ width: 952_500, height: 952_500 });
+  expect(await objectExists(response.draftObjectKey as string)).toBe(false);
+
+  const replaced = overlaySpreadsheetPictures(savedBytes, contract, images);
+  await putObject(
+    prepared.draftObjectKey as string,
+    replaced,
+    XLSX_CONTENT_TYPE
+  );
+  const persisted = await prisma.response.findUniqueOrThrow({
+    where: { id: response.id },
+    include: { prefillSnapshot: true },
+  });
+  const resumed = await initializeSpreadsheetResponse(persisted, {
+    processSpreadsheet: () => {
+      throw new Error("Resuming must preserve the user's replacement image");
+    },
+  });
+  expect(resumed.draftObjectKey).toBe(prepared.draftObjectKey);
+  const resumedBytes = await readObject(resumed.draftObjectKey as string);
+  expect(resumedBytes).toEqual(replaced);
+  expect(
+    readSpreadsheetPictures(
+      readSpreadsheetWorkbook(resumedBytes),
+      contract
+    ).get("folio_photo")?.bytes
+  ).toEqual(png);
 });
 
 test("two initialization requests converge and remove the losing artifact", async () => {

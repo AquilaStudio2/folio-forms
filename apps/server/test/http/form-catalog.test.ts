@@ -203,6 +203,61 @@ test("search matches partial title OR description case-insensitively and trims w
   expect(await catalog(searchQuery(`${searchMarker}-ENERGY`))).toEqual(body);
 });
 
+test("document kind filters combine with search, status and pagination using exact totals", async () => {
+  const excelForms = await Promise.all(
+    Array.from({ length: 12 }, (_, index) =>
+      prisma.form.create({
+        data: {
+          createdBy: adminId,
+          documentKind: "xlsx",
+          publicId: crypto.randomUUID().replaceAll("-", ""),
+          status: index < 11 ? "draft" : "published",
+          title: `${searchMarker} Excel ${index}`,
+          updatedAt: new Date(Date.now() + 120_000 - index * 1000),
+        },
+      })
+    )
+  );
+  const docxForms = [...forms];
+  forms.push(...excelForms);
+  const first = await catalog(
+    searchQuery(searchMarker, { documentKind: "xlsx", status: "draft" })
+  );
+  const second = await catalog(
+    searchQuery(searchMarker, {
+      documentKind: "xlsx",
+      page: "2",
+      status: "draft",
+    })
+  );
+  expect(publicIds([...first.forms, ...second.forms])).toEqual(
+    publicIds(excelForms.slice(0, 11))
+  );
+  expect(first.pagination).toEqual({
+    page: 1,
+    pageSize: 10,
+    total: 11,
+    totalPages: 2,
+  });
+  expect(second.pagination).toEqual({
+    page: 2,
+    pageSize: 10,
+    total: 11,
+    totalPages: 2,
+  });
+  expect(first.forms.every(({ documentKind }) => documentKind === "xlsx")).toBe(
+    true
+  );
+  const docx = await catalog(
+    searchQuery(searchMarker, { documentKind: "docx" })
+  );
+  expect(publicIds(docx.forms)).toEqual(publicIds(docxForms.slice(0, 10)));
+  expect(docx.pagination.total).toBe(31);
+  expect(
+    await catalog(searchQuery(searchMarker, { documentKind: "all" }))
+  ).toEqual(await catalog(searchQuery(searchMarker)));
+});
+
 test("search supports Thai substrings and null descriptions", async () => {
   const thai = await catalog(searchQuery(`${searchMarker}พลัง`));
   expect(thai.forms).toHaveLength(1);
@@ -390,6 +445,7 @@ test.each(["", "DRAFT", "unknown", " draft"])(
 
 test.each([
   "page=1&page=2",
+  "documentKind=docx&documentKind=xlsx",
   "status=draft&status=published",
   "search=one&search=two",
 ])("rejects duplicate query parameters: %s", async (query) => {
@@ -397,6 +453,17 @@ test.each([
   expect(response.status).toBe(400);
   expect(await response.json()).toMatchObject({ error: "invalid_request" });
 });
+
+test.each(["", "DOCX", "excel", "pdf", " xlsx"])(
+  "rejects invalid document kind %s",
+  async (documentKind) => {
+    const response = await catalogResponse(
+      new URLSearchParams({ documentKind }).toString()
+    );
+    expect(response.status).toBe(400);
+    expect(await response.json()).toMatchObject({ error: "invalid_request" });
+  }
+);
 
 test("accepts 200 search characters and rejects 201 after trimming", async () => {
   const accepted = await catalog(searchQuery(` ${"z".repeat(200)} `));
@@ -549,4 +616,84 @@ test("deleting the sole item on page four automatically returns ten items on pag
     totalPages: 3,
   });
   expect(publicIds(after.forms)).toEqual(publicIds(forms.slice(20, 30)));
+});
+
+test("response and submission lists report the parent form document kind", async () => {
+  const [docx] = forms;
+  if (!docx) {
+    throw new Error("Catalog fixtures are missing");
+  }
+  const xlsx = await prisma.form.create({
+    data: {
+      createdBy: adminId,
+      documentKind: "xlsx",
+      publicId: crypto.randomUUID().replaceAll("-", ""),
+      title: `${searchMarker} Excel responses`,
+    },
+  });
+  forms.push(xlsx);
+  await Promise.all(
+    [docx, xlsx].map(async (form) => {
+      const published = await prisma.publishedTemplate.create({
+        data: {
+          contentHash: "fixture-hash",
+          documentKey: crypto.randomUUID(),
+          formId: form.id,
+          objectKey: `catalog-${form.id}-published`,
+          version: 1,
+        },
+      });
+      const response = await prisma.response.create({
+        data: {
+          draftDocumentKey: crypto.randomUUID(),
+          draftObjectKey: `catalog-${form.id}-draft`,
+          formId: form.id,
+          publishedTemplateId: published.id,
+          publishedVersion: 1,
+          userId: adminId,
+        },
+      });
+      const submission = await prisma.submission.create({
+        data: {
+          data: {},
+          documentKey: crypto.randomUUID(),
+          formId: form.id,
+          objectKey: `catalog-${form.id}-submission`,
+          responseId: response.id,
+          userId: adminId,
+        },
+      });
+      await Promise.all(
+        (
+          [
+            ["/api/responses/me", "responses", response.id],
+            [
+              `/api/admin/results?form=${form.publicId}`,
+              "results",
+              response.id,
+            ],
+            [
+              `/api/admin/forms/${form.publicId}/submissions`,
+              "submissions",
+              submission.id,
+            ],
+          ] as const
+        ).map(async ([path, key, id]) => {
+          const result = await app.handle(
+            new Request(`http://test.local${path}`, {
+              headers: { Authorization: `Bearer ${adminBearer}` },
+            })
+          );
+          expect(result.status).toBe(200);
+          const body = (await result.json()) as Record<
+            string,
+            { id: string; documentKind: string }[]
+          >;
+          expect(body[key]?.find((item) => item.id === id)).toMatchObject({
+            documentKind: form.documentKind,
+          });
+        })
+      );
+    })
+  );
 });

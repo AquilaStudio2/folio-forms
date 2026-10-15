@@ -1,4 +1,4 @@
-// oxlint-disable func-style sort-keys no-implicit-globals consistent-function-scoping complexity prefer-named-capture-group require-unicode-regexp avoid-new prefer-await-to-callbacks no-empty-function prefer-await-to-then prefer-destructuring logical-assignment-operators func-names prefer-arrow-callback no-loop-func no-use-before-define throw-new-error no-await-in-loop -- ONLYOFFICE commands are serialized into the editor sandbox.
+import { spreadsheetPicturePlaceholder } from "../../server/src/documents/spreadsheets/picture-placeholder.ts";
 import { createApi } from "./api.js";
 import { createBridge } from "./bridge.js";
 import { ACTIONS } from "./constants.js";
@@ -13,6 +13,12 @@ import {
   spreadsheetValidationCommand,
   spreadsheetHeadersCommand,
 } from "./spreadsheet-commands.js";
+// oxlint-disable func-style sort-keys no-implicit-globals consistent-function-scoping complexity prefer-named-capture-group require-unicode-regexp avoid-new prefer-await-to-callbacks no-empty-function prefer-await-to-then prefer-destructuring logical-assignment-operators func-names prefer-arrow-callback no-loop-func no-use-before-define throw-new-error no-await-in-loop -- ONLYOFFICE commands are serialized into the editor sandbox.
+import {
+  spreadsheetPictureCommand,
+  spreadsheetPictureReconcileCommand,
+  readSpreadsheetPictureFile,
+} from "./spreadsheet-pictures.js";
 import {
   selectionPosition,
   tableSelection,
@@ -26,6 +32,7 @@ export function initializeSpreadsheet(options, setStatus) {
   let revision;
   let editing = null;
   let busy = false;
+  let pictureSavePending = false;
 
   let renderList = () => {};
   let refreshAfterAction = () => {};
@@ -193,6 +200,26 @@ export function initializeSpreadsheet(options, setStatus) {
     bridge.setDirtyState(true);
     return selected;
   }
+  async function ensurePictureFrame(field) {
+    window.Asc.scope = window.Asc.scope || {};
+    window.Asc.scope.folioSpreadsheetPicture = {
+      ...spreadsheetPicturePlaceholder,
+      placeholder: true,
+      anchor: field.anchor,
+      id: field.id,
+    };
+    try {
+      if (
+        (await office.callCommandResult(spreadsheetPictureCommand, true)) !==
+        true
+      ) {
+        throw new Error("สร้างกรอบรูปไม่ได้ กดปุ่มสร้างกรอบรูปอีกครั้งเพื่อลองใหม่");
+      }
+      bridge.setDirtyState(true);
+    } finally {
+      delete window.Asc.scope.folioSpreadsheetPicture;
+    }
+  }
   if (options.action === ACTIONS.TEMPLATE_EDIT) {
     const existing = select("ช่องที่บันทึกแล้ว", [["", "เลือกช่องเพื่อแก้ไข"]]);
     const kind = select("กำหนดช่วงที่เลือกเป็น", [
@@ -210,6 +237,7 @@ export function initializeSpreadsheet(options, setStatus) {
       ["number", "ตัวเลข"],
       ["dropdown", "รายการเลือก"],
       ["boolean", "ใช่ / ไม่ใช่"],
+      ["picture", "รูปภาพ (JPEG / PNG)"],
     ]);
     const required = input("บังคับกรอก", "checkbox");
     const choices = label(
@@ -261,12 +289,22 @@ export function initializeSpreadsheet(options, setStatus) {
     const updateControls = () => {
       kind.disabled = Boolean(editing);
       const table = kind.value === "table";
+      const pictureOption = [...type.children].find(
+        (option) => option.value === "picture"
+      );
+      pictureOption.hidden = kind.value === "column";
+      pictureOption.disabled = kind.value === "column";
+      if (kind.value === "column" && type.value === "picture") {
+        type.value = "text";
+      }
       show(type, !table);
       show(required, !table);
       show(choices, !table && type.value === "dropdown");
       show(headers, table && !editing);
       save.textContent = editing ? "บันทึกการแก้ไข" : "เพิ่มช่องจากช่วงที่เลือก";
       remove.hidden = !editing;
+      restorePicture.hidden =
+        editingKind !== "field" || editing?.type !== "picture";
       save.disabled = editing?.computed === true;
       message.textContent = selected
         ? `${selected.sheet}!${selected.address}`
@@ -412,8 +450,12 @@ export function initializeSpreadsheet(options, setStatus) {
         }
       } else if (kind.value !== "column") {
         value.anchor = editing?.anchor || bindingId;
-        value.prefillPointer = editing?.prefillPointer ?? null;
-        value.prefillPolicy = editing?.prefillPolicy || "editable";
+        value.prefillPointer =
+          value.type === "picture" ? null : (editing?.prefillPointer ?? null);
+        value.prefillPolicy =
+          value.type === "picture"
+            ? "editable"
+            : editing?.prefillPolicy || "editable";
       }
       if (kind.value !== "column" && !editing) {
         await anchor(value.anchor, body);
@@ -436,6 +478,10 @@ export function initializeSpreadsheet(options, setStatus) {
       drafts.delete(draftKey());
       drafts.delete(`${kind.value}:${value.id}`);
       loadEntry([kind.value, value]);
+      if (kind.value === "field" && value.type === "picture") {
+        await ensurePictureFrame(value);
+        setStatus("บันทึกฟิลด์และกรอบรูปแล้ว กรุณาบันทึกต้นแบบ", "success");
+      }
       if (newTable) {
         window.Asc.scope.folioSpreadsheetTableBorders = current;
         // Recalculate after formatting so ONLYOFFICE redraws the borders now.
@@ -464,6 +510,14 @@ export function initializeSpreadsheet(options, setStatus) {
       loadEntry(null);
     });
     remove.className = "secondary-action";
+    const restorePicture = button("สร้างกรอบรูปอีกครั้ง", async () => {
+      if (editingKind !== "field" || editing?.type !== "picture") {
+        return;
+      }
+      await ensurePictureFrame(editing);
+      setStatus("เตรียมกรอบรูปแล้ว กรุณาบันทึกต้นแบบ", "success");
+    });
+    restorePicture.className = "secondary-action";
     renderList = () => {
       entries = [
         ...(bindings?.fields || []).map((value) => ["field", value]),
@@ -541,7 +595,180 @@ export function initializeSpreadsheet(options, setStatus) {
     };
     renderList();
   } else {
-    message.textContent = "กรอกข้อมูลทุกช่องที่เทมเพลตอนุญาต หัวรายงานและโครงสร้างถูกล็อก";
+    message.hidden = true;
+    const pictureInputs = [];
+    const pictureFrames = (options.spreadsheetPictureFrames || []).filter(
+      (frame) =>
+        bindings?.fields?.some(
+          (field) =>
+            field.type === "picture" &&
+            field.id === frame.id &&
+            field.anchor === frame.anchor
+        )
+    );
+    let pictureObserved = {};
+    let pictureReconciliation = null;
+    let pictureTimer;
+    let pictureGuardStopped = false;
+    const reconcilePictures = async (force = false) => {
+      if (!pictureFrames.length) {
+        return;
+      }
+      if (pictureReconciliation) {
+        await pictureReconciliation;
+        if (!force) {
+          return;
+        }
+      }
+      pictureReconciliation = (async () => {
+        window.Asc.scope = window.Asc.scope || {};
+        window.Asc.scope.folioSpreadsheetPictureReconcile = {
+          frames: pictureFrames,
+          observed: pictureObserved,
+          force,
+          dataUrl: spreadsheetPicturePlaceholder.dataUrl,
+        };
+        try {
+          const raw = await office.callCommandResult(
+            spreadsheetPictureReconcileCommand,
+            true
+          );
+          const result = typeof raw === "string" ? JSON.parse(raw) : raw;
+          if (!result?.ok) {
+            throw new Error("ดูแลกรอบรูปไม่ได้ กรุณาลองอีกครั้งหรือเปิดแบบฟอร์มใหม่");
+          }
+          pictureObserved = result.observed;
+          if (result.changed) {
+            bridge.setDirtyState(true);
+          }
+        } finally {
+          delete window.Asc.scope.folioSpreadsheetPictureReconcile;
+        }
+      })().finally(() => {
+        pictureReconciliation = null;
+      });
+      await pictureReconciliation;
+    };
+    const schedulePictureGuard = () => {
+      if (pictureGuardStopped || !pictureFrames.length) {
+        return;
+      }
+      pictureTimer = window.setTimeout(async () => {
+        try {
+          if (!busy && !pictureSavePending && !document.hidden) {
+            await reconcilePictures();
+          }
+        } catch (error) {
+          setStatus(error.message || "ดูแลกรอบรูปไม่ได้ กรุณาลองอีกครั้ง", "error");
+        } finally {
+          schedulePictureGuard();
+        }
+      }, 750);
+    };
+    window.addEventListener("pagehide", () => {
+      pictureGuardStopped = true;
+      window.clearTimeout(pictureTimer);
+    });
+    schedulePictureGuard();
+    const runResponseAction = operations.runAction;
+    operations.runAction = async (...args) => {
+      if (busy || pictureSavePending) {
+        setStatus("มีการดำเนินการของฟอร์มกำลังทำงานอยู่", "pending");
+        return { ok: false, ignored: true };
+      }
+      pictureSavePending = true;
+      for (const upload of pictureInputs) {
+        upload.disabled = true;
+      }
+      try {
+        // Reconcile before freezing: Office drawing commands need edit access.
+        await reconcilePictures(true);
+        return await runResponseAction(...args);
+      } catch (error) {
+        const detail = error.message || "ดูแลกรอบรูปไม่ได้ กรุณาลองอีกครั้ง";
+        setStatus(detail, "error");
+        bridge.notifyParent(args[0], "failed", undefined, undefined, detail);
+        return { ok: false, error: detail };
+      } finally {
+        pictureSavePending = false;
+        for (const upload of pictureInputs) {
+          upload.disabled = false;
+        }
+      }
+    };
+    for (const field of bindings?.fields || []) {
+      if (field.type !== "picture") {
+        continue;
+      }
+      const upload = input(
+        `${field.label}${field.required ? " (จำเป็น)" : ""} · JPEG / PNG ไม่เกิน 10 MB`,
+        "file"
+      );
+      upload.accept = "image/png,image/jpeg";
+      pictureInputs.push(upload);
+      upload.addEventListener("change", () => {
+        const file = upload.files?.[0];
+        if (!file) {
+          return;
+        }
+        if (busy || pictureSavePending) {
+          upload.value = "";
+          setStatus(
+            "มีการดำเนินการของฟอร์มกำลังทำงานอยู่ กรุณาเลือกรูปอีกครั้ง",
+            "pending"
+          );
+          return;
+        }
+        busy = true;
+        for (const control of [...buttons, ...pictureInputs]) {
+          control.disabled = true;
+        }
+        Promise.resolve()
+          .then(async () => {
+            if (pictureReconciliation) {
+              await pictureReconciliation;
+            }
+            const frame = options.spreadsheetPictureFrames?.find(
+              (item) => item.id === field.id && item.anchor === field.anchor
+            );
+            if (!frame) {
+              throw new Error("ไม่พบข้อมูลกรอบรูปต้นแบบ กรุณาเปิดแบบฟอร์มใหม่");
+            }
+            const picture = await readSpreadsheetPictureFile(file);
+            window.Asc.scope = window.Asc.scope || {};
+            window.Asc.scope.folioSpreadsheetPicture = {
+              ...picture,
+              frame,
+              id: field.id,
+              anchor: field.anchor,
+            };
+            try {
+              if (
+                (await office.callCommandResult(
+                  spreadsheetPictureCommand,
+                  true
+                )) !== true
+              ) {
+                throw new Error("ใส่รูปภาพไม่ได้ กรุณาเลือกไฟล์เพื่อลองอีกครั้ง");
+              }
+              bridge.setDirtyState(true);
+              setStatus(`ใส่รูป ${field.label} แล้ว กรุณาบันทึก`, "success");
+            } finally {
+              delete window.Asc.scope.folioSpreadsheetPicture;
+            }
+          })
+          .catch((error) => {
+            setStatus(error.message || "ใส่รูปภาพไม่ได้ กรุณาลองอีกครั้ง", "error");
+          })
+          .finally(() => {
+            upload.value = "";
+            busy = false;
+            for (const control of [...buttons, ...pictureInputs]) {
+              control.disabled = false;
+            }
+          });
+      });
+    }
     if (bindings?.table) {
       const changeRows = async (action, index) => {
         if (!Number.isSafeInteger(index) || index < 0) {

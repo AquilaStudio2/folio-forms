@@ -7,6 +7,7 @@ import type {
   SpreadsheetBindings,
   SpreadsheetContract,
 } from "../documents/spreadsheets/contract";
+import { readSpreadsheetPictures } from "../documents/spreadsheets/pictures";
 import {
   readSpreadsheetWorkbook,
   resolveSpreadsheetContract,
@@ -84,7 +85,8 @@ const spreadsheetFieldType = (type: FieldType | null): string => {
     type === FieldType.text ||
     type === FieldType.number ||
     type === FieldType.date ||
-    type === FieldType.dropdown
+    type === FieldType.dropdown ||
+    type === FieldType.picture
   ) {
     return type;
   }
@@ -259,9 +261,9 @@ export const spreadsheetManifestFieldData = (bindings: SpreadsheetBindings) =>
   sharedSpreadsheetRows(bindings).map(
     ({ prefillPointer: _pointer, ...row }) => ({
       ...row,
-      pictureMaxBytes: null,
-      pictureMaxHeight: null,
-      pictureMaxWidth: null,
+      pictureMaxBytes: row.type === FieldType.picture ? 10 * 1024 * 1024 : null,
+      pictureMaxHeight: row.type === FieldType.picture ? 4096 : null,
+      pictureMaxWidth: row.type === FieldType.picture ? 4096 : null,
       placeholder: null,
     })
   );
@@ -339,10 +341,27 @@ export const spreadsheetScalarManifestFields = (
             value: option,
           }))
         : null,
-    pictureMaxBytes: null,
-    pictureMaxHeight: null,
-    pictureMaxWidth: null,
+    pictureMaxBytes: field.type === "picture" ? 10 * 1024 * 1024 : null,
+    pictureMaxHeight: field.type === "picture" ? 4096 : null,
+    pictureMaxWidth: field.type === "picture" ? 4096 : null,
     placeholder: null,
     tag: field.key,
     type: sharedType(field.type),
   }));
+
+export const spreadsheetPicturePresence = (
+  bytes: Uint8Array,
+  fields: readonly SpreadsheetStoredField[]
+): Record<string, boolean> => {
+  const workbook = readSpreadsheetWorkbook(bytes);
+  const contract = resolveSpreadsheetContract(
+    spreadsheetBindingsFromFields(fields),
+    workbook
+  );
+  const pictures = readSpreadsheetPictures(workbook, contract);
+  return Object.fromEntries(
+    contract.fields
+      .filter((field) => field.type === "picture")
+      .map((field) => [field.key, pictures.has(field.id)])
+  );
+};

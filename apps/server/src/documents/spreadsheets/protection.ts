@@ -30,7 +30,10 @@ export const spreadsheetInputRanges = (
   locked: ReadonlySet<string> = new Set()
 ): SpreadsheetRange[] => {
   const ranges = contract.fields
-    .filter((field) => !field.computed && !locked.has(field.key))
+    .filter(
+      (field) =>
+        !field.computed && field.type !== "picture" && !locked.has(field.key)
+    )
     .map((field) => contract.locations[field.anchor] as SpreadsheetRange);
   if (contract.table) {
     const body = contract.locations[contract.table.anchor] as SpreadsheetRange;
@@ -267,7 +270,9 @@ export const protectSpreadsheet = (
       formatRows: "1",
       insertColumns: "1",
       insertRows: "1",
-      objects: "1",
+      objects: contract.fields.some((field) => field.type === "picture")
+        ? "0"
+        : "1",
       password: "DAA7",
       scenarios: "1",
       selectLockedCells: "0",

@@ -118,6 +118,7 @@ export interface CallbackClaimInput {
 export interface EditorOptions {
   documentKind?: "docx" | "xlsx";
   spreadsheetBindings?: unknown;
+  spreadsheetPictureFrames?: unknown;
   action: PluginAction;
   capabilities: Partial<Record<EditorCapabilityAction, string>>;
   lease: {

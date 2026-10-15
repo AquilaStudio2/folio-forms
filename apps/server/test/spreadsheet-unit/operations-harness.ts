@@ -2,6 +2,12 @@
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 
+import { spreadsheetBindingSchema } from "../../src/documents/spreadsheets/contract";
+import {
+  overlaySpreadsheetPictures,
+  readSpreadsheetPictures,
+  synchronizeSpreadsheetPictureAnchors,
+} from "../../src/documents/spreadsheets/pictures";
 import { protectSpreadsheet } from "../../src/documents/spreadsheets/protection";
 import {
   readSpreadsheetWorkbook,
@@ -27,6 +33,7 @@ const state = resolveSpreadsheetContract(
 const base = protectSpreadsheet(raw, state);
 let output = raw;
 let savedBase = base;
+const publishedBase: { bytes?: Uint8Array } = {};
 let calls = 0;
 let workerInput: Uint8Array | undefined;
 let workerOptions: Record<string, unknown> = {};
@@ -43,6 +50,7 @@ mock.module("@onlyoffice/db", () => ({
     date: "date",
     dropdown: "dropdown",
     number: "number",
+    picture: "picture",
     table: "table",
     text: "text",
   },
@@ -59,7 +67,7 @@ mock.module("@onlyoffice/db", () => ({
     },
     form: { findUnique: () => Promise.resolve(form) },
     publishedTemplate: {
-      findUnique: () => Promise.resolve({ objectKey: "trusted.xlsx" }),
+      findUnique: () => Promise.resolve({ objectKey: "published.xlsx" }),
     },
     response: {
       findUnique: () =>
@@ -94,6 +102,9 @@ mock.module("../../src/storage", () => ({
     throw new Error("Unexpected storage write");
   },
   readObject: (key: string) => {
+    if (key === "published.xlsx") {
+      return Promise.resolve(publishedBase.bytes ?? savedBase);
+    }
     assert.equal(key, "trusted.xlsx");
     return Promise.resolve(savedBase);
   },
@@ -301,4 +312,382 @@ assert.equal(
   1
 );
 assert.equal(Object.hasOwn(published, "spreadsheetState"), false);
+// Picture answers stay embedded in the trusted workbook across draft and correction saves.
+const pictureBindings = spreadsheetBindingSchema.parse({
+  ...bindings,
+  fields: [
+    ...bindings.fields,
+    {
+      anchor: "folio_photo",
+      id: "folio_photo",
+      key: "photo",
+      label: "Photo",
+      required: true,
+      type: "picture",
+    },
+  ],
+});
+manifestRows = spreadsheetManifestFieldData(pictureBindings);
+const pictureRaw = mutatePart(raw, "xl/workbook.xml", (xml) =>
+  xml.replace(
+    "</definedNames>",
+    `<definedName name="folio_photo">'Form'!$G$2</definedName></definedNames>`
+  )
+);
+const pictureContract = resolveSpreadsheetContract(
+  pictureBindings,
+  readSpreadsheetWorkbook(pictureRaw)
+);
+const png = Uint8Array.from(
+  Buffer.from(
+    "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6FoUAAAAASUVORK5CYII=",
+    "base64"
+  )
+);
+const firstPicture = overlaySpreadsheetPictures(
+  pictureRaw,
+  pictureContract,
+  new Map([["folio_photo", { bytes: png, height: 9525, width: 9525 }]])
+);
+const drawingPath = Object.keys(
+  readSpreadsheetWorkbook(firstPicture).archive
+).find((name) => name.startsWith("xl/drawings/") && name.endsWith(".xml"));
+assert.ok(drawingPath);
+// A static logo shares the original image media and must survive mapped-image replacement.
+const trustedPictures = mutatePart(firstPicture, drawingPath, (xml) =>
+  xml.replace(
+    "</xdr:wsDr>",
+    `${xml
+      .slice(xml.indexOf("<xdr:oneCellAnchor"), xml.indexOf("</xdr:wsDr>"))
+      .replace('name="folio_picture_folio_photo"', 'name="Trusted logo"')
+      .replace('id="1"', 'id="2"')}</xdr:wsDr>`
+  )
+);
+savedBase = protectSpreadsheet(trustedPictures, pictureContract);
+output = trustedPictures;
+const pictureDraft = metadata("save-draft");
+const pictureSaved = await prepareSpreadsheetOperation(
+  pictureDraft,
+  savedBase,
+  heartbeat
+);
+assert.deepEqual(
+  readSpreadsheetPictures(
+    readSpreadsheetWorkbook(pictureSaved),
+    pictureContract
+  ).get("folio_photo")?.bytes,
+  png
+);
+assert.ok(!Object.hasOwn(pictureDraft.data ?? {}, "photo"));
+assert.deepEqual(pictureDraft.spreadsheetErrors, []);
+assert.ok(!(workerOptions.clearRanges as string[]).includes("G2:G2"));
+
+const withoutPicture = overlaySpreadsheetPictures(
+  savedBase,
+  pictureContract,
+  new Map()
+);
+const emptyPictureDraft = metadata("save-draft");
+const missingPictureSaved = await prepareSpreadsheetOperation(
+  emptyPictureDraft,
+  withoutPicture,
+  heartbeat
+);
+assert.equal(
+  readSpreadsheetPictures(
+    readSpreadsheetWorkbook(missingPictureSaved),
+    pictureContract
+  ).size,
+  0
+);
+await assert.rejects(
+  prepareSpreadsheetOperation(metadata("submit"), withoutPicture, heartbeat),
+  (error: unknown) =>
+    error instanceof SpreadsheetValidationError &&
+    error.errors.some(
+      (item) =>
+        item.address === "G2" && item.message === "Required picture: Photo"
+    )
+);
+const pictureSubmission = metadata("submit");
+await prepareSpreadsheetOperation(pictureSubmission, pictureSaved, heartbeat);
+assert.ok(!Object.hasOwn(pictureSubmission.data ?? {}, "photo"));
+
+const replacement = overlaySpreadsheetPictures(
+  savedBase,
+  pictureContract,
+  new Map([["folio_photo", { bytes: png, height: 19_050, width: 19_050 }]])
+);
+const alteredPictureLayout = mutatePart(
+  mutatePart(replacement, drawingPath, (xml) =>
+    xml.replace("Trusted logo", "Client logo")
+  ),
+  "xl/styles.xml",
+  (xml) => xml.replaceAll('locked="1"', 'locked="0"')
+);
+const pictureCorrection = metadata("save-correction");
+pictureCorrection.submissionId = "submission";
+const correctedPictureBytes = await prepareSpreadsheetOperation(
+  pictureCorrection,
+  alteredPictureLayout,
+  heartbeat
+);
+const correctedPictures = readSpreadsheetWorkbook(correctedPictureBytes);
+assert.equal(
+  readSpreadsheetPictures(correctedPictures, pictureContract).get("folio_photo")
+    ?.width,
+  19_050
+);
+assert.ok(!Object.hasOwn(pictureCorrection.data ?? {}, "photo"));
+assert.deepEqual(pictureCorrection.spreadsheetErrors, []);
+assert.ok(workerInput);
+assert.deepEqual(
+  workbookXml(workerInput).parse("xl/styles.xml"),
+  workbookXml(savedBase).parse("xl/styles.xml")
+);
+const drawingXml = workbookXml(correctedPictureBytes).parse(drawingPath);
+assert.ok(
+  descendants(drawingXml, "cNvPr").some(
+    (node) => node.attributes.name === "Trusted logo"
+  )
+);
+assert.ok(
+  !descendants(drawingXml, "cNvPr").some(
+    (node) => node.attributes.name === "Client logo"
+  )
+);
+assert.equal(
+  Object.keys(correctedPictures.archive).filter((name) =>
+    name.startsWith("xl/media/")
+  ).length,
+  2
+);
+// Publication provides frames for old mappings and never accepts admin photos as answers.
+draftRows = spreadsheetDraftFieldData(pictureBindings);
+const framedPublication = await prepareSpreadsheetOperation(
+  metadata("publish"),
+  trustedPictures,
+  heartbeat
+);
+assert.equal(
+  readSpreadsheetPictures(
+    readSpreadsheetWorkbook(framedPublication),
+    pictureContract
+  ).size,
+  0
+);
+assert.equal(
+  readSpreadsheetPictures(
+    readSpreadsheetWorkbook(framedPublication),
+    pictureContract,
+    {
+      includePlaceholders: true,
+    }
+  ).size,
+  1
+);
+savedBase = framedPublication;
+output = framedPublication;
+const frameDraft = await prepareSpreadsheetOperation(
+  metadata("save-draft"),
+  framedPublication,
+  heartbeat
+);
+assert.equal(
+  readSpreadsheetPictures(
+    readSpreadsheetWorkbook(frameDraft),
+    pictureContract,
+    {
+      includePlaceholders: true,
+    }
+  ).size,
+  1
+);
+const resumedFrame = await prepareSpreadsheetOperation(
+  metadata("save-draft"),
+  frameDraft,
+  heartbeat
+);
+for (const action of ["submit", "save-correction"] as const) {
+  const unchanged = metadata(action);
+  unchanged.submissionId = "submission";
+  // oxlint-disable-next-line no-await-in-loop -- Operations share the mocked worker state and must execute sequentially.
+  await assert.rejects(
+    prepareSpreadsheetOperation(unchanged, resumedFrame, heartbeat),
+    (error: unknown) =>
+      error instanceof SpreadsheetValidationError &&
+      error.errors.some((item) => item.message === "Required picture: Photo")
+  );
+}
+const actualReplacement = overlaySpreadsheetPictures(
+  resumedFrame,
+  pictureContract,
+  new Map([["folio_photo", { bytes: png, height: 19_050, width: 19_050 }]])
+);
+await prepareSpreadsheetOperation(
+  metadata("submit"),
+  actualReplacement,
+  heartbeat
+);
+output = pictureRaw;
+const legacyPublication = await prepareSpreadsheetOperation(
+  metadata("publish"),
+  pictureRaw,
+  heartbeat
+);
+assert.equal(
+  readSpreadsheetPictures(
+    readSpreadsheetWorkbook(legacyPublication),
+    pictureContract,
+    {
+      includePlaceholders: true,
+    }
+  ).size,
+  1
+);
+// Publication accepts admin movement; respondent layout keeps the trusted offsets and permits resizing.
+const adminLayout = overlaySpreadsheetPictures(
+  pictureRaw,
+  pictureContract,
+  new Map([
+    [
+      "folio_photo",
+      {
+        bytes: png,
+        columnOffset: 647_699,
+        height: 514_350,
+        rowOffset: 114_299,
+        width: 857_250,
+      },
+    ],
+  ])
+);
+const adminDrawingPath = Object.keys(
+  readSpreadsheetWorkbook(adminLayout).archive
+).find((name) => name.startsWith("xl/drawings/") && name.endsWith(".xml"));
+assert.ok(adminDrawingPath);
+const adminMoved = mutatePart(adminLayout, adminDrawingPath, (xml) =>
+  xml.replace("<xdr:row>1</xdr:row>", "<xdr:row>2</xdr:row>")
+);
+output = synchronizeSpreadsheetPictureAnchors(adminMoved, pictureBindings);
+const publishedMoved = await prepareSpreadsheetOperation(
+  metadata("publish"),
+  adminMoved,
+  heartbeat
+);
+assert.ok(workerInput);
+assert.equal(
+  readSpreadsheetWorkbook(workerInput).names.get("folio_photo")?.firstRow,
+  2
+);
+const movedContract = resolveSpreadsheetContract(
+  pictureBindings,
+  readSpreadsheetWorkbook(publishedMoved)
+);
+const movedPicture = readSpreadsheetPictures(
+  readSpreadsheetWorkbook(publishedMoved),
+  movedContract,
+  { includePlaceholders: true }
+).get("folio_photo");
+assert.equal(movedPicture?.columnOffset, 647_699);
+assert.equal(movedPicture?.rowOffset, 114_299);
+assert.equal(movedPicture?.height, 514_350);
+assert.equal(movedPicture?.width, 857_250);
+savedBase = publishedMoved;
+output = publishedMoved;
+const userResize = overlaySpreadsheetPictures(
+  publishedMoved,
+  movedContract,
+  new Map([
+    [
+      "folio_photo",
+      {
+        bytes: png,
+        columnOffset: 1,
+        height: 600_000,
+        rowOffset: 2,
+        width: 1_000_000,
+      },
+    ],
+  ])
+);
+const resized = await prepareSpreadsheetOperation(
+  metadata("save-draft"),
+  userResize,
+  heartbeat
+);
+const resizedPicture = readSpreadsheetPictures(
+  readSpreadsheetWorkbook(resized),
+  movedContract
+).get("folio_photo");
+assert.equal(resizedPicture?.width, 1_000_000);
+assert.equal(resizedPicture?.height, 600_000);
+assert.equal(resizedPicture?.columnOffset, 647_699);
+assert.equal(resizedPicture?.rowOffset, 114_299);
+const [responseLock] = descendants(
+  workbookXml(resized).parse(adminDrawingPath),
+  "picLocks"
+);
+assert.equal(responseLock?.attributes.noMove, "1");
+assert.equal(responseLock?.attributes.noResize, "0");
+const [templateLock] = descendants(
+  workbookXml(publishedMoved).parse(adminDrawingPath),
+  "picLocks"
+);
+assert.equal(templateLock?.attributes.noMove, undefined);
+
+// The immutable published frame remains authoritative after the current draft was resized.
+publishedBase.bytes = publishedMoved;
+savedBase = resized;
+output = resized;
+const { spreadsheetPictureFramesForTemplate } =
+  await import("../../src/forms/spreadsheet-picture-frames");
+const initialFrames = await spreadsheetPictureFramesForTemplate("published");
+assert.equal(initialFrames[0]?.width, 857_250);
+assert.equal(initialFrames[0]?.height, 514_350);
+const deletedPhoto = overlaySpreadsheetPictures(
+  resized,
+  movedContract,
+  new Map()
+);
+const restoredPhoto = await prepareSpreadsheetOperation(
+  metadata("save-draft"),
+  deletedPhoto,
+  heartbeat
+);
+const restoredWorkbook = readSpreadsheetWorkbook(restoredPhoto);
+assert.equal(readSpreadsheetPictures(restoredWorkbook, movedContract).size, 0);
+const restoredFrame = readSpreadsheetPictures(restoredWorkbook, movedContract, {
+  includePlaceholders: true,
+}).get("folio_photo");
+assert.equal(restoredFrame?.width, 857_250);
+assert.equal(restoredFrame?.height, 514_350);
+assert.equal(restoredFrame?.columnOffset, 647_699);
+assert.equal(restoredFrame?.rowOffset, 114_299);
+await assert.rejects(
+  prepareSpreadsheetOperation(metadata("submit"), deletedPhoto, heartbeat),
+  (error: unknown) =>
+    error instanceof SpreadsheetValidationError &&
+    error.errors.some((item) => item.message === "Required picture: Photo")
+);
+const userMoved = mutatePart(userResize, adminDrawingPath, (xml) =>
+  xml.replace("<xdr:row>2</xdr:row>", "<xdr:row>3</xdr:row>")
+);
+await assert.rejects(
+  prepareSpreadsheetOperation(metadata("save-draft"), userMoved, heartbeat),
+  /outside its field/u
+);
+const adminOverlap = mutatePart(adminMoved, adminDrawingPath, (xml) =>
+  xml
+    .replace("<xdr:row>2</xdr:row>", "<xdr:row>3</xdr:row>")
+    .replace("<xdr:col>6</xdr:col>", "<xdr:col>0</xdr:col>")
+);
+await assert.rejects(
+  prepareSpreadsheetOperation(metadata("publish"), adminOverlap, heartbeat),
+  (error: unknown) =>
+    error instanceof Error &&
+    "code" in error &&
+    error.code === "invalid_template" &&
+    /overlap/u.test(error.message)
+);
 process.stdout.write("operations boundary passed\n");

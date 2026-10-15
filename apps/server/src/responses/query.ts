@@ -1,4 +1,5 @@
 import { ResponseStatus, prisma } from "@onlyoffice/db";
+import type { DocumentKind } from "@onlyoffice/db";
 
 import type { Identity, Actor } from "../auth/identity";
 import { manifestFieldsWithDocumentMetadata } from "../forms/query";
@@ -74,6 +75,7 @@ export function adminResultDate(
 export function responseSummary(
   response: Response,
   extra: {
+    documentKind?: DocumentKind;
     formPublicId?: string;
     formTitle?: string;
     latestCorrectionNumber?: number | null;
@@ -83,6 +85,7 @@ export function responseSummary(
 ): JsonRecord {
   return {
     createdAt: response.createdAt,
+    documentKind: extra.documentKind,
     formPublicId: extra.formPublicId,
     formTitle: extra.formTitle,
     hasDraft: Boolean(response.draftObjectKey && response.draftData),
@@ -99,6 +102,7 @@ export function responseSummary(
 export function submissionSummary(
   submission: Submission,
   extra: {
+    documentKind?: DocumentKind;
     formPublicId?: string;
     formTitle?: string;
     userEmail?: string;
@@ -106,6 +110,7 @@ export function submissionSummary(
 ): JsonRecord {
   return {
     createdAt: submission.createdAt,
+    documentKind: extra.documentKind,
     formPublicId: extra.formPublicId,
     formTitle: extra.formTitle,
     id: submission.id,
@@ -120,7 +125,7 @@ export function submissionSummary(
 export function adminResultSummary(response: {
   corrections: { revision: number }[];
   createdAt: Date;
-  form: { publicId: string; title: string };
+  form: { documentKind: DocumentKind; publicId: string; title: string };
   id: string;
   owner: { email: string };
   status: ResponseStatus;
@@ -131,6 +136,7 @@ export function adminResultSummary(response: {
   const submission = response.submissions[0] ?? null;
   return {
     createdAt: response.createdAt,
+    documentKind: response.form.documentKind,
     formPublicId: response.form.publicId,
     formTitle: response.form.title,
     id: response.id,

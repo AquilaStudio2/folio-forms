@@ -4,6 +4,13 @@ import { spreadsheetColumnName } from "../documents/spreadsheets/contract";
 import type { SpreadsheetRange } from "../documents/spreadsheets/contract";
 import { processSpreadsheet } from "../documents/spreadsheets/engine";
 import {
+  resetSpreadsheetPicturePlaceholders,
+  readSpreadsheetPictures,
+  overlaySpreadsheetPictures,
+  synchronizeSpreadsheetPictureAnchors,
+  restoreSpreadsheetPictureFrames,
+} from "../documents/spreadsheets/pictures";
+import {
   protectSpreadsheet,
   spreadsheetInputRanges,
   unprotectSpreadsheet,
@@ -20,6 +27,7 @@ import {
   storedSpreadsheetBindings,
   validateSpreadsheetPublication,
 } from "../forms/spreadsheet-fields";
+import { spreadsheetPictureFramesForTemplate } from "../forms/spreadsheet-picture-frames";
 import { fail } from "../http/errors";
 import { readObject } from "../storage";
 import type { OperationMetadata } from "./model";
@@ -68,8 +76,13 @@ export const prepareSpreadsheetOperation = async (
       return snapshot;
     }
     validateSpreadsheetPublication(bindings);
+    let synchronized: Uint8Array;
     try {
-      resolveSpreadsheetContract(bindings, current);
+      synchronized = synchronizeSpreadsheetPictureAnchors(snapshot, bindings);
+      resolveSpreadsheetContract(
+        bindings,
+        readSpreadsheetWorkbook(synchronized)
+      );
     } catch (error) {
       fail(
         422,
@@ -77,13 +90,29 @@ export const prepareSpreadsheetOperation = async (
         error instanceof Error ? error.message : "ตรวจสอบช่วงเซลล์และคอลัมน์ของฟอร์ม"
       );
     }
-    const result = await processSpreadsheet(unprotectSpreadsheet(snapshot), {
-      bindings,
-      heartbeat,
-    });
-    const workbook = readSpreadsheetWorkbook(result.workbook);
-    const contract = resolveSpreadsheetContract(bindings, workbook);
-    return protectSpreadsheet(result.workbook, contract);
+    const result = await processSpreadsheet(
+      unprotectSpreadsheet(synchronized),
+      {
+        bindings,
+        heartbeat,
+      }
+    );
+    try {
+      const workbook = readSpreadsheetWorkbook(result.workbook);
+      const contract = resolveSpreadsheetContract(bindings, workbook);
+      return protectSpreadsheet(
+        resetSpreadsheetPicturePlaceholders(result.workbook, contract),
+        contract
+      );
+    } catch (error) {
+      fail(
+        422,
+        "invalid_template",
+        error instanceof Error
+          ? error.message
+          : "ตรวจสอบกรอบรูปและช่วงเซลล์ของฟอร์ม"
+      );
+    }
   }
 
   const response = metadata.responseId
@@ -132,6 +161,12 @@ export const prepareSpreadsheetOperation = async (
       : Object.keys(lockedRecord).filter((key) => lockedRecord[key] === true)
   );
   validateSpreadsheetEdits(previous, current, contract, locked);
+  const pictures = readSpreadsheetPictures(current, contract, {
+    includePlaceholders: true,
+  });
+  const frames = contract.fields.some((field) => field.type === "picture")
+    ? await spreadsheetPictureFramesForTemplate(response.publishedTemplateId)
+    : [];
   const inputs = spreadsheetInputRanges(contract, locked);
   const values = [...current.cells.values()]
     .filter((cell) =>
@@ -180,8 +215,14 @@ export const prepareSpreadsheetOperation = async (
     storedSpreadsheetBindings(contract),
     workbook
   );
+  const withPictures = overlaySpreadsheetPictures(
+    result.workbook,
+    nextContract,
+    restoreSpreadsheetPictureFrames(pictures, frames),
+    { lockPosition: true }
+  );
   const extracted = extractSpreadsheetData(
-    workbook,
+    readSpreadsheetWorkbook(withPictures),
     nextContract,
     metadata.action === "submit" || metadata.action === "save-correction"
   );
@@ -190,5 +231,5 @@ export const prepareSpreadsheetOperation = async (
   }
   metadata.data = extracted.data;
   metadata.spreadsheetErrors = extracted.errors;
-  return protectSpreadsheet(result.workbook, nextContract, locked);
+  return protectSpreadsheet(withPictures, nextContract, locked);
 };

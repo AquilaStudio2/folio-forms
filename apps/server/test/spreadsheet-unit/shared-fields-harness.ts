@@ -3,7 +3,12 @@ import { mock } from "bun:test";
 import assert from "node:assert/strict";
 
 import { spreadsheetBindingSchema } from "../../src/documents/spreadsheets/contract";
-import { fixtureBindings } from "./fixture";
+import { overlaySpreadsheetPictures } from "../../src/documents/spreadsheets/pictures";
+import {
+  readSpreadsheetWorkbook,
+  resolveSpreadsheetContract,
+} from "../../src/documents/spreadsheets/workbook";
+import { fixtureBindings, fixtureWorkbook } from "./fixture";
 
 mock.module("@onlyoffice/db", () => ({
   FieldType: {
@@ -28,6 +33,7 @@ const {
   spreadsheetBindingsFromFields,
   spreadsheetDraftFieldData,
   spreadsheetManifestFieldData,
+  spreadsheetPicturePresence,
 } = await import("../../src/forms/spreadsheet-fields");
 const bindings = spreadsheetBindingSchema.parse({
   ...fixtureBindings(),
@@ -42,6 +48,14 @@ const bindings = spreadsheetBindingSchema.parse({
       prefillPolicy: "lock_when_available",
       required: true,
       type: "number",
+    },
+    {
+      anchor: "folio_photo",
+      id: "folio_photo",
+      key: "photo",
+      label: "Photo",
+      required: true,
+      type: "picture",
     },
     {
       anchor: "folio_scalar_options",
@@ -77,6 +91,37 @@ for (const field of drafts) {
   assert.ok(!Object.hasOwn(field.binding, "required"));
 }
 const published = spreadsheetManifestFieldData(bindings);
+assert.deepEqual(
+  drafts.find((field) => field.tag === "photo"),
+  {
+    binding: { anchor: "folio_photo", computed: false, id: "folio_photo" },
+    label: "Photo",
+    options: null,
+    position: 3,
+    prefillPointer: null,
+    prefillPolicy: "editable",
+    required: true,
+    tag: "photo",
+    type: "picture",
+  }
+);
+assert.deepEqual(
+  published.find((field) => field.tag === "photo"),
+  {
+    binding: { anchor: "folio_photo", computed: false, id: "folio_photo" },
+    label: "Photo",
+    options: null,
+    pictureMaxBytes: 10 * 1024 * 1024,
+    pictureMaxHeight: 4096,
+    pictureMaxWidth: 4096,
+    placeholder: null,
+    position: 3,
+    prefillPolicy: "editable",
+    required: true,
+    tag: "photo",
+    type: "picture",
+  }
+);
 const prefill = bindings.fields
   .filter((field) => field.prefillPointer !== null)
   .map((field) => ({
@@ -161,5 +206,45 @@ const irrelevantOptions = spreadsheetBindingSchema.parse({
 assert.throws(
   () => spreadsheetDraftFieldData(irrelevantOptions),
   /only supported/u
+);
+// Results routes load picture-only manifest rows, retaining their original positions.
+const pictureRows = published.filter((field) => field.type === "picture");
+assert.equal(pictureRows.length, 1);
+assert.equal(pictureRows[0]?.position, 3);
+const emptyPictureWorkbook = fixtureWorkbook({
+  cells: [],
+  merges: [],
+  names: { folio_photo: "'Form'!$G$2" },
+});
+assert.deepEqual(
+  spreadsheetPicturePresence(emptyPictureWorkbook, pictureRows),
+  { photo: false }
+);
+const pictureContract = resolveSpreadsheetContract(
+  spreadsheetBindingsFromFields(pictureRows),
+  readSpreadsheetWorkbook(emptyPictureWorkbook)
+);
+const filledPictureWorkbook = overlaySpreadsheetPictures(
+  emptyPictureWorkbook,
+  pictureContract,
+  new Map([
+    [
+      "folio_photo",
+      {
+        bytes: Uint8Array.from(
+          Buffer.from(
+            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9Wl6FoUAAAAASUVORK5CYII=",
+            "base64"
+          )
+        ),
+        height: 9525,
+        width: 9525,
+      },
+    ],
+  ])
+);
+assert.deepEqual(
+  spreadsheetPicturePresence(filledPictureWorkbook, pictureRows),
+  { photo: true }
 );
 process.stdout.write("shared field conversion passed\n");
