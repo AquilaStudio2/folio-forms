@@ -175,6 +175,46 @@ test("serialized Excel validation supports numeric zero and nullable boolean rul
   ]);
 });
 
+test("dropdown options containing non-ASCII text skip the literal list formula", () => {
+  const additions = [];
+  const validation = {
+    Add(...args) {
+      additions.push(args);
+    },
+    Delete() {},
+    SetErrorMessage() {},
+    SetIgnoreBlank() {},
+    SetInCellDropdown() {},
+    SetShowError() {},
+  };
+  const api = {
+    GetDefName: () => ({
+      GetRefersToRange: () => ({
+        GetAddress: () => "A2",
+        GetValidation: () => validation,
+      }),
+    }),
+  };
+  const result = runInNewContext(
+    `(${spreadsheetValidationCommand.toString()})()`,
+    {
+      Api: api,
+      Asc: {
+        scope: {
+          folioSpreadsheetValidation: {
+            anchor: "folio_cell",
+            computed: false,
+            options: ["ชาย", "หญิง"],
+            type: "dropdown",
+          },
+        },
+      },
+    }
+  );
+  expect(result).toBe(true);
+  expect(additions).toEqual([]);
+});
+
 const descendants = (node) => [node, ...node.children.flatMap(descendants)];
 
 test("legacy calculated bindings cannot be edited by the manual-only designer", () => {
@@ -648,6 +688,68 @@ test("selection changes while metadata saves are reconciled after the action", a
   harness.window.Asc.plugin.init();
   await flushPlugin();
   expect(control(harness, "Title · ชื่อช่อง").value).toBe("ช่อง B2");
+});
+
+test("dropdown options editor supports bulk add, edit, delete and reordering", async () => {
+  const native = { address: "A1" };
+  const bindings = { fields: [], table: null, version: 1 };
+  const harness = createHarness({
+    action: "template-edit",
+    capabilityResponses: ["read", "write"],
+    documentKind: "xlsx",
+    responses: [
+      { bindings, revision: 0 },
+      { bindings, revision: 1 },
+    ],
+    spreadsheetSelection: native,
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  control(harness, "ชนิดข้อมูล").value = "dropdown";
+  control(harness, "ชนิดข้อมูล").dispatchEvent({ type: "change" });
+  const entryInput = descendants(harness.body).find(
+    (node) => node.tagName === "TEXTAREA"
+  );
+  const selectOption = (text) => {
+    descendants(harness.body)
+      .find((node) => node.tagName === "LI" && node.textContent === text)
+      .dispatchEvent({ type: "click" });
+  };
+  const optionTexts = () =>
+    descendants(harness.body)
+      .filter((node) => node.tagName === "LI")
+      .map((node) => node.textContent);
+
+  entryInput.value = "ชาย, หญิง, อื่นๆ";
+  await click(harness, "Add");
+  expect(optionTexts()).toEqual(["ชาย", "หญิง", "อื่นๆ"]);
+
+  selectOption("หญิง");
+  await click(harness, "Up");
+  expect(optionTexts()).toEqual(["หญิง", "ชาย", "อื่นๆ"]);
+
+  selectOption("อื่นๆ");
+  await click(harness, "Edit");
+  expect(entryInput.value).toBe("อื่นๆ");
+  entryInput.value = "อื่นๆ (ระบุ)";
+  await click(harness, "Update");
+  expect(optionTexts()).toEqual(["หญิง", "ชาย", "อื่นๆ (ระบุ)"]);
+
+  selectOption("ชาย");
+  await click(harness, "Delete");
+  expect(optionTexts()).toEqual(["หญิง", "อื่นๆ (ระบุ)"]);
+
+  const save = descendants(harness.body).find(
+    (node) =>
+      node.tagName === "BUTTON" && node.textContent === "เพิ่มช่องจากช่วงที่เลือก"
+  );
+  save.dispatchEvent({ type: "click" });
+  await flushPlugin();
+  const { change } = JSON.parse(
+    harness.requests.find((request) => request.method === "PATCH").body
+  );
+  expect(change.value.type).toBe("dropdown");
+  expect(change.value.options).toEqual(["หญิง", "อื่นๆ (ระบุ)"]);
 });
 
 test("response append-row button inserts after all current rows with native save synchronization", async () => {

@@ -19,6 +19,169 @@ import {
   selectedBinding,
 } from "./spreadsheet-selection.js";
 
+const parseDropdownOptions = (text) => {
+  const seen = new Set();
+  const parsed = [];
+  for (const raw of text.split(/[,;\r\n]+/)) {
+    const item = raw.trim();
+    if (item && !seen.has(item)) {
+      seen.add(item);
+      parsed.push(item);
+    }
+  }
+  return parsed;
+};
+
+// Mirrors ONLYOFFICE's native "Drop-down list" content control editor
+// (Add/Edit/Delete/Up/Down over a reorderable list) for Excel dropdown fields.
+const createOptionsField = () => {
+  const wrapper = document.createElement("div");
+  wrapper.className = "field-label options-field";
+  const caption = document.createElement("span");
+  caption.textContent = "ตัวเลือก";
+  wrapper.append(caption);
+
+  const entryRow = document.createElement("div");
+  entryRow.className = "options-entry-row";
+  const entryInput = document.createElement("textarea");
+  entryInput.rows = 2;
+  entryInput.placeholder = "พิมพ์ตัวเลือก";
+  const addButton = document.createElement("button");
+  addButton.type = "button";
+  addButton.textContent = "Add";
+  entryRow.append(entryInput, addButton);
+  wrapper.append(entryRow);
+
+  const list = document.createElement("ul");
+  list.className = "options-list";
+  wrapper.append(list);
+
+  const actionsRow = document.createElement("div");
+  actionsRow.className = "options-actions-row";
+  const editButton = document.createElement("button");
+  editButton.type = "button";
+  editButton.textContent = "Edit";
+  const deleteButton = document.createElement("button");
+  deleteButton.type = "button";
+  deleteButton.textContent = "Delete";
+  const upButton = document.createElement("button");
+  upButton.type = "button";
+  upButton.textContent = "Up";
+  const downButton = document.createElement("button");
+  downButton.type = "button";
+  downButton.textContent = "Down";
+  actionsRow.append(editButton, deleteButton, upButton, downButton);
+  wrapper.append(actionsRow);
+
+  let items = [];
+  let selected = -1;
+  let editingIndex = -1;
+
+  const exitEditMode = () => {
+    editingIndex = -1;
+    addButton.textContent = "Add";
+    entryInput.value = "";
+  };
+
+  const renderList = () => {
+    list.replaceChildren();
+    for (const [index, item] of items.entries()) {
+      const row = document.createElement("li");
+      row.textContent = item;
+      row.tabIndex = 0;
+      row.className =
+        index === selected ? "options-item selected" : "options-item";
+      row.addEventListener("click", () => {
+        selected = index;
+        renderList();
+      });
+      list.append(row);
+    }
+    editButton.disabled = selected === -1;
+    deleteButton.disabled = selected === -1;
+    upButton.disabled = selected <= 0;
+    downButton.disabled = selected === -1 || selected >= items.length - 1;
+  };
+
+  addButton.addEventListener("click", () => {
+    if (editingIndex !== -1) {
+      const value = entryInput.value.trim();
+      if (value) {
+        items[editingIndex] = value;
+      }
+      exitEditMode();
+      renderList();
+      return;
+    }
+    const seen = new Set(items);
+    for (const value of parseDropdownOptions(entryInput.value)) {
+      if (!seen.has(value)) {
+        seen.add(value);
+        items.push(value);
+      }
+    }
+    entryInput.value = "";
+    renderList();
+  });
+
+  editButton.addEventListener("click", () => {
+    if (selected === -1) {
+      return;
+    }
+    entryInput.value = items[selected];
+    editingIndex = selected;
+    addButton.textContent = "Update";
+    entryInput.focus?.();
+  });
+
+  deleteButton.addEventListener("click", () => {
+    if (selected === -1) {
+      return;
+    }
+    items.splice(selected, 1);
+    selected = -1;
+    exitEditMode();
+    renderList();
+  });
+
+  upButton.addEventListener("click", () => {
+    if (selected <= 0) {
+      return;
+    }
+    [items[selected - 1], items[selected]] = [
+      items[selected],
+      items[selected - 1],
+    ];
+    selected -= 1;
+    renderList();
+  });
+
+  downButton.addEventListener("click", () => {
+    if (selected === -1 || selected >= items.length - 1) {
+      return;
+    }
+    [items[selected + 1], items[selected]] = [
+      items[selected],
+      items[selected + 1],
+    ];
+    selected += 1;
+    renderList();
+  });
+
+  renderList();
+
+  return {
+    element: wrapper,
+    getOptions: () => [...items],
+    setOptions: (next) => {
+      items = [...next];
+      selected = -1;
+      exitEditMode();
+      renderList();
+    },
+  };
+};
+
 export function initializeSpreadsheet(options, setStatus) {
   const office = createOffice(options);
   const api = createApi(options);
@@ -212,11 +375,8 @@ export function initializeSpreadsheet(options, setStatus) {
       ["boolean", "ใช่ / ไม่ใช่"],
     ]);
     const required = input("บังคับกรอก", "checkbox");
-    const choices = label(
-      "ตัวเลือก (หนึ่งรายการต่อบรรทัด)",
-      document.createElement("textarea")
-    );
-    choices.rows = 4;
+    const optionsField = createOptionsField();
+    panel.append(optionsField.element);
     const headers = input("ใช้แถวแรกเป็นชื่อคอลัมน์", "checkbox");
     let editingKind = null;
     let selected = null;
@@ -240,7 +400,7 @@ export function initializeSpreadsheet(options, setStatus) {
         key: key.value,
         type: type.value,
         required: required.checked,
-        choices: choices.value,
+        choices: optionsField.getOptions(),
         headers: headers.checked,
       });
     };
@@ -263,7 +423,7 @@ export function initializeSpreadsheet(options, setStatus) {
       const table = kind.value === "table";
       show(type, !table);
       show(required, !table);
-      show(choices, !table && type.value === "dropdown");
+      optionsField.element.hidden = table || type.value !== "dropdown";
       show(headers, table && !editing);
       save.textContent = editing ? "บันทึกการแก้ไข" : "เพิ่มช่องจากช่วงที่เลือก";
       remove.hidden = !editing;
@@ -288,7 +448,7 @@ export function initializeSpreadsheet(options, setStatus) {
       key.value = editing?.key || defaultKey();
       type.value = editing?.type || "text";
       required.checked = Boolean(editing?.required);
-      choices.value = (editing?.options || []).join("\n");
+      optionsField.setOptions(editing?.options || []);
       existing.value = editing?.id || "";
       const draft = drafts.get(draftKey());
       if (draft) {
@@ -297,7 +457,7 @@ export function initializeSpreadsheet(options, setStatus) {
         key.value = draft.key;
         type.value = draft.type;
         required.checked = draft.required;
-        choices.value = draft.choices;
+        optionsField.setOptions(draft.choices);
         headers.checked = draft.headers;
       }
       updateControls();
@@ -351,20 +511,16 @@ export function initializeSpreadsheet(options, setStatus) {
         type: type.value,
         required: required.checked,
         computed: false,
-        options:
-          type.value === "dropdown"
-            ? choices.value
-                .split(/\r?\n/)
-                .map((item) => item.trim())
-                .filter(Boolean)
-            : [],
+        options: type.value === "dropdown" ? optionsField.getOptions() : [],
       };
       if (
         kind.value !== "table" &&
         value.type === "dropdown" &&
         !value.options.length
       ) {
-        throw new Error("เพิ่มตัวเลือกอย่างน้อยหนึ่งรายการ โดยใส่หนึ่งรายการต่อบรรทัด");
+        throw new Error(
+          "เพิ่มตัวเลือกอย่างน้อยหนึ่งรายการ โดยขึ้นบรรทัดใหม่หรือคั่นด้วยจุลภาคระหว่างรายการ"
+        );
       }
       let body = current;
       if (kind.value === "table") {

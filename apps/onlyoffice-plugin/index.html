@@ -192,6 +192,63 @@
         width: 16px;
       }
 
+      .options-field {
+        gap: 6px;
+      }
+
+      .options-entry-row {
+        display: grid;
+        gap: 6px;
+        grid-template-columns: 1fr auto;
+      }
+
+      .options-entry-row textarea {
+        min-height: unset;
+        resize: vertical;
+      }
+
+      .options-entry-row button {
+        align-self: start;
+        min-height: unset;
+      }
+
+      .options-list {
+        background: #fff;
+        border: 1px solid #94a3b8;
+        border-radius: 5px;
+        list-style: none;
+        margin: 0;
+        max-height: 160px;
+        overflow-y: auto;
+        padding: 0;
+      }
+
+      .options-item {
+        border-bottom: 1px solid #e2e8f0;
+        cursor: pointer;
+        overflow-wrap: anywhere;
+        padding: 6px 8px;
+      }
+
+      .options-item:last-child {
+        border-bottom: none;
+      }
+
+      .options-item.selected {
+        background: #99f6e4;
+      }
+
+      .options-actions-row {
+        display: grid;
+        gap: 6px;
+        grid-template-columns: repeat(4, 1fr);
+      }
+
+      .options-actions-row button {
+        min-height: unset;
+        padding: 5px 4px;
+      }
+
       .checkbox-label {
         align-items: center;
         display: flex;
