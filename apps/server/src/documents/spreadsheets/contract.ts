@@ -14,6 +14,7 @@ const fieldSchema = z
     key: keySchema,
     label: z.string().trim().min(1).max(200),
     options: z.array(z.string().min(1)).default([]),
+    placeholder: z.string().trim().min(1).max(255).nullable().default(null),
     required: z.boolean().default(false),
     type: z.enum(["text", "number", "date", "dropdown", "boolean"]),
   })

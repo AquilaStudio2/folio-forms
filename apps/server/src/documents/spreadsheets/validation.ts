@@ -207,7 +207,10 @@ export const applySpreadsheetValidation = (
     }
   }
   for (const { field, range } of fields) {
-    if (field.computed || field.type === "text") {
+    if (field.computed) {
+      continue;
+    }
+    if (field.type === "text" && !field.placeholder) {
       continue;
     }
     const rule = spreadsheetXmlElement(rules, "dataValidation", {
@@ -218,7 +221,12 @@ export const applySpreadsheetValidation = (
       showErrorMessage: "1",
       sqref: rangeAddress(range),
     });
-    let formula: string;
+    if (field.placeholder) {
+      rule.attributes.prompt = field.placeholder.slice(0, 255);
+      rule.attributes.promptTitle = field.label.slice(0, 32);
+      rule.attributes.showInputMessage = "1";
+    }
+    let formula: string | undefined;
     if (field.type === "dropdown" || field.type === "boolean") {
       rule.attributes.type = "list";
       rule.attributes.showDropDown = "0";
@@ -229,7 +237,7 @@ export const applySpreadsheetValidation = (
     } else if (field.type === "number") {
       rule.attributes.type = "custom";
       formula = `ISNUMBER(${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1})`;
-    } else {
+    } else if (field.type === "date") {
       rule.attributes.type = "date";
       rule.attributes.operator = "between";
       formula = "0";
@@ -237,9 +245,11 @@ export const applySpreadsheetValidation = (
       maximum.children = [workbook.date1904 ? "2957003" : "2958465"];
       rule.children.push(maximum);
     }
-    const first = spreadsheetXmlElement(rule, "formula1");
-    first.children = [formula];
-    rule.children.unshift(first);
+    if (formula !== undefined) {
+      const first = spreadsheetXmlElement(rule, "formula1");
+      first.children = [formula];
+      rule.children.unshift(first);
+    }
     rules.children.push(rule);
   }
   const sheet = spreadsheetXmlTree(

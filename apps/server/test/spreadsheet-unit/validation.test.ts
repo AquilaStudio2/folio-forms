@@ -64,6 +64,40 @@ describe("authoritative spreadsheet validation", () => {
         .type
     ).toBe("date");
   });
+  test("a placeholder adds an Excel input message, including for plain text fields", () => {
+    const bindings = fixtureBindings();
+    const [agency, date] = bindings.fields;
+    if (!agency || !date) {
+      throw new Error("Missing fixture field");
+    }
+    agency.placeholder = "e.g. Department of Something";
+    date.placeholder = "dd/mm/yyyy";
+    const bytes = applySpreadsheetValidation(fixtureWorkbook(), bindings);
+    const actual = workbookXml(bytes);
+    const validation = descendants(actual.sheet, "dataValidation");
+    const text = validation.find((rule) => rule.attributes.sqref === "A1:B1");
+    expect(text?.attributes.type).toBeUndefined();
+    expect(text?.attributes.showInputMessage).toBe("1");
+    expect(text?.attributes.prompt).toBe(agency.placeholder);
+    expect(text?.attributes.promptTitle).toBe(agency.label);
+    const withDate = validation.find(
+      (rule) => rule.attributes.sqref === "D1:D1"
+    );
+    expect(withDate?.attributes.type).toBe("date");
+    expect(withDate?.attributes.prompt).toBe(date.placeholder);
+    const [, plainDate] = fixtureBindings().fields;
+    expect(plainDate?.placeholder).toBeNull();
+    const noPlaceholder = applySpreadsheetValidation(
+      fixtureWorkbook(),
+      fixtureBindings()
+    );
+    const withoutPlaceholder = workbookXml(noPlaceholder);
+    expect(
+      descendants(withoutPlaceholder.sheet, "dataValidation").find(
+        (rule) => rule.attributes.sqref === "A1:B1"
+      )
+    ).toBeUndefined();
+  });
   test("only accepts the internal helper as a hidden standard worksheet", () => {
     const bytes = applySpreadsheetValidation(
       fixtureWorkbook(),

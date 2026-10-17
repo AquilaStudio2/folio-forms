@@ -375,6 +375,7 @@ export function initializeSpreadsheet(options, setStatus) {
       ["boolean", "ใช่ / ไม่ใช่"],
     ]);
     const required = input("บังคับกรอก", "checkbox");
+    const placeholder = input("คำแนะนำในเซลล์ · Placeholder (ไม่บังคับ)");
     const optionsField = createOptionsField();
     panel.append(optionsField.element);
     const headers = input("ใช้แถวแรกเป็นชื่อคอลัมน์", "checkbox");
@@ -400,6 +401,7 @@ export function initializeSpreadsheet(options, setStatus) {
         key: key.value,
         type: type.value,
         required: required.checked,
+        placeholder: placeholder.value,
         choices: optionsField.getOptions(),
         headers: headers.checked,
       });
@@ -423,6 +425,7 @@ export function initializeSpreadsheet(options, setStatus) {
       const table = kind.value === "table";
       show(type, !table);
       show(required, !table);
+      show(placeholder, !table);
       optionsField.element.hidden = table || type.value !== "dropdown";
       show(headers, table && !editing);
       save.textContent = editing ? "บันทึกการแก้ไข" : "เพิ่มช่องจากช่วงที่เลือก";
@@ -448,6 +451,7 @@ export function initializeSpreadsheet(options, setStatus) {
       key.value = editing?.key || defaultKey();
       type.value = editing?.type || "text";
       required.checked = Boolean(editing?.required);
+      placeholder.value = editing?.placeholder || "";
       optionsField.setOptions(editing?.options || []);
       existing.value = editing?.id || "";
       const draft = drafts.get(draftKey());
@@ -457,6 +461,7 @@ export function initializeSpreadsheet(options, setStatus) {
         key.value = draft.key;
         type.value = draft.type;
         required.checked = draft.required;
+        placeholder.value = draft.placeholder;
         optionsField.setOptions(draft.choices);
         headers.checked = draft.headers;
       }
@@ -510,6 +515,7 @@ export function initializeSpreadsheet(options, setStatus) {
         label: labelText,
         type: type.value,
         required: required.checked,
+        placeholder: placeholder.value.trim() || null,
         computed: false,
         options: type.value === "dropdown" ? optionsField.getOptions() : [],
       };

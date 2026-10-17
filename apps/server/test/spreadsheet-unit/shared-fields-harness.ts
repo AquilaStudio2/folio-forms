@@ -38,6 +38,7 @@ const bindings = spreadsheetBindingSchema.parse({
       id: "folio_scalar_quantity",
       key: "quantity",
       label: "Scalar quantity",
+      placeholder: "e.g. 42",
       prefillPointer: "/account/quantity",
       prefillPolicy: "lock_when_available",
       required: true,
@@ -76,6 +77,13 @@ for (const field of drafts) {
   assert.ok(!Object.hasOwn(field.binding, "options"));
   assert.ok(!Object.hasOwn(field.binding, "required"));
 }
+const bindingPlaceholder = (tag: string): string | null => {
+  const field = drafts.find((item) => item.tag === tag);
+  assert.ok(field);
+  return (field.binding as { placeholder: string | null }).placeholder;
+};
+assert.equal(bindingPlaceholder("quantity"), "e.g. 42");
+assert.equal(bindingPlaceholder("agency"), null);
 const published = spreadsheetManifestFieldData(bindings);
 const prefill = bindings.fields
   .filter((field) => field.prefillPointer !== null)
