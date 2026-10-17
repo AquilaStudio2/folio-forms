@@ -206,6 +206,7 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
       anchor: field.anchor,
       computed: field.computed,
       id: field.id,
+      placeholder: field.placeholder,
     } satisfies ExcelScalarBinding),
     label: field.label,
     options:
@@ -238,6 +239,7 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
           computed: column.computed,
           id: column.id,
           offset: column.offset,
+          placeholder: column.placeholder,
         } satisfies ExcelColumnBinding),
         label: column.label,
         options:
