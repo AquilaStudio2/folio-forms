@@ -131,11 +131,15 @@ export function spreadsheetValidationCommand() {
   } else {
     const options =
       input.type === "boolean" ? ["TRUE", "FALSE"] : input.options;
-    if (
-      options.some((option) => /[,"\r\n]/.test(option)) ||
-      options.join(",").length > 253
-    ) {
-      // The worker installs an authoritative helper-range dropdown when saved.
+    const hasUnsafeCharacter = (option) =>
+      [...option].some(
+        (character) =>
+          /[,"\r\n]/.test(character) || character.codePointAt(0) > 127
+      );
+    if (options.some(hasUnsafeCharacter) || options.join(",").length > 253) {
+      // The literal list formula mangles non-ASCII text (e.g. Thai) and
+      // breaks on commas/quotes/newlines. The worker installs an
+      // authoritative helper-range dropdown when saved, so skip here.
       return true;
     }
     validation.Add(
