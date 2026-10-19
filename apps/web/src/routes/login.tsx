@@ -211,87 +211,97 @@ const LoginRoute = () => {
             </p>
           </div>
           <Card className="mt-7 p-6 sm:p-8">
-          {error ? (
-            <div ref={errorRef} id="login-error" className="mt-5" tabIndex={-1}>
-              <Notice tone="danger">{error}</Notice>
-            </div>
-          ) : null}
-          {legacySso === "pending" ? (
-            <div className="mt-5">
-              <Notice tone="neutral">
-                คำขอเชื่อมบัญชีกำลังรอผู้ดูแลระบบตรวจสอบ คุณยังไม่ได้เข้าสู่ระบบ ใช้บัญชี Folio
-                Forms เดิม หรือลองเข้าสู่ระบบผ่านระบบเดิมอีกครั้งหลังอนุมัติ
-              </Notice>
-            </div>
-          ) : null}
-          {success ? (
-            <div className="mt-5">
-              <Notice tone="success">{success}</Notice>
-            </div>
-          ) : null}
-          <form
-            className="mt-7 space-y-5"
-            onSubmit={submit}
-            aria-busy={busy}
-            noValidate
-          >
-            <label className="block text-sm font-semibold" htmlFor="email">
-              อีเมล
-              <Input
-                id="email"
-                className="mt-2"
-                type="email"
-                autoComplete="email"
-                autoFocus
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-                aria-describedby={error ? "login-error" : undefined}
-                aria-invalid={error ? "true" : undefined}
-                required
-              />
-            </label>
-            <label className="block text-sm font-semibold" htmlFor="password">
-              รหัสผ่าน
-              <Input
-                id="password"
-                className="mt-2"
-                type="password"
-                autoComplete="current-password"
-                minLength={12}
-                maxLength={128}
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-                aria-describedby={error ? "login-error" : undefined}
-                aria-invalid={error ? "true" : undefined}
-                required
-              />
-            </label>
-            <Button className="w-full" size="lg" type="submit" disabled={busy}>
-              {busy ? <Spinner /> : <KeyRound size={17} />}
-              {busy ? "กำลังเข้าสู่ระบบ…" : "เข้าสู่ระบบ"}
-              <ArrowRight size={16} />
-            </Button>
-          </form>
-          {legacySsoAvailable ? (
-            <div className="mt-5 space-y-4">
-              <div className="flex items-center gap-3 text-xs text-[var(--ink-soft)]">
-                <span className="h-px flex-1 bg-[var(--line)]" />
-                <span>หรือเข้าสู่ระบบผ่านระบบเดิม</span>
-                <span className="h-px flex-1 bg-[var(--line)]" />
+            {error ? (
+              <div
+                ref={errorRef}
+                id="login-error"
+                className="mt-5"
+                tabIndex={-1}
+              >
+                <Notice tone="danger">{error}</Notice>
               </div>
+            ) : null}
+            {legacySso === "pending" ? (
+              <div className="mt-5">
+                <Notice tone="neutral">
+                  คำขอเชื่อมบัญชีกำลังรอผู้ดูแลระบบตรวจสอบ คุณยังไม่ได้เข้าสู่ระบบ ใช้บัญชี Folio
+                  Forms เดิม หรือลองเข้าสู่ระบบผ่านระบบเดิมอีกครั้งหลังอนุมัติ
+                </Notice>
+              </div>
+            ) : null}
+            {success ? (
+              <div className="mt-5">
+                <Notice tone="success">{success}</Notice>
+              </div>
+            ) : null}
+            <form
+              className="mt-7 space-y-5"
+              onSubmit={submit}
+              aria-busy={busy}
+              noValidate
+            >
+              <label className="block text-sm font-semibold" htmlFor="email">
+                อีเมล
+                <Input
+                  id="email"
+                  className="mt-2"
+                  type="email"
+                  autoComplete="email"
+                  autoFocus
+                  value={email}
+                  onChange={(event) => setEmail(event.target.value)}
+                  aria-describedby={error ? "login-error" : undefined}
+                  aria-invalid={error ? "true" : undefined}
+                  required
+                />
+              </label>
+              <label className="block text-sm font-semibold" htmlFor="password">
+                รหัสผ่าน
+                <Input
+                  id="password"
+                  className="mt-2"
+                  type="password"
+                  autoComplete="current-password"
+                  minLength={12}
+                  maxLength={128}
+                  value={password}
+                  onChange={(event) => setPassword(event.target.value)}
+                  aria-describedby={error ? "login-error" : undefined}
+                  aria-invalid={error ? "true" : undefined}
+                  required
+                />
+              </label>
               <Button
                 className="w-full"
                 size="lg"
-                type="button"
-                variant="secondary"
-                onClick={startLegacySso}
+                type="submit"
                 disabled={busy}
               >
-                <LockKeyhole size={17} />
-                เข้าสู่ระบบผ่านระบบเดิม
+                {busy ? <Spinner /> : <KeyRound size={17} />}
+                {busy ? "กำลังเข้าสู่ระบบ…" : "เข้าสู่ระบบ"}
+                <ArrowRight size={16} />
               </Button>
-            </div>
-          ) : null}
+            </form>
+            {legacySsoAvailable ? (
+              <div className="mt-5 space-y-4">
+                <div className="flex items-center gap-3 text-xs text-[var(--ink-soft)]">
+                  <span className="h-px flex-1 bg-[var(--line)]" />
+                  <span>หรือเข้าสู่ระบบผ่านระบบเดิม</span>
+                  <span className="h-px flex-1 bg-[var(--line)]" />
+                </div>
+                <Button
+                  className="w-full"
+                  size="lg"
+                  type="button"
+                  variant="secondary"
+                  onClick={startLegacySso}
+                  disabled={busy}
+                >
+                  <LockKeyhole size={17} />
+                  เข้าสู่ระบบผ่านระบบเดิม
+                </Button>
+              </div>
+            ) : null}
           </Card>
           <p className="mt-5 text-center text-xs text-[var(--ink-soft)] lg:hidden">
             พื้นที่ทำงานภายใน · ใช้โทเค็นเซสชันแบบไม่เปิดเผยข้อมูล
