@@ -177,9 +177,9 @@ const LoginRoute = () => {
   };
 
   return (
-    <div className="grid min-h-screen place-items-center bg-[var(--ink)] px-5 py-12">
-      <div className="w-full max-w-[440px] animate-rise">
-        <div className="mb-8 flex items-center gap-3 text-[var(--paper)]">
+    <div className="grid min-h-screen lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+      <aside className="hidden flex-col justify-between bg-[var(--ink)] p-12 text-[var(--paper)] lg:flex">
+        <div className="flex items-center gap-3">
           <span className="grid size-10 place-items-center rounded-[10px] bg-[var(--accent)] text-[var(--ink)]">
             <LockKeyhole size={19} />
           </span>
@@ -187,11 +187,30 @@ const LoginRoute = () => {
             Folio Forms
           </span>
         </div>
-        <Card className="p-6 sm:p-8">
-          <h1 className="text-2xl font-bold tracking-[-0.04em]">เข้าสู่ระบบ</h1>
-          <p className="mt-2 text-sm text-[var(--ink-soft)]">
-            เข้าสู่พื้นที่ทำงานของคุณเพื่อดำเนินการต่อ
-          </p>
+        <p className="max-w-[16ch] text-5xl leading-[1.15] font-bold tracking-[-0.04em] [overflow-wrap:anywhere]">
+          เข้าสู่พื้นที่ทำงานของคุณ
+        </p>
+        <p className="text-xs text-[#b8c5c5]">
+          พื้นที่ทำงานภายใน · ใช้โทเค็นเซสชันแบบไม่เปิดเผยข้อมูล
+        </p>
+      </aside>
+      <main className="grid place-items-center bg-[var(--canvas)] px-5 py-12">
+        <div className="w-full max-w-[420px] animate-rise">
+          <div className="mb-8 flex items-center gap-3 text-[var(--ink)] lg:hidden">
+            <span className="grid size-10 place-items-center rounded-[10px] bg-[var(--ink)] text-[var(--accent)]">
+              <LockKeyhole size={19} />
+            </span>
+            <span className="text-xl font-bold tracking-[-0.03em]">
+              Folio Forms
+            </span>
+          </div>
+          <div>
+            <h1 className="text-3xl font-bold tracking-[-0.04em]">เข้าสู่ระบบ</h1>
+            <p className="mt-2 text-sm text-[var(--ink-soft)]">
+              เข้าสู่พื้นที่ทำงานของคุณเพื่อดำเนินการต่อ
+            </p>
+          </div>
+          <Card className="mt-7 p-6 sm:p-8">
           {error ? (
             <div ref={errorRef} id="login-error" className="mt-5" tabIndex={-1}>
               <Notice tone="danger">{error}</Notice>
@@ -273,11 +292,12 @@ const LoginRoute = () => {
               </Button>
             </div>
           ) : null}
-        </Card>
-        <p className="mt-5 text-center text-xs text-[#b8c5c5]">
-          พื้นที่ทำงานภายใน · ใช้โทเค็นเซสชันแบบไม่เปิดเผยข้อมูล
-        </p>
-      </div>
+          </Card>
+          <p className="mt-5 text-center text-xs text-[var(--ink-soft)] lg:hidden">
+            พื้นที่ทำงานภายใน · ใช้โทเค็นเซสชันแบบไม่เปิดเผยข้อมูล
+          </p>
+        </div>
+      </main>
     </div>
   );
 };
