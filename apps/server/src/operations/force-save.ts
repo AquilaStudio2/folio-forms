@@ -14,6 +14,7 @@ import {
   updateOperationFailed,
   operationDocumentKey,
 } from "./lifecycle";
+import { SpreadsheetValidationError } from "./spreadsheet-document";
 
 export function launchForceSave(
   operation: Operation,
@@ -53,11 +54,11 @@ export function launchForceSave(
       if (!claimed) {
         return;
       }
-      const hasChanges = await onlyOffice.forceSave(
+      const saveResult = await onlyOffice.forceSave(
         operation.documentKey,
         userdata
       );
-      if (!hasChanges) {
+      if (saveResult !== true) {
         const consumption = await consumeCallbackClaim(operation.id, userdata);
         if (consumption === "replayed") {
           return;
@@ -66,20 +67,28 @@ export function launchForceSave(
           await updateOperationFailed(operation.id, "callback_claim_invalid");
           return;
         }
-        const currentObjectKey = await operationDocumentKey(
-          operation.documentKey
-        );
-        if (!currentObjectKey) {
-          fail(
-            500,
-            "document_unavailable",
-            "The current document snapshot is unavailable"
+        let snapshot: Uint8Array | undefined;
+        if (saveResult === false) {
+          const currentObjectKey = await operationDocumentKey(
+            operation.documentKey
           );
+          if (!currentObjectKey) {
+            fail(
+              500,
+              "document_unavailable",
+              "The current document snapshot is unavailable"
+            );
+          }
+          snapshot = await readObject(currentObjectKey);
         }
         await finalizeCallback(
           operation.id,
-          { key: operation.documentKey, status: 6 },
-          await readObject(currentObjectKey),
+          {
+            key: operation.documentKey,
+            status: 6,
+            ...(saveResult === false ? {} : { url: saveResult.url }),
+          },
+          snapshot,
           allowedCallbackOrigins
         );
       }
@@ -88,7 +97,16 @@ export function launchForceSave(
         operation.id,
         error instanceof HttpError && error.code === "invalid_template"
           ? "invalid_template"
-          : "force_save_failed"
+          : "force_save_failed",
+        undefined,
+        error instanceof HttpError && error.code === "invalid_template"
+          ? { errorMessage: error.message }
+          : error instanceof SpreadsheetValidationError
+            ? {
+                errorMessage: "ตรวจสอบช่องกรอกที่ระบุก่อนส่งคำตอบ",
+                validationErrors: error.errors,
+              }
+            : undefined
       );
     }
   })();

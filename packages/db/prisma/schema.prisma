@@ -17,11 +17,16 @@ enum FormStatus {
   published
   archived
 }
+
 enum FillMethod {
   onlyoffice
   native
 }
 
+enum DocumentKind {
+  docx
+  xlsx
+}
 
 enum FieldType {
   text
@@ -30,6 +35,8 @@ enum FieldType {
   dropdown
   combo
   picture
+  number
+  table
 }
 
 enum PrefillPolicy {
@@ -96,34 +103,34 @@ model User {
   createdAt          DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt          DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
-  sessions          Session[]
-  accounts          Account[]
+  sessions                  Session[]
+  accounts                  Account[]
   legacyAccountLinkRequests LegacyAccountLinkRequest[] @relation("LegacyAccountLinkCandidate")
   legacyAccountLinkReviews  LegacyAccountLinkRequest[] @relation("LegacyAccountLinkReviewer")
-  formsCreated      Form[]            @relation("FormCreator")
-  responses         Response[]        @relation("ResponseOwner")
-  submissions       Submission[]      @relation("SubmissionOwner")
-  prefillSnapshots  PrefillSnapshot[] @relation("PrefillOwner")
-  operationsAsActor Operation[]       @relation("OperationActor")
-  operationsAsOwner Operation[]       @relation("OperationOwner")
-  editorLeases      EditorLease[]     @relation("LeaseHolder")
+  formsCreated              Form[]                     @relation("FormCreator")
+  responses                 Response[]                 @relation("ResponseOwner")
+  submissions               Submission[]               @relation("SubmissionOwner")
+  prefillSnapshots          PrefillSnapshot[]          @relation("PrefillOwner")
+  operationsAsActor         Operation[]                @relation("OperationActor")
+  operationsAsOwner         Operation[]                @relation("OperationOwner")
+  editorLeases              EditorLease[]              @relation("LeaseHolder")
 
   @@index([role, enabled])
   @@map("user")
 }
 
 model LegacyAccountLinkRequest {
-  id           String                  @id @default(uuid()) @db.Uuid
-  providerId   String                  @map("provider_id")
-  subject      String
-  email        String
-  userId       String                  @map("user_id")
-  status       LegacyAccountLinkStatus @default(pending)
+  id                 String                  @id @default(uuid()) @db.Uuid
+  providerId         String                  @map("provider_id")
+  subject            String
+  email              String
+  userId             String                  @map("user_id")
+  status             LegacyAccountLinkStatus @default(pending)
   reviewedById       String?                 @map("reviewed_by_id")
-  reviewedGeneration BigInt?                @map("reviewed_generation")
+  reviewedGeneration BigInt?                 @map("reviewed_generation")
   reviewedAt         DateTime?               @map("reviewed_at") @db.Timestamptz(3)
-  createdAt    DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt    DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime                @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   user     User  @relation("LegacyAccountLinkCandidate", fields: [userId], references: [id], onDelete: Cascade)
   reviewer User? @relation("LegacyAccountLinkReviewer", fields: [reviewedById], references: [id], onDelete: SetNull)
@@ -191,16 +198,17 @@ model Verification {
 }
 
 model Form {
-  id          String     @id @default(uuid()) @db.Uuid
-  title       String
-  description String?
-  publicId    String     @unique @map("public_id")
-  status      FormStatus @default(draft)
-  fillMethod  FillMethod @default(onlyoffice) @map("fill_method")
-  version     Int        @default(0)
-  createdBy   String?    @map("created_by")
-  createdAt   DateTime   @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime   @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id           String       @id @default(uuid()) @db.Uuid
+  title        String
+  description  String?
+  publicId     String       @unique @map("public_id")
+  status       FormStatus   @default(draft)
+  fillMethod   FillMethod   @default(onlyoffice) @map("fill_method")
+  documentKind DocumentKind @default(docx) @map("document_kind")
+  version      Int          @default(0)
+  createdBy    String?      @map("created_by")
+  createdAt    DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt    DateTime     @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   creator              User?                 @relation("FormCreator", fields: [createdBy], references: [id], onDelete: SetNull)
   templateDraft        TemplateDraft?
@@ -218,13 +226,15 @@ model Form {
 }
 
 model TemplateDraft {
-  id          String   @id @default(uuid()) @db.Uuid
-  formId      String   @unique @map("form_id") @db.Uuid
-  objectKey   String   @map("object_key")
-  documentKey String   @unique @map("document_key")
-  contentHash String?  @map("content_hash")
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  id              String   @id @default(uuid()) @db.Uuid
+  formId          String   @unique @map("form_id") @db.Uuid
+  objectKey       String   @map("object_key")
+  documentKey     String   @unique @map("document_key")
+  contentHash     String?  @map("content_hash")
+  /// Rejects stale field edits and save/publish callbacks for this draft.
+  bindingRevision Int      @default(0) @map("binding_revision")
+  createdAt       DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   form       Form             @relation(fields: [formId], references: [id], onDelete: Cascade)
   fieldRules DraftFieldRule[]
@@ -236,6 +246,14 @@ model DraftFieldRule {
   id              String        @id @default(uuid()) @db.Uuid
   templateDraftId String        @map("template_draft_id") @db.Uuid
   tag             String
+  /// XLSX display/type metadata; DOCX metadata continues to come from content controls.
+  label           String?
+  type            FieldType?
+  options         Json?
+  position        Int?
+  /// ExcelBinding JSON: scalar, table or column placement; shared with ManifestField.binding.
+  /// Types and validation: apps/server/src/forms/excel-binding.ts. DOCX uses null.
+  binding         Json?
   required        Boolean       @default(false)
   prefillPointer  String?       @map("prefill_pointer")
   prefillPolicy   PrefillPolicy @default(editable) @map("prefill_policy")
@@ -268,11 +286,11 @@ model PublishedTemplate {
 }
 
 model FieldManifest {
-  id                       String   @id @default(uuid()) @db.Uuid
-  publishedTemplateId      String   @unique @map("published_template_id") @db.Uuid
-  configurationHash        String   @map("configuration_hash")
-  displayMetadataVersion   Int      @default(1) @map("display_metadata_version")
-  createdAt                DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                     String   @id @default(uuid()) @db.Uuid
+  publishedTemplateId    String   @unique @map("published_template_id") @db.Uuid
+  configurationHash      String   @map("configuration_hash")
+  displayMetadataVersion Int      @default(1) @map("display_metadata_version")
+  createdAt              DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   publishedTemplate PublishedTemplate @relation(fields: [publishedTemplateId], references: [id], onDelete: Restrict)
   fields            ManifestField[]
@@ -291,6 +309,9 @@ model ManifestField {
   required         Boolean       @default(false)
   prefillPolicy    PrefillPolicy @default(editable) @map("prefill_policy")
   options          Json?
+  /// ExcelBinding JSON: scalar, table or column placement; shared with DraftFieldRule.binding.
+  /// Types and validation: apps/server/src/forms/excel-binding.ts. DOCX uses null.
+  binding          Json?
   pictureMaxBytes  Int?          @map("picture_max_bytes")
   pictureMaxWidth  Int?          @map("picture_max_width")
   pictureMaxHeight Int?          @map("picture_max_height")
@@ -341,6 +362,8 @@ model Response {
   publishedVersion        Int            @map("published_version")
   status                  ResponseStatus @default(draft)
   draftData               Json?          @map("draft_data")
+  /// Prefill and input protection have been prepared for the current XLSX draft.
+  spreadsheetInitialized  Boolean        @default(false) @map("spreadsheet_initialized")
   draftObjectKey          String?        @map("draft_object_key")
   draftDocumentKey        String?        @unique @map("draft_document_key")
   externalReferenceDigest String?        @unique @map("external_reference_digest")
@@ -519,19 +542,19 @@ model CallbackClaim {
 }
 
 model EditorLease {
-  id                   String              @id @default(uuid()) @db.Uuid
-  targetType           OperationTargetType @map("target_type")
-  targetId             String              @map("target_id") @db.Uuid
-  holderSessionId      String              @map("holder_session_id")
-  holderUserId         String              @map("holder_user_id")
-  capabilityDigest     String              @map("capability_digest")
-  expiresAt            DateTime            @map("expires_at") @db.Timestamptz(3)
-  workspaceBaseDocumentKey String?         @map("workspace_base_document_key")
-  workspaceBaseRevision    Int?            @map("workspace_base_revision")
-  workspaceDocumentKey     String?         @unique @map("workspace_document_key")
-  workspaceObjectKey       String?         @map("workspace_object_key")
-  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
-  renewedAt            DateTime            @default(now()) @map("renewed_at") @db.Timestamptz(3)
+  id                       String              @id @default(uuid()) @db.Uuid
+  targetType               OperationTargetType @map("target_type")
+  targetId                 String              @map("target_id") @db.Uuid
+  holderSessionId          String              @map("holder_session_id")
+  holderUserId             String              @map("holder_user_id")
+  capabilityDigest         String              @map("capability_digest")
+  expiresAt                DateTime            @map("expires_at") @db.Timestamptz(3)
+  workspaceBaseDocumentKey String?             @map("workspace_base_document_key")
+  workspaceBaseRevision    Int?                @map("workspace_base_revision")
+  workspaceDocumentKey     String?             @unique @map("workspace_document_key")
+  workspaceObjectKey       String?             @map("workspace_object_key")
+  createdAt                DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  renewedAt                DateTime            @default(now()) @map("renewed_at") @db.Timestamptz(3)
 
   holderSession Session @relation(fields: [holderSessionId], references: [id], onDelete: Cascade)
   holder        User    @relation("LeaseHolder", fields: [holderUserId], references: [id], onDelete: Cascade)
@@ -544,12 +567,12 @@ model EditorLease {
 }
 
 model ObjectCleanupIntent {
-  id                         String   @id @default(uuid()) @db.Uuid
-  objectKey                  String   @unique @map("object_key")
-  deletionResponseLookupDigest String? @map("deletion_response_lookup_digest")
-  deletionOwnerUserId        String?  @map("deletion_owner_user_id")
-  cleanupAfter               DateTime @default(now()) @map("cleanup_after") @db.Timestamptz(3)
-  createdAt                  DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  id                           String   @id @default(uuid()) @db.Uuid
+  objectKey                    String   @unique @map("object_key")
+  deletionResponseLookupDigest String?  @map("deletion_response_lookup_digest")
+  deletionOwnerUserId          String?  @map("deletion_owner_user_id")
+  cleanupAfter                 DateTime @default(now()) @map("cleanup_after") @db.Timestamptz(3)
+  createdAt                    DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([cleanupAfter, createdAt])
   @@index([deletionResponseLookupDigest, cleanupAfter])

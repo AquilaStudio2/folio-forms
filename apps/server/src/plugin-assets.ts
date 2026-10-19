@@ -33,3 +33,9 @@ export const pluginScriptResponse = async () =>
       : await buildPlugin(pluginDir),
     { headers: { "content-type": "text/javascript; charset=utf-8" } }
   );
+
+export const pluginSettingsIconResponse = (theme: "light" | "dark") =>
+  new Response(
+    Bun.file(path.resolve(pluginDir, "resources", theme, "settings.svg")),
+    { headers: { "content-type": "image/svg+xml" } }
+  );

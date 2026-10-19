@@ -1,105 +1,214 @@
-Folio Forms — Architecture และภาพรวม Logic ของระบบ ตรวจเมื่อ 12 ตุลาคม 2026 · อ้างอิง working tree ที่ HEAD 0c8dda0
+# Folio Forms: สถาปัตยกรรมและตำแหน่งเก็บข้อมูล
 
-เอกสารนี้อธิบาย implementation ปัจจุบันจาก CodeGraph, source code, Prisma schema, deployment configuration และ tests ที่มีใน repository ครอบคลุม subsystem และเส้นทางธุรกิจหลัก ไม่ใช่การรับรองว่าไม่มี bug ทุกกรณีหรือผลทดสอบระบบ production จริง จุดที่เอกสารเดิมขัดกับโค้ดแยกไว้ท้ายรายงาน
+ปรับตาม implementation และผลตรวจวันที่ 15 ตุลาคม 2026 อ่านคู่กับ [คู่มือวางไฟล์](STRUCTURE.th.md) และ [คำศัพท์ของระบบ](../CONTEXT.md)
 
-1. ภาพรวมในหนึ่งหน้า Folio Forms เปลี่ยน DOCX ที่มี tagged content controls ให้เป็นแบบฟอร์มที่แชร์ลิงก์ได้ ผู้ใช้ต้องเข้าสู่ระบบก่อนกรอก Admin เลือกได้ว่าจะให้กรอกผ่าน ONLYOFFICE หรือ native web form ทั้งสองทางใช้ Field Manifest เดียวกันและบันทึกผลเป็น DOCX พร้อมข้อมูล structured ในฐานข้อมูล
+## ภาพรวม
 
-flowchart LR Admin[Admin] --> Draft[สร้างหรืออัปโหลด Template Draft] AI[AI Authoring: PDF หรือข้อความ] --> Draft Draft --> Editor[แก้ DOCX และตั้ง Field Rules] Editor --> Publish[Publish: ตรึง DOCX และ Field Manifest] Publish --> Link[ลิงก์ Form] Link --> Login[User Login] External[ระบบภายนอก] --> Prefill[Prefill Handoff] Prefill --> Login Login --> Response[เริ่มหรือเปิด Response เดิม] Response --> Fill[ONLYOFFICE หรือ Native Form] Fill --> Save[Save Draft และกลับมากรอกต่อ] Save --> Fill Fill --> Submit[Submit] Submit --> Result[Submission: JSON ใน DB และ DOCX ใน Storage] Result --> Receipt[Receipt และอ่านย้อนหลัง] Result --> Correction[Admin Correction revision ใหม่] Correction --> Receipt Receipt --> PDF[สร้าง PDF เมื่อขอดาวน์โหลด] Result --> Response: เริ่มกรอกรอบใหม่ (เปิด Response กลับเป็น draft, seed จาก Submission ล่าสุด) กติกาหลักที่กำหนดระบบ:
+Folio Forms ใช้ API หลักตัวเดียว แบ่งโค้ดตามหน้าที่ของระบบ Web และปลั๊กอิน ONLYOFFICE เรียก lifecycle เดียวกันสำหรับสร้างต้นแบบ เผยแพร่ บันทึกร่าง ส่งคำตอบ และแก้ไขผลย้อนหลัง PostgreSQL เก็บข้อมูลและตัวอ้างอิงไฟล์ ส่วน RustFS เก็บไฟล์ DOCX/XLSX จริง
 
-หนึ่ง User มีได้หนึ่ง Response ต่อ Form ตาม unique constraint (formId, userId) แต่ submit ซ้ำได้ไม่จำกัดจำนวนครั้งบน Response เดิม แต่ละครั้งสร้าง Submission ใหม่โดยไม่ลบของเดิม; การลบ Draft เป็นอีก flow หนึ่ง Published Template และ Field contract แก้ทับไม่ได้ หากต้องเปลี่ยนโครงสร้างให้ Duplicate เป็น Form ใหม่ Metadata เช่นชื่อ คำอธิบาย สถานะ archive และ Fill Method เปลี่ยนได้ตามเงื่อนไข โดยไม่เปลี่ยน Published Template Draft ต้องบันทึกข้อมูลและ DOCX สำเร็จก่อนแสดงว่าสำเร็จ การพิมพ์ใน editor ยังไม่เท่ากับบันทึก Draft ของ Folio Submission เดิมไม่ถูกแก้ทับ; Admin เพิ่ม Correction พร้อมเหตุผลและ revision ใหม่ได้ การลบข้อมูลโดยผู้มีสิทธิ์เป็นข้อยกเว้นด้าน retention PDF เป็นผลแปลงตามคำขอ ไม่ใช่ artifact ที่ต้องสร้างสำเร็จตอน Submit PostgreSQL เก็บสถานะและความสัมพันธ์; RustFS เก็บไฟล์; ONLYOFFICE ทำหน้าที่ editor และแปลง PDF แหล่งหลัก: [app.ts](../apps/server/src/app.ts), [schema.prisma](../packages/db/prisma/schema.prisma), [response completion](../apps/server/src/operations/response-completion.ts), [template completion](../apps/server/src/operations/template-completion.ts)
+```mermaid
+flowchart LR
+  Web[React Web] --> API[Bun / Elysia API]
+  Plugin[ONLYOFFICE Form Bridge] --> API
+  API --> DB[(PostgreSQL / Prisma)]
+  API --> Storage[(RustFS: ไฟล์เอกสาร)]
+  API <--> Office[ONLYOFFICE: editor / processing / PDF]
+  API --> AI[OmniRoute / isolated document worker]
+```
 
-2. Component และ Deployment flowchart TB Browser[Browser: React SPA และ ONLYOFFICE iframe] Ingress[External ingress / TLS termination] Gateway[Pingap gateway: HTTP] Browser --> Ingress --> Gateway Gateway -->|SPA paths| Web[web: static-web-server] Gateway -->|assets| Assets[web-assets: ไม่มี SPA fallback] Gateway -->|api, onlyoffice, prefill, health, ready| API[Bun + Elysia API] Gateway -->|office prefix| Office[ONLYOFFICE Docs] API --> Auth[Better Auth] Auth --> DB[(PostgreSQL / Prisma)] API --> DB API --> S3[(RustFS: private S3 bucket)] API -->|force-save / PDF conversion| Office Office -->|signed document fetch / callback| API API -->|SSO code exchange| PDMS[PDMS Auth] API -->|AI requests| Omni[OmniRoute / model provider] API --> Worker[Document worker API] Worker --> Daemon[Dedicated Docker daemon] Daemon --> Job[Ephemeral Python container] ส่วน หน้าที่ ตำแหน่ง Web React, Vite, TanStack Router; login, admin, fill, receipt apps/web API รวม route, authorization, validation, transaction และ orchestration apps/server/src/app.ts Form Bridge คุยกับ editor, อ่าน field values, prefill, save/submit และ field settings apps/onlyoffice-plugin/src Database Prisma client, schema และ migrations packages/db Authentication Better Auth factory และ bootstrap Admin packages/auth Environment ตรวจ configuration ฝั่ง server packages/env Prefill mock ตัวจำลอง integration สำหรับ verification รวมถึง fixtures apps/prefill-mock AI worker รัน Python ใน container ชั่วคราวที่จำกัด resource apps/server/src/document-worker-server.ts Gateway แยก web, assets, API และ ONLYOFFICE gateway/pingap.toml ใน compose.yaml gateway publish ${GATEWAY_PORT:-8080}:80; HTTPS เป็นหน้าที่ ingress ภายนอก ไม่ได้มี Caddy service ในไฟล์นี้ PUBLIC_ORIGIN กำหนด browser-facing origin ส่วน API, DB, RustFS, web และ ONLYOFFICE ใช้เครือข่ายภายในเป็นหลัก prefill-mock เปิดเฉพาะ profile verification และ publish port 3010
+[compose.yaml](../compose.yaml) และ [gateway/pingap.toml](../gateway/pingap.toml) กำหนดเส้นทาง Web, assets, API และ ONLYOFFICE ส่วน HTTPS อยู่ที่ ingress ภายนอก API ประกอบ routes ใน [app.ts](../apps/server/src/app.ts) และเริ่มงาน recovery ใน [index.ts](../apps/server/src/index.ts)
 
-ภาพรวมเป็น modular monolith: API process เดียวแบ่ง module ตาม domain ไม่ใช่ microservices สำหรับแต่ละ feature ไม่มี durable job queue สำหรับ Operation; งานถูกเริ่มใน process แล้วอาศัยสถานะใน DB และ reconciliation จัดการงานค้าง
+## วงจรข้อมูลตามระบบเดิม
 
-แหล่ง: [compose.yaml](../compose.yaml), [gateway config](../gateway/pingap.toml), [root package.json](../package.json)
+```mermaid
+flowchart LR
+  Form --> TemplateDraft
+  TemplateDraft -->|publish| PublishedTemplate
+  PublishedTemplate --> FieldManifest
+  PublishedTemplate --> Response
+  Response -->|save draft| Draft[ข้อมูลร่าง + ไฟล์ร่าง]
+  Response -->|submit| Submission
+  Submission -->|admin correction| Correction
+  Submission -->|เริ่มกรอกอีกครั้ง| Response
+```
 
-3. Data Model และสิ่งที่ถือเป็นข้อมูลจริง erDiagram User ||--o{ Session : authenticates User ||--o{ Account : credentials_or_provider User ||--o{ Response : owns Form ||--o| TemplateDraft : editable_source TemplateDraft ||--o{ DraftFieldRule : configures Form ||--o| PublishedTemplate : immutable_contract PublishedTemplate ||--o| FieldManifest : describes FieldManifest ||--o{ ManifestField : contains PublishedTemplate ||--o| PrefillConfiguration : maps PrefillConfiguration ||--o{ PrefillField : contains Form ||--o{ Response : receives Response ||--o| PrefillSnapshot : freezes_initial_values Response ||--o{ Submission : completes Submission ||--o{ Correction : revisions Response ||--o{ Operation : tracks_work Operation ||--o| CallbackClaim : correlates_callback Form ||--o{ Handoff : receives_external_data Handoff ||--o| PendingClaim : reserves_launch แผนภาพแสดงความสัมพันธ์หลัก ไม่ใช่ทุก foreign key ของ schema
+- หนึ่ง User มีหนึ่ง Response ต่อ Form แต่ส่งได้หลายครั้ง แต่ละครั้งสร้าง Submission ใหม่
+- Template Draft และร่างคำตอบแก้ทับได้ ส่วน Published Template, Submission และ Correction เป็นประวัติที่ไม่แก้ทับ
+- เปลี่ยนโครงสร้างแบบฟอร์มที่เผยแพร่แล้วด้วยการ Duplicate เป็น Form ใหม่
+- การบันทึกสำเร็จต้องมีทั้งข้อมูลที่สกัดแล้วและไฟล์ที่บันทึกสำเร็จ การพิมพ์ใน editor หรือ HTTP 202 ยังไม่ใช่ผลสำเร็จ
+- PDF สร้างจากเอกสารที่บันทึกไว้เมื่อขอดาวน์โหลด การแปลง PDF ล้มเหลวไม่ลบ Submission
 
-กลุ่มข้อมูล ความหมายและ invariant User, Session, Account ตัวตน Folio, session ของ Folio และ local credential/SSO mapping แยกกัน Verification, LegacyAccountLinkRequest transaction/transfer ของ SSO และคำขอผูกบัญชีที่ต้อง review Form metadata, opaque public ID, lifecycle, Fill Method และ version; public ID ถูกสร้างตั้งแต่สร้าง Form TemplateDraft, DraftFieldRule DOCX ที่แก้ไขได้และกฎแต่ละ Tag ก่อน publish PublishedTemplate, FieldManifest, ManifestField DOCX และสัญญา field ที่ตรึงไว้: Tag, label, placeholder, ลำดับ, type, options, required, policy, picture limits PrefillConfiguration, PrefillField mapping ระหว่าง field Tag กับ JSON Pointer และ policy Response, PrefillSnapshot งานของ User ต่อ Form; snapshot เก็บ values และ locked fields ณ การเริ่ม Submission, Correction หนึ่ง Response มีได้หลาย Submission ตามลำดับเวลา (submit ซ้ำเปิด Response กลับเป็น draft แล้วสร้าง Submission ใหม่ทุกครั้งที่ submit สำเร็จ โดยไม่ลบ Submission เดิม); แต่ละ Submission มี Correction chain ของตนเองเริ่มที่ original revision 0 และ revision ถัดไป แต่ละ revision มี data, objectKey, documentKey ของตน Operation, CallbackClaim ติดตาม async action และ claim สำหรับรับ callback ที่สัมพันธ์กับ action นั้น EditorLease สิทธิ์แก้ไขชั่วคราวต่อ target; unique (targetType, targetId) และผูกกับ User/Session Handoff, PendingClaim code จากระบบภายนอกและ browser claim ก่อน redeem เข้าบัญชี ObjectCleanupIntent, DeletionTombstone งานล้างไฟล์ที่ retry ได้และหลักฐาน digest หลังลบเพื่อไม่ให้ reference ถูกนำกลับมาใช้ AuditEvent, LoginFailure ประวัติการกระทำและตัวนับ login attempts ขอบเขต persistence: DB ไม่ได้เก็บเนื้อไฟล์ DOCX โดยตรง แต่เก็บ object keys และ structured data; documentKey ใช้ระบุรุ่นเอกสารให้ ONLYOFFICE และตรวจ stale request ไม่ใช่ S3 object key ส่วน AI conversation และ PDF ต้นฉบับอยู่ใน session ชั่วคราว ไม่ใช่ Form data ถาวร
+สำหรับ XLSX ที่แก้ไขได้ Web รับ `onDocumentStateChange: true` เพื่อระบุว่ามีการเปลี่ยนแปลงและเตือนก่อนออกจากหน้า ค่า `false` หมายถึง ONLYOFFICE รับการเปลี่ยนแปลงไว้ในบริการ editor แล้ว จึงไม่ล้างสถานะร่างของ Folio ต้องรอผลบันทึกผ่าน lifecycle ของ Folio ตามเดิม DOCX ยังคงใช้การแจ้งสถานะจากปลั๊กอินเดิม
 
-แหล่ง: [Prisma schema](../packages/db/prisma/schema.prisma), [storage.ts](../apps/server/src/storage.ts)
+## ข้อมูลแต่ละอย่างควรอยู่ที่ไหน
 
-4. Lifecycle ของ Form, Response และ Operation stateDiagram-v2 state "Form" as F { [_] --> DraftForm DraftForm --> Published: Publish สำเร็จ DraftForm --> DeletedDraft: ลบเมื่อยังไม่เคย publish และไม่มี response data Published --> Archived: Archive Archived --> Published: Unarchive } state "Response" as R { [_] --> DraftResponse: Start DraftResponse --> DraftResponse: Save Draft DraftResponse --> Submitting: Submit accepted Submitting --> Submitted: DOCX และ DB commit สำเร็จ Submitting --> DraftResponse: Operation failed / timeout Submitted --> Submitted: เพิ่ม Correction revision Submitted --> DraftResponse: Start ใหม่โดยไม่มี pending Prefill claim (เปิด Response กลับเป็น draft, seed จาก Submission ล่าสุด) } ไม่มี transition Published → Draft หรือ publish ทับ template เดิมใน implementation ปัจจุบัน การ Duplicate สร้าง entity ใหม่พร้อม public ID ใหม่และสำเนา DOCX/rules ไม่คัดลอก Responses, Submissions หรือประวัติ Operations ของต้นฉบับ
+ชื่อตารางและคอลัมน์จริงดูที่ [schema.prisma](../packages/db/prisma/schema.prisma)
 
-Archive หยุดรับ Response ใหม่ แต่ผู้มี Response เดิมยังเข้าถึงและทำ flow เดิมได้ตาม guard ของแต่ละ action จึงไม่ควรตีความ Archive ว่าเป็นการลบหรือเพิกถอนเอกสารทุกคน
+| ข้อมูล | เจ้าของข้อมูล | เหตุผล |
+| --- | --- | --- |
+| ชื่อ คำอธิบาย ลิงก์ สถานะ วิธีกรอก ชนิดเอกสาร | `Form` / `forms` | เป็นคุณสมบัติของแบบฟอร์มทั้งหมด |
+| ต้นแบบที่ Admin กำลังแก้ | `TemplateDraft` / `template_drafts` | มีไฟล์และ editor identity ของต้นแบบแยกจากผลกรอก |
+| กฎและการตั้งค่าฟิลด์ก่อนเผยแพร่ | `DraftFieldRule` / `draft_field_rules` | DOCX ใช้กฎตาม Tag เดิม; XLSX ใช้แถวเดียวกันเก็บชื่อ ชนิด ตัวเลือก กฎ และ binding |
+| เอกสารต้นแบบฉบับเผยแพร่ | `PublishedTemplate` / `published_templates` | เป็นฉบับที่ Response อ้างถึงและเปลี่ยนทับไม่ได้ |
+| สัญญาช่องกรอกที่เผยแพร่แล้ว | `FieldManifest`, `ManifestField` | ใช้แสดงผล ตรวจข้อมูล และรองรับ Prefill ร่วมกับ DOCX |
+| ตำแหน่งที่ฟิลด์ XLSX อ้างถึง | `DraftFieldRule.binding` หรือ `ManifestField.binding` | เก็บเฉพาะ identity, named anchor, offset และ computed ตามชนิดแถว ไม่คัดลอกชื่อหรือกฎลง JSON อีก |
+| mapping ข้อมูลภายนอก | `PrefillConfiguration`, `PrefillField` | บอกว่าค่า JSON Pointer ใดใช้กับช่องใด |
+| ค่า Prefill และช่องที่ล็อกของผู้กรอกแต่ละราย | `PrefillSnapshot` | ตรึงค่าเมื่อเริ่มกรอก ไม่ดึงใหม่ทุกครั้งที่ resume |
+| คำตอบที่บันทึกเป็นร่าง | `Response.draftData` และ `draftObjectKey` | ยังแก้ไขได้และยังไม่ใช่การส่งคำตอบ |
+| คำตอบที่ส่งแล้วแต่ละครั้ง | `Submission.data` และ `objectKey` | เก็บประวัติผลกรอกแบบ immutable |
+| ฉบับที่ Admin แก้ผลกรอก | `Correction.data`, `changedData`, `objectKey`, `reason` | เก็บ revision ใหม่โดยยังอ่าน Submission เดิมได้ |
+| ไฟล์ DOCX/XLSX จริง | RustFS ตาม `objectKey` | ไม่เก็บ binary เอกสารซ้ำใน JSON หรือฐานข้อมูล |
 
-Operation มีสถานะ pending → processing → completed หรือ failed และชนิด save_template_draft, publish_form, save_draft, submit_response, save_correction การตอบ HTTP 202 หมายถึงรับงานแล้ว ไม่ใช่บันทึกเสร็จ
+### ทำไมยังแยก template_drafts
 
-แหล่ง: [form catalog](../apps/server/src/routes/form-catalog.ts), [public forms](../apps/server/src/routes/public-forms.ts), [operation lifecycle](../apps/server/src/operations/lifecycle.ts)
+`template_drafts` มีอยู่ในระบบ DOCX เดิม ไม่ใช่ตารางที่เพิ่มขึ้นเพื่อ Excel โดยเฉพาะ `id` ของมันเป็นเป้าหมายของ Editor Lease และ capability ส่วน `documentKey` ใช้ตรวจรุ่นเอกสารระหว่าง save/publish
 
-5. สร้าง แก้ไข และ Publish Form Admin สร้าง Form จาก bundled starter DOCX หรือ upload DOCX; API ตรวจ input และ package ก่อนเก็บไฟล์และ record การเปิด editor ต้องผ่าน Admin authorization และได้ Editor Lease; session อื่นที่ถือ lease อยู่ทำให้เปิดแก้ชนกันไม่ได้ Admin ใส่ content control โดยใช้ Tag เป็น key, Title/Alias เป็น label และ Placeholder เป็นคำแนะนำ; label ว่างใช้ Tag แทน Form Bridge panel ตั้ง required และ Prefill policy ต่อ Tag; schema lookup ให้ JSON Pointer ของ scalar fields จาก mock schema ไม่ได้คืนค่าข้อมูลผู้ใช้จริง Save Template สั่ง force-save ผ่าน Operation; สำเร็จแล้วจึงเปลี่ยน canonical object/document key ของ Template Draft Publish ตรวจ controls แล้วสร้าง Published Template, Field Manifest และ Prefill Configuration ใน transaction พร้อมเปลี่ยนสถานะ Form หลัง publish เปลี่ยนโครงสร้างหรือ policy ต้อง Duplicate; เปลี่ยน metadata/archive/Fill Method ผ่าน route metadata โดยมี guard แยก ประเภท field รองรับ text, checkbox, date, dropdown, combo, picture การ publish ปฏิเสธ Tag ว่าง/ซ้ำและ contract ที่ไม่รองรับ มีอย่างน้อยหนึ่ง supported tagged control ส่วน Picture ใช้ภาพ embedded JPEG/PNG หนึ่งภาพต่อ field จำกัด 10 MiB และ 4096×4096 และไม่ใช้ scalar Prefill mapping
+| คอลัมน์ | หน้าที่ |
+| --- | --- |
+| `formId` | ระบุว่าเป็นต้นแบบของ Form ใด โดยหนึ่ง Form มีได้หนึ่ง Template Draft |
+| `objectKey` | ตำแหน่งไฟล์ต้นแบบที่บันทึกแล้วใน RustFS |
+| `documentKey` | identity ของเอกสารที่ ONLYOFFICE เปิด และเงื่อนไขตรวจคำขอเก่า |
+| `contentHash` | ลายนิ้วมือของเนื้อไฟล์ ใช้คนละหน้าที่กับตำแหน่งไฟล์ |
+| `fieldRules` | relation ไปยังแถว `DraftFieldRule` ที่ใช้ร่วมกัน ไม่ใช่ JSON การตั้งค่าอีกชุด |
+| `bindingRevision` | ลำดับการแก้การตั้งค่า ใช้ป้องกันการเขียนทับจากคำขอเก่า |
 
-ข้อแตกต่างของ Fill Method: native ต้องผ่าน supportsNativeTemplate เพิ่มเติม เช่นโครงสร้าง nested controls และ date settings บางแบบไม่รองรับ การ publish ผ่านจึงไม่ได้แปลว่าเลือก native ได้ทุกเอกสาร การเปลี่ยน method ระหว่างมี response operation ทำงานถูกป้องกัน และ client เก่าจะได้รับ fill_method_changed
+การรวมกับ Form จะกระทบ identity และความสัมพันธ์ของระบบแก้ไข DOCX เดิม ส่วนการรวมกับ Submission จะปนต้นแบบที่ยังไม่มีเจ้าของคำตอบเข้ากับผลกรอกที่ต้องมี Response และ User จึงรักษาตารางเดิมไว้
 
-แหล่ง: [form authoring](../apps/server/src/routes/form-authoring.ts), [field parsing](../apps/server/src/documents/fields.ts), [native document](../apps/server/src/documents/native-document.ts), [native eligibility](../apps/server/src/documents/native-eligibility.ts)
+### รวมข้อมูลที่เซฟกับ submissions ได้แค่ไหน
 
-6. เริ่มกรอก, Save Draft และ Submit 6.1 การ Start และ Resume POST /api/forms/:publicId/start ตรวจ identity, Form และ Response เดิมก่อนตัดสินใจ:
+คำตอบ XLSX ที่ส่งแล้วใช้ `submissions.data` และไฟล์ตาม `submissions.object_key` อยู่แล้ว ไม่มีตารางคำตอบ Excel อีกชุดหนึ่ง แต่ Save Draft ยังเก็บใน `responses` เพราะผู้ใช้ยังแก้ได้และอาจไม่ส่งเลย การนำร่างทุกครั้งไปเป็น Submission จะเปลี่ยนความหมายของประวัติ ใบรับคำตอบ และการส่งซ้ำของ DOCX
 
-สิ่งที่พบ ผลลัพธ์ ส่งแล้วและมี pending Prefill claim คืน receipt ของ Submission ล่าสุด ไม่สร้าง submission ซ้ำ (redeem handoff เป็น terminal state) ส่งแล้วและไม่มี pending Prefill claim เปิด Response เดิมกลับเป็น draft อีกครั้ง โดย copy data/DOCX จาก Submission ล่าสุดมาเป็น draft ใหม่ ให้กรอกและ submit ซ้ำได้ไม่จำกัดจำนวนครั้ง แต่ละครั้งที่ submit สำเร็จสร้าง Submission ใหม่แยกจากของเดิม กำลัง submit ปฏิเสธด้วย operation_in_progress มี pending Prefill claim ตรวจและ redeem handoff ต้องมี Prefill แต่เป็นผู้เริ่มใหม่ที่ไม่มี handoff ปฏิเสธด้วย prefill_required มี Draft รุ่นปัจจุบันและ artifact อยู่จริง เปิด Draft เดิม ยังไม่มี Response และ Form รับคำตอบ copy Published DOCX, สร้าง Response และ snapshot Form archived และไม่มี Response เดิม ไม่รับการเริ่มใหม่ จากนั้น editor-config ตรวจเจ้าของ Response และ claim lease แล้วคืน config สำหรับ method ปัจจุบัน Native แสดง field ตามลำดับเอกสารเป็นหน้าเดียว ไม่จำลอง static headings หรือ layout ของ DOCX
+ตารางรายการใน Excel เป็นส่วนของ JSON คำตอบตาม key ที่ผู้สร้างตั้ง เช่น `data.items = [{ description: "รายการ A", quantity: 2 }]` ส่วนชื่อ key, label และชนิดคอลัมน์อยู่ในแถว `DraftFieldRule` ก่อนเผยแพร่ และ `ManifestField` หลังเผยแพร่ ไม่ต้องเพิ่ม SQL table สำหรับแต่ละแบบฟอร์ม
 
-6.2 การบันทึกสองทางที่มาบรรจบกัน sequenceDiagram participant UI as Web / Form Bridge participant API as Folio API participant OO as ONLYOFFICE participant S3 as RustFS participant DB as PostgreSQL UI->>API: Save หรือ Submit พร้อม scoped capability API->>API: ตรวจ owner, lease, documentKey, method และ field data API->>DB: สร้าง Operation; Submit เปลี่ยนเป็น submitting API-->>UI: 202 + operation ID + polling capability alt ONLYOFFICE API->>OO: Force-save พร้อม callback claim OO->>API: Signed callback status 6 และ document URL API->>OO: อ่าน DOCX จาก origin ที่อนุญาต else Native API->>API: สร้างหรือ overlay DOCX จาก manifest และ field values end API->>API: ตรวจ DOCX ตรงกับ published contract API->>S3: เขียน staged และ final object API->>DB: Transaction: เปลี่ยน canonical pointer + data + completed API->>S3: Cleanup object เก่าที่เลิกอ้างอิง UI->>API: Poll operation API-->>UI: completed หรือ failed ใน ONLYOFFICE plugin จะ freeze editor ระหว่างอ่านค่าและ flush editor changes ก่อนส่ง action; Api.Save อย่างเดียวไม่ใช่หลักฐานว่า Folio บันทึกเสร็จ Plugin ต้องรอ Operation สำเร็จจึง clear dirty state
+### เปรียบเทียบ DOCX และ Excel ในแต่ละขั้นตอน
 
-API ตรวจ unknown Tags, type, dropdown options, date, ความยาวข้อความ, ขนาด structured payload และ locked Prefill ทั้ง Draft และ Submit; Draft ยอมให้ required fields ยังไม่ครบ ส่วน Submit บังคับ required รวมถึง checkbox ที่ required ต้องเป็น true Picture ตรวจจาก DOCX/ไฟล์ภาพแยกจาก scalar JSON
+| ขั้นตอน/ข้อมูล | DOCX เดิม | Excel หลังปรับ |
+| --- | --- | --- |
+| ไฟล์ต้นแบบที่กำลังออกแบบ | `TemplateDraft.objectKey` → DOCX ใน RustFS | `TemplateDraft.objectKey` → XLSX ใน RustFS |
+| ชื่อ ชนิด ตัวเลือก และตำแหน่งในต้นแบบ | อยู่ใน content controls ของไฟล์ DOCX ตามเดิม | `DraftFieldRule.tag/label/type/options/position` และ `binding` |
+| Required และ Prefill ตอนออกแบบ | `DraftFieldRule.required/prefillPointer/prefillPolicy` | คอลัมน์เดียวกัน |
+| ชื่อ ชนิด ตัวเลือก และกฎหลังเผยแพร่ | `ManifestField` | `ManifestField` เดียวกัน รวมแถวตารางและคอลัมน์ |
+| ตัวชี้ Prefill หลังเผยแพร่ | `PrefillField` ใน `PrefillConfiguration` | ตารางเดียวกัน รองรับ scalar fields ตามขอบเขตเดิม |
+| ค่า Prefill ของผู้กรอกแต่ละราย | `PrefillSnapshot` | ตารางเดียวกัน |
+| คำตอบร่าง | `Response.draftData` | คอลัมน์เดียวกัน |
+| คำตอบที่ส่งแล้ว | `Submission.data` | คอลัมน์เดียวกัน |
+| คำตอบที่ Admin แก้ | `Correction.data/changedData` | คอลัมน์เดียวกัน |
 
-เมื่อ Save สำเร็จ เก็บ draftData กับ draftObjectKey คู่กัน; เมื่อ Submit สำเร็จสร้าง Submission แล้วล้าง draft fields และเปลี่ยน Response เป็น submitted หากล้มเหลวไม่ควรถือว่าคลิกแล้วเท่ากับสำเร็จ UI เก็บ dirty/error และหยุด flow save-and-exit/save-and-export หลัง Submit สำเร็จ UI ไม่ redirect ไป receipt ทันที แต่เรียก /start ซ้ำเพื่อเปิด Response เดิมกลับเป็น draft ใหม่ (seed ค่าจาก Submission ที่สร้าง) ให้กรอกคำตอบรอบใหม่ได้ในหน้าเดิม ผู้ใช้กดลิงก์ไปยัง receipt ของ Submission ที่ผ่านมาเองจากตาราง Submission history ที่แสดงเฉพาะ Form ตาม allowlist ชื่อ Form ใน client
+ไม่ได้ย้ายชื่อใน content control ของ DOCX ออกมาเป็นข้อมูลต้นแบบอีกชุด: คอลัมน์ใหม่ที่เพิ่มใน `DraftFieldRule` เป็น nullable และ DOCX ใช้พฤติกรรมเดิม เมื่อเผยแพร่ DOCX ระบบยังอ่าน metadata จากเอกสารมาสร้าง `ManifestField` ตามเดิม
 
-เรื่อง session หมดอายุ: UI มีคำเตือนก่อนหมดอายุและ flow save-before-reauth แต่ไม่ใช่ offline autosave และไม่รับประกันว่าจะบันทึกได้หลัง credential หมดอายุหรือเมื่อ network ใช้ไม่ได้
+### ตัวอย่างฟิลด์และตำแหน่ง Excel
 
-แหล่ง: [response actions](../apps/server/src/routes/response-actions.ts), [data validation](../apps/server/src/responses/data.ts), [completion](../apps/server/src/operations/response-completion.ts), [plugin operations](../apps/onlyoffice-plugin/src/operations.js), [fill page](../apps/web/src/routes/forms/$publicId/fill.tsx)
+แถวต่อไปนี้อยู่ใน `DraftFieldRule` ตอนออกแบบ และถูกตรึงเป็น `ManifestField` เมื่อเผยแพร่:
 
-7. Prefill จากระบบภายนอก flowchart LR Source[External backend] -->|shared-secret API| Create[สร้าง Handoff] Create --> Code[one-use launch code] Code -->|top-level POST| Launch[prefill/handoff] Launch --> Cookie[HttpOnly PendingClaim cookie] Cookie --> Login[เข้าสู่ระบบ Folio] Login --> Redeem[Start: ตรวจ email, expiry, config และ reference] Redeem --> Snapshot[PrefillSnapshot: values + locked fields] Snapshot --> Draft[สร้างหรือใช้ Response ตาม continuation rules] Source -->|status API| Status[ติดตามด้วย externalReference] Handoff เป็นคนละกลไกกับ SSO: Handoff ส่งข้อมูลเริ่มต้นและผูก normalized email; SSO พิสูจน์ตัวตนและสร้าง session การมี SSO ไม่ได้ข้ามข้อกำหนด email ของ Handoff
+| `tag` | `label` | `type` | `binding` |
+| --- | --- | --- | --- |
+| `name` | ชื่อผู้กรอก | `text` | `{"id":"folio_name","anchor":"folio_name","computed":false}` |
+| `items` | รายการ | `table` | `{"id":"folio_items","anchor":"folio_items"}` |
+| `items.quantity` | จำนวน | `number` | `{"id":"folio_quantity","offset":1,"computed":false}` |
 
-Backend ภายนอกส่ง public ID, email, external reference และ values ผ่าน API ที่ตรวจ X-Prefill-Handoff-Secret เก็บ digest ของ code/reference และกรองค่าตาม JSON Pointer ที่ publish ไว้ ตรวจ type กับ Manifest และ configuration hash Launch ต้องเป็น top-level POST; GET ถูกปฏิเสธ เปลี่ยน pending → reserved และสร้าง PendingClaim cookie แบบ HttpOnly, Secure, SameSite=Lax Redeem ตรวจ claim กับบัญชีและ Form ใน transaction; เปลี่ยนเป็น consumed เมื่อใช้สำเร็จ มี expiry และ deletion states แยก lock_when_available ล็อกเมื่อ snapshot มีค่า; ถ้าไม่มีค่ายังแก้ได้ API ตรวจซ้ำ ไม่พึ่งแค่การ disable field ใน UI Resume ใช้ snapshot เดิม ไม่เรียกข้อมูลสดมาแทนค่าที่กรอกไว้ การใช้ reference ซ้ำหรือ reference ที่มี tombstone ถูกปฏิเสธ แหล่ง: [prefill routes](../apps/server/src/routes/prefill.ts), [create/launch](../apps/server/src/prefill/create-launch.ts), [redemption](../apps/server/src/prefill/redemption.ts), [values](../apps/server/src/prefill/values.ts), [status](../apps/server/src/prefill/status.ts)
+- `id` เป็น identity ที่ปลั๊กอินใช้ติดตามฟิลด์ ไม่ใช่ UUID ของแถวฐานข้อมูล
+- `anchor` เป็นชื่อ named range ในไฟล์ เช่น `folio_name` อาจชี้ไป `Sheet1!B4` ระบบอ่านตำแหน่งจริงจาก workbook ที่เชื่อถือได้ ไม่เก็บพิกัดซ้ำใน DB
+- แถวตารางใช้ `anchor` ของช่วง body; คอลัมน์ใช้ `offset` นับจากศูนย์ ดังนั้น `offset: 1` คือคอลัมน์ที่สองของตาราง
+- `computed` บอกว่าเป็นช่องสูตรตามสัญญาเดิม ไม่ได้เพิ่มความสามารถสร้างช่องสูตรใหม่ในแผงตั้งค่า
+- ชื่อคอลัมน์ใช้ `tag` แบบ `tableKey.columnKey`; key ที่ผู้สร้างตั้งห้ามมีจุดอยู่แล้ว จึงแยก `quantity` ของฟิลด์หลักกับ `items.quantity` ได้โดยไม่ชนกัน
 
-8. Login, สิทธิ์ และ Legacy SSO 8.1 Local login และบัญชี Better Auth ออก opaque bearer session อายุหนึ่งชั่วโมงและไม่ refresh session อัตโนมัติ ปิด public sign-up; Admin provision บัญชีหรือ reset password แล้วแสดง temporary password ใน response นั้น การเข้าแบบ local ที่ mustChangePassword=true ต้องเปลี่ยนรหัสก่อนทำงานทั่วไป
+โครงสร้างทั้งหมดนี้มีนิยามกลางชื่อ `ExcelBinding` ใน [forms/excel-binding.ts](../apps/server/src/forms/excel-binding.ts) ใช้ทั้ง `DraftFieldRule.binding` และ `ManifestField.binding`:
 
-API ตรวจ session ที่ยังใช้ได้, enabled, role และ ownership จริง ไม่อาศัยการซ่อนปุ่มบนเว็บอย่างเดียว Admin ตรวจ Draft/Submission ของทุกคนได้; User อ่านข้อมูลตนเอง การเปลี่ยนบัญชีสำคัญใช้ transaction และ lock; ป้องกันการ disable/demote Admin ที่ enabled คนสุดท้าย
+| ชนิดข้อมูลในโค้ด | สมาชิกของ JSON | ตัวตรวจใน `excelBindingSchemas` |
+| --- | --- | --- |
+| `ExcelScalarBinding` | `id`, `anchor`, `computed` | `scalar` |
+| `ExcelTableBinding` | `id`, `anchor` | `table` |
+| `ExcelColumnBinding` | `id`, `offset`, `computed` | `column` |
 
-Login limiter ของแอปนับตาม digest ของ email และ source IP: limit 5 attempts ต่อ window 15 นาทีและล้างเมื่อ login สำเร็จ การตั้งค่า Better Auth rate limiter เป็น false จึงไม่แปลว่าไม่มี limiter ของแอป
+`ExcelBinding` รวมสามชนิดนี้ และ `excelBindingSchema` ตรวจ JSON ก่อนเขียนแถวฟิลด์ เมื่ออ่านกลับจะเลือก schema ของชนิดแถวที่คาดหวัง เพื่อปฏิเสธ property ที่ปนจากชนิดอื่นหรือชื่อ/กฎที่คัดลอกเข้ามา กลุ่มนี้เป็นชนิดข้อมูลในโค้ด ไม่ใช่ Prisma model ใหม่ ฐานข้อมูลยังเป็น `binding Json?` คอลัมน์เดิม รูป JSON และข้อมูลที่มีอยู่เดิมอ่านได้เหมือนเดิม จึงไม่ต้องเพิ่ม migration
 
-แหล่ง: [auth package](../packages/auth/src/index.ts), [identity](../apps/server/src/auth/identity.ts), [password/session](../apps/server/src/auth/password-session.ts), [accounts](../apps/server/src/routes/accounts.ts)
+Required, ตัวเลือก dropdown และ Prefill ใช้คอลัมน์ร่วม ไม่อยู่ใน `binding` ตัวเลือกใช้รูป `{displayText, value}` แบบ DOCX; Boolean ใช้ `FieldType.checkbox` และเพิ่มชนิด `number`/`table` เพื่อไม่สูญเสียความหมายของ Excel โดยไม่เปลี่ยนชนิด content controls ของ DOCX
 
-8.2 Legacy SSO / PDMS sequenceDiagram participant B as Browser participant F as Folio participant P as PDMS Portal/Auth B->>F: Start พร้อม safe return path F-->>B: authorization URL + browser-bound cookie B->>P: Authorize: state และ PKCE S256 P-->>B: Redirect กลับพร้อม one-time code B->>F: Callback code + state + cookie F->>P: Server-to-server code exchange P-->>F: sub, email, boolean email_verified, optional name F->>F: Resolve provider/subject และ account review generation alt อีเมลชนบัญชีที่ยังไม่ linked F-->>B: Pending Account Link; ยังไม่มี session ใหม่ else มี session เดิมที่ต้องยืนยันการสลับ F-->>B: หน้า confirm / cancel B->>F: ยืนยันพร้อม confirmation fingerprint else บัญชีเข้าได้ตามปกติ F->>F: สร้าง session transfer end B->>F: Claim transfer ครั้งเดียวเมื่อมี transfer F-->>B: Folio session token ผ่าน response body Identity หลักคือ configured provider + stable subject ไม่ใช่ email ถ้ามี mapping แล้วใช้เจ้าของเดิมที่ enabled และ role=user; ไม่ sync profile หรือ password requirement จาก PDMS ทับทุกครั้ง
+คำตอบของตัวอย่างนี้เป็น `{"name":"สมชาย","items":[{"quantity":2}]}` ใน `draftData` หรือ `data` ตามขั้นตอน ใช้ key เชื่อมกับนิยามฟิลด์ แต่ไม่คัดลอก label ชนิด หรือกฎลงในคำตอบ ส่วน DOCX มี `binding = null`
 
-กรณี first-time identity ที่ email ยังว่าง สร้าง ordinary User โดยไม่มี local password และ emailVerified=false โค้ดรับ email_verified ทั้ง true และ false แต่ต้องเป็น boolean จาก exchange ที่เชื่อถือได้ ไม่ได้อ้างว่า PDMS ยืนยันการเป็นเจ้าของ mailbox
+### DocumentKind อยู่ตรงไหน
 
-หาก email ชนบัญชีเดิม จะสร้าง Pending Account Link ให้ Admin review ไม่ auto-merge Approval ต้องผูกกับ reviewedGeneration ปัจจุบันและ login ต้องเริ่ม transaction ใหม่หลัง approval; evidence/candidate เปลี่ยนทำให้ต้อง review ใหม่ คำขอที่ rejected ยังถูกปฏิเสธ Admin และ disabled User ไม่ใช่เป้าหมายที่ SSO เข้าได้
+`DocumentKind` เป็น enum `docx | xlsx` และมีคอลัมน์ `forms.document_kind` เพียงตำแหน่งเดียว ไม่ใช่ตารางใหม่ Responses/Submissions รู้ชนิดเอกสารผ่าน Form เดิม ชนิดเอกสารเปลี่ยนไม่ได้หลังสร้าง และ XLSX ใช้ ONLYOFFICE ตาม constraint เดิมของส่วน Excel
 
-การ switch บัญชีมี confirm/cancel ผูกกับ initiating Session และ challenge อายุสั้น แม้เป็นบัญชีเดียวกันก็ผ่านการยืนยันตาม flow ปัจจุบัน Cancel คง session เดิมไว้ SSO ไม่แชร์ access/refresh token ของ PDMS มาใช้แทน Folio token และไม่ทำ synchronized logout
+ค่านี้เพียงพอสำหรับเลือกวิธีประมวลผลเอกสาร ไม่ต้องเพิ่มชนิดเอกสารซ้ำในแต่ละแถว แต่ไม่ได้บอกว่าแต่ละฟิลด์อยู่เซลล์ไหน จึงยังต้องมี `binding` ขนาดเล็กในแถวฟิลด์นั้น
 
-แหล่ง: [SSO browser flow](../apps/server/src/legacy-sso/browser.ts), [account resolution](../apps/server/src/legacy-sso/accounts.ts), [review](../apps/server/src/accounts/review.ts), [ADR 0002](adr/0002-legacy-one-time-code-sso.md)
+## ส่วน spreadsheet ที่เก็บไว้และส่วนที่ตัดออก
 
-9. Results, Correction, Export และการลบ User เปิด receipt ของตนเอง; Admin ใช้ results list/detail และ submission list เพื่ออ่าน Draft/Submission หน้าผลลัพธ์เลือก revision โดยข้อมูล fields, read-only DOCX และ download ต้องเป็น revision เดียวกัน Default UI ใช้ latest ส่วน original คือ revision 0 ประวัติ revision/Correction ของแต่ละ Submission ดึงผ่าน /api/submissions/:id/corrections ซึ่งผูกกับตัว Submission โดยตรง (ไม่ใช่ Response) จึงยังเปิดดู receipt และ correction history ของ Submission เก่าได้แม้ Response จะถูกเปิดกลับเป็น draft เพื่อกรอกรอบใหม่ไปแล้ว
+| ส่วน | การตัดสินใจหลังปรับปรุง |
+| --- | --- |
+| `TemplateDraft.spreadsheetBindings` | เอาออก ย้ายข้อมูลไป `DraftFieldRule` |
+| `TemplateDraft.bindingRevision` | เก็บไว้ ตรวจ revision ทั้งตอนแก้ field และตอน callback ของ save/publish |
+| `FieldManifest.spreadsheetContract` | เอาออก ย้ายข้อมูลไป `ManifestField` และใช้ `PrefillField` เดิม |
+| `Response/Submission/Correction.spreadsheetState` | เอาออกทั้งสามคอลัมน์ เพราะ mapping ซ้ำกับ manifest และตำแหน่งอยู่ใน named ranges ของไฟล์ |
+| `Response.spreadsheetInitialized` | Boolean เดียว ระบุว่าเตรียม Prefill และ protection แล้ว ป้องกันการเติมค่าทับเมื่อเปิดร่างอีกครั้ง |
+| `DraftFieldRule` ของ XLSX | ใช้จริงทั้งการแก้ฟิลด์และ Duplicate โดยไม่มี blob สำรองคู่กัน |
+| contract ใน Operation | ไม่เก็บสำเนาทั้ง publish และ save/submit/correction; publish อ่าน draft rows ภายใต้ transaction และ revision guard |
 
-Correction เริ่มจาก DOCX ของ latest effective revision โดย copy ไป workspace แยกและถือ correction lease ต้องให้เหตุผลและตรวจ base revision/document key ก่อน commit หากมี revision ใหม่กว่าแล้วให้ fail แทนการทับข้อมูลเดิม Correction เก็บทั้ง full data, changedData, actor, reason และ artifact ของ revision ใหม่ Correction สร้างเพิ่มได้เฉพาะตอน Response อยู่ในสถานะ submitted และ Submission ที่แก้เป็น Submission ล่าสุดของ Response นั้นเท่านั้น; เมื่อผู้ใช้เริ่มกรอกรอบใหม่ (Response กลับเป็น draft) จะเพิ่ม Correction ให้ Submission รอบก่อนไม่ได้อีกจนกว่าจะ submit ใหม่ แต่ประวัติเดิมยังอ่านได้เสมอ
+`bindingRevision` ต่างจาก `Form.version`: ตัวแรกเปลี่ยนตามการแก้ mapping ส่วนตัวหลังระบุฉบับเผยแพร่ ตัวเลข revision ใน request และ Operation เป็นค่าที่คาดหวังเพื่อเปรียบเทียบกับ Template Draft ไม่ใช่เจ้าของข้อมูลอีกแห่งหนึ่ง
 
-DOCX download stream จาก storage; PDF เรียก ONLYOFFICE conversion เมื่อร้องขอ จึงเป็นไปได้ที่ Submit สำเร็จแต่ PDF download ล้มเหลวภายหลัง JSON endpoint ยังมีใน API แม้ UI เน้นอ่าน fields และไม่ได้มีปุ่ม JSON ในทุกหน้าจอ
+ตำแหน่งเซลล์หลังเพิ่มหรือลบแถวต้องอ่านจาก named ranges ของ **ไฟล์ที่บันทึกและเชื่อถือได้** แล้วตรวจไฟล์ที่ editor ส่งมาเทียบกับฉบับนั้น ห้ามใช้ตำแหน่งจาก client เป็นฐานตัดสินสิทธิ์แก้ไข การเตรียมเอกสารเริ่มต้นอ่าน named ranges จากไฟล์ที่บันทึกไว้เช่นกัน ไม่มีตำแหน่งสำรองใน manifest
 
-การลบแยกจากการแก้ revision:
+หน้าผลลัพธ์ใช้ JSON คำตอบกับสัญญาที่ตรึงไว้ จึงอ่านประวัติข้อมูลได้แม้ไฟล์ไม่พร้อมดาวน์โหลด ส่วนการเปิด editor และประมวลผลคำตอบต้องมีไฟล์จริง การเริ่มต้น XLSX ไม่เปลี่ยน `draftData` จาก null ให้กลายเป็นร่างที่ผู้ใช้บันทึกแล้ว
 
-User discard Draft ของตนเองได้ตาม guard; ไม่สามารถลบ Submission ของผู้อื่น Admin มี flow ลบ Response พร้อม explicit confirmation; ตรวจ active Operation/Lease และอาจ revoke owner sessions ตาม route ลบทั้ง structured records และ artifact ที่เกี่ยวข้องโดยใช้ cleanup intents; สถานะ cleanup ค้างส่ง error ที่ retry ได้ ไม่กล่าวอ้างว่าล้างครบแล้ว Tombstone เก็บ lookup/reference digest เพื่อจำผลการลบและป้องกัน replay; ไม่ใช่สำเนาข้อมูลคำตอบที่กู้คืนได้ Audit เก็บประวัติ action/outcome และ safe metadata จึงต้องแยกความหมาย “ลบคำตอบ” กับ “ไม่มีประวัติการลบหลงเหลือ” แหล่ง: [results routes](../apps/server/src/routes/results.ts), [submissions](../apps/server/src/routes/submissions.ts), [correction editor](../apps/server/src/responses/editor.ts), [response deletion](../apps/server/src/responses/deletion.ts)
+ชื่อ `spreadsheetBindings` ใน editor configuration และ `spreadsheetContract` ใน API ผลลัพธ์ยังคงไว้เพื่อให้ปลั๊กอิน/Web ใช้รูปข้อมูลเดิม แต่เป็นข้อมูลที่ประกอบจากแถวร่วม ไม่ใช่คอลัมน์ JSON ที่บันทึกซ้ำ API ผลลัพธ์ส่ง `locations: {}` เพราะการแสดงชื่อและตารางไม่ต้องใช้พิกัดเซลล์
 
-10. AI Authoring Admin เริ่มจากข้อความหรือ PDF → consent → OmniRoute วิเคราะห์ → Pi จัดการ conversation/tool call → สร้าง DOCX → validate → preview/download หรือส่งต่อเข้า flow สร้าง Template Draft จากหน้าเว็บ โดยยังต้อง publish ตามกฎปกติ
+แถว draft และ published ยังแยกกันตาม lifecycle DOCX: draft แก้ไขได้ ส่วน published ตรึงไว้ให้คำตอบและประวัติอ้างถึง นี่เป็นการแยกตามขั้นตอนของระบบเดิม ไม่ใช่การแยกที่เก็บตามชนิดเอกสาร
 
-เปิดเมื่อ configuration ของ OmniRoute พร้อมเท่านั้น credential อยู่ server-side PDF สูงสุด 10 MiB; เก็บ original PDF เพื่อส่งไปตรวจอีกใน revision ถัดไป ไม่มี local OCR และไม่ได้ใช้เพียง summary รอบแรก หนึ่ง auth session มี active authoring session ได้หนึ่งงาน และกัน generation request ซ้อน DOCX ที่สร้างต้องตรงกับ metadata/fields และผ่าน package/control validation; revision ที่ผิดเก็บเอกสาร valid ก่อนหน้าไว้ Plain document tool ใช้ได้โดยไม่ต้องมี Python worker; Python tool เปิดเมื่อ worker reachable Python job ไม่มี network, filesystem read-only ยกเว้น output tmpfs, non-root, drop capabilities, จำกัด CPU/memory/process/time; worker รับพร้อมกันได้ไม่เกินสอง jobs Session อยู่ใน process และ temporary workspace: refresh ใน auth session เดิมกลับมาได้; explicit end/logout/revocation/inactivity cleanup ยุติ session และ restart ทำให้ session ใน memory หาย Folio ลบสำเนาของตน ไม่รับประกันลบข้อมูลที่ OmniRoute/provider เก็บไว้ รายละเอียด trust boundary: Docker daemon ของ worker แยกจาก API แต่ compose กำหนด daemon เป็น privileged: true จึงยังต้องนับเป็น privileged infrastructure บน host ไม่ใช่ข้อพิสูจน์ว่า isolated container เทียบเท่าแยกเครื่อง
+## ขอบเขตการทำงานของโค้ด
 
-แหล่ง: [AI sessions](../apps/server/src/ai-authoring.ts), [Pi/tools](../apps/server/src/ai-authoring/agent.ts), [AI routes](../apps/server/src/routes/ai-authoring.ts), [worker](../apps/server/src/document-worker-server.ts), [ADR 0001](adr/0001-ai-authoring-through-omniroute.md)
+| ขั้นตอน | จุดหลัก |
+| --- | --- |
+| ตรวจและอ่านการตั้งค่าของต้นแบบ | [forms/spreadsheet-fields.ts](../apps/server/src/forms/spreadsheet-fields.ts) |
+| HTTP แก้ mapping ของ Excel | [routes/spreadsheet-authoring.ts](../apps/server/src/routes/spreadsheet-authoring.ts) |
+| อ่าน workbook, named ranges, ค่า, สูตร, validation และ protection | [documents/spreadsheets/](../apps/server/src/documents/spreadsheets/) |
+| เตรียม Prefill ในร่างพร้อม cleanup และป้องกันคำขอชนกัน | [responses/spreadsheet-document.ts](../apps/server/src/responses/spreadsheet-document.ts) |
+| เตรียมไฟล์ก่อนบันทึกผ่าน Operation เดิม | [operations/spreadsheet-document.ts](../apps/server/src/operations/spreadsheet-document.ts) |
+| commit ข้อมูลและตัวอ้างอิงไฟล์ | [template-completion.ts](../apps/server/src/operations/template-completion.ts), [response-completion.ts](../apps/server/src/operations/response-completion.ts) |
 
-11. Concurrency, ความปลอดภัย และ Recovery กลไก ป้องกันอะไร / ขอบเขต Bearer session + role/owner checks ใช้ endpoint หรืออ่านคำตอบนอกสิทธิ์ Action-scoped editor capability จำกัด actor, action, target และ document version; plugin ไม่ต้องรับ session bearer Editor Lease กันคนละ session แก้ target เดียวกัน; อายุ lease 90 วินาทีและไม่เกิน session expiry documentKey, base revision, configuration hash ปฏิเสธงานที่เริ่มจากเอกสาร/contract เก่า Transaction, row/advisory lock, unique constraints กัน submit ซ้ำ, start แข่งกัน, account mutation และ correction ชนกัน Signed callback + one-use claim ผูก callback กับ Operation/type/documentKey และรองรับ replay โดยไม่ commit ซ้ำ Origin allowlist + no redirect + size limit จำกัดการดาวน์โหลด callback document ไปยังปลายทางที่กำหนด Manifest และ DOCX validation กัน input fields หรือโครงสร้างเอกสารหลุด published contract Bridge source/origin/bridgeId validation กัน iframe/window อื่นปลอมข้อความของ editor Object cleanup intents เก็บงานล้างไฟล์ให้ retry ได้เมื่อ storage ล้มเหลว Dirty navigation + operation polling ลดการออกจากหน้าหรือแสดง success ก่อน save สำเร็จ DB transaction และ S3 write ไม่ใช่ atomic transaction เดียวกัน ระบบเขียนไฟล์ใหม่ก่อนแล้วเปลี่ยน canonical pointer ใน DB; ถ้าไม่สำเร็จพยายามล้างไฟล์ที่ไม่ได้ถูกใช้งาน และป้องกันไม่ลบ canonical object จึงต้องมองทั้ง status และ cleanup intents เมื่อวิเคราะห์เหตุขัดข้อง
+DOCX ยังคง content controls, Tag, Field Rules, native/ONLYOFFICE fill และ lifecycle เดิม XLSX มีขอบเขตเดิมคือเริ่มจาก workbook เปล่า หนึ่ง worksheet ที่แก้ไขได้ และหนึ่งตารางรายการ ไม่เพิ่มระบบ import Excel หรือระบบแก้ไขแบบใหม่
 
-Startup ของ container รัน migrations → bootstrap Admin เมื่อยังไม่มี Admin → reconcile state → API listen รอบ recovery ทำทุก 60 วินาที ล้าง expired Handoff, stale Operation, expired Lease/CallbackClaim และ drain cleanup intents; Operation ที่ไม่คืบหน้าตาม updatedAt เกิน 4 นาทีถูก fail ไม่ได้ resume execution ของ job เดิมแบบ queue
+## การทำงานร่วมกับส่วนอื่น
 
-/health เป็น liveness ตื้น ๆ ส่วน /ready ตรวจ PostgreSQL, RustFS health และพบ template source; ไม่ได้ probe ONLYOFFICE, OmniRoute หรือ worker ในทุก readiness request แม้ compose จะมี dependency health checks ตอน startup จึงต้องตรวจ integration แยกเมื่อ feature เหล่านั้นล้มเหลว
+- Better Auth และ account/SSO ใช้ identity และ session ของ Folio; การผูกบัญชี legacy ต้องทำตาม [ADR 0002](adr/0002-legacy-one-time-code-sso.md)
+- Editor Lease และ action capability ควบคุมสิทธิ์แก้ไข callback ต้องผูกกับ Operation และตรวจ token/document key ตามเดิม
+- Operation บันทึกสถานะ pending/processing/completed/failed ใน DB งานเริ่มใน API process และมี recovery สำหรับงานค้าง ไม่มี queue service ใหม่
+- `ObjectCleanupIntent` ทำให้การเก็บกวาดไฟล์ที่ไม่เป็น canonical แล้ว retry ได้ การล้มเหลวระหว่างบันทึกต้องไม่ลบไฟล์ canonical เดิม
+- `AuditEvent`, `LoginFailure` และ `DeletionTombstone` ยังคงหน้าที่ด้าน audit, login และ deletion แยกจากคำตอบ
+- AI authoring ใช้ session ชั่วคราวและ worker แยก container ตาม [ADR 0001](adr/0001-ai-authoring-through-omniroute.md) ไม่รวมบทสนทนา AI เข้า Submission
+- Spreadsheet engine และ export snapshot มีข้อมูลชั่วคราวเพื่อ processing/conversion พร้อมหมดอายุและ cleanup ไม่ใช่แหล่งเก็บคำตอบถาวร
 
-ขีดจำกัดที่ README ระบุเป็นเป้าหมาย MMVP: single host/single disk ประมาณ 100 accounts, 100 Forms และ 20 concurrent editors ไม่ใช่ผล load test ที่ยืนยันในการตรวจครั้งนี้ ไม่มี application/off-host backup ใน topology ที่ตรวจ
+## Migration และผลตรวจครั้งนี้
 
-แหล่ง: [authorization](../apps/server/src/editor/authorization.ts), [leases](../apps/server/src/editor/leases.ts), [ONLYOFFICE routes](../apps/server/src/routes/onlyoffice.ts), [callback](../apps/server/src/operations/callback.ts), [cleanup](../apps/server/src/operations/object-cleanup.ts), [recovery](../apps/server/src/operations/recovery.ts), [readiness](../apps/server/src/readiness.ts)
+เก็บ migration ที่มีอยู่เดิมไว้ตามลำดับ:
 
-12. จุดที่เอกสารเดิมไม่ตรงกับ implementation ประเด็น สิ่งที่พบ ผลต่อการเข้าใจระบบ Publish ซ้ำ CONTEXT.md ระบุ replace Published Template และ invalidate Draft; completion/routes ปัจจุบันตอบ published_immutable เมื่อมี Published Template ใช้ duplicate/new Form สำหรับ structural change; glossary ควรปรับให้ตรงโค้ด Submission ต้องมี PDF CONTEXT.md และบางถ้อยคำใน PRODUCT.md สื่อว่าต้อง persist JSON+DOCX+PDF; schema/completion เก็บ data+DOCX และ PDF route convert on demand PDF failure ไม่ได้ทำให้ Submission ที่ commit แล้วไม่สมบูรณ์ตาม implementation Verified email ใน SSO PRODUCT.md บางส่วนยังบอกต้อง verified email; ADR 0002 และ parser ปัจจุบันรับ boolean false จาก PDMS ต้องแยก authenticated identity กับ verified mailbox และคง manual link review Deployment README บางส่วนระบุ Caddy, FORMS_HOST, CADDY_EMAIL; compose ใช้ Pingap, PUBLIC_ORIGIN, GATEWAY_PORT และ external TLS ingress อ้าง compose/gateway ปัจจุบันในการวาง deployment รายการนี้เป็นข้อขัดกันของ documentation ที่ยืนยันจาก source ไม่ใช่การตัดสินให้เปลี่ยน business rule โดยอัตโนมัติ การตรวจครั้งนี้เพิ่มเฉพาะรายงาน ไม่แก้ application behavior หรือ ADR
+1. `20261014120000_spreadsheet_state_from_workbooks` ย้ายสถานะ initialization ก่อนลบสามสำเนาของคำตอบ และล้างแถวกฎ XLSX เก่าที่ไม่ได้ใช้งานในโครงสร้างขณะนั้น
+2. [20261014130000_shared_field_types](../packages/db/prisma/migrations/20261014130000_shared_field_types/migration.sql) เพิ่ม enum `number`/`table` และ commit ก่อนนำมาใช้
+3. [20261014130100_shared_spreadsheet_fields](../packages/db/prisma/migrations/20261014130100_shared_spreadsheet_fields/migration.sql) ย้าย JSON เดิมเข้าแถวร่วม ตรวจความตรงกันของ published Prefill เก็บ UUID ของ scalar manifest เดิม แล้วลบสอง blob และ snapshot ใน Operation เฉพาะ XLSX ภายใน transaction เดียว
 
-13. ผลการตรวจและสิ่งที่ยังไม่ยืนยัน การตรวจ ผล CodeGraph และอ่าน source/config/schema ตามเส้นทาง Form lifecycle, fill/save/submit, callback, Prefill, SSO, AI, correction/export/deletion และ recovery bun run check-types ผ่าน: Turbo 4 tasks สำเร็จ bun test apps/onlyoffice-plugin/test apps/web/test apps/prefill-mock/test ผ่าน 37 tests, 0 fail, 183 assertions ใน 8 files bun run check Formatting ผ่านสำหรับ 251 files; lint ไม่ผ่าน 1 จุด: apps/server/src/documents/native-xml.ts:168 กฎ unicorn/consistent-function-scoping ของ setAttribute ในโค้ดที่ไม่ได้แก้ในการตรวจนี้ bun run fix docs/ARCHITECTURE.th.md Formatter ทำงานกับ Markdown แล้ว; command จบ exit 1 เพราะขั้น lint ไม่มีไฟล์ชนิดที่รองรับ (No files found to lint) ไม่ใช่ผลว่า lint ทั้งระบบผ่าน HTTP/database/storage integration suites ยังไม่ได้รันในการตรวจครั้งนี้; script กำหนดให้ใช้ isolated PostgreSQL และต้องเตรียมบริการ/fixtures ที่เกี่ยวข้อง Live PDMS / OmniRoute / ONLYOFFICE และ load/failure tests ยังไม่ได้ทดสอบ end-to-end กับบริการจริง Repository มี HTTP suites ครอบคลุม callback security, native scalar/picture, account workflow, Legacy provisioning/review/session และ AI cleanup/DOCX/PDF/worker รวมถึง scenarios สำหรับ correction, deletion และ recovery การมีไฟล์ tests ไม่เท่ากับผ่านการรันใน environment ปัจจุบัน
+หาก configuration เดิมผิดรูปหรือ Prefill ไม่ตรงกัน migration จะล้มเหลวและ rollback การย้ายข้อมูล ไม่ลบแหล่งข้อมูลเดิมทิ้งเพื่อให้ผ่าน การเพิ่ม enum ใน migration ก่อนหน้ายังคงอยู่และไม่เปลี่ยนข้อมูล DOCX
 
-จุดที่ควรตรวจต่อหากจะยืนยัน production: callback หลัง network ขาด, restart ระหว่างเขียนไฟล์กับ DB commit, cleanup retry, session expiry ระหว่าง dirty work, concurrent correction และ SSO ที่เชื่อม PDMS จริง โดยใช้ test database/storage แยกจากข้อมูลผู้ใช้
+ทดสอบทั้ง fresh migration และ upgrade ที่มีข้อมูลเดิมในฐานข้อมูลแยกแล้ว รวมถึงตรวจว่าข้อมูลคำตอบและตัวอ้างอิงไฟล์ไม่เปลี่ยน งานนี้ยังไม่ได้ apply migration กับฐานข้อมูลที่ใช้งานอยู่ การนำโค้ดไปใช้งานต้องใช้ schema ใหม่ด้วย คำสั่ง migration อยู่ใน [README](../README.md#commands)
 
-14. แผนที่อ่านโค้ดตามงาน อยากเข้าใจหรือแก้ส่วนไหน เริ่มอ่าน การประกอบระบบและ startup apps/server/src/app.ts, index.ts, readiness.ts Form lifecycle และ public entry routes/form-catalog.ts, form-authoring.ts, public-forms.ts Field schema/rules forms/field-schema.ts, field-rules.ts, documents/fields.ts DOCX package และ native rendering documents/package.ts, native-_.ts, pictures.ts, picture-overlay.ts Validation ของคำตอบ responses/data.ts, date-value.ts, native-request.ts Save/submit/correction routes/response-actions.ts, routes/results.ts, operations/*completion.ts Force-save/callback และ recovery operations/force-save.ts, callback.ts, lifecycle.ts, recovery.ts Editor session/สิทธิ์ editor/authorization.ts, editor/leases.ts, onlyoffice.ts Plugin ใน editor apps/onlyoffice-plugin/src/bridge.js, operations.js, office.js, field-panel.js Login/บัญชี/SSO auth/*, accounts/_, legacy-sso/_, packages/auth/src/index.ts Prefill integration prefill/_, routes/prefill.ts, apps/prefill-mock/src/* AI ai-authoring.ts, ai-authoring/_, document-worker_.ts การอ่าน/ดาวน์โหลด/ลบข้อมูล routes/results.ts, submissions.ts, responses.ts, responses/deletion.ts Audit และ cleanup audit/*, operations/object-cleanup.ts UI และ session/exit guards apps/web/src/routes, lib/auth.tsx, lib/api.ts, features/onlyoffice, features/forms เส้นทางในตารางที่ไม่ขึ้นต้นด้วย apps/ หรือ packages/ อ้างอิงจาก apps/server/src/
+ผลตรวจหลังปรับโค้ดส่วน shared fields:
+
+- root formatting/lint, type check และ build ผ่าน
+- HTTP 132 tests / 4,643 assertions ผ่าน รวมการเผยแพร่จริงใน transaction, revision เก่า, Duplicate และใบรับคำตอบเมื่อไฟล์หาย; suite ของ isolated AI document worker ไม่ได้เปิดรัน
+- spreadsheet unit 35 tests, plugin 52 tests, web lifecycle 10 และ UI 68 tests ผ่าน
+- ONLYOFFICE runtime 14 tests และ HTTP builder จริง 1 test ผ่าน
+- fresh/upgrade ของ 20 migrations ผ่านในฐานข้อมูลแยก โดยเปรียบเทียบชนิดฟิลด์ ตาราง คอลัมน์ Prefill, DOCX dropdown/picture, UUID เดิม และกฎ immutable
+- ทดสอบ Prefill ไม่ตรงกันและ options ผิดรูป: migration ปฏิเสธพร้อม rollback โดยเก็บข้อมูลเดิมและ trigger ไว้ครบ
+
+การตรวจครั้งนี้ไม่ใช่การรับรอง deployment production หรือ browser journey ทุกกรณี และยังไม่ได้เปลี่ยน schema ของฐานข้อมูลที่ใช้งานอยู่
+
+หลังจัดกลุ่ม `ExcelBinding` วันที่ 15 ตุลาคม 2026: spreadsheet unit 35 tests และ HTTP เฉพาะ spreadsheet authoring/initialization กับ DOCX native scalar รวม 15 tests / 593 assertions ผ่าน รวมถึงตรวจรูป binding ที่ปนผิดชนิดทั้ง draft และ published; root formatting/lint, type check และ build ผ่าน การปรับรอบนี้เปลี่ยนเฉพาะนิยาม/ตัวตรวจในโค้ดและคำอธิบาย schema ไม่มีการเปลี่ยนคอลัมน์หรือตาราง
+
+ตรวจผ่าน browser จริงเพิ่มเติมวันที่ 15 ตุลาคม 2026 โดยใช้บัญชีจำลอง ฐานข้อมูลและ bucket แยก:
+
+- Excel: สร้าง workbook เปล่า เพิ่มฟิลด์ตัวเลขและตาราง เปลี่ยนชนิดฟิลด์ บันทึกและเปิดกลับมา แล้วเผยแพร่สำเร็จ ชื่อ scalar `quantity` และคอลัมน์ `items.quantity` อยู่ร่วมกันได้
+- Excel: กรอกตัวเลขและรายการ บันทึกร่าง เพิ่มแถว เปิดร่างกลับมา แก้ค่าแล้วใช้ “บันทึกแล้วออก” เปิดกลับมาได้ค่าเดิม และส่งคำตอบสำเร็จ
+- DOCX: อัปโหลดไฟล์ที่มี text content control บันทึกและเผยแพร่ แล้วกรอกแบบ Native บันทึกร่าง โหลดหน้าใหม่ได้คำตอบเดิม และส่งสำเร็จ
+- ตรวจข้อมูลหลังส่งแบบอ่านอย่างเดียว: Excel `Submission.data` มี `quantity: 4` และรายการ `Pen` จำนวน `3` ตรงกับเซลล์ในไฟล์จริง พร้อมช่วงตาราง `A8:B11`; DOCX มี `name: "Browser User QA"` ตรงกับ content control แถว manifest ไม่เปลี่ยน และทั้งสอง Response กลับเป็นร่างที่ใช้ข้อมูลและไฟล์จาก Submission ตาม lifecycle เดิม
+- พบและแก้ปัญหา Excel ไม่แจ้งสถานะหลังแก้เซลล์ โดยรับ event ของ editor ที่รองรับจริง ตรวจแล้วว่าค่า autosave ของ ONLYOFFICE ไม่ล้างสถานะ Folio และมีคำเตือนก่อนออกจากหน้า
+- หลังแก้สถานะ: Web UI 70 tests และ plugin 50 tests / 226 assertions ผ่าน พร้อม root lint, type check และ build
+
+browser รอบนี้ไม่ได้ครอบคลุมการตัดการเชื่อมต่อ การแก้พร้อมกันหลายแท็บ การดาวน์โหลด PDF หรือ correction ทุกกรณี และไม่ได้ apply migration กับฐานข้อมูลที่ใช้งานอยู่

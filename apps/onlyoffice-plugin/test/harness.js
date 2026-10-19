@@ -1,4 +1,4 @@
-// oxlint-disable prefer-await-to-callbacks node/callback-return unicorn/prefer-dom-node-remove prefer-destructuring unicorn/prefer-response-static-json no-await-in-loop unicorn/consistent-function-scoping no-plusplus unicorn/prefer-array-find -- VM harness intentionally mirrors browser callbacks and DOM shims.
+// oxlint-disable prefer-await-to-callbacks node/callback-return unicorn/prefer-dom-node-remove prefer-destructuring unicorn/prefer-response-static-json no-await-in-loop unicorn/consistent-function-scoping no-plusplus unicorn/prefer-array-find no-empty-function -- VM harness intentionally mirrors browser callbacks and DOM shims.
 import path from "node:path";
 import { runInNewContext } from "node:vm";
 
@@ -10,6 +10,11 @@ const pluginSource = await pluginArtifact.text();
 
 export const createHarness = ({
   action = "fill",
+  documentKind = "docx",
+  spreadsheetBindings = { fields: [], table: null, version: 1 },
+  spreadsheetPictureFrames = [],
+  spreadsheetSelection,
+  browserGlobals = {},
   capabilityResponses = [],
   clipboard,
   controls = [],
@@ -25,10 +30,12 @@ export const createHarness = ({
   const bridgeId = "bridge-test-1";
   const messages = [];
   const messageListeners = [];
+  const windowEventListeners = new Map();
   const editorEvents = new Map();
   const elements = new Map();
   const requests = [];
   const methodCalls = [];
+  const methodInvocations = [];
   const saveCalls = [];
   const timers = [];
   const queuedCapabilityResponses = [...capabilityResponses];
@@ -206,6 +213,7 @@ export const createHarness = ({
     },
     executeMethod(method, ...args) {
       methodCalls.push(method);
+      methodInvocations.push({ args: args[0], method });
       const done = args.at(-1);
       if (typeof done !== "function") {
         return;
@@ -229,10 +237,13 @@ export const createHarness = ({
         apiBase: "https://api.example.test/",
         bridgeId,
         documentKey: "document-key",
+        documentKind,
         parentOrigin,
         prefill,
         publicId: "public-id",
         responseId: "response-id",
+        spreadsheetBindings,
+        spreadsheetPictureFrames,
         tagAliases,
         targetId: "target-id",
       },
@@ -272,6 +283,9 @@ export const createHarness = ({
       if (type === "message") {
         messageListeners.push(listener);
       }
+      const callbacks = windowEventListeners.get(type) || [];
+      callbacks.push(listener);
+      windowEventListeners.set(type, callbacks);
     },
     clearTimeout(timer) {
       if (timer) {
@@ -310,7 +324,61 @@ export const createHarness = ({
       return true;
     },
   };
+  const spreadsheetNames = new Map(
+    Object.entries(spreadsheetSelection?.names || {})
+  );
+  const spreadsheetBorders = [];
+  const visibleSpreadsheetBorders = [];
+  const spreadsheetRange = (address) => ({
+    GetAddress: () => address,
+    GetCol: () =>
+      [...address.replaceAll("$", "").match(/^[A-Z]+/u)[0]].reduce(
+        (index, character) => index * 26 + character.codePointAt(0) - 64,
+        0
+      ),
+    GetColumnsCount: () => 2,
+    GetFormula: () => "",
+    GetRow: () => Number(address.match(/\d+/u)[0]),
+    GetRowsCount: () => spreadsheetSelection?.rowCount || 5,
+    GetValidation: () => ({
+      Add() {},
+      Delete() {},
+      SetErrorMessage() {},
+      SetIgnoreBlank() {},
+      SetInCellDropdown() {},
+      SetShowError() {},
+    }),
+    GetValue: () => spreadsheetSelection?.headers || "",
+    GetWorksheet: () => ({ GetRange: spreadsheetRange }),
+    SetBorders(border, style, color) {
+      spreadsheetBorders.push({ address, border, color, style });
+      return true;
+    },
+    SetNumberFormat() {},
+  });
   const Api = {
+    AddDefName(name, reference) {
+      spreadsheetNames.set(name, reference);
+      return true;
+    },
+    CreateColorFromRGB: (red, green, blue) => ({ blue, green, red }),
+    GetActiveSheet() {
+      return {
+        GetName: () => spreadsheetSelection?.sheet || "Sheet1",
+        GetSelection: () =>
+          spreadsheetRange(spreadsheetSelection?.address || "A1"),
+      };
+    },
+    GetDefName(name) {
+      const reference = spreadsheetNames.get(name);
+      return reference
+        ? {
+            GetRefersTo: () => reference,
+            GetRefersToRange: () =>
+              spreadsheetRange(reference.split("!").at(-1)),
+          }
+        : null;
+    },
     GetDocument() {
       return {
         GetAllContentControls() {
@@ -324,6 +392,9 @@ export const createHarness = ({
         },
       };
     },
+    GetSheet() {
+      return { GetRange: spreadsheetRange };
+    },
     Save() {
       saveCalls.push("save");
       return true;
@@ -331,10 +402,22 @@ export const createHarness = ({
   };
   plugin.callCommand = function callCommand(...args) {
     const command = args[0];
-    const done = args.at(-1);
-    if (typeof done !== "function") {
+    const callback = args.at(-1);
+    if (typeof callback !== "function") {
       return;
     }
+    const done = (result) => {
+      // Spreadsheet formatting stays offscreen until a calculating command
+      // refreshes the editor, even though the workbook model already changed.
+      if (args[2] !== false) {
+        visibleSpreadsheetBorders.splice(
+          0,
+          visibleSpreadsheetBorders.length,
+          ...spreadsheetBorders
+        );
+      }
+      callback(result);
+    };
     if (serializeCommands && typeof command === "function") {
       done(
         runInNewContext(`(${command.toString()})()`, {
@@ -380,6 +463,8 @@ export const createHarness = ({
     },
   };
   const context = {
+    ...browserGlobals,
+    AbortController,
     Api,
     Asc: window.Asc,
     Headers,
@@ -397,6 +482,7 @@ export const createHarness = ({
   window.Asc.plugin.init();
 
   return {
+    body: document.body,
     bridgeId,
     dispatch,
     editorEvents,
@@ -409,6 +495,11 @@ export const createHarness = ({
         callback(value);
       }
     },
+    emitWindowEvent(type) {
+      for (const listener of windowEventListeners.get(type) || []) {
+        listener();
+      }
+    },
     expireCapabilityRequests() {
       for (const timer of timers) {
         if (timer.milliseconds !== 5000 || timer.cancelled) {
@@ -416,6 +507,14 @@ export const createHarness = ({
         }
         timer.cancelled = true;
         timer.callback();
+      }
+    },
+    expireEditorSaveRequests() {
+      for (const timer of timers) {
+        if (timer.milliseconds === 45_000 && !timer.cancelled) {
+          timer.cancelled = true;
+          timer.callback();
+        }
       }
     },
     finishEditorSave(error) {
@@ -432,15 +531,30 @@ export const createHarness = ({
     },
     messages,
     methodCalls,
+    methodInvocations,
     parentOrigin,
     parentWindow,
     requests,
+    async runPictureGuardTimer() {
+      const timer = timers.find(
+        (item) => item.milliseconds === 750 && !item.cancelled
+      );
+      if (!timer) {
+        return false;
+      }
+      timer.cancelled = true;
+      await timer.callback();
+      return true;
+    },
     saveCalls,
     setSelection(nextSelection) {
       selectionState.currentControl = nextSelection?.currentControl;
       selectionState.properties = nextSelection?.properties;
     },
+    spreadsheetBorders,
+    spreadsheetNames,
     statusElement,
+    visibleSpreadsheetBorders,
     window,
   };
 };

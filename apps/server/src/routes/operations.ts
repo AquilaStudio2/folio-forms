@@ -68,14 +68,31 @@ export function registerOperationRoutes(
     }
     operation = await expireOperationIfNeeded(operation);
     await cleanupTerminalOperationObjects(operation);
+    const result = operation.result as Record<string, unknown> | null;
+    const errorMessages: Record<string, string> = {
+      callback_processing_failed:
+        "ประมวลผลเอกสารไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาลองอีกครั้ง",
+      force_save_failed: "บันทึกเอกสารไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาลองอีกครั้ง",
+      invalid_template: "ตรวจสอบช่องกรอก ช่วงเซลล์ และคอลัมน์ตารางก่อนเผยแพร่",
+      onlyoffice_document_error: "ตัวแก้ไขบันทึกเอกสารไม่สำเร็จ กรุณาลองอีกครั้ง",
+      operation_timeout: "บันทึกไม่สำเร็จภายในเวลาที่กำหนด ข้อมูลเดิมยังอยู่ กรุณาลองอีกครั้ง",
+    };
     return {
       operation: {
         createdAt: operation.createdAt,
         error: operation.errorCode,
+        errorMessage:
+          operation.status === OperationStatus.failed
+            ? typeof result?.errorMessage === "string"
+              ? result.errorMessage
+              : (errorMessages[operation.errorCode ?? ""] ??
+                "ดำเนินการไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาลองอีกครั้ง")
+            : undefined,
         id: operation.id,
         responseId: operation.responseId,
         result:
-          operation.status === OperationStatus.completed
+          operation.status === OperationStatus.completed ||
+          operation.status === OperationStatus.failed
             ? operation.result
             : undefined,
         status: operation.status,

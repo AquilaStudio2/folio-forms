@@ -24,12 +24,29 @@ export function createApi(options) {
       headers.set("Content-Type", "application/json");
     }
 
-    const response = await fetch(apiUrl(path), {
-      ...init,
-      credentials: "omit",
-      headers,
-    });
-    const text = await response.text();
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => controller.abort(), 30_000);
+    let response;
+    let text;
+    try {
+      response = await fetch(apiUrl(path), {
+        ...init,
+        credentials: "omit",
+        headers,
+        signal: controller.signal,
+      });
+      text = await response.text();
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new Error(
+          "การเชื่อมต่อใช้เวลานานเกินไป กรุณาตรวจการเชื่อมต่อแล้วลองอีกครั้ง",
+          { cause: error }
+        );
+      }
+      throw error;
+    } finally {
+      window.clearTimeout(timeout);
+    }
     let payload = {};
 
     if (text) {

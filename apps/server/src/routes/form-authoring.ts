@@ -33,6 +33,10 @@ import {
 } from "../forms/field-rules";
 import { schemaPage } from "../forms/field-schema";
 import { findFormByPublicId } from "../forms/query";
+import {
+  spreadsheetDraftBindings,
+  validateSpreadsheetPublication,
+} from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 import {
   readJsonRecord,
@@ -99,6 +103,14 @@ export function registerFormAuthoringRoutes(
         return editorConfig(
           {
             action: "template-edit",
+            documentKind: form.documentKind,
+            ...(form.documentKind === "xlsx"
+              ? {
+                  spreadsheetBindings: await spreadsheetDraftBindings(
+                    templateDraft.id
+                  ),
+                }
+              : {}),
             capabilities: {
               "configure-fields": actionEditorCapability(
                 identity,
@@ -138,10 +150,17 @@ export function registerFormAuthoringRoutes(
     .get(
       "/api/admin/forms/:publicId/field-rules",
       async ({ request, params }) => {
-        const { templateDraft } = await requireFieldRuleContext(
+        const { form, templateDraft } = await requireFieldRuleContext(
           request,
           params.publicId
         );
+        if (form.documentKind !== "docx") {
+          fail(
+            409,
+            "invalid_field_config",
+            "Excel fields use spreadsheet bindings"
+          );
+        }
         const rules = await prisma.draftFieldRule.findMany({
           orderBy: { tag: "asc" },
           select: {
@@ -160,6 +179,13 @@ export function registerFormAuthoringRoutes(
       async ({ request, params }) => {
         const { authorization, capabilityScope, form, templateDraft } =
           await requireFieldRuleContext(request, params.publicId);
+        if (form.documentKind !== "docx") {
+          fail(
+            409,
+            "invalid_field_config",
+            "Excel fields use spreadsheet bindings"
+          );
+        }
         const { actor: identity } = authorization;
         const input = fieldRuleInput(
           await readJsonRecord(request, fieldRuleBodyMaximumBytes)
@@ -382,16 +408,18 @@ export function registerFormAuthoringRoutes(
             operationId,
             "template",
             crypto.randomUUID(),
-            "docx"
+            form.documentKind
           );
           const metadata: OperationMetadata = {
             action: "save-template",
+            bindingRevision: templateDraft.bindingRevision,
+            documentKind: form.documentKind,
             finalObjectKey: objectKey(
               "forms",
               form.id,
               "template-draft",
               crypto.randomUUID(),
-              "docx"
+              form.documentKind
             ),
             formId: form.id,
             nextDocumentKey,
@@ -484,6 +512,11 @@ export function registerFormAuthoringRoutes(
               "A publish operation is already in progress"
             );
           }
+          if (form.documentKind === "xlsx") {
+            validateSpreadsheetPublication(
+              await spreadsheetDraftBindings(templateDraft.id)
+            );
+          }
           const operationId = crypto.randomUUID();
           const version = form.version + 1;
           const publishedKey = `published-${version}-${crypto.randomUUID()}`;
@@ -492,17 +525,19 @@ export function registerFormAuthoringRoutes(
             operationId,
             "published",
             crypto.randomUUID(),
-            "docx"
+            form.documentKind
           );
           const metadata: OperationMetadata = {
             action: "publish",
+            bindingRevision: templateDraft.bindingRevision,
+            documentKind: form.documentKind,
             finalObjectKey: objectKey(
               "forms",
               form.id,
               "published",
               String(version),
               crypto.randomUUID(),
-              "docx"
+              form.documentKind
             ),
             formId: form.id,
             publicId: form.publicId,
@@ -566,6 +601,7 @@ export function registerFormAuthoringRoutes(
         return {
           submissions: submissions.map((submission) =>
             submissionSummary(submission, {
+              documentKind: submission.form.documentKind,
               formPublicId: submission.form.publicId,
               formTitle: submission.form.title,
               userEmail: submission.owner.email,

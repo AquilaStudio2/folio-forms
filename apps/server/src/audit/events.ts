@@ -281,7 +281,7 @@ type ResponseAuditAction =
 type ResponseAuditTargetType = "correction" | "response" | "submission";
 interface ResponseAuditMetadata {
   errorCode?: OperationErrorCode;
-  format?: "docx" | "json" | "pdf";
+  format?: "docx" | "xlsx" | "json" | "pdf";
   revision?: number;
   state: "draft" | "submitted";
 }

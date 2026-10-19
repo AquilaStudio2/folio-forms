@@ -4,6 +4,7 @@ import { ArrowLeft, ArrowUpRight, FileCheck2 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
+import { DocumentKindBadge } from "@/components/document-kind-badge";
 import { Badge, Card, Notice, Spinner } from "@/components/ui";
 import { apiGet, formatDate } from "@/lib/api";
 import type { Submission } from "@/lib/api";
@@ -87,6 +88,7 @@ const SubmissionsRoute = () => {
                 </p>
               </div>
               <div className="flex items-center gap-3">
+                <DocumentKindBadge documentKind={row.documentKind} />
                 <Badge tone="success">{row.status ?? "Submitted"}</Badge>
                 <Link
                   to="/admin/forms/$formId/submissions/$submissionId"

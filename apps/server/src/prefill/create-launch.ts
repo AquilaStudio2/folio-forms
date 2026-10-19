@@ -4,6 +4,7 @@ import { prisma, Prisma, AuditOutcome, HandoffStatus } from "@onlyoffice/db";
 
 import { createFormAudit, createFormFailureAudit } from "../audit/events";
 import { tokenDigest } from "../digests";
+import { spreadsheetBindingsForTemplate } from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 import { publicIdPattern } from "../http/input";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
@@ -17,6 +18,7 @@ import {
   handoffCodeLifetimeMs,
   pendingClaimLifetimeSeconds,
 } from "./input";
+import { validateSpreadsheetPrefillValues } from "./spreadsheet-values";
 import { publishedPrefillConfiguration, filteredPrefillValues } from "./values";
 
 export interface PrefillHandoffCreateInput {
@@ -66,7 +68,14 @@ export async function createPrefillHandoff(
   ) {
     handoffUnavailable();
   }
-  validatePrefillValuesAgainstManifest(filteredValues, manifest.fields);
+  if (form.documentKind === "xlsx") {
+    validateSpreadsheetPrefillValues(
+      filteredValues,
+      await spreadsheetBindingsForTemplate(manifest.publishedTemplateId)
+    );
+  } else {
+    validatePrefillValuesAgainstManifest(filteredValues, manifest.fields);
+  }
   const code = randomBytes(32).toString("base64url");
   const codeDigest = tokenDigest(code);
   const externalReferenceDigest = tokenDigest(input.externalReference);

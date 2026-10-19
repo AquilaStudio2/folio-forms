@@ -13,6 +13,8 @@ import {
 } from "../audit/events";
 import { requireIdentity, requireAdmin } from "../auth/identity";
 import { responsePicturePresence } from "../documents/pictures";
+import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
+import { spreadsheetPicturePresence } from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 import {
   validateId,
@@ -59,6 +61,7 @@ export function registerResponseRoutes(
       return {
         responses: responses.map((response) =>
           responseSummary(response, {
+            documentKind: response.form.documentKind,
             formPublicId: response.form.publicId,
             formTitle: response.form.title,
             latestCorrectionNumber: response.corrections[0]?.revision ?? null,
@@ -74,6 +77,7 @@ export function registerResponseRoutes(
       const response = await prisma.response.findUnique({
         include: {
           corrections: { orderBy: { revision: "desc" } },
+          form: true,
           publishedTemplate: {
             include: { manifest: { include: { fields: true } } },
           },
@@ -107,9 +111,13 @@ export function registerResponseRoutes(
         response.publishedTemplate.manifest?.fields.filter(
           (field) => field.type === FieldType.picture
         ) ?? [];
+      const picturePresence =
+        response.form.documentKind === "xlsx"
+          ? spreadsheetPicturePresence
+          : responsePicturePresence;
       const originalPictures =
         originalAvailable && pictureFields.length > 0
-          ? responsePicturePresence(
+          ? picturePresence(
               await readObject(submission.objectKey),
               pictureFields
             )
@@ -119,7 +127,7 @@ export function registerResponseRoutes(
         const documentAvailable = await objectExists(correction.objectKey);
         const pictures =
           documentAvailable && pictureFields.length > 0
-            ? responsePicturePresence(
+            ? picturePresence(
                 await readObject(correction.objectKey),
                 pictureFields
               )
@@ -196,11 +204,13 @@ export function registerResponseRoutes(
         if (
           params.format !== "json" &&
           params.format !== "docx" &&
+          params.format !== "xlsx" &&
           params.format !== "pdf"
         ) {
           fail(404, "not_found", "Draft export was not found");
         }
         const response = await prisma.response.findUnique({
+          include: { form: { select: { documentKind: true } } },
           where: { id: params.id },
         });
         if (!response) {
@@ -229,17 +239,24 @@ export function registerResponseRoutes(
         if (!(await objectExists(response.draftObjectKey))) {
           fail(404, "document_unavailable", "Draft document is unavailable");
         }
-        if (params.format === "docx") {
+        if (params.format === "docx" || params.format === "xlsx") {
+          if (params.format !== response.form.documentKind) {
+            fail(404, "not_found", "This document format is unavailable");
+          }
           return new Response(streamObject(response.draftObjectKey), {
             headers: {
-              "Content-Disposition": `attachment; filename="response-${response.id}.docx"`,
-              "Content-Type": DOCX_CONTENT_TYPE,
+              "Content-Disposition": `attachment; filename="response-${response.id}.${response.form.documentKind}"`,
+              "Content-Type":
+                response.form.documentKind === "xlsx"
+                  ? XLSX_CONTENT_TYPE
+                  : DOCX_CONTENT_TYPE,
             },
           });
         }
         const pdf = await onlyOffice.convertDocxToPdf(
           response.draftDocumentKey,
-          true
+          true,
+          response.form.documentKind
         );
         set.headers["Content-Disposition"] =
           `attachment; filename="response-${response.id}.pdf"`;

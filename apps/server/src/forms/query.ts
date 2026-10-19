@@ -32,6 +32,7 @@ export function formDto(
     activeDraftCount,
     createdAt: form.createdAt,
     description: form.description ?? "",
+    documentKind: form.documentKind,
     fillMethod: form.fillMethod,
     hasTemplateDraft: Boolean(form.templateDraft),
     publicId: form.publicId,
@@ -98,7 +99,11 @@ export async function supportsNativeTemplate(
   fields: readonly { tag: string; type: FieldType }[],
   documentBytes?: Uint8Array
 ): Promise<boolean> {
-  if (!objectKey || !supportsNativeFill(fields)) {
+  if (
+    !objectKey ||
+    objectKey.endsWith(".xlsx") ||
+    !supportsNativeFill(fields)
+  ) {
     return false;
   }
   const { archive, xmlPaths } = safeTemplateArchive(

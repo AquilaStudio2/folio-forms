@@ -7,9 +7,11 @@
     "dev": "bun --watch src/index.ts",
     "check-types": "tsc -b",
     "compile": "bun build --compile --minify --sourcemap --bytecode ./src/index.ts --outfile server",
-    "test:http": "test -n \"$DATABASE_URL\" || { echo 'DATABASE_URL must point to an isolated PostgreSQL database' >&2; exit 1; }; bun run --cwd ../prefill-mock build && for suite in test/http/form-catalog.test.ts test/http/callback.test.ts test/http/legacy-provisioning.test.ts test/http/legacy-review.test.ts test/http/legacy-session.test.ts test/http/native-scalar.test.ts test/http/admin-user-workflow.test.ts test/http/native-picture.test.ts test/http/authoring-cleanup.test.ts test/http/authoring-docx.test.ts test/http/authoring-pdf.test.ts test/http/authoring-worker.test.ts; do bun test --timeout 120000 \"$suite\" || exit $?; done",
+    "test:http": "test -n \"$DATABASE_URL\" || { echo 'DATABASE_URL must point to an isolated PostgreSQL database' >&2; exit 1; }; bun run --cwd ../prefill-mock build && for suite in test/http/form-catalog.test.ts test/http/callback.test.ts test/http/legacy-provisioning.test.ts test/http/legacy-review.test.ts test/http/legacy-session.test.ts test/http/native-scalar.test.ts test/http/admin-user-workflow.test.ts test/http/native-picture.test.ts test/http/authoring-cleanup.test.ts test/http/authoring-docx.test.ts test/http/authoring-pdf.test.ts test/http/authoring-worker.test.ts test/http/spreadsheet-authoring.test.ts test/http/spreadsheet-initialization.test.ts; do bun test --timeout 120000 \"$suite\" || exit $?; done",
     "test:storage": "bun test --timeout 120000 test/storage.test.ts",
-    "test:catalog": "test -n \"$DATABASE_URL\" || { echo 'DATABASE_URL must point to an isolated PostgreSQL database' >&2; exit 1; }; bun test --timeout 120000 test/http/form-catalog.test.ts"
+    "test:catalog": "test -n \"$DATABASE_URL\" || { echo 'DATABASE_URL must point to an isolated PostgreSQL database' >&2; exit 1; }; bun test --timeout 120000 test/http/form-catalog.test.ts",
+    "test:spreadsheet": "bun test ./test/spreadsheet-unit/*.test.ts",
+    "test:spreadsheet:runtime": "RUN_SPREADSHEET_RUNTIME=1 bun test --timeout 120000 ./test/spreadsheet-runtime/*.test.ts"
   },
   "dependencies": {
     "@earendil-works/pi-coding-agent": "0.87.1",
@@ -22,6 +24,7 @@
     "dotenv": "catalog:",
     "elysia": "^1.4.29",
     "fflate": "^0.8.3",
+    "pngjs": "^7.0.0",
     "saxes": "^6.0.0",
     "typebox": "1.3.34",
     "zod": "catalog:"
@@ -29,6 +32,7 @@
   "devDependencies": {
     "@onlyoffice/config": "workspace:*",
     "@types/bun": "catalog:",
+    "@types/pngjs": "^6.0.5",
     "prefill-mock": "workspace:*",
     "tsdown": "^0.22.14",
     "typescript": "catalog:"

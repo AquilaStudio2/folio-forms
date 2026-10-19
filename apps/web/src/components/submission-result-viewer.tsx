@@ -4,7 +4,11 @@ import { useState } from "react";
 import { OnlyOfficeEditor } from "@/components/onlyoffice-editor";
 import { Badge, Notice } from "@/components/ui";
 import { formatDateTime } from "@/lib/api";
-import type { ReceiptField, ResponseRevision } from "@/lib/api";
+import type {
+  ReceiptField,
+  ResponseRevision,
+  SpreadsheetResultContract,
+} from "@/lib/api";
 
 const fieldValue = (
   field: ReceiptField,
@@ -20,7 +24,10 @@ const fieldValue = (
   if (value === null || value === undefined || value === "") {
     return "—";
   }
-  if (field.type === "checkbox" && typeof value === "boolean") {
+  if (
+    (field.type === "checkbox" || field.type === "boolean") &&
+    typeof value === "boolean"
+  ) {
     return value ? "ใช่" : "ไม่ใช่";
   }
   if (typeof value === "string") {
@@ -35,16 +42,101 @@ const fieldValue = (
   return "มีข้อมูลที่บันทึกแล้ว";
 };
 
+const spreadsheetDisplayValue = (value: unknown): string => {
+  if (value === null || value === undefined || value === "") {
+    return "—";
+  }
+  if (typeof value === "boolean") {
+    return value ? "ใช่" : "ไม่ใช่";
+  }
+  return typeof value === "string" || typeof value === "number"
+    ? String(value)
+    : "—";
+};
+
+export const SpreadsheetTable = ({
+  data,
+  table,
+}: {
+  data: Record<string, unknown>;
+  table: NonNullable<SpreadsheetResultContract["table"]>;
+}) => {
+  const [page, setPage] = useState(0);
+  const rows = Array.isArray(data[table.key])
+    ? (data[table.key] as Record<string, unknown>[])
+    : [];
+  const pages = Math.max(1, Math.ceil(rows.length / 50));
+  const currentPage = Math.min(page, pages - 1);
+  return (
+    <section className="mt-6">
+      <h3 className="font-semibold">
+        {table.label} ({rows.length} รายการ)
+      </h3>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full text-left text-sm">
+          <caption className="sr-only">{table.label}</caption>
+          <thead>
+            <tr>
+              {table.columns.map((column) => (
+                <th className="border p-3" scope="col" key={column.id}>
+                  {column.label}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows
+              .slice(currentPage * 50, (currentPage + 1) * 50)
+              .map((row, index) => (
+                <tr key={currentPage * 50 + index}>
+                  {table.columns.map((column) => (
+                    <td
+                      className="border p-3 whitespace-pre-wrap"
+                      key={column.id}
+                    >
+                      {spreadsheetDisplayValue(row?.[column.key])}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="mt-3 flex gap-3 items-center">
+        <button
+          type="button"
+          disabled={currentPage === 0}
+          onClick={() => setPage(currentPage - 1)}
+        >
+          หน้าก่อนหน้า
+        </button>
+        <span aria-live="polite">
+          หน้า {currentPage + 1} / {pages}
+        </span>
+        <button
+          type="button"
+          disabled={currentPage + 1 >= pages}
+          onClick={() => setPage(currentPage + 1)}
+        >
+          หน้าถัดไป
+        </button>
+      </div>
+    </section>
+  );
+};
+
 export const SubmissionFields = ({
   data,
   fields,
   pictures,
   title = "ข้อมูลคำตอบ",
+  spreadsheetContract,
 }: {
   data: Record<string, unknown>;
   fields: ReceiptField[];
   pictures: Record<string, boolean> | null;
   title?: string;
+  spreadsheetContract?: SpreadsheetResultContract | null;
 }) => (
   <>
     <h2 className="mb-4 font-semibold">{title}</h2>
@@ -61,6 +153,9 @@ export const SubmissionFields = ({
         </div>
       ))}
     </dl>
+    {spreadsheetContract?.table ? (
+      <SpreadsheetTable data={data} table={spreadsheetContract.table} />
+    ) : null}
   </>
 );
 
@@ -108,12 +203,14 @@ export const SubmissionResultViewer = ({
   fields,
   fieldsError,
   pictures,
+  spreadsheetContract,
 }: {
   configUrl?: string;
   data: Record<string, unknown>;
   documentAvailable: boolean | null;
   fields: ReceiptField[];
   fieldsError?: string | null;
+  spreadsheetContract?: SpreadsheetResultContract | null;
   pictures: Record<string, boolean> | null;
 }) => {
   const [activeTab, setActiveTab] = useState<"document" | "fields">("document");
@@ -134,7 +231,12 @@ export const SubmissionResultViewer = ({
     fieldsContent = fieldsError ? (
       <Notice tone="danger">{fieldsError}</Notice>
     ) : (
-      <SubmissionFields data={data} fields={fields} pictures={pictures} />
+      <SubmissionFields
+        data={data}
+        fields={fields}
+        pictures={pictures}
+        spreadsheetContract={spreadsheetContract}
+      />
     );
   }
 

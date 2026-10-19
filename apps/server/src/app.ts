@@ -44,6 +44,7 @@ import { registerPublicFormRoutes } from "./routes/public-forms";
 import { registerResponseActionRoutes } from "./routes/response-actions";
 import { registerResponseRoutes } from "./routes/responses";
 import { registerResultRoutes } from "./routes/results";
+import { registerSpreadsheetAuthoringRoutes } from "./routes/spreadsheet-authoring";
 import { registerSubmissionRoutes } from "./routes/submissions";
 import { putObject, deleteObject } from "./storage";
 
@@ -105,7 +106,14 @@ export function createApp(options: AppOptions = {}) {
   };
   const app = new Elysia();
   app
-    .onError(({ error, set }) => {
+    .onError(({ code, error, set }) => {
+      if (code === "NOT_FOUND") {
+        set.status = 404;
+        return Response.json({
+          error: "not_found",
+          message: "Route was not found",
+        });
+      }
       if (error instanceof AiAuthoringError) {
         set.status = error.status;
         return Response.json({
@@ -168,6 +176,7 @@ export function createApp(options: AppOptions = {}) {
     });
   registerFormCatalogRoutes(app, dependencies);
   registerFormAuthoringRoutes(app, dependencies);
+  registerSpreadsheetAuthoringRoutes(app);
   registerAuditRoutes(app, dependencies);
   registerResultRoutes(app, dependencies);
   registerPublicFormRoutes(app, dependencies);

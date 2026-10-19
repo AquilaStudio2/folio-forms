@@ -14,6 +14,7 @@ import type { Identity } from "../auth/identity";
 import { normalizeEmail } from "../auth/identity";
 import { databaseErrorCode, isSerializationConflict } from "../db-errors";
 import { tokenDigest } from "../digests";
+import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
 import { fail, HttpError } from "../http/errors";
 import { jsonRecord, publicIdPattern } from "../http/input";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
@@ -72,10 +73,14 @@ export async function redeemPrefillHandoff(
     responseId,
     "draft",
     crypto.randomUUID(),
-    "docx"
+    form.documentKind
   );
   const draftDocumentKey = `response-${responseId}-${crypto.randomUUID()}`;
-  await putObject(draftObjectKey, document, DOCX_CONTENT_TYPE);
+  await putObject(
+    draftObjectKey,
+    document,
+    form.documentKind === "xlsx" ? XLSX_CONTENT_TYPE : DOCX_CONTENT_TYPE
+  );
   const claimDigest = tokenDigest(claimToken);
   let oldDraftObjectKey: string | null = null;
   let unusedDraftObjectKey: string | null = null;
@@ -227,6 +232,7 @@ export async function redeemPrefillHandoff(
                 externalReferenceDigest: handoff.externalReferenceDigest,
                 publishedTemplateId: currentForm.publishedTemplate.id,
                 publishedVersion: currentForm.version,
+                spreadsheetInitialized: false,
                 status: ResponseStatus.draft,
                 updatedAt: now,
               },
@@ -246,6 +252,7 @@ export async function redeemPrefillHandoff(
                   connect: { id: currentForm.publishedTemplate.id },
                 },
                 publishedVersion: currentForm.version,
+                spreadsheetInitialized: false,
                 status: ResponseStatus.draft,
               },
             });

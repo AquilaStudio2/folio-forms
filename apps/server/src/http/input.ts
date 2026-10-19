@@ -168,6 +168,7 @@ export async function readAuthoringCreationInput(
 }
 
 interface TemplateCreationInput {
+  documentKind: "docx" | "xlsx";
   description: string;
   source: FormSource;
   templateBytes?: Uint8Array;
@@ -206,6 +207,7 @@ export async function readTemplateCreationInput(
   for (const [key, value] of formData.entries()) {
     if (
       key !== "description" &&
+      key !== "documentKind" &&
       key !== "source" &&
       key !== "template" &&
       key !== "title"
@@ -231,6 +233,11 @@ export async function readTemplateCreationInput(
     fail(400, "invalid_request", "source is required");
   }
   const title = titleValue.trim();
+  const documentKindValue = entries.get("documentKind") ?? "docx";
+  if (documentKindValue !== "docx" && documentKindValue !== "xlsx") {
+    fail(400, "invalid_request", "documentKind must be docx or xlsx");
+  }
+  const documentKind = documentKindValue;
   const source = sourceValue.trim();
   if (title.length > 200) {
     fail(400, "invalid_request", "Title is too long");
@@ -253,12 +260,15 @@ export async function readTemplateCreationInput(
     if (template !== undefined) {
       fail(400, "invalid_request", "template is only accepted for upload");
     }
-    return { description, source, title };
+    return { description, documentKind, source, title };
+  }
+  if (documentKind === "xlsx") {
+    fail(400, "invalid_request", "สร้างแบบฟอร์ม Excel จากเอกสารเปล่าเท่านั้น");
   }
   if (!(template instanceof File)) {
     fail(400, "invalid_request", "template is required for upload");
   }
-  if (!/\.docx$/iu.test(template.name)) {
+  if (!template.name.toLowerCase().endsWith(".docx")) {
     fail(415, "invalid_file_type", "Template must be a DOCX file");
   }
   const normalizedType = template.type.trim().toLowerCase();
@@ -276,7 +286,7 @@ export async function readTemplateCreationInput(
   if (templateBytes.byteLength > maxTemplateUploadBytes) {
     fail(413, "payload_too_large", "Template upload is too large");
   }
-  return { description, source, templateBytes, title };
+  return { description, documentKind, source, templateBytes, title };
 }
 
 export function requiredString(record: JsonRecord, key: string): string {

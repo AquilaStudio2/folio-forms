@@ -21,6 +21,7 @@ import type {
   OnlyOfficeEditorState,
 } from "@/features/onlyoffice/editor-protocol";
 import { EditorSurface } from "@/features/onlyoffice/editor-surface";
+import { isEditorWindowSource } from "@/features/onlyoffice/editor-window-source";
 import { ApiError, apiDelete, apiGet, apiPost } from "@/lib/api";
 
 interface DocsApi {
@@ -41,6 +42,7 @@ export const OnlyOfficeEditor = ({
   configUrl,
   onBridgeMessage,
   onDirtyChange,
+  onCommandReadyChange,
   onStateChange,
   readOnly = false,
   revision = 0,
@@ -53,10 +55,11 @@ export const OnlyOfficeEditor = ({
   configUrl?: string;
   onBridgeMessage?: (message: EditorBridgeMessage) => void | Promise<void>;
   onDirtyChange?: (dirty: boolean) => void;
+  onCommandReadyChange?: (ready: boolean) => void;
   onStateChange?: (state: OnlyOfficeEditorState) => void;
   readOnly?: boolean;
   revision?: number;
-  saveAction?: "save-draft" | "save-correction";
+  saveAction?: "save-draft" | "save-correction" | "submit";
   saveReason?: string;
   saveRequest?: number;
   title: string;
@@ -67,11 +70,17 @@ export const OnlyOfficeEditor = ({
   const editorRef = useRef<{ destroyEditor?: () => void } | null>(null);
   const onBridgeMessageRef = useRef(onBridgeMessage);
   const onDirtyChangeRef = useRef(onDirtyChange);
+  const onCommandReadyChangeRef = useRef(onCommandReadyChange);
+  const pendingCommandRef = useRef<{
+    action: typeof saveAction;
+    timer: ReturnType<typeof setTimeout>;
+  } | null>(null);
   const onStateChangeRef = useRef(onStateChange);
   const pinnedSourceRef = useRef<MessageEventSource | null>(null);
   const lastClearDirtyRequestRef = useRef(0);
   const lastSaveRequestRef = useRef(0);
   const terminalOperationIdsRef = useRef(new Set<string>());
+  const mountGenerationRef = useRef(0);
   const editorId = useId().replaceAll(":", "");
   const surfaceId = `${editorId}-surface`;
   const keyboardHelpId = `${editorId}-keyboard-help`;
@@ -181,8 +190,38 @@ export const OnlyOfficeEditor = ({
   useEffect(() => {
     onBridgeMessageRef.current = onBridgeMessage;
     onDirtyChangeRef.current = onDirtyChange;
+    onCommandReadyChangeRef.current = onCommandReadyChange;
     onStateChangeRef.current = onStateChange;
-  }, [onBridgeMessage, onDirtyChange, onStateChange]);
+  }, [onBridgeMessage, onDirtyChange, onCommandReadyChange, onStateChange]);
+  useEffect(() => {
+    if (saveRequest === 0) {
+      return;
+    }
+    const timer = setTimeout(() => {
+      pendingCommandRef.current = null;
+      // A late handshake must not deliver a command the page has reported failed.
+      lastSaveRequestRef.current = Math.max(
+        lastSaveRequestRef.current,
+        saveRequest
+      );
+      onBridgeMessageRef.current?.({
+        action: saveAction,
+        bridgeId: "editor-command",
+        error:
+          "ตัวแก้ไขยังไม่ตอบรับคำสั่ง กรุณารอให้เชื่อมต่อพร้อมแล้วลองใหม่ เก็บหน้านี้ไว้เพื่อรักษาการเปลี่ยนแปลง",
+        source: "form-bridge",
+        status: "failed",
+        type: "operation",
+      });
+    }, 30_000);
+    pendingCommandRef.current = { action: saveAction, timer };
+    return () => {
+      clearTimeout(timer);
+      if (pendingCommandRef.current?.timer === timer) {
+        pendingCommandRef.current = null;
+      }
+    };
+  }, [saveRequest, saveAction]);
   useEffect(() => {
     const bridgeId = config?.bridge?.id;
     const pluginOrigin = config?.bridge?.pluginOrigin;
@@ -239,6 +278,7 @@ export const OnlyOfficeEditor = ({
     }
 
     const path = editorConfigPath(configUrl);
+    onCommandReadyChangeRef.current?.(false);
     loadedConfigUrlRef.current = null;
     setConfig(null);
     setError(null);
@@ -342,13 +382,18 @@ export const OnlyOfficeEditor = ({
     };
     const respondToCapabilityRequest = (
       request: CapabilityRequestMessage,
-      response: { capability: string } | { error: string }
+      response: { capability: string } | { error: string },
+      requestedSource: MessageEventSource
     ) => {
       if (cancelled) {
         return;
       }
       const pinnedSource = pinnedSourceRef.current;
-      if (!pinnedSource) {
+      if (
+        !pinnedSource ||
+        pinnedSource !== requestedSource ||
+        !isEditorWindowSource(pinnedSource, surfaceRef.current)
+      ) {
         return;
       }
       try {
@@ -368,11 +413,18 @@ export const OnlyOfficeEditor = ({
       }
     };
 
-    const renewCapability = async (request: CapabilityRequestMessage) => {
+    const renewCapability = async (
+      request: CapabilityRequestMessage,
+      requestedSource: MessageEventSource
+    ) => {
       if (!configUrl) {
-        respondToCapabilityRequest(request, {
-          error: "ไม่พบสิทธิ์สำหรับตัวแก้ไขเอกสาร",
-        });
+        respondToCapabilityRequest(
+          request,
+          {
+            error: "ไม่พบสิทธิ์สำหรับตัวแก้ไขเอกสาร",
+          },
+          requestedSource
+        );
         return;
       }
 
@@ -380,7 +432,7 @@ export const OnlyOfficeEditor = ({
       try {
         const path = editorConfigPath(configUrl);
         const fresh = await apiGet<EditorConfig>(path);
-        if (cancelled) {
+        if (cancelled || pinnedSourceRef.current !== requestedSource) {
           return;
         }
         const freshLease = fresh.bridge?.lease;
@@ -394,17 +446,25 @@ export const OnlyOfficeEditor = ({
 
         const capability = fresh.bridge?.capabilities?.[request.action];
         if (typeof capability !== "string" || !capability) {
-          respondToCapabilityRequest(request, {
-            error: "ไม่พบสิทธิ์สำหรับตัวแก้ไขเอกสาร",
-          });
+          respondToCapabilityRequest(
+            request,
+            {
+              error: "ไม่พบสิทธิ์สำหรับตัวแก้ไขเอกสาร",
+            },
+            requestedSource
+          );
           return;
         }
-        respondToCapabilityRequest(request, { capability });
+        respondToCapabilityRequest(request, { capability }, requestedSource);
       } catch {
         if (!cancelled) {
-          respondToCapabilityRequest(request, {
-            error: "ไม่สามารถยืนยันสิทธิ์ตัวแก้ไขเอกสารได้",
-          });
+          respondToCapabilityRequest(
+            request,
+            {
+              error: "ไม่สามารถยืนยันสิทธิ์ตัวแก้ไขเอกสารได้",
+            },
+            requestedSource
+          );
         }
       }
     };
@@ -417,16 +477,19 @@ export const OnlyOfficeEditor = ({
 
       const { data } = event;
       if (isBridgeReadyMessage(data, bridgeId)) {
-        if (!event.source) {
+        if (!isEditorWindowSource(event.source, surfaceRef.current)) {
           return;
         }
         if (
           pinnedSourceRef.current &&
           pinnedSourceRef.current !== event.source
         ) {
-          return;
+          respondToEditorSave(
+            "The plugin closed before native saving completed"
+          );
         }
         pinnedSourceRef.current = event.source;
+        onCommandReadyChangeRef.current?.(true);
         acknowledgeBridge(
           event.source,
           pluginOrigin,
@@ -438,7 +501,11 @@ export const OnlyOfficeEditor = ({
       }
 
       const pinnedSource = pinnedSourceRef.current;
-      if (!pinnedSource || event.source !== pinnedSource) {
+      if (
+        !pinnedSource ||
+        event.source !== pinnedSource ||
+        !isEditorWindowSource(pinnedSource, surfaceRef.current)
+      ) {
         return;
       }
 
@@ -449,6 +516,12 @@ export const OnlyOfficeEditor = ({
         data.type === "editor-save-request" &&
         isNonEmptyString(data.requestId)
       ) {
+        // Native save synchronization means the plugin accepted the command;
+        // its own save/operation deadlines now govern completion.
+        if (pendingCommandRef.current) {
+          clearTimeout(pendingCommandRef.current.timer);
+          pendingCommandRef.current = null;
+        }
         pendingEditorSaveId = data.requestId;
         if (config.editorUrl || readOnly || nativeDocumentDirty === null) {
           respondToEditorSave(
@@ -464,7 +537,7 @@ export const OnlyOfficeEditor = ({
 
       const capabilityRequest = parseCapabilityRequest(data, bridgeId);
       if (capabilityRequest) {
-        void renewCapability(capabilityRequest);
+        void renewCapability(capabilityRequest, pinnedSource);
         return;
       }
       const fieldSelection = parseFieldSelectionMessage(data, bridgeId);
@@ -480,6 +553,10 @@ export const OnlyOfficeEditor = ({
       const message = parseOperationMessage(data, bridgeId);
       if (!message) {
         return;
+      }
+      if (pendingCommandRef.current?.action === message.action) {
+        clearTimeout(pendingCommandRef.current.timer);
+        pendingCommandRef.current = null;
       }
       const isTerminal =
         message.status === "completed" || message.status === "failed";
@@ -504,6 +581,7 @@ export const OnlyOfficeEditor = ({
       cancelled = true;
       window.removeEventListener("message", handleBridgeMessage);
       pinnedSourceRef.current = null;
+      onCommandReadyChangeRef.current?.(false);
     };
 
     if (config.editorUrl || !hostRef.current) {
@@ -540,6 +618,14 @@ export const OnlyOfficeEditor = ({
             return;
           }
           nativeDocumentDirty = event.data;
+          if (
+            !readOnly &&
+            config.config?.documentType === "cell" &&
+            nativeDocumentDirty
+          ) {
+            // Office autosave is separate from Folio's saved draft/submission.
+            onDirtyChangeRef.current?.(true);
+          }
           if (!nativeDocumentDirty) {
             // ONLYOFFICE defines false as changes sent to its editing service.
             nativeSaveError = null;
@@ -565,11 +651,16 @@ export const OnlyOfficeEditor = ({
 
       const host = hostRef.current;
       const placeholder = document.createElement("div");
-      placeholder.id = editorId;
+      mountGenerationRef.current += 1;
+      const placeholderId = `${editorId}-mount-${mountGenerationRef.current}`;
+      placeholder.id = placeholderId;
       placeholder.className = "h-full w-full";
       host.replaceChildren(placeholder);
       mountedHost = host;
-      editorRef.current = new window.DocsAPI.DocEditor(editorId, editorConfig);
+      editorRef.current = new window.DocsAPI.DocEditor(
+        placeholderId,
+        editorConfig
+      );
       reportState("ready");
     };
     const handleScriptError = () => {

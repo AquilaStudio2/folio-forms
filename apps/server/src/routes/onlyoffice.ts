@@ -2,6 +2,9 @@ import { prisma, OperationStatus } from "@onlyoffice/db";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Elysia } from "elysia";
 
+import { registerSpreadsheetBuilderRoutes } from "../documents/spreadsheets/engine";
+import { spreadsheetExportSnapshot } from "../documents/spreadsheets/export-snapshot";
+import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
 import { HttpError, fail } from "../http/errors";
 import { readJsonRecord } from "../http/input";
 import { corsOrigin } from "../http/origins";
@@ -19,10 +22,12 @@ import {
 } from "../operations/lifecycle";
 import type { CallbackPayload } from "../operations/model";
 import { cleanupTerminalOperationObjects } from "../operations/object-cleanup";
+import { SpreadsheetValidationError } from "../operations/spreadsheet-document";
 import {
   pluginIndexResponse,
   pluginOrigins,
   pluginScriptResponse,
+  pluginSettingsIconResponse,
 } from "../plugin-assets";
 import { nativePdfDocument } from "../responses/native-document";
 import { DOCX_CONTENT_TYPE, objectExists, streamObject } from "../storage";
@@ -36,6 +41,7 @@ export function registerOnlyOfficeRoutes(
   >
 ): void {
   const { allowedCallbackOrigins, callbackMaximumBytes } = dependencies;
+  registerSpreadsheetBuilderRoutes(app);
   app
     .get("/onlyoffice/document/:key", async ({ request, params, query }) => {
       const { key } = params;
@@ -52,17 +58,30 @@ export function registerOnlyOfficeRoutes(
           "Document access token is invalid or expired"
         );
       }
+      const exportSnapshot = spreadsheetExportSnapshot(key);
+      if (exportSnapshot) {
+        return new Response(exportSnapshot, {
+          headers: {
+            "Cache-Control": "no-store",
+            "Content-Type": XLSX_CONTENT_TYPE,
+          },
+        });
+      }
       const objectKey = await operationDocumentKey(key);
       if (!objectKey || !(await objectExists(objectKey))) {
         fail(404, "not_found", "Document was not found");
       }
-      if (query.pdf === "1") {
+      if (query.pdf === "1" && !objectKey.endsWith(".xlsx")) {
         return new Response(await nativePdfDocument(key), {
           headers: { "Content-Type": DOCX_CONTENT_TYPE },
         });
       }
       return new Response(streamObject(objectKey), {
-        headers: { "Content-Type": DOCX_CONTENT_TYPE },
+        headers: {
+          "Content-Type": objectKey.endsWith(".xlsx")
+            ? XLSX_CONTENT_TYPE
+            : DOCX_CONTENT_TYPE,
+        },
       });
     })
     .get("/onlyoffice-plugin/config.json", ({ request, set }) => {
@@ -79,7 +98,7 @@ export function registerOnlyOfficeRoutes(
         name: "ตั้งค่าฟิลด์",
         variations: [
           {
-            EditorsSupport: ["word"],
+            EditorsSupport: ["word", "cell"],
             buttons: [],
             description: "แผงตั้งค่าฟิลด์สำหรับแบบฟอร์ม",
             events: [
@@ -88,6 +107,8 @@ export function registerOnlyOfficeRoutes(
               "onChangeContentControl",
               "onTargetPositionChanged",
             ],
+            icons:
+              "resources/%theme-type%(light|dark)/settings.%extension%(svg)",
             initData: "",
             initDataType: "none",
             initOnSelectionChanged: true,
@@ -107,6 +128,12 @@ export function registerOnlyOfficeRoutes(
     .get("/onlyoffice-plugin/", pluginIndexResponse)
     .get("/onlyoffice-plugin/index.html", pluginIndexResponse)
     .get("/onlyoffice-plugin/plugin.js", pluginScriptResponse)
+    .get("/onlyoffice-plugin/resources/light/settings.svg", () =>
+      pluginSettingsIconResponse("light")
+    )
+    .get("/onlyoffice-plugin/resources/dark/settings.svg", () =>
+      pluginSettingsIconResponse("dark")
+    )
     .post(
       "/onlyoffice/callback",
       async ({ request }) => {
@@ -186,9 +213,21 @@ export function registerOnlyOfficeRoutes(
             operation.id,
             error instanceof HttpError && error.code === "invalid_template"
               ? "invalid_template"
-              : "callback_processing_failed"
+              : "callback_processing_failed",
+            undefined,
+            error instanceof HttpError && error.code === "invalid_template"
+              ? { errorMessage: error.message }
+              : error instanceof SpreadsheetValidationError
+                ? {
+                    errorMessage: "ตรวจสอบช่องกรอกที่ระบุก่อนส่งคำตอบ",
+                    validationErrors: error.errors,
+                  }
+                : undefined
           );
-          return { error: 1 };
+          // Validation is a completed application decision. Acknowledge receipt
+          // so ONLYOFFICE does not replay this failed action's cached userdata
+          // for the next force-save; the operation still reports failure.
+          return { error: error instanceof SpreadsheetValidationError ? 0 : 1 };
         }
       },
       { parse: "none" }

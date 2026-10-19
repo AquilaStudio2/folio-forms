@@ -5,7 +5,12 @@ import type { Elysia } from "elysia";
 import { createResponseAudit } from "../audit/events";
 import { requireIdentity } from "../auth/identity";
 import { responsePicturePresence } from "../documents/pictures";
+import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
 import { receiptField } from "../forms/query";
+import {
+  spreadsheetPicturePresence,
+  spreadsheetBindingsForTemplate,
+} from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 import { jsonRecord, validateId } from "../http/input";
 import {
@@ -65,9 +70,19 @@ export function registerSubmissionRoutes(
             }
           : null,
         data: selected.data,
+        documentKind: submission.form.documentKind,
         fields: manifestFields.map(receiptField),
         returnUrl: prefillReturnUrl,
         revision: selected.revision,
+        spreadsheetContract:
+          submission.form.documentKind === "xlsx"
+            ? {
+                ...(await spreadsheetBindingsForTemplate(
+                  submission.response.publishedTemplateId
+                )),
+                locations: {},
+              }
+            : null,
         submission: submissionSummary(submission, {
           formPublicId: submission.form.publicId,
           formTitle: submission.form.title,
@@ -100,9 +115,13 @@ export function registerSubmissionRoutes(
         submission.response?.publishedTemplate?.manifest?.fields.filter(
           (field) => field.type === FieldType.picture
         ) ?? [];
+      const picturePresence =
+        submission.form.documentKind === "xlsx"
+          ? spreadsheetPicturePresence
+          : responsePicturePresence;
       const originalPictures =
         originalAvailable && pictureFields.length > 0
-          ? responsePicturePresence(
+          ? picturePresence(
               await readObject(submission.objectKey),
               pictureFields
             )
@@ -112,7 +131,7 @@ export function registerSubmissionRoutes(
         const documentAvailable = await objectExists(correction.objectKey);
         const pictures =
           documentAvailable && pictureFields.length > 0
-            ? responsePicturePresence(
+            ? picturePresence(
                 await readObject(correction.objectKey),
                 pictureFields
               )
@@ -214,7 +233,10 @@ export function registerSubmissionRoutes(
         },
       });
     })
-    .get("/api/submissions/:id/docx", async ({ request, params, query }) => {
+    .get("/api/submissions/:id/:format", async ({ request, params, query }) => {
+      if (params.format !== "docx" && params.format !== "xlsx") {
+        fail(404, "not_found", "Submission export was not found");
+      }
       const identity = await requireIdentity(request);
       validateId(params.id, "Submission");
       const submission = await findSubmissionWithRevisions(params.id);
@@ -226,6 +248,9 @@ export function registerSubmissionRoutes(
         submission,
         revisionSelector(query.revision)
       );
+      if (params.format !== submission.form.documentKind) {
+        fail(404, "not_found", "This document format is unavailable");
+      }
       if (!(await objectExists(selected.objectKey))) {
         fail(404, "not_found", "Submission document was not found");
       }
@@ -234,7 +259,7 @@ export function registerSubmissionRoutes(
         actorId: identity.id,
         outcome: AuditOutcome.success,
         safeMetadata: {
-          format: "docx",
+          format: submission.form.documentKind,
           revision: selected.revision,
           state: "submitted",
         },
@@ -245,8 +270,11 @@ export function registerSubmissionRoutes(
         selected.revision === 0 ? "" : `-revision-${selected.revision}`;
       return new Response(streamObject(selected.objectKey), {
         headers: {
-          "Content-Disposition": `attachment; filename="submission-${submission.id}${suffix}.docx"`,
-          "Content-Type": DOCX_CONTENT_TYPE,
+          "Content-Disposition": `attachment; filename="submission-${submission.id}${suffix}.${submission.form.documentKind}"`,
+          "Content-Type":
+            submission.form.documentKind === "xlsx"
+              ? XLSX_CONTENT_TYPE
+              : DOCX_CONTENT_TYPE,
         },
       });
     })
@@ -266,7 +294,11 @@ export function registerSubmissionRoutes(
         );
         let pdf: Uint8Array;
         try {
-          pdf = await onlyOffice.convertDocxToPdf(selected.documentKey, true);
+          pdf = await onlyOffice.convertDocxToPdf(
+            selected.documentKey,
+            true,
+            submission.form.documentKind
+          );
         } catch (error) {
           await createResponseAudit({
             action: selected.correction

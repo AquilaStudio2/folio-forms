@@ -73,7 +73,16 @@ export function createBridge(options, office, callbacks) {
     const requestId = `editor-save-${editorSaveRequestSequence}`;
     // This host round trip runs after the native command and its queued state events.
     await new Promise((resolve, reject) => {
-      pendingEditorSave = { reject, requestId, resolve };
+      const timeoutId = window.setTimeout(() => {
+        if (pendingEditorSave?.requestId !== requestId) {
+          return;
+        }
+        pendingEditorSave = undefined;
+        reject(
+          new Error("ตัวแก้ไขยังยืนยันการบันทึกไม่สำเร็จ กรุณาลองบันทึกอีกครั้งก่อนปิดหน้านี้")
+        );
+      }, 45_000);
+      pendingEditorSave = { reject, requestId, resolve, timeoutId };
       try {
         postBridgeMessage({
           requestId,
@@ -81,6 +90,7 @@ export function createBridge(options, office, callbacks) {
           type: EDITOR_SAVE_REQUEST_TYPE,
         });
       } catch (error) {
+        window.clearTimeout(timeoutId);
         pendingEditorSave = undefined;
         reject(error);
       }
@@ -324,6 +334,7 @@ export function createBridge(options, office, callbacks) {
       }
       if (message.saved === true && !Object.hasOwn(message, "error")) {
         pendingEditorSave = undefined;
+        window.clearTimeout(pending.timeoutId);
         pending.resolve();
       } else if (
         !Object.hasOwn(message, "saved") &&
@@ -331,6 +342,7 @@ export function createBridge(options, office, callbacks) {
         message.error.trim()
       ) {
         pendingEditorSave = undefined;
+        window.clearTimeout(pending.timeoutId);
         pending.reject(new Error(message.error));
       }
       return;
@@ -344,7 +356,12 @@ export function createBridge(options, office, callbacks) {
     if (message.type === RUN_ACTION_TYPE) {
       if (
         message.action !== ACTIONS.SAVE_DRAFT &&
-        message.action !== ACTIONS.SAVE_CORRECTION
+        message.action !== ACTIONS.SAVE_CORRECTION &&
+        !(
+          options.documentKind === "xlsx" &&
+          message.action === ACTIONS.SUBMIT &&
+          (options.action === ACTIONS.FILL || options.action === ACTIONS.DRAFT)
+        )
       ) {
         return;
       }

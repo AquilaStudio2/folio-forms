@@ -13,6 +13,7 @@ import {
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
+import { DocumentKindBadge } from "@/components/document-kind-badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -108,6 +109,7 @@ const formsErrorMessage = (caughtError: unknown, fallback: string): string => {
 // oxlint-disable-next-line complexity -- Coordinates catalog feedback, deletion guards, and the existing empty/error states.
 export const AdminFormsPage = () => {
   const [query, setQuery] = useState<FormCatalogQuery>({
+    documentKind: "all",
     page: 1,
     search: "",
     status: "all",
@@ -268,13 +270,17 @@ export const AdminFormsPage = () => {
         <div>
           <FileText className="mx-auto mb-3 text-[var(--ink-soft)]" size={30} />
           <h2 className="font-semibold">
-            {query.search || query.status !== "all"
+            {query.search ||
+            query.status !== "all" ||
+            query.documentKind !== "all"
               ? "ไม่พบแบบฟอร์มที่ตรงกับการค้นหา"
               : "ยังไม่มีแบบฟอร์ม"}
           </h2>
           <p className="mt-1 text-sm text-[var(--ink-soft)]">
-            {query.search || query.status !== "all"
-              ? "ลองเปลี่ยนคำค้นหรือสถานะแบบฟอร์ม"
+            {query.search ||
+            query.status !== "all" ||
+            query.documentKind !== "all"
+              ? "ลองเปลี่ยนคำค้น สถานะ หรือประเภทเอกสาร"
               : "สร้างแบบร่างแรก แล้วเปิดตัวแก้ไขเพื่อจัดรูปแบบ"}
           </p>
           <Button asChild variant="link" className="mt-4">
@@ -328,6 +334,7 @@ export const AdminFormsPage = () => {
                   </div>
                 </div>
                 <div className="flex flex-wrap items-center gap-3 pl-14 sm:pl-0">
+                  <DocumentKindBadge documentKind={form.documentKind} />
                   <Badge variant="secondary" className={status.className}>
                     {status.label}
                   </Badge>
@@ -419,7 +426,7 @@ export const AdminFormsPage = () => {
         }
       />
       <Card className="mb-5 gap-0 p-5">
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-end">
+        <div className="flex flex-col gap-4 md:flex-row md:items-end">
           <div className="min-w-0 flex-1 space-y-2">
             <Label htmlFor="form-search">ค้นหาแบบฟอร์ม</Label>
             <div className="relative">
@@ -467,7 +474,28 @@ export const AdminFormsPage = () => {
               totalPages={pagination.totalPages}
             />
           </div>
-          <div className="space-y-2 sm:w-48 sm:pb-6">
+          <div className="space-y-2 md:w-44 md:pb-6">
+            <Label htmlFor="form-document-kind">ประเภทเอกสาร</Label>
+            <Select
+              value={query.documentKind}
+              disabled={Boolean(removingPublicId)}
+              onValueChange={(value) => {
+                if (value === "all" || value === "docx" || value === "xlsx") {
+                  changeQuery({ documentKind: value, page: 1 });
+                }
+              }}
+            >
+              <SelectTrigger id="form-document-kind" className="w-full">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">ทั้งหมด</SelectItem>
+                <SelectItem value="docx">DOCX</SelectItem>
+                <SelectItem value="xlsx">Excel (XLSX)</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-2 md:w-48 md:pb-6">
             <Label htmlFor="form-status">สถานะแบบฟอร์ม</Label>
             <Select
               value={query.status}

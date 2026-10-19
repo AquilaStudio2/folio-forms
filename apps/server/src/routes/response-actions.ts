@@ -98,16 +98,19 @@ export function registerResponseActionRoutes(
           action: "save-draft",
         });
         await requireActiveEditorLease(authorization, capabilityScope);
-        const data = await normalizeResponseData(
-          form,
-          response,
-          input.data,
-          false,
-          form.fillMethod === FillMethod.onlyoffice,
-          form.fillMethod === FillMethod.onlyoffice
-            ? input.canonicalDateFields
-            : undefined
-        );
+        const data =
+          form.documentKind === "xlsx"
+            ? {}
+            : await normalizeResponseData(
+                form,
+                response,
+                input.data,
+                false,
+                form.fillMethod === FillMethod.onlyoffice,
+                form.fillMethod === FillMethod.onlyoffice
+                  ? input.canonicalDateFields
+                  : undefined
+              );
         if (await activeOperationForResponse(response.id)) {
           fail(
             409,
@@ -143,23 +146,28 @@ export function registerResponseActionRoutes(
           operationId,
           "draft",
           crypto.randomUUID(),
-          "docx"
+          form.documentKind
         );
         const metadata: OperationMetadata = {
           action: "save-draft",
+          documentKind: form.documentKind,
+          ...(form.documentKind === "xlsx" && input.rowChange !== undefined
+            ? { spreadsheetRowChange: input.rowChange }
+            : {}),
           data,
           finalObjectKey: objectKey(
             "responses",
             response.id,
             "draft",
             crypto.randomUUID(),
-            "docx"
+            form.documentKind
           ),
           formId: form.id,
           nextDocumentKey: `response-${response.id}-${crypto.randomUUID()}`,
           publicId: form.publicId,
           responseId: response.id,
-          ...(form.fillMethod === FillMethod.onlyoffice
+          ...(form.documentKind !== "xlsx" &&
+          form.fillMethod === FillMethod.onlyoffice
             ? callbackFieldMetadata(data, input.data, response.prefillSnapshot)
             : {}),
           ...(nativeDocumentBytes ? { nativeDocumentStaged: true } : {}),
@@ -253,16 +261,19 @@ export function registerResponseActionRoutes(
           action: "submit",
         });
         await requireActiveEditorLease(authorization, capabilityScope);
-        const data = await normalizeResponseData(
-          form,
-          response,
-          input.data,
-          true,
-          form.fillMethod === FillMethod.onlyoffice,
-          form.fillMethod === FillMethod.onlyoffice
-            ? input.canonicalDateFields
-            : undefined
-        );
+        const data =
+          form.documentKind === "xlsx"
+            ? {}
+            : await normalizeResponseData(
+                form,
+                response,
+                input.data,
+                true,
+                form.fillMethod === FillMethod.onlyoffice,
+                form.fillMethod === FillMethod.onlyoffice
+                  ? input.canonicalDateFields
+                  : undefined
+              );
         if (await activeOperationForResponse(response.id)) {
           fail(
             409,
@@ -300,22 +311,24 @@ export function registerResponseActionRoutes(
           operationId,
           "submission",
           crypto.randomUUID(),
-          "docx"
+          form.documentKind
         );
         const metadata: OperationMetadata = {
           action: "submit",
           data,
+          documentKind: form.documentKind,
           finalObjectKey: objectKey(
             "submissions",
             submissionId,
             "filled",
             crypto.randomUUID(),
-            "docx"
+            form.documentKind
           ),
           formId: form.id,
           publicId: form.publicId,
           responseId: response.id,
-          ...(form.fillMethod === FillMethod.onlyoffice
+          ...(form.documentKind !== "xlsx" &&
+          form.fillMethod === FillMethod.onlyoffice
             ? callbackFieldMetadata(data, input.data, response.prefillSnapshot)
             : {}),
           stagedObjectKey,

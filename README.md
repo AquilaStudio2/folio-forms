@@ -1,6 +1,6 @@
 # Folio Forms
 
-Production-oriented MMVP for designing, publishing, and completing DOCX forms through ONLYOFFICE or a native form.
+Production-oriented MMVP for designing, publishing, and completing DOCX and XLSX forms. DOCX supports ONLYOFFICE or a native form; XLSX uses ONLYOFFICE.
 
 The application provides:
 
@@ -9,7 +9,7 @@ The application provides:
 - Authenticated user form completion.
 - User-specific prefill with locked and editable field policies.
 - Explicit draft save and resume.
-- Immutable submissions with extracted JSON, canonical filled DOCX, and on-demand PDF exports.
+- Immutable submissions with extracted JSON, canonical filled DOCX/XLSX, and on-demand PDF exports.
 - Admin submission review and authorized downloads.
 
 The accepted deployment target is one private single-host Docker Compose stack.
@@ -276,6 +276,8 @@ The plugin applies prefill through ONLYOFFICE's command API, then restricts resp
 - Handoffs, pending claims, Operations, callback claims, Editor Leases, and durable Object Cleanup Intents.
 - immutable Audit Events, login-failure windows, and Deletion Tombstones.
 
+DOCX and XLSX share `DraftFieldRule`, `ManifestField`, Prefill tables, and the existing answer columns (`Response.draftData`, `Submission.data`, `Correction.data/changedData`). XLSX stores only placement metadata in each field's nullable `binding`, using the shared `ExcelBinding` types and validators in [forms/excel-binding.ts](apps/server/src/forms/excel-binding.ts); it has no separate draft/published configuration JSON or response contract snapshots. `Form.documentKind` selects the document processor. DOCX draft labels and types still come from its content controls, preserving the existing authoring flow. See the [storage comparison and examples](docs/ARCHITECTURE.th.md).
+
 Database constraints enforce:
 
 - Normalized unique account email and opaque Form public IDs.
@@ -286,7 +288,7 @@ Database constraints enforce:
 
 ### Private object storage
 
-RustFS stores canonical DOCX objects under opaque keys such as:
+RustFS stores canonical DOCX/XLSX objects under opaque keys such as (XLSX uses the same paths with an `xlsx` suffix):
 
 ```text
 forms/<formId>/template-draft/<uuid>/docx
@@ -315,7 +317,7 @@ Form creation and hard deletion record Object Cleanup Intents before an object c
 - ONLYOFFICE document URLs use a five-minute HMAC token bound to the document key.
 - ONLYOFFICE callback userdata uses a server-signed HMAC envelope containing the Operation ID. Its exact token digest and single-use consumption are persisted, so replay protection survives process restarts.
 - Callback document downloads are restricted to configured ONLYOFFICE origins, disallow redirects, and enforce a response-size limit.
-- Response JSON is restricted to published content-control tags, scalar values, and a bounded payload size.
+- DOCX response JSON is restricted to published content-control tags and validated values. XLSX response JSON follows its frozen field/table contract. Payloads and document inputs are bounded.
 - Operations expire with stable error codes and atomically roll back submitting Responses when they remain active too long. Startup reconciliation expires stale Operations, callback claims, editor leases, and leases backed by expired Sessions without replacing committed object references.
 
 These protections cover the current local stack, but the deployment defaults below are not suitable for the public internet.
@@ -455,14 +457,20 @@ apps/
     src/routes/            HTTP registrars with scoped per-app dependencies
     src/ai-authoring.ts    Authoring reservations, sessions, expiry, and cleanup
     src/ai-authoring/      Document generation, agent orchestration, shared types
-    src/documents/         DOCX package, field, picture, and native-rendering algorithms
+    src/documents/         DOCX/package algorithms; spreadsheets/ owns XLSX processing
+    src/forms/             Form settings, field rules, published spreadsheet contracts
+    src/responses/         Draft preparation, editor configuration, response data
+    src/operations/        Shared save/publish/submit/correction lifecycle
+    src/prefill/           Handoff, snapshot and document-specific Prefill validation
     src/document-worker.ts Python worker HTTP client
     src/document-worker-server.ts Isolated document execution and container cleanup
     src/index.ts           Production listen entrypoint
     src/onlyoffice.ts      ONLYOFFICE URLs, HMAC tokens, force-save, PDF conversion
     src/storage.ts         Private RustFS object primitives
     Dockerfile             Production API image
-    test/http/             Twelve serial HTTP suites
+    test/http/             Serial HTTP regression suites
+    test/spreadsheet-unit/ XLSX algorithms and operation preparation
+    test/spreadsheet-runtime/ Real ONLYOFFICE processing tests
     test/fixtures/         Explicit app dependencies and caller-owned mock cleanup
     test/scenarios/        Typed steps within the original Admin and native journeys
   web/
@@ -481,7 +489,8 @@ packages/
 onlyoffice-templates/
   template.docx            Tracked tagged template
 compose.yaml               Canonical private single-host Compose topology
-Caddyfile                  HTTPS host routing
+compose.dev.yaml           Local-development overrides
+gateway/                   Pingap routing; external ingress provides HTTPS
 CONTEXT.md                 Canonical domain glossary
 ```
 
@@ -588,6 +597,6 @@ The stack has no application or off-host backup. Attached-disk loss, ransomware,
 ## Related documentation
 
 - [Domain glossary](CONTEXT.md)
-- [Frontend setup research](docs/research/frontend-setup.md)
-- [Authentication setup research](docs/research/auth-setup.md)
-- [Database setup notes](packages/db/README.md)
+- [Architecture and data ownership (Thai)](docs/ARCHITECTURE.th.md)
+- [Repository structure and file placement (Thai)](docs/STRUCTURE.th.md)
+- [Architecture decisions](docs/adr/)

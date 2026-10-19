@@ -5,6 +5,7 @@ import { Button, Input, Spinner, Textarea } from "@/components/ui";
 import type { FillMethod, FormSummary } from "@/lib/api";
 
 interface FormMetadataPanelProps {
+  documentKind?: "docx" | "xlsx";
   title: string;
   description: string;
   metadataBusy: "archive" | "fill-method" | "save" | "duplicate" | null;
@@ -20,6 +21,7 @@ interface FormMetadataPanelProps {
 }
 
 export const FormMetadataPanel = ({
+  documentKind = "docx",
   title,
   description,
   metadataBusy,
@@ -95,43 +97,45 @@ export const FormMetadataPanel = ({
           </Button>
         </div>
       </form>
-      <div
-        className="mt-5 space-y-2"
-        aria-busy={metadataBusy === "fill-method"}
-      >
-        <label className="text-sm font-semibold" htmlFor="form-fill-method">
-          Fill Method
-        </label>
-        <select
-          className="min-h-11 w-full rounded-[10px] border border-[var(--line-strong)] bg-[var(--paper)] px-3 text-[var(--ink)] shadow-sm focus:border-[var(--ink)] focus:outline-none"
-          disabled={!metadataCanAct || status === "draft"}
-          id="form-fill-method"
-          onChange={(event) => {
-            const { value } = event.target;
-            if (value === "native" || value === "onlyoffice") {
-              void updateFillMethod(value);
-            }
-          }}
-          value={fillMethod}
+      {documentKind === "docx" ? (
+        <div
+          className="mt-5 space-y-2"
+          aria-busy={metadataBusy === "fill-method"}
         >
-          <option value="onlyoffice">ONLYOFFICE</option>
-          <option disabled={!nativeFillAvailable} value="native">
-            Native form
-          </option>
-        </select>
-        <p
-          className="text-xs text-[var(--ink-soft)]"
-          id="form-fill-method-help"
-        >
-          {fillMethodHelp}
-        </p>
-        {metadataBusy === "fill-method" ? (
-          <p className="inline-flex items-center gap-2 text-xs" role="status">
-            <Spinner />
-            Updating Fill Method…
+          <label className="text-sm font-semibold" htmlFor="form-fill-method">
+            Fill Method
+          </label>
+          <select
+            className="min-h-11 w-full rounded-[10px] border border-[var(--line-strong)] bg-[var(--paper)] px-3 text-[var(--ink)] shadow-sm focus:border-[var(--ink)] focus:outline-none"
+            disabled={!metadataCanAct || status === "draft"}
+            id="form-fill-method"
+            onChange={(event) => {
+              const { value } = event.target;
+              if (value === "native" || value === "onlyoffice") {
+                void updateFillMethod(value);
+              }
+            }}
+            value={fillMethod}
+          >
+            <option value="onlyoffice">ONLYOFFICE</option>
+            <option disabled={!nativeFillAvailable} value="native">
+              Native form
+            </option>
+          </select>
+          <p
+            className="text-xs text-[var(--ink-soft)]"
+            id="form-fill-method-help"
+          >
+            {fillMethodHelp}
           </p>
-        ) : null}
-      </div>
+          {metadataBusy === "fill-method" ? (
+            <p className="inline-flex items-center gap-2 text-xs" role="status">
+              <Spinner />
+              Updating Fill Method…
+            </p>
+          ) : null}
+        </div>
+      ) : null}
     </div>
   </section>
 );

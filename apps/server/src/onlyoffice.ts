@@ -116,6 +116,9 @@ export interface CallbackClaimInput {
 }
 
 export interface EditorOptions {
+  documentKind?: "docx" | "xlsx";
+  spreadsheetBindings?: unknown;
+  spreadsheetPictureFrames?: unknown;
   action: PluginAction;
   capabilities: Partial<Record<EditorCapabilityAction, string>>;
   lease: {
@@ -461,8 +464,9 @@ export function editorConfig(
   user: { id: string; name: string }
 ): Record<string, unknown> {
   // DOCXF enables ONLYOFFICE's native fixed-form interactions in fill mode.
+  const wordFileType = options.action === "template-edit" ? "docx" : "docxf";
   const documentFileType =
-    options.action === "template-edit" ? "docx" : "docxf";
+    options.documentKind === "xlsx" ? "xlsx" : wordFileType;
   const { capabilities, lease, ...pluginOptions } = options;
   const officeServerOrigin = trimOrigin(env.ONLYOFFICE_DOCUMENT_BASE_URL);
   const browserServerOrigin = trimOrigin(env.API_BASE);
@@ -478,20 +482,21 @@ export function editorConfig(
         // switches user sessions to the `forms` restriction immediately after
         // applying the server-provided values.
         edit: true,
-        fillForms: options.action !== "template-edit",
+        fillForms:
+          options.documentKind !== "xlsx" && options.action !== "template-edit",
         review: false,
       },
       title: `${options.action}-${options.publicId}.${documentFileType}`,
       url: documentUrl(options.documentKey),
     },
-    documentType: "word",
+    documentType: options.documentKind === "xlsx" ? "cell" : "word",
     editorConfig: {
       ...(options.action === "template-edit"
         ? {}
         : {
             customization: {
               compactToolbar: true,
-              hideRightMenu: true,
+              hideRightMenu: options.documentKind !== "xlsx",
             },
           }),
       callbackUrl: `${officeServerOrigin}/onlyoffice/callback`,
@@ -532,11 +537,12 @@ export function editorConfig(
 export function readOnlyViewerConfig(
   documentKey: string,
   publicId: string,
-  user: { id: string; name: string }
+  user: { id: string; name: string },
+  documentKind: "docx" | "xlsx" = "docx"
 ): Record<string, unknown> {
   const config = {
     document: {
-      fileType: "docx",
+      fileType: documentKind,
       key: documentKey,
       permissions: {
         comment: false,
@@ -545,10 +551,10 @@ export function readOnlyViewerConfig(
         fillForms: false,
         review: false,
       },
-      title: `submission-${publicId}.docx`,
+      title: `submission-${publicId}.${documentKind}`,
       url: documentUrl(documentKey),
     },
-    documentType: "word",
+    documentType: documentKind === "xlsx" ? "cell" : "word",
     editorConfig: {
       customization: { compactToolbar: true, hideRightMenu: true },
       mode: "view",
@@ -564,10 +570,14 @@ export function readOnlyViewerConfig(
 }
 
 export interface OnlyOfficeClient {
-  forceSave: (documentKey: string, userdata: string) => Promise<boolean>;
+  forceSave: (
+    documentKey: string,
+    userdata: string
+  ) => Promise<boolean | { url: string }>;
   convertDocxToPdf: (
     documentKey: string,
-    pdfOnly?: boolean
+    pdfOnly?: boolean,
+    documentKind?: "docx" | "xlsx"
   ) => Promise<Uint8Array>;
 }
 
@@ -661,16 +671,24 @@ export function createOnlyOfficeClient(
     options.maxDownloadBytes ?? maxOnlyOfficeDownloadBytes;
 
   return {
-    async convertDocxToPdf(documentKey, pdfOnly = false): Promise<Uint8Array> {
+    async convertDocxToPdf(
+      documentKey,
+      pdfOnly = false,
+      documentKind = "docx"
+    ): Promise<Uint8Array> {
       const conversionKey = pdfOnly ? randomUUID() : documentKey;
       const endpoint = `${trimOrigin(internalUrl)}/converter?shardkey=${encodeURIComponent(documentKey)}`;
       const conversion = {
         async: false,
-        filetype: "docx",
+        filetype: documentKind,
         key: conversionKey,
         outputtype: "pdf",
-        title: `${conversionKey}.docx`,
-        url: documentUrlFor(documentKey, documentBaseUrl, pdfOnly),
+        title: `${conversionKey}.${documentKind}`,
+        url: documentUrlFor(
+          documentKey,
+          documentBaseUrl,
+          pdfOnly && documentKind !== "xlsx"
+        ),
       };
       const response = await request(endpoint, {
         body: JSON.stringify(conversion),
@@ -710,7 +728,7 @@ export function createOnlyOfficeClient(
       return boundedResponseBytes(pdfResponse, maximumDownloadBytes);
     },
 
-    async forceSave(documentKey, userdata): Promise<boolean> {
+    async forceSave(documentKey, userdata): Promise<boolean | { url: string }> {
       const endpoint = `${trimOrigin(internalUrl)}/command?shardkey=${encodeURIComponent(documentKey)}`;
       const command = { c: "forcesave", key: documentKey, userdata };
       const response = await request(endpoint, {
@@ -732,6 +750,15 @@ export function createOnlyOfficeClient(
       }
       const error = "error" in payload ? payload.error : undefined;
       if (error === 4) {
+        // An unchanged editor can still have a newer snapshot than our last
+        // accepted draft (for example, after submission validation failed).
+        if (
+          "url" in payload &&
+          typeof payload.url === "string" &&
+          payload.url
+        ) {
+          return { url: onlyOfficeResultUrl(payload.url, internalUrl) };
+        }
         return false;
       }
       if (error !== undefined && error !== 0) {
@@ -751,7 +778,7 @@ const defaultOnlyOfficeClient = createOnlyOfficeClient();
 export function forceSave(
   documentKey: string,
   userdata: string
-): Promise<boolean> {
+): Promise<boolean | { url: string }> {
   return defaultOnlyOfficeClient.forceSave(documentKey, userdata);
 }
 

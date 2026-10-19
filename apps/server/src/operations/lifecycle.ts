@@ -63,7 +63,11 @@ export async function activeOperationForResponse(
 export async function updateOperationFailed(
   operationId: string,
   errorCode: OperationErrorCode,
-  updatedBefore?: Date
+  updatedBefore?: Date,
+  details?: {
+    errorMessage: string;
+    validationErrors?: { address: string; message: string }[];
+  }
 ): Promise<boolean> {
   const operation = await prisma.$transaction(async (tx) => {
     const current = await tx.operation.findUnique({
@@ -77,6 +81,7 @@ export async function updateOperationFailed(
     const failed = await tx.operation.updateMany({
       data: {
         errorCode,
+        ...(details ? { result: jsonValue(details) } : {}),
         status: OperationStatus.failed,
         updatedAt: new Date(),
       },
@@ -262,7 +267,11 @@ export async function markOperationCompleted(
   const completed = await tx.operation.updateMany({
     data: {
       errorCode: null,
-      metadata: jsonValue({ ...metadata, cleanupObjectKeys }),
+      metadata: jsonValue({
+        ...metadata,
+        ...(metadata.documentKind === "xlsx" ? { data: undefined } : {}),
+        cleanupObjectKeys,
+      }),
       result: jsonValue(result),
       status: OperationStatus.completed,
       ...(submissionId ? { submissionId } : {}),

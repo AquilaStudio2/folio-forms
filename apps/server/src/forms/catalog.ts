@@ -1,4 +1,10 @@
-import { FormStatus, Prisma, prisma, ResponseStatus } from "@onlyoffice/db";
+import {
+  DocumentKind,
+  FormStatus,
+  Prisma,
+  prisma,
+  ResponseStatus,
+} from "@onlyoffice/db";
 
 import { fail } from "../http/errors";
 import { formDto } from "./query";
@@ -9,6 +15,20 @@ const queryValue = (params: URLSearchParams, key: string): string | null => {
     fail(400, "invalid_request", `${key} must occur only once`);
   }
   return params.get(key);
+};
+
+const documentKindFilter = (params: URLSearchParams): Prisma.FormWhereInput => {
+  const documentKind = queryValue(params, "documentKind");
+  if (documentKind === null || documentKind === "all") {
+    return {};
+  }
+  if (
+    documentKind !== DocumentKind.docx &&
+    documentKind !== DocumentKind.xlsx
+  ) {
+    fail(400, "invalid_request", "documentKind is invalid");
+  }
+  return { documentKind };
 };
 
 const catalogQuery = (params: URLSearchParams) => {
@@ -38,6 +58,7 @@ const catalogQuery = (params: URLSearchParams) => {
   // Prisma contains uses LIKE: escape pattern characters for literal search.
   const contains = search.replaceAll(/[\\%_]/gu, "\\$&");
   const where: Prisma.FormWhereInput = {
+    ...documentKindFilter(params),
     ...(status && status !== "all" ? { status: status as FormStatus } : {}),
     ...(search
       ? {

@@ -3,6 +3,7 @@ import { ArrowUpRight, ClipboardList, FileCheck2, Inbox } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 
 import { AppShell, PageHeader } from "@/components/app-shell";
+import { DocumentKindBadge } from "@/components/document-kind-badge";
 import { Badge, Button, Card, Notice, Spinner } from "@/components/ui";
 import { ApiError, apiDelete, apiGet, formatDate } from "@/lib/api";
 import type { Submission } from "@/lib/api";
@@ -171,9 +172,12 @@ const DashboardRoute = () => {
                 key={row.id}
               >
                 <div>
-                  <h2 className="font-semibold">
-                    {row.formTitle ?? "แบบฟอร์มไม่มีชื่อ"}
-                  </h2>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="font-semibold">
+                      {row.formTitle ?? "แบบฟอร์มไม่มีชื่อ"}
+                    </h2>
+                    <DocumentKindBadge documentKind={row.documentKind} />
+                  </div>
                   <p className="mt-1 text-sm text-[var(--ink-soft)]">
                     {submitted
                       ? `ส่งเมื่อ ${formatDate(row.submittedAt ?? row.createdAt)}`
