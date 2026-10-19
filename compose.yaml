@@ -58,7 +58,9 @@ services:
         rc alias set local http://rustfs:9000 "$$RUSTFS_ACCESS_KEY" "$$RUSTFS_SECRET_KEY" && rc bucket create "local/$$RUSTFS_BUCKET" --ignore-existing && rc anonymous set private "local/$$RUSTFS_BUCKET"
 
   onlyoffice:
-    image: onlyoffice/documentserver:9.4.0.1
+    build:
+      context: ./onlyoffice
+    image: folio-onlyoffice:9.4.0.1
     restart: unless-stopped
     depends_on:
       postgres:

@@ -96,6 +96,19 @@ docker compose --env-file .env.production -f compose.yaml --profile verification
 
 This topology has no application or off-host backup. Disk, ransomware, or regional loss is unrecoverable.
 
+### ONLYOFFICE fonts
+
+The ONLYOFFICE image is built from `onlyoffice/Dockerfile` and includes TH SarabunPSK in regular, bold, italic, and bold italic styles. Fonts in `onlyoffice/fonts/` are installed and indexed during the image build; users can select **TH SarabunPSK** in the web editor without installing it on their computers.
+
+To add or replace fonts, copy the `.ttf` or `.otf` files into `onlyoffice/fonts/`, then build and recreate only the editor:
+
+```bash
+docker compose --env-file .env.production -f compose.yaml build onlyoffice
+docker compose --env-file .env.production -f compose.yaml up -d --no-deps --wait onlyoffice
+```
+
+Recreating ONLYOFFICE interrupts active editor sessions; deploy when users have saved and closed their documents, then reopen the editor to see the updated font list. Font indexing runs during the build, so there is no manual script to run after deployment. Docker can reuse the font layer when the files have not changed.
+
 ## Open the application
 
 Production application:
@@ -488,6 +501,9 @@ packages/
   config/                  Shared TypeScript/project configuration
 onlyoffice-templates/
   template.docx            Tracked tagged template
+onlyoffice/
+  Dockerfile               ONLYOFFICE image with bundled fonts
+  fonts/                   Shared editor fonts, including TH SarabunPSK
 compose.yaml               Canonical private single-host Compose topology
 compose.dev.yaml           Local-development overrides
 gateway/                   Pingap routing; external ingress provides HTTPS
