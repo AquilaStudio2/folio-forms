@@ -37,7 +37,7 @@ const Centered = ({ message }: { message: string }) => (
 );
 
 const DashboardRoute = () => {
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signedOut } = useAuth();
   const [rows, setRows] = useState<Submission[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -139,7 +139,13 @@ const DashboardRoute = () => {
     return <Centered message="กำลังตรวจสอบเซสชัน…" />;
   }
   if (!user) {
-    return <Navigate to="/login" search={{ returnTo: "/dashboard" }} />;
+    return (
+      <Navigate
+        to="/login"
+        search={{ returnTo: signedOut ? undefined : "/dashboard" }}
+        replace
+      />
+    );
   }
 
   let responseContent: React.ReactNode;

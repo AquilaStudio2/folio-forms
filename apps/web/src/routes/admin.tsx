@@ -5,7 +5,7 @@ import { Spinner } from "@/components/ui";
 import { roleFor, useAuth } from "@/lib/auth";
 
 const AdminLayout = () => {
-  const { user, loading } = useAuth();
+  const { user, loading, signedOut } = useAuth();
   if (loading) {
     return (
       <div className="grid min-h-screen place-items-center">
@@ -14,7 +14,13 @@ const AdminLayout = () => {
     );
   }
   if (!user) {
-    return <Navigate to="/login" search={{ returnTo: "/admin" }} />;
+    return (
+      <Navigate
+        to="/login"
+        search={{ returnTo: signedOut ? undefined : "/admin" }}
+        replace
+      />
+    );
   }
   if (roleFor(user) !== "admin") {
     return <Navigate to="/dashboard" />;

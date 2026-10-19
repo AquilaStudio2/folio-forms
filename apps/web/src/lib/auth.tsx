@@ -16,6 +16,7 @@ import type { Role, SessionUser } from "@/lib/api";
 interface AuthContextValue {
   user: SessionUser | null;
   loading: boolean;
+  signedOut: boolean;
   error: string | null;
   expiresAt: string | null;
   clearSession: () => void;
@@ -24,7 +25,7 @@ interface AuthContextValue {
     currentPassword: string,
     newPassword: string
   ) => Promise<void>;
-  signOut: () => Promise<void>;
+  signOut: (options?: { preserveReturnTo?: boolean }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
@@ -63,6 +64,7 @@ export const authErrorMessage = (
 export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [user, setUser] = useState<SessionUser | null>(null);
   const [loading, setLoading] = useState(true);
+  const [signedOut, setSignedOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
 
@@ -172,6 +174,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const session = await getSession();
       setUser(session.user);
       setExpiresAt(session.session.expiresAt);
+      setSignedOut(false);
       return session.user;
     } catch (caughtError) {
       setError(
@@ -207,17 +210,19 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     setExpiresAt(null);
   };
 
-  const signOut = async () => {
+  const signOut = async ({ preserveReturnTo = false } = {}) => {
     setError(null);
     try {
       await requestSignOut();
     } catch (caughtError) {
       if (caughtError instanceof ApiError && caughtError.sessionRevoked) {
         setError(caughtError.code);
+        setSignedOut(!preserveReturnTo);
         clearSession();
       }
       throw caughtError;
     }
+    setSignedOut(!preserveReturnTo);
     clearSession();
   };
 
@@ -231,6 +236,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         replacePassword,
         signIn,
         signOut,
+        signedOut,
         user,
       }}
     >

@@ -29,7 +29,14 @@ const currentReturnPath = () => {
 
 // oxlint-disable-next-line complexity -- Coordinates session expiry, reauthentication, and routing in the app shell.
 const AuthGate = () => {
-  const { error: authError, expiresAt, loading, signOut, user } = useAuth();
+  const {
+    error: authError,
+    expiresAt,
+    loading,
+    signedOut,
+    signOut,
+    user,
+  } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const [sessionExpiringSoon, setSessionExpiringSoon] = useState(false);
@@ -86,7 +93,7 @@ const AuthGate = () => {
           return;
         }
         const returnTo = currentReturnPath() ?? undefined;
-        await signOut();
+        await signOut({ preserveReturnTo: true });
         await navigate({
           replace: true,
           search: { returnTo },
@@ -120,7 +127,9 @@ const AuthGate = () => {
     return (
       <Navigate
         to="/login"
-        search={{ returnTo: currentReturnPath() ?? undefined }}
+        search={{
+          returnTo: signedOut ? undefined : (currentReturnPath() ?? undefined),
+        }}
         replace
       />
     );

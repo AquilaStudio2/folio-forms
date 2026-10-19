@@ -121,7 +121,7 @@ interface SubmissionHistoryEntry {
 const FillRoute = () => {
   const { publicId } = useParams({ from: "/forms/$publicId/fill" });
   const { responseId } = useSearch({ from: "/forms/$publicId/fill" });
-  const { user, loading: authLoading } = useAuth();
+  const { user, loading: authLoading, signedOut } = useAuth();
   const navigate = useNavigate();
   const [form, setForm] = useState<PublicForm | null>(null);
   const [editorConfigUrl, setEditorConfigUrl] = useState<string | null>(null);
@@ -710,7 +710,7 @@ const FillRoute = () => {
     return (
       <Navigate
         to="/login"
-        search={{ returnTo: fillPath ?? undefined }}
+        search={{ returnTo: signedOut ? undefined : (fillPath ?? undefined) }}
         replace
       />
     );
