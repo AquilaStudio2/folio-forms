@@ -292,8 +292,10 @@ export const protectSpreadsheet = (
   if (!sheets) {
     throw new Error("Missing workbook sheets");
   }
+  // SpreadsheetML requires workbookProtection before bookViews, not only sheets.
+  const [bookViews] = spreadsheetXmlChildren(book, "bookViews");
   book.children.splice(
-    book.children.indexOf(sheets),
+    book.children.indexOf(bookViews ?? sheets),
     0,
     spreadsheetXmlElement(book, "workbookProtection", {
       lockStructure: "1",

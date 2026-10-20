@@ -1,5 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
+import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+
 import {
   protectSpreadsheet,
   spreadsheetInputRanges,
@@ -43,6 +45,39 @@ const changed = (
 };
 
 describe("spreadsheet input permissions and protected layout", () => {
+  test("places workbook protection before views when protecting and reprotecting editor files", () => {
+    const { bytes, contract } = setup();
+    const archive = unzipSync(bytes);
+    const workbookPart = archive["xl/workbook.xml"];
+    if (!workbookPart) {
+      throw new Error("Fixture lacks workbook.xml");
+    }
+    archive["xl/workbook.xml"] = strToU8(
+      strFromU8(workbookPart).replace(
+        "<sheets>",
+        '<bookViews><workbookView activeTab="0"/></bookViews><sheets>'
+      )
+    );
+    let protectedBytes: Uint8Array = zipSync(archive);
+    for (let pass = 0; pass < 2; pass += 1) {
+      protectedBytes = protectSpreadsheet(protectedBytes, contract);
+      const book = workbookXml(protectedBytes).parse("xl/workbook.xml");
+      const elements = descendants(book, "workbook")[0]?.children.map(
+        (child) => child.local
+      );
+      expect(elements?.slice(0, 4)).toEqual([
+        "workbookPr",
+        "workbookProtection",
+        "bookViews",
+        "sheets",
+      ]);
+      expect(descendants(book, "workbookProtection")).toHaveLength(1);
+      expect(descendants(book, "workbookView")[0]?.attributes.activeTab).toBe(
+        "0"
+      );
+    }
+  });
+
   test("allows scalar and table input changes including zero, false and clearing", () => {
     const { previous, contract } = setup();
     for (const [address, value] of [
