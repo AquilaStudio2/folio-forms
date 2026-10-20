@@ -27,6 +27,11 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      - name: Build web (generates routeTree.gen.ts)
+        run: bun run --cwd apps/web build
+        env:
+          VITE_API_ORIGIN: ${{ vars.VITE_API_ORIGIN }}
+
       - name: Check types
         run: bun run check-types
 
