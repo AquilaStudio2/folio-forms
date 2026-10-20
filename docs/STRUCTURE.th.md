@@ -1,6 +1,6 @@
 # Folio Forms: โครงสร้างไฟล์และกติกาการวางโค้ด
 
-ปรับหลังจัดระเบียบโค้ดและตรวจการใช้งานวันที่ 15 ตุลาคม 2026 รายละเอียดการเก็บข้อมูลอยู่ใน [Architecture](ARCHITECTURE.th.md)
+ปรับหลังจัดระเบียบโค้ดและตรวจการใช้งานถึงวันที่ 20 ตุลาคม 2026 รายละเอียดการเก็บข้อมูลอยู่ใน [Architecture](ARCHITECTURE.th.md)
 
 ## โครงสร้างหลัก
 
@@ -90,6 +90,9 @@ folio-forms/
 | `operations/spreadsheet-document.ts` | เตรียมไฟล์ก่อน save/publish/submit/correction ด้วย pipeline เดิม |
 | `prefill/spreadsheet-values.ts` | ตรวจค่า scalar Prefill สำหรับ XLSX |
 | `documents/spreadsheets/contract.ts` | ชนิดข้อมูลและ schema ของ fields, table และ ranges |
+| `documents/spreadsheets/columns.ts` | resolve identity คอลัมน์จาก named ranges และ reconcile offset หลังแทรก/ย้ายคอลัมน์ |
+| `documents/spreadsheets/save-snapshot.ts` | ตรวจ configuration และตำแหน่งที่ตรึงไว้กับ workbook ก่อนบันทึก |
+| `documents/spreadsheets/helper-storage.ts` | เก็บกวาดเฉพาะ dropdown helper ที่เลิกใช้แล้วใน saved draft และจัด shared strings ใหม่ |
 | `documents/spreadsheets/workbook.ts` | อ่าน package, resolve named ranges และสกัดคำตอบ |
 | `documents/spreadsheets/xml.ts` | อ่านและเขียน XML ภายใน XLSX |
 | `documents/spreadsheets/blank.ts` | สร้าง workbook เปล่า |
@@ -107,6 +110,18 @@ folio-forms/
 การปรับวันที่ 15 ตุลาคม 2026 จัดข้อมูลตำแหน่งเป็นกลุ่ม `ExcelBinding` ใน `forms/excel-binding.ts` ซึ่งมีชนิดข้อมูล TypeScript และ Zod schemas ที่ใช้ร่วมกัน การอ่านเลือก schema ตามชนิดแถว ส่วนการเขียนตรวจโครงสร้างก่อนสร้างแถว Prisma การเพิ่มกฎตำแหน่งต้องแก้ที่ไฟล์นี้ โดยคงชื่อ/ชนิด/กฎทั่วไปไว้ในแถวฟิลด์เดิม
 
 ปลั๊กอินใช้โครงสร้างแบนตามของเดิม: `spreadsheet.js` ดูแล panel/controller, `spreadsheet-commands.js` เก็บคำสั่ง Office ที่ serialize ได้โดยไม่พึ่ง closure ภายนอก และ `spreadsheet-selection.js` เก็บตัวช่วยตำแหน่งเซลล์/การเลือก field เช่นเดียวกับที่ DOCX แยก `document-commands.js` ออกจาก panel
+
+ส่วนที่แยกเพิ่มสำหรับ authoring safety:
+
+| ไฟล์ใน `apps/onlyoffice-plugin/src/` | ความรับผิดชอบ |
+| --- | --- |
+| `spreadsheet-binding-recovery.js` | เปรียบเทียบ prior/intended bindings และหลักฐาน revision/document/fence เพื่อสรุปผลการเขียนที่ไม่แน่ชัด |
+| `spreadsheet-columns.js` | ชื่ออ้างอิงคอลัมน์ที่คง identity และคำสั่ง resolve/reanchor ตำแหน่งใน editor |
+| `spreadsheet-field-state.js` | คำสั่ง snapshot/restore native validation, format และ named ranges พร้อมตรวจสถานะก่อนคืนค่า |
+| `spreadsheet-commands.js` | native validation, immutable option helpers และคำสั่งแก้ workbook ที่รันใน sandbox |
+| `plugin-entry.js` | status notice ร่วม พร้อมปุ่มปิดที่ใช้ keyboard ได้ |
+
+ฝั่ง API ใช้ `routes/spreadsheet-authoring.ts` สำหรับ GET/PATCH bindings และ POST recovery โดยแชร์ authorization, lease และ Form lock การเพิ่ม fence ไม่ใช่การ replay PATCH หรือ Operation ใหม่ การเก็บกวาด helper อยู่ในขั้นเตรียม saved file ของ `operations/spreadsheet-document.ts`; การบันทึก offset ที่ reconcile แล้วอยู่ใน `operations/template-completion.ts`
 
 ฝั่ง Web ใช้ editor เดียวกัน ไฟล์ `features/onlyoffice/editor-window-source.ts` อยู่กับ protocol/surface เพราะทำหน้าที่ตรวจ iframe/source ระหว่าง reconnect ไม่ต้องสร้าง editor อีกชุดสำหรับ Excel
 
@@ -128,5 +143,7 @@ folio-forms/
 | spec/ticket/หลักฐานเฉพาะงาน | `.scratch/<feature>/` ตาม `docs/agents/issue-tracker.md` |
 
 ใช้ root scripts `bun run fix`, `bun run check`, `bun run check-types` และ `bun run build` สำหรับตรวจรวม ส่วน spreadsheet scripts ระบุ source `*.test.ts` โดยตรงเพื่อไม่รันทดสอบซ้ำจาก `dist/` ที่ TypeScript สร้างไว้
+
+ชุด regression ของรอบ 20 ตุลาคม 2026 ครอบคลุม dropdown save/reopen, validation rollback, grouped columns, column identity, helper reuse/cleanup และ recovery races ทั้ง plugin, real ONLYOFFICE runtime และ HTTP กับฐานข้อมูลจริง ดูรายละเอียดและคำสั่งใน [รายงานงาน](../.scratch/spreadsheet-authoring-reliability/report.md) และ [README](../README.md#commands)
 
 `dist/`, `node_modules/`, Prisma generated client และ `web/src/routeTree.gen.ts` เป็นผลลัพธ์ที่สร้างใหม่ได้ ไม่ใช่ที่เก็บ source การเปลี่ยน schema ต้องมี migration ใหม่ ไม่แก้ migration ที่ใช้งานไปแล้ว และเอกสารอธิบายโครงสร้างต้องปรับตามโค้ดหลัง implementation เสร็จ

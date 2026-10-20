@@ -3,6 +3,31 @@ import { API_ROUTES } from "./constants.js";
 import { isRecord, requireOption } from "./values.js";
 
 export function createApi(options) {
+  function requestError(payload, status) {
+    const code =
+      isRecord(payload) && typeof payload.error === "string"
+        ? payload.error
+        : undefined;
+    const message =
+      isRecord(payload) && typeof payload.message === "string"
+        ? payload.message.trim()
+        : "";
+    let detail = message || code || "ดำเนินการไม่สำเร็จ กรุณาลองอีกครั้ง";
+    if (code === "duplicate_field_tag") {
+      detail = "tag นี้ซ้ำ กรุณาใช้ tag อื่น";
+    } else if (
+      code === "invalid_field_config" &&
+      !/[\u0E00-\u0E7F]/.test(message)
+    ) {
+      detail =
+        "การตั้งค่าช่องไม่ถูกต้อง กรุณาตรวจสอบชื่อช่อง tag ชนิดข้อมูล และตัวเลือก แล้วลองอีกครั้ง";
+    }
+    const error = new Error(detail);
+    error.code = code;
+    error.httpStatus = status;
+    error.detail = message || code;
+    return error;
+  }
   function apiUrl(path) {
     const base = options.apiBase;
 
@@ -60,17 +85,11 @@ export function createApi(options) {
     }
 
     if (!response.ok) {
-      const detail =
-        (isRecord(payload) && (payload.error || payload.message)) ||
-        `HTTP ${response.status}`;
-
-      throw new Error(String(detail));
+      throw requestError(payload, response.status);
     }
 
     if (isRecord(payload) && payload.ok === false) {
-      throw new Error(
-        String(payload.error || payload.message || "Request failed")
-      );
+      throw requestError(payload, response.status);
     }
 
     return payload;

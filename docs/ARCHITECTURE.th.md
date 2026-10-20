@@ -1,6 +1,6 @@
 # Folio Forms: สถาปัตยกรรมและตำแหน่งเก็บข้อมูล
 
-ปรับตาม implementation และผลตรวจวันที่ 15 ตุลาคม 2026 อ่านคู่กับ [คู่มือวางไฟล์](STRUCTURE.th.md) และ [คำศัพท์ของระบบ](../CONTEXT.md)
+ปรับตาม implementation และผลตรวจถึงวันที่ 20 ตุลาคม 2026 อ่านคู่กับ [คู่มือวางไฟล์](STRUCTURE.th.md) และ [คำศัพท์ของระบบ](../CONTEXT.md)
 
 ## ภาพรวม
 
@@ -166,6 +166,25 @@ Required, ตัวเลือก dropdown และ Prefill ใช้คอล
 | commit ข้อมูลและตัวอ้างอิงไฟล์ | [template-completion.ts](../apps/server/src/operations/template-completion.ts), [response-completion.ts](../apps/server/src/operations/response-completion.ts) |
 
 DOCX ยังคง content controls, Tag, Field Rules, native/ONLYOFFICE fill และ lifecycle เดิม XLSX มีขอบเขตเดิมคือเริ่มจาก workbook เปล่า หนึ่ง worksheet ที่แก้ไขได้ และหนึ่งตารางรายการ ไม่เพิ่มระบบ import Excel หรือระบบแก้ไขแบบใหม่
+
+## ความสอดคล้องของการตั้งค่าฟิลด์ XLSX
+
+การแก้ฟิลด์เกี่ยวข้องกับสองส่วน: native validation/named ranges/format ใน editor และ metadata ใน `DraftFieldRule` ปลั๊กอินตรึง editor ก่อนอ่าน snapshot และแก้ native state จากนั้นส่ง PATCH ที่ผูกกับ `documentKey` และ revision เดิม การคืนค่าใช้ snapshot ที่ตรวจสอบได้ เพื่อไม่เขียนทับการแก้อื่น ฟิลด์ที่เปลี่ยน selection ยังเก็บค่าที่ยังไม่กดใช้ รวมถึงตัวเลือกที่กำลังพิมพ์ไว้ และบล็อก save/publish จนจัดการ draft ของ panel แล้ว
+
+เมื่อไม่ได้รับผล PATCH ปลั๊กอินเก็บ prior/intended bindings ทั้งชุดพร้อม native snapshots และแสดง “ลองยืนยันอีกครั้ง” โดยไม่ยิง PATCH เดิมซ้ำ:
+
+1. GET คืน `bindings`, `documentKey`, `revision`; จะรับว่าเขียนสำเร็จต่อเมื่อ document เดิม, revision เดิมบวกหนึ่ง และ bindings ตรงกับ intended ทั้งชุด
+2. ถ้ายังพิสูจน์ไม่ได้ ใช้ `POST /api/admin/forms/:publicId/spreadsheet-bindings/recover` พร้อม `{documentKey, revision}` โดยตรวจ capability, active lease, สถานะ Form และ active Operation เช่นเดียวกับ PATCH
+3. endpoint จับ Form row lock เดียวกับ PATCH ถ้า revision ยังเท่าเดิม จะเพิ่มหนึ่งโดยไม่แก้ bindings เพื่อให้ PATCH เก่าที่มาช้าถูกปฏิเสธ ถ้าขยับไปแล้วจะคืนสถานะ authoritative ปัจจุบัน การ retry ไม่เพิ่ม revision ซ้ำเมื่อผ่าน base ไปแล้ว
+4. ผลคืนมี `recovery: {baseRevision, settled: true}` เมื่อเป็น revision เดิมบวกหนึ่งและ bindings ยังตรงกับ prior จึงคืน native snapshot ได้อย่างปลอดภัย การอ่าน GET ที่ยังเป็นค่าเก่าเพียงอย่างเดียวไม่ยืนยันว่า PATCH ที่กำลังเดินทางจะไม่ commit ภายหลัง
+
+document เปลี่ยน, revision สูงกว่าขอบเขตที่ยืนยันได้, metadata ขัดกัน หรือ native state ต่างจาก snapshot จะยังบล็อกไว้ให้ตรวจสอบ ปุ่ม × ปิดเฉพาะข้อความ ไม่ปลด guard หรือซ่อนทาง retry ปุ่ม retry ถูกเลื่อนมาให้เห็นเมื่อเข้าสถานะค้างครั้งแรก
+
+คอลัมน์ตารางใช้ named range `folio_column_<columnId>` และ marker `folio_columns_<tableId>` ใน workbook เพื่อคำนวณ offset ใหม่ก่อนแก้/บันทึก/เผยแพร่ โดยยังใช้ `ExcelBinding` และตาราง DB เดิม การตรวจ server อ่านตำแหน่งจากไฟล์ที่บันทึกและเทียบ snapshot ก่อนเขียน metadata คอลัมน์ที่ถูกลบ ย้ายพ้นตาราง หรืออ้างอิงซ้ำถูกปฏิเสธ ฟอร์มเก่าที่ไม่เคยมี tracking จะเริ่มสร้างได้เฉพาะโครงสร้างที่ความกว้างตรงกับ metadata; วิธีนี้ไม่สามารถพิสูจน์การสลับคอลัมน์ย้อนหลังที่ความกว้างเท่าเดิมได้
+
+Dropdown ใช้ native list validation พร้อมคำนวณรายการใหม่ และใช้ hidden/protected `_folio_options` เมื่อจำเป็นสำหรับค่าพิเศษหรือรายการยาว รายการที่เหมือนกันใช้ immutable range ร่วมกัน `compactSpreadsheetDraftOptions` เก็บกวาดเฉพาะข้อมูลที่พิสูจน์ว่าเป็นของ Folio และไม่มีผู้ใช้อ้างถึงในสำเนาไฟล์ที่ save-template หลังผ่าน snapshot check แล้ว รวมการจัด shared strings ใหม่ ช่องที่คืนพื้นที่ถูกนำกลับมาใช้ในการแก้ครั้งถัดไป ไม่เก็บกวาดประวัติใน editor ที่ยังเปิดอยู่ ถ้ามีสูตร การอ้างอิงแบบ dynamic หรือโครงสร้าง custom ที่พิสูจน์ไม่ได้ จะคงข้อมูลไว้
+
+ไม่มี schema migration ใหม่สำหรับการแก้รอบนี้ รายงานสิ่งที่แก้ ผลทดสอบ 319 tests บน local และข้อจำกัดของฟอร์มเก่า/ONLYOFFICE internals อยู่ใน [รายงาน spreadsheet authoring](../.scratch/spreadsheet-authoring-reliability/report.md) ผลตรวจและ migration ของงานก่อนหน้ายังคงบันทึกตามวันที่ด้านล่าง
 
 ## การทำงานร่วมกับส่วนอื่น
 

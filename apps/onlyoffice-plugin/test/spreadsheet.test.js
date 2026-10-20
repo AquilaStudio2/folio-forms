@@ -19,6 +19,22 @@ import {
   flushPlugin,
 } from "./harness.js";
 
+const validationRange = (validation, overrides = {}) => {
+  const range = {
+    GetAddress: () => "A2",
+    GetCol: () => 1,
+    GetColumnsCount: () => 1,
+    GetNumberFormat: () => "General",
+    GetRow: () => 2,
+    GetRowsCount: () => 1,
+    GetValidation: () => validation,
+    GetWorksheet: () => ({ GetRange: () => range }),
+    SetNumberFormat: () => true,
+    ...overrides,
+  };
+  return range;
+};
+
 test("Excel validation failures show the cell and allow another action", async () => {
   const harness = createHarness({
     capabilityResponses: ["submit-capability", "draft-capability"],
@@ -122,6 +138,7 @@ test("serialized Excel validation supports numeric zero and nullable boolean rul
   const validation = {
     Add(...args) {
       additions.push(args);
+      return validation;
     },
     Delete() {},
     SetErrorMessage() {},
@@ -137,15 +154,9 @@ test("serialized Excel validation supports numeric zero and nullable boolean rul
   };
   const api = {
     GetDefName: () => ({
-      GetRefersToRange: () => ({
-        GetAddress: () => "A2",
-        GetValidation: () => validation,
-      }),
+      GetRefersToRange: () => validationRange(validation),
     }),
-    GetRange: () => ({
-      GetAddress: () => "A2",
-      GetValidation: () => validation,
-    }),
+    GetRange: () => validationRange(validation),
   };
   for (const type of ["number", "boolean"]) {
     runInNewContext(`(${spreadsheetValidationCommand.toString()})()`, {
@@ -166,21 +177,22 @@ test("serialized Excel validation supports numeric zero and nullable boolean rul
     "xlValidateCustom",
     "xlValidAlertStop",
     "xlBetween",
-    "ISNUMBER(A2)",
+    "=ISNUMBER(A2)",
   ]);
   expect(additions[1]).toEqual([
     "xlValidateList",
     "xlValidAlertStop",
     "xlBetween",
-    '"TRUE,FALSE"',
+    "TRUE,FALSE",
   ]);
 });
 
-test("dropdown options containing non-ASCII text skip the literal list formula", () => {
+test("dropdown options containing Thai text use unquoted interface input", () => {
   const additions = [];
   const validation = {
     Add(...args) {
       additions.push(args);
+      return validation;
     },
     Delete() {},
     SetErrorMessage() {},
@@ -190,10 +202,7 @@ test("dropdown options containing non-ASCII text skip the literal list formula",
   };
   const api = {
     GetDefName: () => ({
-      GetRefersToRange: () => ({
-        GetAddress: () => "A2",
-        GetValidation: () => validation,
-      }),
+      GetRefersToRange: () => validationRange(validation),
     }),
   };
   const result = runInNewContext(
@@ -213,7 +222,9 @@ test("dropdown options containing non-ASCII text skip the literal list formula",
     }
   );
   expect(result).toBe(true);
-  expect(additions).toEqual([]);
+  expect(additions).toEqual([
+    ["xlValidateList", "xlValidAlertStop", "xlBetween", "ชาย,หญิง"],
+  ]);
 });
 
 const descendants = (node) => [node, ...node.children.flatMap(descendants)];
@@ -257,11 +268,13 @@ test("legacy calculated bindings cannot be edited by the manual-only designer", 
 test("manual field validation rejects formulas but preserves literal text beginning with equals", () => {
   let formula = "=SUM(A1:A2)";
   let value = "3";
-  const range = {
-    GetFormula: () => formula,
-    GetValidation: () => ({ Delete() {} }),
-    GetValue: () => value,
-  };
+  const range = validationRange(
+    { Delete() {} },
+    {
+      GetFormula: () => formula,
+      GetValue: () => value,
+    }
+  );
   const context = {
     Api: { GetDefName: () => ({ GetRefersToRange: () => range }) },
     Asc: {
@@ -909,6 +922,60 @@ test("dropdown options editor supports bulk add, edit, delete and reordering", a
   );
   expect(change.value.type).toBe("dropdown");
   expect(change.value.options).toEqual(["หญิง", "อื่นๆ (ระบุ)"]);
+});
+
+test("extending a reopened dropdown preserves its identity and refreshes the native dropdown", async () => {
+  const field = {
+    anchor: "folio_saved",
+    id: "saved",
+    key: "choice",
+    label: "Choice",
+    options: ["test_1", "test_2", "test_3"],
+    type: "dropdown",
+  };
+  const bindings = { fields: [field], table: null, version: 1 };
+  const harness = createHarness({
+    action: "template-edit",
+    capabilityResponses: ["read", "write"],
+    documentKind: "xlsx",
+    responses: [
+      { bindings, revision: 0 },
+      { bindings, revision: 1 },
+    ],
+    spreadsheetBindings: bindings,
+    spreadsheetSelection: {
+      address: "A1",
+      names: { folio_saved: "'Sheet1'!$A$1" },
+    },
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  const originalCallCommand = harness.window.Asc.plugin.callCommand;
+  const validationRefreshes = [];
+  harness.window.Asc.plugin.callCommand = (...args) => {
+    if (args[0].toString().includes("ISNUMBER")) {
+      validationRefreshes.push(args[2]);
+    }
+    return originalCallCommand(...args);
+  };
+  const entry = descendants(harness.body).find(
+    (node) => node.tagName === "TEXTAREA"
+  );
+  entry.value = "test_4";
+  await click(harness, "Add");
+  await click(harness, "บันทึกการแก้ไข");
+  const request = harness.requests.find(
+    (candidate) => candidate.method === "PATCH"
+  );
+  expect(JSON.parse(request.body).change).toMatchObject({
+    kind: "field",
+    value: {
+      anchor: field.anchor,
+      id: field.id,
+      options: [...field.options, "test_4"],
+    },
+  });
+  expect(validationRefreshes).toEqual([true]);
 });
 
 test("response append-row button inserts after all current rows with native save synchronization", async () => {

@@ -1,8 +1,10 @@
 import { prisma } from "@onlyoffice/db";
 
+import { reconcileSpreadsheetColumns } from "../documents/spreadsheets/columns";
 import { spreadsheetColumnName } from "../documents/spreadsheets/contract";
 import type { SpreadsheetRange } from "../documents/spreadsheets/contract";
 import { processSpreadsheet } from "../documents/spreadsheets/engine";
+import { compactSpreadsheetDraftOptions } from "../documents/spreadsheets/helper-storage";
 import {
   resetSpreadsheetPicturePlaceholders,
   readSpreadsheetPictures,
@@ -70,7 +72,7 @@ export const prepareSpreadsheetOperation = async (
         "Spreadsheet configuration changed while saving"
       );
     }
-    const bindings = await spreadsheetDraftBindings(form.templateDraft.id);
+    let bindings = await spreadsheetDraftBindings(form.templateDraft.id);
     if (metadata.spreadsheetAnchors) {
       validateSpreadsheetSaveSnapshot(
         metadata.spreadsheetAnchors,
@@ -78,10 +80,19 @@ export const prepareSpreadsheetOperation = async (
         current
       );
     }
+    try {
+      bindings = reconcileSpreadsheetColumns(bindings, current.names);
+    } catch (error) {
+      fail(
+        422,
+        "invalid_template",
+        error instanceof Error ? error.message : "ตรวจสอบตำแหน่งคอลัมน์ตาราง"
+      );
+    }
     // A Template Draft may contain unfinished mappings. Saving preserves the
     // editor snapshot; only publication freezes and validates the contract.
     if (metadata.action === "save-template") {
-      return snapshot;
+      return compactSpreadsheetDraftOptions(snapshot);
     }
     validateSpreadsheetPublication(bindings);
     let synchronized: Uint8Array;
