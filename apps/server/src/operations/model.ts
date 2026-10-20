@@ -1,6 +1,7 @@
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { OperationType } from "@onlyoffice/db";
 
+import type { SpreadsheetAnchorSnapshot } from "../documents/spreadsheets/save-snapshot";
 import { fail } from "../http/errors";
 import { asRecord } from "../http/input";
 import type { JsonRecord } from "../model-types";
@@ -31,6 +32,7 @@ export type OperationErrorCode =
   | "operation_timeout"
   | "pdf_conversion_failed";
 export interface OperationMetadata extends JsonRecord {
+  spreadsheetAnchors?: SpreadsheetAnchorSnapshot;
   documentKind?: "docx" | "xlsx";
   bindingRevision?: number;
   action: OperationAction;

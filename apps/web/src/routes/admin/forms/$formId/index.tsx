@@ -166,6 +166,11 @@ const FormEditorRoute = () => {
   const [operationStatus, setOperationStatus] =
     useState<OperationViewStatus | null>(null);
   const [editorRevision, setEditorRevision] = useState(0);
+  const [commandReady, setCommandReady] = useState(false);
+  const [saveRequest, setSaveRequest] = useState(0);
+  const [saveAction, setSaveAction] = useState<"save-template" | "publish">(
+    "save-template"
+  );
   const [reloadToken, setReloadToken] = useState(0);
   const busyGuardRef = useRef(false);
   const metadataGuardRef = useRef(false);
@@ -244,12 +249,16 @@ const FormEditorRoute = () => {
     }
     const timer = window.setTimeout(() => {
       setOperationStatus("failed");
+      if (form?.documentKind === "xlsx") {
+        setBusy(null);
+        busyGuardRef.current = false;
+      }
       setError(
         "ยังยืนยันผลการบันทึกไม่ได้ กรุณารอสักครู่แล้วตรวจสอบอีกครั้ง เก็บหน้าตัวแก้ไขนี้ไว้เพื่อรักษาการเปลี่ยนแปลง"
       );
     }, 330_000);
     return () => window.clearTimeout(timer);
-  }, [operationStatus]);
+  }, [operationStatus, form?.documentKind]);
 
   if (loading) {
     return (
@@ -289,6 +298,7 @@ const FormEditorRoute = () => {
   const canAct =
     canEditTemplate &&
     editorState === "ready" &&
+    (loadedForm.documentKind !== "xlsx" || commandReady) &&
     !busy &&
     !metadataBusy &&
     !operationBusy;
@@ -329,6 +339,12 @@ const FormEditorRoute = () => {
     setOperationStatus("pending");
     setError(null);
     setNotice(null);
+    if (loadedForm.documentKind === "xlsx") {
+      // Excel must flush native changes and capture its named ranges before saving.
+      setSaveAction(action === "save" ? "save-template" : "publish");
+      setSaveRequest((value) => value + 1);
+      return;
+    }
     try {
       const editorConfig = await apiGet<AdminEditorConfig>(editorConfigUrl, {
         timeoutMs: 30_000,
@@ -555,6 +571,10 @@ const FormEditorRoute = () => {
       message.status === "pending" ? "pending" : message.status
     );
     if (message.status === "failed") {
+      if (loadedForm.documentKind === "xlsx") {
+        setBusy(null);
+        busyGuardRef.current = false;
+      }
       setError(
         message.error ??
           (message.action === "publish"
@@ -581,6 +601,10 @@ const FormEditorRoute = () => {
     await refreshFormAfterOperation(
       message.action === "publish" ? "publish" : "save"
     );
+    if (loadedForm.documentKind === "xlsx") {
+      setBusy(null);
+      busyGuardRef.current = false;
+    }
   };
 
   const copyLink = async () => {
@@ -797,6 +821,13 @@ const FormEditorRoute = () => {
             key={publicId}
             onBridgeMessage={handleEditorBridgeMessage}
             onStateChange={setEditorState}
+            {...(loadedForm.documentKind === "xlsx"
+              ? {
+                  onCommandReadyChange: setCommandReady,
+                  saveAction,
+                  saveRequest,
+                }
+              : {})}
             configUrl={editorConfigUrl}
             revision={editorRevision}
             title={`ตัวแก้ไขเอกสาร ${loadedForm.title}`}

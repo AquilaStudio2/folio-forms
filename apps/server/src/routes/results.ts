@@ -50,6 +50,7 @@ import {
   adminResultPageSize,
   adminResultCursorValue,
   adminResultSummary,
+  responseIdsWithLatestCorrection,
   revisionSelector,
   selectedSubmissionRevision,
 } from "../responses/query";
@@ -121,25 +122,29 @@ export function registerResultRoutes(
         });
       }
       if (correction !== undefined) {
-        and.push(
-          correction === 0
-            ? { corrections: { none: {} } }
-            : { corrections: { some: { revision: correction } } },
-          { corrections: { none: { revision: { gt: correction } } } }
-        );
+        and.push({
+          id: {
+            in: await responseIdsWithLatestCorrection(correction, {
+              AND: [...and],
+            }),
+          },
+        });
       }
       const responses = await prisma.response.findMany({
         include: {
-          corrections: {
-            orderBy: { revision: "desc" },
-            select: { revision: true },
-            take: 1,
-          },
           form: { select: { documentKind: true, publicId: true, title: true } },
           owner: { select: { email: true } },
           submissions: {
-            orderBy: { createdAt: "desc" },
-            select: { createdAt: true, id: true },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            select: {
+              corrections: {
+                orderBy: { revision: "desc" },
+                select: { revision: true },
+                take: 1,
+              },
+              createdAt: true,
+              id: true,
+            },
             take: 1,
           },
         },
@@ -163,9 +168,6 @@ export function registerResultRoutes(
       const selector = revisionSelector(query.revision);
       const response = await prisma.response.findUnique({
         include: {
-          corrections: {
-            orderBy: { revision: "desc" },
-          },
           form: { select: { documentKind: true, publicId: true, title: true } },
           owner: { select: { email: true } },
           publishedTemplate: {
@@ -177,7 +179,11 @@ export function registerResultRoutes(
               },
             },
           },
-          submissions: { orderBy: { createdAt: "desc" }, take: 1 },
+          submissions: {
+            include: { corrections: { orderBy: { revision: "desc" } } },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: 1,
+          },
         },
         where: { id: params.id },
       });
@@ -189,13 +195,12 @@ export function registerResultRoutes(
       if (!submitted && selector !== "latest") {
         fail(404, "not_found", "Submission revision was not found");
       }
-      const latestCorrection = submitted ? response.corrections[0] : undefined;
+      const latestCorrection = submitted
+        ? submission?.corrections[0]
+        : undefined;
       const selected = submitted
         ? submission
-          ? selectedSubmissionRevision(
-              { ...submission, corrections: response.corrections },
-              selector
-            )
+          ? selectedSubmissionRevision(submission, selector)
           : fail(404, "not_found", "Response was not found")
         : undefined;
       await createResponseAudit({
@@ -307,9 +312,12 @@ export function registerResultRoutes(
         const selector = revisionSelector(query.revision);
         const response = await prisma.response.findUnique({
           include: {
-            corrections: { orderBy: { revision: "desc" } },
             form: { select: { documentKind: true, publicId: true } },
-            submissions: { orderBy: { createdAt: "desc" }, take: 1 },
+            submissions: {
+              include: { corrections: { orderBy: { revision: "desc" } } },
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+              take: 1,
+            },
           },
           where: { id: params.id },
         });
@@ -326,10 +334,7 @@ export function registerResultRoutes(
         }
         const selected =
           submitted && submission
-            ? selectedSubmissionRevision(
-                { ...submission, corrections: response.corrections },
-                selector
-              )
+            ? selectedSubmissionRevision(submission, selector)
             : undefined;
         const selectedCorrection = selected?.correction;
         const documentKey = submitted
@@ -391,12 +396,14 @@ export function registerResultRoutes(
         const input = correctionInput(body);
         const response = await prisma.response.findUnique({
           include: {
-            corrections: {
-              orderBy: { revision: "desc" },
+            prefillSnapshot: true,
+            submissions: {
+              include: {
+                corrections: { orderBy: { revision: "desc" }, take: 1 },
+              },
+              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
               take: 1,
             },
-            prefillSnapshot: true,
-            submissions: { orderBy: { createdAt: "desc" }, take: 1 },
           },
           where: { id: params.id },
         });
@@ -415,7 +422,7 @@ export function registerResultRoutes(
         if (!form) {
           fail(404, "not_found", "Form was not found");
         }
-        const latest = response.corrections[0];
+        const latest = submission.corrections[0];
         const currentRevision = latest?.revision ?? 0;
         const currentDocumentKey =
           latest?.documentKey ?? submission.documentKey;

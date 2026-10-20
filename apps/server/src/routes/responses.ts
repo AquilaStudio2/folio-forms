@@ -47,13 +47,18 @@ export function registerResponseRoutes(
       const identity = await requireIdentity(request);
       const responses = await prisma.response.findMany({
         include: {
-          corrections: {
-            orderBy: { revision: "desc" },
-            select: { revision: true },
+          form: true,
+          submissions: {
+            include: {
+              corrections: {
+                orderBy: { revision: "desc" },
+                select: { revision: true },
+                take: 1,
+              },
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             take: 1,
           },
-          form: true,
-          submissions: { orderBy: { createdAt: "desc" }, take: 1 },
         },
         orderBy: { updatedAt: "desc" },
         where: { userId: identity.id },
@@ -64,7 +69,8 @@ export function registerResponseRoutes(
             documentKind: response.form.documentKind,
             formPublicId: response.form.publicId,
             formTitle: response.form.title,
-            latestCorrectionNumber: response.corrections[0]?.revision ?? null,
+            latestCorrectionNumber:
+              response.submissions[0]?.corrections[0]?.revision ?? null,
             submissionId: response.submissions[0]?.id,
             submittedAt: response.submissions[0]?.createdAt,
           })
@@ -76,12 +82,15 @@ export function registerResponseRoutes(
       validateId(params.id, "Response");
       const response = await prisma.response.findUnique({
         include: {
-          corrections: { orderBy: { revision: "desc" } },
           form: true,
           publishedTemplate: {
             include: { manifest: { include: { fields: true } } },
           },
-          submissions: { orderBy: { createdAt: "desc" }, take: 1 },
+          submissions: {
+            include: { corrections: { orderBy: { revision: "desc" } } },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: 1,
+          },
         },
         where: { id: params.id },
       });
@@ -96,7 +105,7 @@ export function registerResponseRoutes(
       if (identity.role !== "admin" && response.userId !== identity.id) {
         fail(403, "forbidden", "You may only access your own Response");
       }
-      const actorIds = response.corrections.map(
+      const actorIds = submission.corrections.map(
         (correction) => correction.actorId
       );
       const actors = await prisma.user.findMany({
@@ -123,7 +132,7 @@ export function registerResponseRoutes(
             )
           : null;
       const correctionSummaries: CorrectionRevisionSummary[] = [];
-      for (const correction of response.corrections.toReversed()) {
+      for (const correction of submission.corrections.toReversed()) {
         const documentAvailable = await objectExists(correction.objectKey);
         const pictures =
           documentAvailable && pictureFields.length > 0
@@ -149,7 +158,7 @@ export function registerResponseRoutes(
         targetId: submission.id,
         targetType: "submission",
       });
-      for (const correction of response.corrections) {
+      for (const correction of submission.corrections) {
         await createResponseAudit({
           action: "view_correction",
           actorId: identity.id,
@@ -163,7 +172,7 @@ export function registerResponseRoutes(
         });
       }
       return {
-        latestRevision: response.corrections[0]?.revision ?? 0,
+        latestRevision: submission.corrections[0]?.revision ?? 0,
         revisions: [
           {
             actorEmail: null,

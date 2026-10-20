@@ -371,6 +371,9 @@ export const createHarness = ({
     },
     GetDefName(name) {
       const reference = spreadsheetNames.get(name);
+      if (!reference) {
+        throw new Error(`Defined name does not exist:${name}`);
+      }
       return reference
         ? {
             GetRefersTo: () => reference,

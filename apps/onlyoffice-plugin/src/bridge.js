@@ -359,6 +359,12 @@ export function createBridge(options, office, callbacks) {
         message.action !== ACTIONS.SAVE_CORRECTION &&
         !(
           options.documentKind === "xlsx" &&
+          options.action === ACTIONS.TEMPLATE_EDIT &&
+          (message.action === ACTIONS.SAVE_TEMPLATE ||
+            message.action === ACTIONS.PUBLISH)
+        ) &&
+        !(
+          options.documentKind === "xlsx" &&
           message.action === ACTIONS.SUBMIT &&
           (options.action === ACTIONS.FILL || options.action === ACTIONS.DRAFT)
         )

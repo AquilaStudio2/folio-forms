@@ -88,7 +88,6 @@ const form = {
   },
 };
 const response = {
-  corrections: [],
   draftDocumentKey: "draft-document",
   draftObjectKey: "draft.xlsx",
   formId: form.id,
@@ -98,7 +97,12 @@ const response = {
   spreadsheetInitialized: true,
   status: "draft",
   submissions: [
-    { documentKey: "submission-document", objectKey: "draft.xlsx" },
+    {
+      corrections: [],
+      documentKey: "submission-document",
+      id: "submission",
+      objectKey: "draft.xlsx",
+    },
   ],
 };
 const lease = {

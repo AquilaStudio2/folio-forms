@@ -36,6 +36,9 @@ export function createOperations(
       return {
         body: {
           documentKey,
+          ...(options.documentKind === "xlsx" && data?.spreadsheetAnchors
+            ? { spreadsheetAnchors: data.spreadsheetAnchors }
+            : {}),
         },
         path,
       };
@@ -219,10 +222,22 @@ export function createOperations(
   async function runAction(action, reason = "", rowChange = null) {
     if (actionInFlight || isInitializationPending()) {
       setStatus("มีการดำเนินการของฟอร์มกำลังทำงานอยู่", "pending");
+      if (options.documentKind === "xlsx" && !actionInFlight) {
+        bridge.notifyParent(
+          action,
+          "failed",
+          undefined,
+          undefined,
+          "มีการดำเนินการของฟอร์มกำลังทำงานอยู่ กรุณารอแล้วลองใหม่"
+        );
+      }
       return { ignored: true, ok: false };
     }
 
     actionInFlight = true;
+    if (options.documentKind === "xlsx") {
+      callbacks.setActionBusy?.(true);
+    }
     let operationId;
     let completedPayload;
     let editorFrozen = false;
@@ -260,6 +275,9 @@ export function createOperations(
       if (!needsData) {
         await office.freezeEditor();
         editorFrozen = true;
+        if (options.documentKind === "xlsx") {
+          data = await callbacks.getTemplateSnapshot?.();
+        }
       }
       await bridge.flushEditorChanges();
 
@@ -330,6 +348,9 @@ export function createOperations(
         }
       }
       actionInFlight = false;
+      if (options.documentKind === "xlsx") {
+        callbacks.setActionBusy?.(false);
+      }
     }
   }
 

@@ -45,6 +45,13 @@ const pdfKinds: (string | undefined)[] = [];
 const exportKeys: string[] = [];
 const exportSources: Uint8Array[] = [];
 const storedObjects: string[] = [];
+let nativeSnapshot: Uint8Array | null = null;
+const nativeServer = Bun.serve({
+  fetch: () => new Response(nativeSnapshot),
+  hostname: "127.0.0.1",
+  port: 0,
+});
+let nativeSnapshotUrl: string | null = null;
 const app = createApp({
   legacySso: null,
   omniRoute: null,
@@ -64,8 +71,10 @@ const app = createApp({
       }
       return new TextEncoder().encode("%PDF-test");
     },
-    forceSave: () => Promise.resolve(false),
+    forceSave: () =>
+      Promise.resolve(nativeSnapshotUrl ? { url: nativeSnapshotUrl } : false),
   },
+  onlyOfficeCallbackOrigins: [nativeServer.url.origin],
 });
 const fixtureId = crypto.randomUUID();
 const formId = crypto.randomUUID();
@@ -86,6 +95,7 @@ const field = {
   key: "name",
   label: "Name",
   options: [],
+  placeholder: null,
   prefillPointer: null,
   prefillPolicy: "editable",
   required: false,
@@ -208,6 +218,7 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
+  await nativeServer.stop(true);
   await prisma.operation.deleteMany({ where: { formId } });
   await prisma.editorLease.deleteMany({ where: { targetId: templateId } });
   await prisma.form.deleteMany({ where: { id: formId } });
@@ -294,7 +305,12 @@ test("spreadsheet binding API requires scoped capability and preserves revision 
     },
   });
   expect(sharedField).toMatchObject({
-    binding: { anchor: field.anchor, computed: false, id: field.id },
+    binding: {
+      anchor: field.anchor,
+      computed: false,
+      id: field.id,
+      placeholder: null,
+    },
     label: field.label,
     options: null,
     required: field.required,
@@ -304,6 +320,7 @@ test("spreadsheet binding API requires scoped capability and preserves revision 
     "anchor",
     "computed",
     "id",
+    "placeholder",
   ]);
   expect(
     (await update(0, { action: "upsert", kind: "field", value: field })).status
@@ -368,6 +385,7 @@ test("table columns retain stable keys through edits and delete; active operatio
     label: "Amount",
     offset: 1,
     options: [],
+    placeholder: null,
     required: true,
     type: "number" as const,
   };
@@ -415,7 +433,12 @@ test("table columns retain stable keys through edits and delete; active operatio
     })
   ).toEqual([
     {
-      binding: { anchor: field.anchor, computed: false, id: field.id },
+      binding: {
+        anchor: field.anchor,
+        computed: false,
+        id: field.id,
+        placeholder: null,
+      },
       label: field.label,
       required: false,
       tag: field.key,
@@ -429,7 +452,12 @@ test("table columns retain stable keys through edits and delete; active operatio
       type: "table",
     },
     {
-      binding: { computed: false, id: column.id, offset: column.offset },
+      binding: {
+        computed: false,
+        id: column.id,
+        offset: column.offset,
+        placeholder: null,
+      },
       label: column.label,
       required: true,
       tag: "rows.amount",
@@ -706,10 +734,19 @@ test("incomplete Excel drafts save without a builder; publishing reports immedia
   };
   await replaceDraftFields(incomplete);
   // oxlint-disable-next-line unicorn/consistent-function-scoping -- Keep the action fixture beside its assertions.
-  const action = (name: string, token: string) =>
-    app.handle(
+  const action = async (
+    name: string,
+    token: string,
+    liveReference: string | null = null
+  ) => {
+    const current = await spreadsheetDraftBindings(templateId);
+    const spreadsheetAnchors = [
+      ...current.fields.map((entry) => [entry.anchor, liveReference]),
+      ...(current.table ? [[current.table.anchor, null]] : []),
+    ];
+    return app.handle(
       new Request(`http://test.local/api/admin/forms/${publicId}/${name}`, {
-        body: JSON.stringify({ documentKey }),
+        body: JSON.stringify({ documentKey, spreadsheetAnchors }),
         headers: {
           "Content-Type": "application/json",
           "X-Editor-Capability": token,
@@ -717,6 +754,7 @@ test("incomplete Excel drafts save without a builder; publishing reports immedia
         method: "POST",
       })
     );
+  };
   const denied = await action("publish", publishCapability);
   expect(denied.status).toBe(422);
   expect(await denied.json()).toMatchObject({
@@ -759,16 +797,52 @@ test("incomplete Excel drafts save without a builder; publishing reports immedia
   expect(
     Object.hasOwn(publishOperation.metadata as object, "spreadsheetState")
   ).toBe(false);
-  await replaceDraftFields(incomplete);
-  const saved = await action("save", saveCapability);
-  expect(saved.status).toBe(202);
-  const saveId = ((await saved.json()) as { operationId: string }).operationId;
-  expect(await poll(saveId)).toMatchObject({ status: "completed" });
-  const draft = await prisma.templateDraft.findUniqueOrThrow({
+  const beforeStaleSave = await prisma.templateDraft.findUniqueOrThrow({
     where: { id: templateId },
   });
-  expect(await spreadsheetDraftBindings(templateId)).toEqual(incomplete);
-  storedObjects.push(draft.objectKey);
+  const stale = await action("save", saveCapability, "'Form'!$E$5");
+  expect(stale.status).toBe(202);
+  const staleId = ((await stale.json()) as { operationId: string }).operationId;
+  expect(await poll(staleId)).toMatchObject({
+    error: "invalid_template",
+    errorMessage:
+      "ไฟล์ Excel ที่ได้รับยังไม่ตรงกับตำแหน่งช่องล่าสุด กรุณาเก็บหน้านี้ไว้แล้วลองบันทึกอีกครั้ง",
+    status: "failed",
+  });
+  const afterStaleSave = await prisma.templateDraft.findUniqueOrThrow({
+    where: { id: templateId },
+  });
+  expect(afterStaleSave.documentKey).toBe(beforeStaleSave.documentKey);
+  expect(afterStaleSave.objectKey).toBe(beforeStaleSave.objectKey);
+  expect(await spreadsheetDraftBindings(templateId)).toEqual(bindings);
+  await replaceDraftFields(incomplete);
+  nativeSnapshot = fixtureWorkbook({
+    names: { folio_name_anchor: "Form!E5" },
+  });
+  nativeSnapshotUrl = new URL("/saved.xlsx", nativeServer.url).href;
+  try {
+    const saved = await action("save", saveCapability, "'Form'!$E$5");
+    expect(saved.status).toBe(202);
+    const saveId = ((await saved.json()) as { operationId: string })
+      .operationId;
+    expect(await poll(saveId)).toMatchObject({ status: "completed" });
+    const draft = await prisma.templateDraft.findUniqueOrThrow({
+      where: { id: templateId },
+    });
+    storedObjects.push(draft.objectKey);
+    expect(draft.documentKey).not.toBe(documentKey);
+    expect(await spreadsheetDraftBindings(templateId)).toEqual(incomplete);
+    const reopened = readSpreadsheetWorkbook(await readObject(draft.objectKey));
+    expect(reopened.names.get("folio_name_anchor")).toMatchObject({
+      firstColumn: 4,
+      firstRow: 4,
+      sheet: "Form",
+    });
+    expect(reopened.names.has("folio_unfinished")).toBe(false);
+  } finally {
+    nativeSnapshotUrl = null;
+    nativeSnapshot = null;
+  }
 });
 
 test("Excel receipts, selected revisions, downloads and viewers use the spreadsheet contract and format", async () => {
@@ -794,6 +868,7 @@ test("Excel receipts, selected revisions, downloads and viewers use the spreadsh
         key: "value",
         label: "Root value",
         options: [],
+        placeholder: null,
         prefillPointer: null,
         prefillPolicy: "editable" as const,
         required: false,
@@ -811,6 +886,7 @@ test("Excel receipts, selected revisions, downloads and viewers use the spreadsh
           label: "Value",
           offset: 0,
           options: [],
+          placeholder: null,
           required: false,
           type: "number" as const,
         },
@@ -1102,6 +1178,7 @@ test("publication freezes shared Excel fields, preserves scoped keys and Prefill
           label: "Numeric name",
           offset: 0,
           options: [],
+          placeholder: null,
           required: true,
           type: "number",
         },

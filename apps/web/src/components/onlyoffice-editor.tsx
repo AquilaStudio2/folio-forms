@@ -59,7 +59,12 @@ export const OnlyOfficeEditor = ({
   onStateChange?: (state: OnlyOfficeEditorState) => void;
   readOnly?: boolean;
   revision?: number;
-  saveAction?: "save-draft" | "save-correction" | "submit";
+  saveAction?:
+    | "save-draft"
+    | "save-correction"
+    | "submit"
+    | "save-template"
+    | "publish";
   saveReason?: string;
   saveRequest?: number;
   title: string;

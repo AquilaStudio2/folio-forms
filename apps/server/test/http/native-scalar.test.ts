@@ -42,6 +42,93 @@ const app = createApp({
   requestIp: (request) => request.headers.get("x-test-ip"),
 });
 
+test("DOCX template save, reopen and publish retain the documentKey-only API", async () => {
+  const email = `docx-save-regression-${crypto.randomUUID()}@example.com`;
+  const password = "Docx-save-regression-password";
+  await createCredentialFixture({
+    email,
+    name: "DOCX Save Regression",
+    password,
+    role: "admin",
+  });
+  const bearer = await bearerFor(app, email, password);
+  const createdResponse = await app.handle(
+    formCreationRequest({
+      authorization: bearer,
+      source: "upload",
+      template: {
+        bytes: docxXmlFixture({
+          document:
+            '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"><w:body><w:sdt><w:sdtPr><w:alias w:val="Name"/><w:tag w:val="name"/><w:text/></w:sdtPr><w:sdtContent><w:p><w:r><w:t>Name</w:t></w:r></w:p></w:sdtContent></w:sdt><w:sectPr/></w:body></w:document>',
+        }),
+        name: "save-regression.docx",
+      },
+      title: "DOCX Save Regression",
+    })
+  );
+  expect(createdResponse.status).toBe(200);
+  const { form } = (await createdResponse.json()) as {
+    form: { publicId: string };
+  };
+  const base = `http://test.local/api/admin/forms/${form.publicId}`;
+  const readConfig = async () => {
+    const response = await app.handle(
+      new Request(`${base}/editor-config`, {
+        headers: { Authorization: `Bearer ${bearer}` },
+      })
+    );
+    expect(response.status).toBe(200);
+    return response.json() as Promise<EditorConfigBody>;
+  };
+  let editor = await readConfig();
+  const originalKey = editor.config.document.key;
+  for (const action of ["save", "publish"] as const) {
+    const capability =
+      editor.bridge.capabilities[
+        action === "save" ? "save-template" : "publish"
+      ];
+    if (!capability) {
+      throw new Error("Missing template action capability");
+    }
+    const response = await app.handle(
+      new Request(`${base}/${action}`, {
+        body: JSON.stringify({ documentKey: editor.config.document.key }),
+        headers: {
+          ...jsonHeaders,
+          Authorization: `Bearer ${bearer}`,
+          "X-Editor-Capability": capability,
+        },
+        method: "POST",
+      })
+    );
+    expect(response.status).toBe(202);
+    const operation = (await response.json()) as { operationId: string };
+    expect(
+      await waitForOperation(app, operation.operationId, {
+        Authorization: `Bearer ${bearer}`,
+      })
+    ).toMatchObject({ status: "completed" });
+    if (action === "save") {
+      editor = await readConfig();
+      expect(editor.config.document.key).not.toBe(originalKey);
+    }
+  }
+  const saved = await prisma.form.findUniqueOrThrow({
+    include: {
+      publishedTemplate: {
+        include: { manifest: { include: { fields: true } } },
+      },
+    },
+    where: { publicId: form.publicId },
+  });
+  expect(saved.status).toBe("published");
+  expect(saved.publishedTemplate?.manifest?.fields).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({ tag: "name", type: "text" }),
+    ])
+  );
+});
+
 test("Ticket 07 native scalar forms preserve values, validation, and Fill Method", async () => {
   const setup = await runNativeSetup({ app });
   const draft = await runNativeDraft({

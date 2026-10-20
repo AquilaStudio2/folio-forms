@@ -8,6 +8,201 @@ import {
   flushPlugin,
 } from "./harness.js";
 
+for (const action of ["save-template", "publish"]) {
+  test(`DOCX ${action} ignores new parent commands and preserves the existing toolbar contract`, async () => {
+    const harness = createHarness({
+      action: "template-edit",
+      capabilityResponses: ["docx-action-capability"],
+      documentKind: "docx",
+      holdEditorSave: true,
+      responses: [
+        { operationCapability: "docx-poll", operationId: "docx-operation" },
+        completedOperation(),
+      ],
+    });
+    acknowledgeBridge(harness);
+    await flushPlugin();
+    const dispatch = () =>
+      harness.dispatch({
+        data: {
+          action,
+          bridgeId: harness.bridgeId,
+          source: "folio-parent",
+          type: "run-action",
+        },
+        origin: harness.parentOrigin,
+        source: harness.parentWindow,
+      });
+    dispatch();
+    await flushPlugin();
+    expect(harness.requests).toHaveLength(0);
+    expect(
+      harness.messages.some(
+        ({ message }) => message.type === "editor-save-request"
+      )
+    ).toBe(false);
+    const firstAttempt = harness.window.FormBridge.runAction(action);
+    await flushPlugin();
+    expect(harness.methodInvocations).toContainEqual({
+      args: ["readOnly"],
+      method: "SetEditingRestrictions",
+    });
+    harness.finishEditorSave("Native save failed");
+    await expect(firstAttempt).resolves.toMatchObject({ ok: false });
+    await flushPlugin();
+    expect(harness.requests).toHaveLength(0);
+    expect(
+      harness.messages
+        .filter(({ message }) => message.type === "operation")
+        .at(-1).message
+    ).toMatchObject({
+      action,
+      error: "Native save failed",
+      status: "failed",
+    });
+    expect(harness.methodInvocations.at(-1)).toMatchObject({
+      args: ["none"],
+      method: "SetEditingRestrictions",
+    });
+    const retry = harness.window.FormBridge.runAction(action);
+    await flushPlugin();
+    harness.finishEditorSave();
+    await expect(retry).resolves.toMatchObject({ ok: true });
+    await flushPlugin();
+    expect(harness.requests.map(({ method }) => method)).toEqual([
+      "POST",
+      "GET",
+    ]);
+    expect(harness.requests[0].url).toEndWith(
+      action === "publish" ? "/publish" : "/save"
+    );
+    expect(JSON.parse(harness.requests[0].body)).toEqual({
+      documentKey: "document-key",
+    });
+    expect(harness.requests[0].headers.get("x-editor-capability")).toBe(
+      "docx-action-capability"
+    );
+    expect(harness.requests[1].headers.get("x-editor-capability")).toBe(
+      "docx-poll"
+    );
+    expect(
+      harness.messages
+        .filter(({ message }) => message.type === "operation")
+        .at(-1).message
+    ).toMatchObject({
+      action,
+      status: "completed",
+    });
+  });
+}
+
+for (const action of ["save-template", "publish"]) {
+  test(`parent ${action} waits for native Excel save and captures live anchors`, async () => {
+    const harness = createHarness({
+      action: "template-edit",
+      capabilityResponses: ["action-capability"],
+      documentKind: "xlsx",
+      holdEditorSave: true,
+      responses: [
+        { operationCapability: "poll", operationId: "template-save" },
+        completedOperation(),
+      ],
+      serializeCommands: true,
+      spreadsheetBindings: {
+        fields: [
+          {
+            anchor: "folio_month",
+            id: "folio_month",
+            key: "month",
+            label: "Month",
+            options: [],
+            type: "text",
+          },
+          {
+            anchor: "folio_unfinished",
+            id: "folio_unfinished",
+            key: "unfinished",
+            label: "Unfinished",
+            options: [],
+            type: "text",
+          },
+        ],
+        table: null,
+        version: 1,
+      },
+      spreadsheetSelection: {
+        address: "E5",
+        names: { folio_month: "'Form'!$E$5" },
+        sheet: "Form",
+      },
+    });
+    acknowledgeBridge(harness);
+    await flushPlugin();
+    harness.dispatch({
+      data: {
+        action,
+        bridgeId: harness.bridgeId,
+        source: "folio-parent",
+        type: "run-action",
+      },
+      origin: harness.parentOrigin,
+      source: harness.parentWindow,
+    });
+    await flushPlugin();
+    expect(harness.requests).toHaveLength(0);
+    expect(
+      harness.messages.some(
+        ({ message }) => message.type === "editor-save-request"
+      )
+    ).toBe(true);
+    harness.finishEditorSave();
+    await flushPlugin();
+    expect(JSON.parse(harness.requests[0].body)).toEqual({
+      documentKey: "document-key",
+      spreadsheetAnchors: [
+        ["folio_month", "'Form'!$E$5"],
+        ["folio_unfinished", null],
+      ],
+    });
+    expect(harness.requests[0].url).toEndWith(
+      action === "publish" ? "/publish" : "/save"
+    );
+    expect(
+      harness.messages
+        .filter(({ message }) => message.type === "operation")
+        .map(({ message }) => message.status)
+    ).toEqual(["pending", "completed"]);
+  });
+}
+
+test("a failed native template save preserves the workbook and permits retry", async () => {
+  const harness = createHarness({
+    action: "template-edit",
+    capabilityResponses: ["save-capability"],
+    documentKind: "xlsx",
+    holdEditorSave: true,
+    responses: [
+      { operationCapability: "poll", operationId: "retry" },
+      completedOperation(),
+    ],
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  const save = harness.window.FormBridge.runAction("save-template");
+  await flushPlugin();
+  harness.finishEditorSave("Native save failed");
+  await expect(save).resolves.toMatchObject({ ok: false });
+  expect(harness.requests).toHaveLength(0);
+  expect(harness.methodInvocations.at(-1)).toMatchObject({
+    args: ["none"],
+    method: "SetEditingRestrictions",
+  });
+  const retry = harness.window.FormBridge.runAction("save-template");
+  await flushPlugin();
+  harness.finishEditorSave();
+  await expect(retry).resolves.toMatchObject({ ok: true });
+});
+
 test("reports dirty state after a document content change", () => {
   const harness = createHarness();
   acknowledgeBridge(harness);

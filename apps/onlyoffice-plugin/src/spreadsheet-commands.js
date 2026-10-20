@@ -8,8 +8,14 @@ export function spreadsheetSelectionCommand() {
     address: selection.GetAddress(true, true, "xlA1", false),
     sheet: sheet.GetName(),
     anchors: (Asc.scope.folioSpreadsheetAnchors || []).map((anchor) => {
-      const name = Api.GetDefName(anchor);
-      return [anchor, name ? name.GetRefersTo() : null];
+      // ONLYOFFICE throws for missing names instead of returning null. Draft
+      // metadata can outlive a workbook edit, so isolate each lookup.
+      try {
+        const name = Api.GetDefName(anchor);
+        return [anchor, name ? name.GetRefersTo() : null];
+      } catch {
+        return [anchor, null];
+      }
     }),
   });
 }

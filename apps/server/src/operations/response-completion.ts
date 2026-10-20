@@ -321,13 +321,18 @@ export async function completeCorrectionOperation(
             orderBy: { revision: "desc" },
             take: 1,
           },
+          submissions: {
+            include: {
+              corrections: { orderBy: { revision: "desc" }, take: 1 },
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: 1,
+          },
         },
         where: { id: response.id },
       });
-      const currentSubmission = await tx.submission.findUnique({
-        where: { id: submissionId },
-      });
-      const latest = current?.corrections[0];
+      const currentSubmission = current?.submissions[0];
+      const latest = currentSubmission?.corrections[0];
       const currentRevision = latest?.revision ?? 0;
       const currentDocumentKey =
         latest?.documentKey ?? currentSubmission?.documentKey;
@@ -335,6 +340,7 @@ export async function completeCorrectionOperation(
         !current ||
         current.status !== ResponseStatus.submitted ||
         !currentSubmission ||
+        currentSubmission.id !== submissionId ||
         currentSubmission.responseId !== current.id ||
         currentRevision !== baseRevision ||
         currentDocumentKey !== baseDocumentKey
@@ -351,7 +357,8 @@ export async function completeCorrectionOperation(
           objectKey: metadata.finalObjectKey,
           reason,
           responseId: current.id,
-          revision: currentRevision + 1,
+          // Keep response-wide revision URLs unique, but derive data only from this submission.
+          revision: (current.corrections[0]?.revision ?? 0) + 1,
           submissionId,
         },
       });

@@ -7,10 +7,12 @@ import {
 } from "@onlyoffice/db";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Elysia } from "elysia";
+import { z } from "zod";
 
 import { createFormFailureAudit, createFormAudit } from "../audit/events";
 import { requireIdentity, requireAdmin } from "../auth/identity";
 import { databaseErrorCode } from "../db-errors";
+import { spreadsheetAnchorSnapshotSchema } from "../documents/spreadsheets/save-snapshot";
 import {
   actionEditorCapability,
   requireActionEditorAuthorization,
@@ -53,6 +55,27 @@ import { operationTypeForAction } from "../operations/model";
 import { submissionSummary } from "../responses/query";
 import { objectExists, objectKey } from "../storage";
 import type { RouteDependencies } from "./dependencies";
+
+const readTemplateActionInput = async (request: Request, kind: string) => {
+  if (kind !== "xlsx") {
+    return { documentKey: await readDocumentKeyInput(request) };
+  }
+  const input = z
+    .object({
+      documentKey: z.string().trim().min(1),
+      spreadsheetAnchors: spreadsheetAnchorSnapshotSchema,
+    })
+    .strict()
+    .safeParse(await readJsonRecord(request, 256 * 1024));
+  if (!input.success) {
+    fail(
+      400,
+      "invalid_request",
+      "อ่านตำแหน่งช่อง Excel ก่อนบันทึกไม่ได้ กรุณาเปิดตัวแก้ไขรุ่นล่าสุดแล้วลองใหม่"
+    );
+  }
+  return input.data;
+};
 
 export function registerFormAuthoringRoutes(
   app: Elysia,
@@ -386,7 +409,10 @@ export function registerFormAuthoringRoutes(
             action: "save-template",
           });
           await requireActiveEditorLease(authorization, capabilityScope);
-          const documentKey = await readDocumentKeyInput(request);
+          const { documentKey, ...snapshot } = await readTemplateActionInput(
+            request,
+            form.documentKind
+          );
           if (templateDraft.documentKey !== documentKey) {
             fail(
               409,
@@ -412,6 +438,7 @@ export function registerFormAuthoringRoutes(
           );
           const metadata: OperationMetadata = {
             action: "save-template",
+            ...snapshot,
             bindingRevision: templateDraft.bindingRevision,
             documentKind: form.documentKind,
             finalObjectKey: objectKey(
@@ -497,7 +524,10 @@ export function registerFormAuthoringRoutes(
             action: "publish",
           });
           await requireActiveEditorLease(authorization, capabilityScope);
-          const documentKey = await readDocumentKeyInput(request);
+          const { documentKey, ...snapshot } = await readTemplateActionInput(
+            request,
+            form.documentKind
+          );
           if (templateDraft.documentKey !== documentKey) {
             fail(
               409,
@@ -529,6 +559,7 @@ export function registerFormAuthoringRoutes(
           );
           const metadata: OperationMetadata = {
             action: "publish",
+            ...snapshot,
             bindingRevision: templateDraft.bindingRevision,
             documentKind: form.documentKind,
             finalObjectKey: objectKey(

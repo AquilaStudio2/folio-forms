@@ -1,5 +1,5 @@
 import { ResponseStatus, prisma } from "@onlyoffice/db";
-import type { DocumentKind } from "@onlyoffice/db";
+import type { DocumentKind, Prisma } from "@onlyoffice/db";
 
 import type { Identity, Actor } from "../auth/identity";
 import { manifestFieldsWithDocumentMetadata } from "../forms/query";
@@ -17,6 +17,73 @@ import type {
 } from "../model-types";
 
 export const adminResultPageSize = 25;
+
+export async function responseIdsWithLatestCorrection(
+  revision: number,
+  where: Prisma.ResponseWhereInput
+): Promise<string[]> {
+  const limit = adminResultPageSize + 1;
+  const ids: string[] = [];
+  let after: AdminResultCursor | undefined;
+  // Prisma relation filters cannot express "the latest related row". Scan small
+  // ordered batches and fill the page with matches, rather than filtering one
+  // page (which could hide later matches) or loading every response into memory.
+  while (ids.length < limit) {
+    const batch = await prisma.response.findMany({
+      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
+      select: {
+        id: true,
+        submissions: {
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          select: {
+            corrections: {
+              orderBy: { revision: "desc" },
+              select: { revision: true },
+              take: 1,
+            },
+          },
+          take: 1,
+        },
+        updatedAt: true,
+      },
+      take: limit,
+      where: {
+        AND: [
+          where,
+          // A positive revision must exist somewhere on this response, but it
+          // still needs to belong to the latest submission below.
+          ...(revision > 0 ? [{ corrections: { some: { revision } } }] : []),
+          ...(after
+            ? [
+                {
+                  OR: [
+                    { updatedAt: { lt: after.updatedAt } },
+                    { id: { lt: after.id }, updatedAt: after.updatedAt },
+                  ],
+                },
+              ]
+            : []),
+        ],
+      },
+    });
+    for (const response of batch) {
+      if (
+        (response.submissions[0]?.corrections[0]?.revision ?? 0) === revision
+      ) {
+        ids.push(response.id);
+        if (ids.length === limit) {
+          return ids;
+        }
+      }
+    }
+    if (batch.length < limit) {
+      break;
+    }
+    after = batch.at(-1);
+  }
+  return ids;
+}
+
 interface AdminResultCursor {
   id: string;
   updatedAt: Date;
@@ -123,13 +190,16 @@ export function submissionSummary(
 }
 
 export function adminResultSummary(response: {
-  corrections: { revision: number }[];
   createdAt: Date;
   form: { documentKind: DocumentKind; publicId: string; title: string };
   id: string;
   owner: { email: string };
   status: ResponseStatus;
-  submissions: { createdAt: Date; id: string }[];
+  submissions: {
+    createdAt: Date;
+    id: string;
+    corrections: { revision: number }[];
+  }[];
   updatedAt: Date;
 }): JsonRecord {
   const submitted = response.status === ResponseStatus.submitted;
@@ -140,7 +210,7 @@ export function adminResultSummary(response: {
     formPublicId: response.form.publicId,
     formTitle: response.form.title,
     id: response.id,
-    latestCorrectionNumber: response.corrections[0]?.revision ?? null,
+    latestCorrectionNumber: submission?.corrections[0]?.revision ?? null,
     state: submitted ? "submitted" : "draft",
     submissionId: submission?.id ?? null,
     submittedAt: submission?.createdAt ?? null,
@@ -221,21 +291,18 @@ export function selectedSubmissionRevision(
   objectKey: string;
   revision: number;
 } {
+  const corrections = submission.corrections.filter(
+    (correction) => correction.submissionId === submission.id
+  );
   const revision =
-    selector === "latest"
-      ? (submission.corrections[0]?.revision ?? 0)
-      : selector;
-  if (
-    revision > 0 &&
-    !submission.corrections.some((item) => item.revision === revision)
-  ) {
+    selector === "latest" ? (corrections[0]?.revision ?? 0) : selector;
+  if (revision > 0 && !corrections.some((item) => item.revision === revision)) {
     fail(404, "not_found", "Submission revision was not found");
   }
   const correction =
     revision === 0
       ? null
-      : (submission.corrections.find((item) => item.revision === revision) ??
-        null);
+      : (corrections.find((item) => item.revision === revision) ?? null);
   return {
     correction,
     data: jsonRecord(correction?.data ?? submission.data),

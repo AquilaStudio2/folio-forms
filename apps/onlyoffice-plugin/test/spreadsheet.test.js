@@ -3,6 +3,7 @@ import { runInNewContext } from "node:vm";
 
 import { createOffice } from "../src/office.js";
 import {
+  spreadsheetSelectionCommand,
   spreadsheetValidationCommand,
   spreadsheetTableSelectedRowCommand,
 } from "../src/spreadsheet-commands.js";
@@ -315,6 +316,164 @@ const click = async (harness, caption) => {
     .dispatchEvent({ type: "click" });
   await flushPlugin();
 };
+
+test("serialized selection retains valid anchors when another saved name is missing", () => {
+  const result = runInNewContext(
+    `(${spreadsheetSelectionCommand.toString()})()`,
+    {
+      Api: {
+        GetActiveSheet: () => ({
+          GetName: () => "Form",
+          GetSelection: () => ({ GetAddress: () => "$E$5" }),
+        }),
+        GetDefName(name) {
+          if (name === "missing") {
+            throw new Error("Defined name does not exist:missing");
+          }
+          return name === "empty" ? null : { GetRefersTo: () => "'Form'!$E$5" };
+        },
+      },
+      Asc: {
+        scope: { folioSpreadsheetAnchors: ["missing", "month", "empty"] },
+      },
+    }
+  );
+  expect(JSON.parse(result)).toEqual({
+    address: "$E$5",
+    anchors: [
+      ["missing", null],
+      ["month", "'Form'!$E$5"],
+      ["empty", null],
+    ],
+    sheet: "Form",
+  });
+});
+
+test.each(["field", "table", "unfinished table"])(
+  "reopened drafts can repair a missing %s anchor without replacing its configuration",
+  async (variant) => {
+    const category = variant === "field" ? "field" : "table";
+    const month = {
+      anchor: "month",
+      id: "month-id",
+      key: "month",
+      label: "เดือน",
+      options: ["มกราคม", "กุมภาพันธ์"],
+      required: true,
+      type: "dropdown",
+    };
+    const missing = {
+      anchor: "missing",
+      id: "missing-id",
+      key: "saved",
+      label: "ช่องเดิม",
+      options: [],
+      required: false,
+      type: "text",
+    };
+    const table = {
+      ...missing,
+      columns: [
+        {
+          id: "first",
+          key: "first",
+          label: "หนึ่ง",
+          offset: 0,
+          options: [],
+          type: "text",
+        },
+        {
+          id: "second",
+          key: "second",
+          label: "สอง",
+          offset: 1,
+          options: [],
+          type: "text",
+        },
+      ],
+    };
+    if (variant === "unfinished table") {
+      table.columns = [];
+    }
+    const bindings = {
+      fields: [month, ...(category === "field" ? [missing] : [])],
+      table: category === "table" ? table : null,
+      version: 1,
+    };
+    const native = { address: "E5", names: { month: "'Sheet1'!$E$5" } };
+    const harness = createHarness({
+      action: "template-edit",
+      capabilityResponses: ["read", "write"],
+      documentKind: "xlsx",
+      responses: [
+        { bindings, revision: 0 },
+        { bindings, revision: 1 },
+      ],
+      serializeCommands: true,
+      spreadsheetBindings: bindings,
+      spreadsheetSelection: native,
+    });
+    acknowledgeBridge(harness);
+    await flushPlugin();
+    expect(control(harness, "Title · ชื่อช่อง").value).toBe("เดือน");
+    expect(
+      descendants(harness.body).some((node) =>
+        node.textContent.includes("ไม่พบตำแหน่งใน Excel 1")
+      )
+    ).toBe(true);
+    native.address = category === "table" ? "B9:C12" : "B9";
+    await harness.window.FormBridge.refreshSelection();
+    const existing = control(harness, "ช่องที่บันทึกแล้ว");
+    existing.value = missing.id;
+    existing.dispatchEvent({ type: "change" });
+    expect(control(harness, "Title · ชื่อช่อง").value).toBe("ช่องเดิม");
+    await click(harness, "บันทึกการแก้ไข");
+    expect(harness.requests).toHaveLength(0);
+    expect(harness.spreadsheetNames.has("missing")).toBe(false);
+    if (category === "table" && table.columns.length > 0) {
+      native.address = "B9";
+      await click(harness, "ผูกตำแหน่งใหม่กับช่วงที่เลือก");
+      expect(harness.spreadsheetNames.has("missing")).toBe(false);
+      native.address = "B9:C12";
+      await harness.window.FormBridge.refreshSelection();
+      existing.value = missing.id;
+      existing.dispatchEvent({ type: "change" });
+    }
+    await click(harness, "ผูกตำแหน่งใหม่กับช่วงที่เลือก");
+    expect(harness.spreadsheetNames.get("missing")).toBe(
+      `'Sheet1'!${native.address}`
+    );
+    expect(harness.spreadsheetNames.get("month")).toBe("'Sheet1'!$E$5");
+    expect(harness.requests).toHaveLength(0);
+    await click(harness, "บันทึกการแก้ไข");
+    const patches = harness.requests.filter(
+      (request) => request.method === "PATCH"
+    );
+    expect(patches).toHaveLength(1);
+    expect(JSON.parse(patches[0].body).change).toMatchObject({
+      kind: category,
+      value: {
+        anchor: "missing",
+        id: "missing-id",
+        key: "saved",
+        label: "ช่องเดิม",
+      },
+    });
+    if (category === "table") {
+      expect(JSON.parse(patches[0].body).change.value.columns).toEqual(
+        table.columns
+      );
+    }
+    native.address = "E5";
+    await harness.window.FormBridge.refreshSelection();
+    expect(control(harness, "Title · ชื่อช่อง").value).toBe("เดือน");
+    expect(
+      descendants(harness.body)
+        .filter((node) => node.tagName === "LI")
+        .map((node) => node.textContent)
+    ).toEqual(month.options);
+  }
+);
 
 test("table mapping explicitly excludes chosen headers and rejects header-only selections", () => {
   expect(tableSelection("$B$3:$D$7", true)).toEqual({
@@ -827,6 +986,7 @@ test("editing an existing table preserves columns without redrawing user borders
       { bindings, revision: 1 },
     ],
     spreadsheetBindings: bindings,
+    spreadsheetSelection: { names: { rows: "'Sheet1'!$A$5:$A$7" } },
   });
   acknowledgeBridge(harness);
   await flushPlugin();

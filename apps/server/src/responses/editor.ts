@@ -55,12 +55,12 @@ export async function correctionEditorConfig(
   validateId(responseId, "Response");
   const response = await prisma.response.findUnique({
     include: {
-      corrections: {
-        orderBy: { revision: "desc" },
+      prefillSnapshot: true,
+      submissions: {
+        include: { corrections: { orderBy: { revision: "desc" }, take: 1 } },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         take: 1,
       },
-      prefillSnapshot: true,
-      submissions: { orderBy: { createdAt: "desc" }, take: 1 },
     },
     where: { id: responseId },
   });
@@ -79,7 +79,7 @@ export async function correctionEditorConfig(
   if (!form) {
     fail(404, "not_found", "Form was not found");
   }
-  const latest = response.corrections[0];
+  const latest = submission.corrections[0];
   const baseRevision = latest?.revision ?? 0;
   const baseDocumentKey = latest?.documentKey ?? submission.documentKey;
   const sourceObjectKey = latest?.objectKey ?? submission.objectKey;
@@ -196,32 +196,39 @@ export async function correctionEditorConfig(
   }
   const currentRevision = await prisma.response.findUnique({
     select: {
-      corrections: {
-        orderBy: { revision: "desc" },
+      status: true,
+      submissions: {
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         select: {
+          corrections: {
+            orderBy: { revision: "desc" },
+            select: {
+              documentKey: true,
+              id: true,
+              objectKey: true,
+              revision: true,
+            },
+            take: 1,
+          },
           documentKey: true,
           id: true,
           objectKey: true,
-          revision: true,
         },
-        take: 1,
-      },
-      submissions: {
-        orderBy: { createdAt: "desc" },
-        select: { documentKey: true, objectKey: true },
         take: 1,
       },
     },
     where: { id: response.id },
   });
-  const currentLatest = currentRevision?.corrections[0];
   const currentSubmission = currentRevision?.submissions[0];
+  const currentLatest = currentSubmission?.corrections[0];
   const currentBaseRevision = currentLatest?.revision ?? 0;
   const currentBaseDocumentKey =
     currentLatest?.documentKey ?? currentSubmission?.documentKey;
   const currentSourceObjectKey =
     currentLatest?.objectKey ?? currentSubmission?.objectKey;
   if (
+    currentRevision?.status !== ResponseStatus.submitted ||
+    currentSubmission?.id !== submission.id ||
     currentBaseRevision !== baseRevision ||
     currentBaseDocumentKey !== baseDocumentKey ||
     currentSourceObjectKey !== sourceObjectKey

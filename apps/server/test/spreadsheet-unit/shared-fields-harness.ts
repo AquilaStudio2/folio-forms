@@ -102,7 +102,12 @@ const published = spreadsheetManifestFieldData(bindings);
 assert.deepEqual(
   drafts.find((field) => field.tag === "photo"),
   {
-    binding: { anchor: "folio_photo", computed: false, id: "folio_photo" },
+    binding: {
+      anchor: "folio_photo",
+      computed: false,
+      id: "folio_photo",
+      placeholder: null,
+    },
     label: "Photo",
     options: null,
     position: 3,
@@ -116,7 +121,12 @@ assert.deepEqual(
 assert.deepEqual(
   published.find((field) => field.tag === "photo"),
   {
-    binding: { anchor: "folio_photo", computed: false, id: "folio_photo" },
+    binding: {
+      anchor: "folio_photo",
+      computed: false,
+      id: "folio_photo",
+      placeholder: null,
+    },
     label: "Photo",
     options: null,
     pictureMaxBytes: 10 * 1024 * 1024,

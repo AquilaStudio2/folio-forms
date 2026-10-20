@@ -16,6 +16,7 @@ import {
   unprotectSpreadsheet,
   validateSpreadsheetEdits,
 } from "../documents/spreadsheets/protection";
+import { validateSpreadsheetSaveSnapshot } from "../documents/spreadsheets/save-snapshot";
 import {
   extractSpreadsheetData,
   readSpreadsheetWorkbook,
@@ -70,6 +71,13 @@ export const prepareSpreadsheetOperation = async (
       );
     }
     const bindings = await spreadsheetDraftBindings(form.templateDraft.id);
+    if (metadata.spreadsheetAnchors) {
+      validateSpreadsheetSaveSnapshot(
+        metadata.spreadsheetAnchors,
+        bindings,
+        current
+      );
+    }
     // A Template Draft may contain unfinished mappings. Saving preserves the
     // editor snapshot; only publication freezes and validates the contract.
     if (metadata.action === "save-template") {

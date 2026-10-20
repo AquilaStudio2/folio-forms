@@ -209,6 +209,20 @@ export function initializeSpreadsheet(options, setStatus) {
   const prefill = { shouldApplyRuntimePrefill: () => false };
   const operations = createOperations(options, office, prefill, bridge, api, {
     isInitializationPending: () => busy,
+    setActionBusy: (value) => {
+      busy = value;
+      for (const item of buttons) {
+        item.disabled = value;
+      }
+    },
+    getTemplateSnapshot: async () => {
+      const raw = await office.callCommandResult(spreadsheetSelectionCommand);
+      const snapshot = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!Array.isArray(snapshot?.anchors)) {
+        throw new TypeError("อ่านตำแหน่งช่องก่อนบันทึกไม่ได้ กรุณาลองใหม่");
+      }
+      return { spreadsheetAnchors: snapshot.anchors };
+    },
     setStatus,
   });
   bridge.startBridge();
@@ -411,6 +425,11 @@ export function initializeSpreadsheet(options, setStatus) {
     let selected = null;
     let entries = [];
     let selectionSequence = 0;
+    const missingAnchor = (entry) =>
+      Boolean(entry?.anchor) &&
+      selected?.anchors?.some(
+        ([name, reference]) => name === entry.anchor && !reference
+      );
     const drafts = new Map();
     const draftKey = () => {
       if (editing) {
@@ -467,7 +486,10 @@ export function initializeSpreadsheet(options, setStatus) {
       save.textContent = editing ? "บันทึกการแก้ไข" : "เพิ่มช่องจากช่วงที่เลือก";
       remove.hidden = !editing;
       restorePicture.hidden =
-        editingKind !== "field" || editing?.type !== "picture";
+        editingKind !== "field" ||
+        editing?.type !== "picture" ||
+        missingAnchor(editing);
+      repairAnchor.hidden = !missingAnchor(editing);
       save.disabled = editing?.computed === true;
       message.textContent = selected
         ? `${selected.sheet}!${selected.address}`
@@ -478,6 +500,12 @@ export function initializeSpreadsheet(options, setStatus) {
         } catch (error) {
           message.textContent = error.message;
         }
+      }
+      const missing = selected?.anchors?.filter(([, reference]) => !reference);
+      if (missing?.length) {
+        message.textContent = missingAnchor(editing)
+          ? "ไม่พบตำแหน่งช่องนี้ใน Excel เลือกช่วงเซลล์ที่ต้องการ แล้วเลือกช่องเดิมจากช่องที่บันทึกแล้วและกดผูกตำแหน่งใหม่ (ตารางให้เลือกเฉพาะแถวข้อมูล ไม่รวมหัวตาราง)"
+          : `มีช่องที่ไม่พบตำแหน่งใน Excel ${missing.length} รายการ เลือกช่วงเซลล์ แล้วเลือกช่องเดิมจากช่องที่บันทึกแล้วเพื่อผูกตำแหน่งใหม่`;
       }
     };
     const loadEntry = (entry) => {
@@ -535,6 +563,18 @@ export function initializeSpreadsheet(options, setStatus) {
         throw new Error("เลือกคอลัมน์จากช่องที่บันทึกแล้ว หรือเลือกเซลล์ในตาราง");
       }
       const current = await selection();
+      const targetAnchor =
+        kind.value === "column" ? bindings?.table?.anchor : editing?.anchor;
+      if (
+        targetAnchor &&
+        current.anchors?.some(
+          ([name, reference]) => name === targetAnchor && !reference
+        )
+      ) {
+        throw new Error(
+          "ไม่พบตำแหน่งช่องนี้ กรุณาเลือกช่องหรือตารางเดิมแล้วกดผูกตำแหน่งใหม่ก่อนบันทึกการแก้ไข"
+        );
+      }
       await readBindings();
       const bindingId = editing?.id || id();
       const bindingKey = key.value.trim() || defaultKey();
@@ -680,6 +720,36 @@ export function initializeSpreadsheet(options, setStatus) {
       setStatus("เตรียมกรอบรูปแล้ว กรุณาบันทึกต้นแบบ", "success");
     });
     restorePicture.className = "secondary-action";
+    const repairAnchor = button("ผูกตำแหน่งใหม่กับช่วงที่เลือก", async () => {
+      if (!editing?.anchor) {
+        return;
+      }
+      const current = await selection();
+      if (
+        !current.anchors?.some(
+          ([name, reference]) => name === editing.anchor && !reference
+        )
+      ) {
+        throw new Error("ช่องนี้มีตำแหน่งอ้างอิงแล้ว กรุณาเลือกช่องที่ตำแหน่งหาย");
+      }
+      if (editingKind === "table") {
+        const range = tableSelection(current.address);
+        if (
+          editing.columns.length > 0 &&
+          range.width !==
+            Math.max(...editing.columns.map((column) => column.offset)) + 1
+        ) {
+          throw new Error(
+            "เลือกช่วงข้อมูลให้มีจำนวนคอลัมน์ตรงกับตารางเดิม โดยไม่รวมหัวตาราง"
+          );
+        }
+      }
+      await anchor(editing.anchor, current);
+      selected = await selection();
+      updateControls();
+      setStatus("ผูกตำแหน่งใหม่แล้ว กรุณาบันทึกการแก้ไขช่องและบันทึกแบบร่าง", "success");
+    });
+    repairAnchor.className = "secondary-action";
     renderList = () => {
       entries = [
         ...(bindings?.fields || []).map((value) => ["field", value]),
@@ -723,7 +793,8 @@ export function initializeSpreadsheet(options, setStatus) {
         }
         if (
           selected?.sheet === current.sheet &&
-          selected?.address === current.address
+          selected?.address === current.address &&
+          JSON.stringify(selected?.anchors) === JSON.stringify(current.anchors)
         ) {
           return;
         }
