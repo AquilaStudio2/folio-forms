@@ -37,13 +37,9 @@ export const formCatalogPath = ({
 };
 
 export const catalogPageNumbers = (page: number, totalPages: number) => {
-  if (totalPages <= 7) {
+  if (totalPages <= 5) {
     return Array.from({ length: totalPages }, (_, index) => index + 1);
   }
-  return (
-    [...new Set([1, page - 1, page, page + 1, totalPages])]
-      .filter((value) => value >= 1 && value <= totalPages)
-      // oxlint-disable-next-line unicorn/no-array-sort -- Sort this freshly created array; the app targets ES2022.
-      .sort((left, right) => left - right)
-  );
+  const start = Math.max(1, Math.min(page - 1, totalPages - 2));
+  return [start, start + 1, start + 2];
 };

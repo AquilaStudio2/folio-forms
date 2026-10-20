@@ -1,6 +1,8 @@
 import { Link } from "@tanstack/react-router";
 import {
   ArrowUpRight,
+  ChevronsLeft,
+  ChevronsRight,
   ChevronLeft,
   ChevronRight,
   FileText,
@@ -547,7 +549,24 @@ export const AdminFormsPage = () => {
             <PaginationContent>
               <PaginationItem>
                 <Button
-                  variant="outline"
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  aria-label="หน้าแรก"
+                  title="หน้าแรก"
+                  disabled={
+                    pagination.page <= 1 ||
+                    Boolean(removingPublicId) ||
+                    Boolean(confirmingPublicId)
+                  }
+                  onClick={() => changeQuery({ page: 1 })}
+                >
+                  <ChevronsLeft aria-hidden="true" />
+                </Button>
+              </PaginationItem>
+              <PaginationItem>
+                <Button
+                  variant="ghost"
                   type="button"
                   aria-label="หน้าก่อนหน้า"
                   disabled={
@@ -572,13 +591,11 @@ export const AdminFormsPage = () => {
                     key={page}
                     className="hidden items-center gap-1 sm:flex"
                   >
-                    {index > 0 && page - (pages[index - 1] ?? page) > 1 ? (
-                      <PaginationEllipsis />
-                    ) : null}
+                    {index === 0 && page > 1 ? <PaginationEllipsis /> : null}
                     <Button
                       type="button"
                       size="icon"
-                      variant={page === pagination.page ? "default" : "outline"}
+                      variant={page === pagination.page ? "outline" : "ghost"}
                       aria-label={`ไปหน้า ${page}`}
                       aria-current={
                         page === pagination.page ? "page" : undefined
@@ -590,12 +607,16 @@ export const AdminFormsPage = () => {
                     >
                       {page}
                     </Button>
+                    {index === pages.length - 1 &&
+                    page < pagination.totalPages ? (
+                      <PaginationEllipsis />
+                    ) : null}
                   </PaginationItem>
                 )
               )}
               <PaginationItem>
                 <Button
-                  variant="outline"
+                  variant="ghost"
                   type="button"
                   aria-label="หน้าถัดไป"
                   disabled={
@@ -607,6 +628,23 @@ export const AdminFormsPage = () => {
                 >
                   <span className="hidden sm:inline">ถัดไป</span>
                   <ChevronRight aria-hidden="true" />
+                </Button>
+              </PaginationItem>
+              <PaginationItem>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  type="button"
+                  aria-label="หน้าสุดท้าย"
+                  title="หน้าสุดท้าย"
+                  disabled={
+                    pagination.page >= pagination.totalPages ||
+                    Boolean(removingPublicId) ||
+                    Boolean(confirmingPublicId)
+                  }
+                  onClick={() => changeQuery({ page: pagination.totalPages })}
+                >
+                  <ChevronsRight aria-hidden="true" />
                 </Button>
               </PaginationItem>
             </PaginationContent>

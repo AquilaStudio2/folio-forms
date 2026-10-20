@@ -12,6 +12,7 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AdminFormsPage } from "@/features/admin-forms/admin-forms-page";
+import { catalogPageNumbers } from "@/features/admin-forms/catalog";
 import { API_ORIGIN, SESSION_KEY } from "@/lib/api";
 import type { FormSummary } from "@/lib/api";
 
@@ -698,6 +699,87 @@ describe("admin form catalog", () => {
     expectQuery({ page: "2" });
   });
 
+  it("uses compact shadcn pagination with Thai controls and preserves filters", async () => {
+    fetchMock.mockImplementation(async (input) => {
+      const page = Number(new URL(String(input)).searchParams.get("page"));
+      return Response.json(payload([form(page)], page, 200));
+    });
+    await mount();
+    await chooseStatus("ร่าง");
+    const pageButtons = () =>
+      within(paginationNav()).getAllByRole("button", { name: /^ไปหน้า /u });
+    expect(pageButtons().map((button) => button.textContent)).toEqual([
+      "1",
+      "2",
+      "3",
+    ]);
+    expect(
+      within(paginationNav()).getByRole("button", {
+        exact: true,
+        name: "หน้าแรก",
+      })
+    ).toBeDisabled();
+    expect(
+      within(paginationNav()).getByRole("button", { name: "หน้าสุดท้าย" })
+    ).toBeEnabled();
+    expect(
+      paginationNav().querySelectorAll('[data-slot="pagination-ellipsis"]')
+    ).toHaveLength(1);
+    fireEvent.click(
+      within(paginationNav()).getByRole("button", {
+        exact: true,
+        name: "ไปหน้า 3",
+      })
+    );
+    await flush();
+    fireEvent.click(
+      within(paginationNav()).getByRole("button", { name: "หน้าถัดไป" })
+    );
+    await flush();
+    expectQuery({ page: "4", status: "draft" });
+    expect(pageButtons().map((button) => button.textContent)).toEqual([
+      "3",
+      "4",
+      "5",
+    ]);
+    expect(
+      within(paginationNav()).getByRole("button", {
+        exact: true,
+        name: "ไปหน้า 4",
+      })
+    ).toHaveAttribute("aria-current", "page");
+    expect(
+      paginationNav().querySelectorAll('[data-slot="pagination-ellipsis"]')
+    ).toHaveLength(2);
+    fireEvent.click(
+      within(paginationNav()).getByRole("button", { name: "หน้าก่อนหน้า" })
+    );
+    await flush();
+    expectQuery({ page: "3", status: "draft" });
+    fireEvent.click(
+      within(paginationNav()).getByRole("button", { name: "หน้าสุดท้าย" })
+    );
+    await flush();
+    expectQuery({ page: "20", status: "draft" });
+    expect(
+      within(paginationNav()).getByRole("button", { name: "หน้าสุดท้าย" })
+    ).toBeDisabled();
+    fireEvent.click(
+      within(paginationNav()).getByRole("button", {
+        exact: true,
+        name: "หน้าแรก",
+      })
+    );
+    await flush();
+    expectQuery({ page: "1", status: "draft" });
+    expect(
+      within(paginationNav()).getByRole("button", {
+        exact: true,
+        name: "หน้าแรก",
+      })
+    ).toBeDisabled();
+  });
+
   it("has no enabled next page for exactly ten records", async () => {
     fetchMock.mockImplementation(async () =>
       Response.json(
@@ -1070,6 +1152,22 @@ describe("admin form catalog", () => {
       expect(
         screen.queryByRole("button", { exact: true, name: "ลบแบบร่าง" })
       ).not.toBeInTheDocument();
+    }
+  );
+});
+
+describe("catalog page ranges", () => {
+  it.each([
+    { expected: [1], page: 1, total: 1 },
+    { expected: [1, 2, 3, 4, 5], page: 3, total: 5 },
+    { expected: [1, 2, 3], page: 1, total: 6 },
+    { expected: [9, 10, 11], page: 10, total: 20 },
+    { expected: [18, 19, 20], page: 20, total: 20 },
+    { expected: [4999, 5000, 5001], page: 5000, total: 10_000 },
+  ])(
+    "keeps a compact window around $page of $total",
+    ({ page, total, expected }) => {
+      expect(catalogPageNumbers(page, total)).toEqual(expected);
     }
   );
 });
