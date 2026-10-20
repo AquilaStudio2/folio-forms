@@ -11,6 +11,9 @@ import { createFormAudit } from "../audit/events";
 import { contentHash } from "../digests";
 import type { ParsedTemplateField } from "../documents/fields";
 import { parseTemplateFields } from "../documents/fields";
+import { reconcileSpreadsheetColumns } from "../documents/spreadsheets/columns";
+import { readSpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
+import { excelBindingSchema } from "../forms/excel-binding";
 import { validateFieldRulePointer } from "../forms/field-rules";
 import {
   spreadsheetDraftBindings,
@@ -81,6 +84,43 @@ export async function completeTemplateOperation(
           "stale_operation",
           "The template changed while this operation was running"
         );
+      }
+      if (form.documentKind === "xlsx") {
+        const previous = await spreadsheetDraftBindings(templateDraft.id, tx);
+        const reconciled = reconcileSpreadsheetColumns(
+          previous,
+          readSpreadsheetWorkbook(bytes).names
+        );
+        for (const column of reconciled.table?.columns ?? []) {
+          if (
+            column.offset ===
+            previous.table?.columns.find((entry) => entry.id === column.id)
+              ?.offset
+          ) {
+            continue;
+          }
+          const result = await tx.draftFieldRule.updateMany({
+            data: {
+              binding: excelBindingSchema.parse({
+                computed: column.computed,
+                id: column.id,
+                offset: column.offset,
+                placeholder: column.placeholder,
+              }),
+            },
+            where: {
+              tag: `${reconciled.table?.key}.${column.key}`,
+              templateDraftId: templateDraft.id,
+            },
+          });
+          if (result.count !== 1) {
+            fail(
+              409,
+              "stale_operation",
+              "การตั้งค่าคอลัมน์เปลี่ยนระหว่างบันทึก กรุณาลองอีกครั้ง"
+            );
+          }
+        }
       }
       const formUpdated = await tx.form.updateMany({
         data: { updatedAt: new Date() },
@@ -282,7 +322,10 @@ export async function completePublishOperation(
       }
       const bindings =
         form.documentKind === "xlsx"
-          ? await spreadsheetDraftBindings(currentForm.templateDraft.id, tx)
+          ? reconcileSpreadsheetColumns(
+              await spreadsheetDraftBindings(currentForm.templateDraft.id, tx),
+              readSpreadsheetWorkbook(bytes).names
+            )
           : null;
       const controls = bindings
         ? spreadsheetScalarManifestFields(bindings)

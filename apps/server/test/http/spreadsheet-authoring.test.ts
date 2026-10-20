@@ -251,6 +251,7 @@ test("spreadsheet binding API requires scoped capability and preserves revision 
   expect(empty.status).toBe(200);
   expect(await empty.json()).toEqual({
     bindings: emptySpreadsheetBindings(),
+    documentKey,
     revision: 0,
   });
 
@@ -342,7 +343,7 @@ test("spreadsheet binding API requires scoped capability and preserves revision 
         value: { ...field, anchor: "folio_second_anchor", id: "folio_second" },
       })
     ).status
-  ).toBe(400);
+  ).toBe(409);
   expect(
     (
       await update(1, {
@@ -400,7 +401,7 @@ test("table columns retain stable keys through edits and delete; active operatio
         },
       })
     ).status
-  ).toBe(400);
+  ).toBe(409);
   expect(
     (
       await update(1, {

@@ -1,4 +1,8 @@
 // oxlint-disable func-style sort-keys no-implicit-globals consistent-function-scoping complexity prefer-named-capture-group require-unicode-regexp avoid-new prefer-await-to-callbacks no-empty-function prefer-await-to-then prefer-destructuring logical-assignment-operators func-names prefer-arrow-callback no-loop-func no-use-before-define throw-new-error no-await-in-loop -- ONLYOFFICE commands are serialized into the editor sandbox.
+import {
+  spreadsheetColumnAnchor,
+  spreadsheetTableColumnsAnchor,
+} from "./spreadsheet-columns.js";
 
 export function selectionPosition(address) {
   const match =
@@ -70,10 +74,29 @@ export function selectedBinding(selected, bindings) {
       ) {
         return ["table", bindings.table];
       }
-      const column = bindings.table.columns.find(
-        (item) => item.offset === point.column - first.column
+      const references = new Map(selected.anchors || []);
+      const tracked = references.has(
+        spreadsheetTableColumnsAnchor(bindings.table.id)
       );
-      return column ? ["column", column] : ["table", bindings.table];
+      const column = bindings.table.columns.find((item) => {
+        if (!tracked) {
+          return item.offset === point.column - first.column;
+        }
+        const columnReference = references.get(
+          spreadsheetColumnAnchor(item.id)
+        );
+        if (!columnReference) {
+          return false;
+        }
+        const columnSeparator = columnReference.lastIndexOf("!");
+        const position = selectionPosition(
+          columnReference.slice(columnSeparator + 1).split(":")[0]
+        );
+        return position.column === point.column;
+      });
+      return column
+        ? ["column", { ...column, offset: point.column - first.column }]
+        : ["table", bindings.table];
     }
   }
   return null;

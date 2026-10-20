@@ -5,6 +5,7 @@ import {
   parseTemplateXml,
   templateAttribute,
 } from "../package";
+import { reconcileSpreadsheetColumns } from "./columns";
 import {
   parseSpreadsheetRange,
   spreadsheetCellPosition,
@@ -195,7 +196,22 @@ export const readSpreadsheetWorkbook = (
     throw new Error("Worksheet is unavailable");
   }
   const names = new Map(
-    [...rawNames].map(([key, value]) => [key, parseSpreadsheetRange(value)])
+    [...rawNames].map(([key, value]) => {
+      try {
+        return [key, parseSpreadsheetRange(value)] as const;
+      } catch (error) {
+        if (
+          key.startsWith("folio_column_") ||
+          key.startsWith("folio_columns_")
+        ) {
+          throw new Error(
+            "ตำแหน่งคอลัมน์ตารางถูกลบหรือไม่ถูกต้อง กรุณาย้อนการลบคอลัมน์ หรือลบคอลัมน์นั้นจากการตั้งค่าก่อนบันทึก",
+            { cause: error }
+          );
+        }
+        throw error;
+      }
+    })
   );
   if ([...names.values()].some((range) => range.sheet !== sheet.name)) {
     throw new Error("Binding references a missing worksheet");
@@ -348,9 +364,10 @@ export const readSpreadsheetWorkbook = (
 };
 
 export const resolveSpreadsheetContract = (
-  bindings: SpreadsheetBindings,
+  input: SpreadsheetBindings,
   workbook: SpreadsheetWorkbook
 ): SpreadsheetContract => {
+  const bindings = reconcileSpreadsheetColumns(input, workbook.names);
   const locations: Record<string, SpreadsheetRange> = {};
   const anchors = [
     ...bindings.fields.map((field) => field.anchor),

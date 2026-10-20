@@ -33,6 +33,7 @@ This is a single-host, single-disk deployment with no application or off-host ba
 - [Run modes](#run-modes)
 - [Roles and workflow](#roles-and-workflow)
 - [DOCX template requirements](#docx-template-requirements)
+- [XLSX authoring and recovery](#xlsx-authoring-and-recovery)
 - [Persistence and artifact storage](#persistence-and-artifact-storage)
 - [Authentication and security](#authentication-and-security)
 - [HTTP API](#http-api)
@@ -108,6 +109,8 @@ docker compose --env-file .env.production -f compose.yaml up -d --no-deps --wait
 ```
 
 Recreating ONLYOFFICE interrupts active editor sessions; deploy when users have saved and closed their documents, then reopen the editor to see the updated font list. Font indexing runs during the build, so there is no manual script to run after deployment. Docker can reuse the font layer when the files have not changed.
+
+The base image is explicitly tagged `onlyoffice/documentserver:9.4.0.1`, and Compose builds `folio-onlyoffice:9.4.0.1`. This work retains that version and does not add a digest pin. A tag can be republished; an optional verified `sha256` digest would also fix the exact base-image contents for future builds. Before deploying a rebuilt image or upgrading ONLYOFFICE, run the spreadsheet runtime and browser regressions below: some native validation snapshot/restore and helper-sheet operations depend on editor internals. A running container does not update merely because its upstream tag changes.
 
 ## Open the application
 
@@ -277,6 +280,22 @@ The plugin extracts:
 
 The plugin applies prefill through ONLYOFFICE's command API, then restricts respondent sessions to form editing. Save, Submit, Publish, and Correction actions temporarily use the supported `readOnly` restriction to prevent further edits. After extracting response values, the plugin requests `Api.Save()` and waits through the source/origin-pinned host bridge until ONLYOFFICE reports that changes reached its editing service. Only then does Folio start the force-save Operation; document/data persistence and Operation completion still precede successful navigation or SSO. Untouched documents do not require a dirty-to-clean transition. An editor error or unavailable synchronization fails the action without starting an Operation or clearing dirty work. The editor then restores form editing, or unrestricted editing for a Template Draft.
 
+## XLSX authoring and recovery
+
+Dropdown edits preserve native validation after saving a Template Draft, reopening it, and adding more options, for both scalar Fields and repeating-table columns. Long lists and choices containing commas, quotes, Thai text, or a leading `=` use protected hidden helper ranges when needed. Identical option lists share immutable storage; successful Template Draft saves reclaim only provably unused Folio-owned helper data in the saved copy. Live undo/rollback data remains available until the saved document replaces the editor session.
+
+The panel still requires Add/Update, then saving the field settings, then saving the Template Draft. Add splits commas, semicolons, and newlines and trims input; preserving already-defined literal option values in helper storage does not add quoted-CSV parsing to that input.
+
+Table columns have stable workbook names derived from their binding IDs. Inserting or moving columns updates their offsets from those names, including before save and publication; deleted, missing, or ambiguous tracked columns are rejected instead of silently mapping a neighboring column. Newly inserted columns remain unmapped: the current panel edits existing column bindings and does not support adding a new column binding to an existing table. Preservation of native column grouping, merged headers, freeze panes, and column widths is covered by runtime regression tests.
+
+Field-panel drafts survive selection changes. Unapplied edits prevent saving or publishing until resolved. A duplicate scalar/table/column tag returns `409 duplicate_field_tag` and displays **tag นี้ซ้ำ กรุณาใช้ tag อื่น**. Error notices have an accessible close button; closing a notice does not resolve a pending save or remove its retry action.
+
+If a field-settings request loses its response, the editor preserves the pending inputs and temporarily blocks mutations and document actions. **ลองยืนยันอีกครั้ง** checks the authoritative document key, revision, and complete bindings without replaying the original PATCH. If the write did not commit, a server-side revision fence first prevents a delayed PATCH from committing, then the plugin can safely restore its native snapshot. Conflicting metadata, a replaced document, or changed native state remains blocked for review rather than being overwritten.
+
+Older tables that were rearranged before column tracking existed need a one-time comparison of their field mappings with the saved workbook. For unchanged older tables, open the field panel and let initialization finish, then save before making structural edits. A historical same-width column swap cannot be inferred reliably from the database alone. Read-only database access plus the referenced XLSX files can identify candidates; ambiguous column meanings still require the Form owner's confirmation.
+
+See the [Thai implementation and local verification report](.scratch/spreadsheet-authoring-reliability/report.md) for the completed fixes, remaining limitations, and the 319 passing tests recorded on 20 October 2026. These results cover local testing, not a production deployment or an audit of existing production Forms.
+
 ## Persistence and artifact storage
 
 ### PostgreSQL tables
@@ -407,6 +426,9 @@ Each pending list entry includes `reviewedGeneration` as a decimal string or `nu
 | `GET` | `/api/admin/forms/:publicId/schema?q=&cursor=` | Search the deterministic scalar-only external schema with cursor paging |
 | `GET` | `/api/admin/forms/:publicId/field-rules` | Read the current Draft Field required and Prefill policies through the editor capability |
 | `PATCH` | `/api/admin/forms/:publicId/field-rules` | Save one exact Field tag, required state, and Prefill pointer/policy |
+| `GET` | `/api/admin/forms/:publicId/spreadsheet-bindings` | Read XLSX draft bindings, revision, and document key through the editor capability |
+| `PATCH` | `/api/admin/forms/:publicId/spreadsheet-bindings` | Apply a revision-checked XLSX field/table/column mutation |
+| `POST` | `/api/admin/forms/:publicId/spreadsheet-bindings/recover` | Settle an uncertain binding write under the Form lock without replaying it |
 | `POST` | `/api/admin/forms/:publicId/save` | Save the Template Draft through an asynchronous Operation |
 | `POST` | `/api/admin/forms/:publicId/publish` | Publish a validated template |
 | `GET` | `/api/admin/forms/:publicId/submissions` | List all submissions for a form |
@@ -558,14 +580,18 @@ docker compose --env-file .env.production -f compose.yaml down
 
 Run `bun run --cwd apps/server test:http` and `bun run --cwd apps/server test:storage` against an isolated PostgreSQL database and disposable private RustFS bucket.
 
-For the complete source suite, use the HTTP script to build the Prefill mock once and run all twelve HTTP suites serially. Keep the remaining source paths explicit so generated `dist` tests are not included:
+For the complete source suite, use the HTTP script to build the Prefill mock once and run its listed HTTP suites serially. Keep the remaining source paths explicit so generated `dist` tests are not included:
 
 ```bash
 bun run --cwd apps/server test:http
 bun run --cwd apps/server test:storage
+bun run --cwd apps/server test:spreadsheet
+bun run --cwd apps/server test:spreadsheet:runtime
 bun run --cwd apps/web test:ui
-bun test --timeout 120000 ./apps/web/test/form-lifecycle.test.ts ./apps/onlyoffice-plugin/test/save-lifecycle.test.js ./apps/onlyoffice-plugin/test/prefill-values.test.js ./apps/onlyoffice-plugin/test/bridge-capabilities.test.js ./apps/onlyoffice-plugin/test/field-config.test.js ./apps/onlyoffice-plugin/test/control-mapping.test.js ./apps/prefill-mock/test/mock.test.ts
+bun test --timeout 120000 ./apps/web/test/form-lifecycle.test.ts ./apps/onlyoffice-plugin/test/*.test.js ./apps/prefill-mock/test/mock.test.ts
 ```
+
+Spreadsheet runtime tests require Docker and the locally available `onlyoffice/documentserver:9.4.0.1` image. The separate HTTP engine test is enabled with `RUN_SPREADSHEET_HTTP=1 bun test --timeout 120000 ./apps/server/test/spreadsheet-runtime/http.test.ts`; provide the local server/ONLYOFFICE environment required by its harness. The runtime script alone skips this HTTP test. Spreadsheet HTTP authoring tests, including column persistence and recovery-fence races, use the isolated database/bucket described above.
 
 Run the catalog tests independently with `bun run --cwd apps/server test:catalog` against an isolated migrated PostgreSQL database, and `bun run --cwd apps/web test:ui` for the interactive UI suite. UI tests mock HTTP and use controlled timers for the 2-second debounce, including stale responses, search cancellation, status/page transitions, deletion, and accessible keyboard controls. Catalog HTTP tests exercise real database search/pagination and authentication; they do not require a running document editor or object-storage service. Provide the required server environment variables, including test secrets and placeholder storage settings. The backend suite uses unique fixture IDs and accounts for retained immutable history so it can be rerun on the same disposable database.
 
@@ -615,4 +641,5 @@ The stack has no application or off-host backup. Attached-disk loss, ransomware,
 - [Domain glossary](CONTEXT.md)
 - [Architecture and data ownership (Thai)](docs/ARCHITECTURE.th.md)
 - [Repository structure and file placement (Thai)](docs/STRUCTURE.th.md)
+- [Spreadsheet authoring fixes and local verification, 20 October 2026 (Thai)](.scratch/spreadsheet-authoring-reliability/report.md)
 - [Architecture decisions](docs/adr/)

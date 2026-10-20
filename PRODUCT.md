@@ -14,11 +14,11 @@ web
 
 ## Product Purpose
 
-Folio Forms turns DOCX templates with tagged content controls into shareable Forms. Admins publish templates; authenticated Users submit responses. A completed Submission retains extracted field data, a filled DOCX, and a PDF.
+Folio Forms turns DOCX templates with tagged content controls and XLSX workbooks with mapped cells into shareable Forms. Admins publish templates; authenticated Users submit responses. A completed Submission retains extracted field data and a filled DOCX or XLSX; PDF is generated on demand.
 
 ## Positioning
 
-DOCX remains the canonical Form template and output. A Google-Forms-like page adds another way to fill the same Fields; it does not replace the DOCX workflow.
+Each Form keeps its selected document kind as its canonical template and output. For DOCX, a Google-Forms-like page adds another way to fill the same Fields. XLSX authoring and filling use ONLYOFFICE.
 
 ## Operating Context
 
@@ -34,12 +34,14 @@ DOCX remains the canonical Form template and output. A Google-Forms-like page ad
 - Personal Codex credentials through OmniRoute are for the account owner's local, single-user tests only. Keep shared AI unavailable until a permitted service credential is configured.
 - Before the first external send, tell Admin that PDF and chat data go to OmniRoute and its configured provider. Upstream retention follows their policies; Folio deletes only its own copies.
 - Allow model-generated Python only in an isolated, ephemeral document worker. Restrict files to the active session; deny shell and network access; enforce resource and time limits. Model instructions are not a security boundary.
-- Admin selects one filling method per Form. Method changes affect existing and new Responses; all Field types and Prefill rules remain available. DOCX stays canonical.
+- Admin selects one filling method per DOCX Form. Method changes affect existing and new Responses; all Field types and Prefill rules remain available. DOCX stays canonical; XLSX uses ONLYOFFICE.
 - The native web form shows all Fields from the published DOCX in document order on one scrollable page. It displays the Field Title/Alias and Placeholder, not the DOCX's static text, headings, or layout.
 - Use content-control Title/Alias as the display label, Tag as stable Field identity and fallback label, and Placeholder as entry guidance.
 - Admin can inspect Drafts and Submissions. Result screens use readable Field data instead of JSON; keep JSON internal.
 - Do not allow external websites to frame the web app.
 - Keep template-only Field settings hidden during respondent fill. Keep the settings panel scrollable for Admins.
+- XLSX field settings preserve unfinished inputs across cell selection changes and preserve dropdown choices after save/reopen. Tracked table columns retain their Field identity when moved.
+- If the outcome of saving XLSX field settings is uncertain, preserve the inputs, offer confirmation retry, and block further mutations until the outcome is established. Error notices can be closed with the keyboard or pointer without bypassing this protection.
 - Provide an in-page, body-sized ONLYOFFICE mode on every editor surface; do not invoke browser fullscreen.
 - Render User receipts as a stacked label/value list, never JSON. Admin result detail has read-only DOCX and Field-table tabs, one revision selector for both, and a separate Correction action. Support Drafts and Submissions; retain DOCX/PDF downloads but remove JSON UI actions.
 - Default User Receipt and Admin results to the latest revision; let both select every stored revision, including the original and intermediate Corrections. Field values, read-only DOCX view, and downloads must match the selected revision.
