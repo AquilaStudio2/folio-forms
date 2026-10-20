@@ -53,8 +53,21 @@ function setStatus(message, state) {
   const element = getStatusElement();
 
   if (element) {
+    element.replaceChildren();
     element.textContent = message;
     element.dataset.state = state || "info";
+    element.hidden = false;
+    if (state === "error") {
+      const dismiss = document.createElement("button");
+      dismiss.type = "button";
+      dismiss.className = "status-dismiss";
+      dismiss.textContent = "×";
+      dismiss.setAttribute("aria-label", "ปิดข้อความแจ้งเตือน");
+      dismiss.addEventListener("click", () => {
+        element.hidden = true;
+      });
+      element.append(dismiss);
+    }
   }
 }
 

@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+export const spreadsheetDuplicateTagMessage = "tag นี้ซ้ำ กรุณาใช้ tag อื่น";
+
 const keySchema = z
   .string()
   .regex(/^[A-Za-z_][A-Za-z0-9_]*$/u)
@@ -89,11 +91,20 @@ export const spreadsheetBindingSchema = z
       );
       anchors.push(bindings.table.anchor);
     }
-    const sets = [
+    const tags = [
       rootKeys,
+      bindings.table?.columns.map((column) => column.key) ?? [],
+    ];
+    if (tags.some((values) => new Set(values).size !== values.length)) {
+      context.addIssue({
+        code: "custom",
+        message: spreadsheetDuplicateTagMessage,
+        params: { folioCode: "duplicate_field_tag" },
+      });
+    }
+    const sets = [
       identities,
       anchors,
-      bindings.table?.columns.map((column) => column.key) ?? [],
       bindings.table?.columns.map((column) => String(column.offset)) ?? [],
     ];
     if (sets.some((values) => new Set(values).size !== values.length)) {

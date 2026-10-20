@@ -244,6 +244,7 @@ export function createOperations(
     const correctionReason = typeof reason === "string" ? reason.trim() : "";
 
     try {
+      await callbacks.beforeAction?.(action);
       const needsData =
         action === ACTIONS.SAVE_DRAFT ||
         action === ACTIONS.SAVE_CORRECTION ||

@@ -1,19 +1,22 @@
 // oxlint-disable prefer-await-to-callbacks node/callback-return unicorn/prefer-dom-node-remove prefer-destructuring unicorn/prefer-response-static-json no-await-in-loop unicorn/consistent-function-scoping no-plusplus unicorn/prefer-array-find no-empty-function -- VM harness intentionally mirrors browser callbacks and DOM shims.
 import path from "node:path";
+import { setImmediate as nextEventLoopTurn } from "node:timers/promises";
 import { runInNewContext } from "node:vm";
 
 import { buildPlugin } from "../../server/src/plugin-bundle.ts";
+import { createNativeValidationModel } from "./spreadsheet-native-state.js";
 
 const pluginDirectory = path.dirname(import.meta.dirname);
 const pluginArtifact = await buildPlugin(pluginDirectory);
 const pluginSource = await pluginArtifact.text();
+const recordEntries = (value) => Object.entries(value ?? {});
 
 export const createHarness = ({
   action = "fill",
   documentKind = "docx",
   spreadsheetBindings = { fields: [], table: null, version: 1 },
   spreadsheetPictureFrames = [],
-  spreadsheetSelection,
+  spreadsheetSelection = {},
   browserGlobals = {},
   capabilityResponses = [],
   clipboard,
@@ -324,37 +327,112 @@ export const createHarness = ({
       return true;
     },
   };
-  const spreadsheetNames = new Map(
-    Object.entries(spreadsheetSelection?.names || {})
-  );
+  const spreadsheetNames = new Map(recordEntries(spreadsheetSelection.names));
   const spreadsheetBorders = [];
   const visibleSpreadsheetBorders = [];
+  const spreadsheetValidations = new Map(
+    recordEntries(spreadsheetSelection.validations)
+  );
+  const spreadsheetNumberFormats = new Map(
+    recordEntries(spreadsheetSelection.formats)
+  );
+  const nativeValidationModel = createNativeValidationModel(
+    spreadsheetValidations
+  );
+  Object.assign(window.Asc, nativeValidationModel.constructors);
+  const normalizedAddress = (address) =>
+    address.split("!").at(-1).replaceAll("$", "");
+  const position = (address) => ({
+    column: [...address.match(/^[A-Z]+/u)[0]].reduce(
+      (index, character) => index * 26 + character.codePointAt(0) - 64,
+      0
+    ),
+    row: Number(address.match(/\d+/u)[0]),
+  });
+  const spreadsheetValidation = (address) => {
+    const key = normalizedAddress(address);
+    const validation = {
+      Add(type, alertStyle, operator, formula1, formula2) {
+        spreadsheetValidations.set(key, {
+          alertStyle,
+          formula1,
+          formula2,
+          operator,
+          type,
+        });
+        return validation;
+      },
+      Delete() {
+        spreadsheetValidations.delete(key);
+        return true;
+      },
+      get validations() {
+        return nativeValidationModel.rules(key);
+      },
+    };
+    for (const property of [
+      "Type",
+      "AlertStyle",
+      "Operator",
+      "Formula1",
+      "Formula2",
+      "ErrorMessage",
+      "ErrorTitle",
+      "InputMessage",
+      "InputTitle",
+      "IgnoreBlank",
+      "InCellDropdown",
+      "ShowError",
+      "ShowInput",
+    ]) {
+      const stateKey = property[0].toLowerCase() + property.slice(1);
+      validation[`Get${property}`] = () =>
+        spreadsheetValidations.get(key)?.[stateKey] ?? null;
+      validation[`Set${property}`] = (value) => {
+        const rule = spreadsheetValidations.get(key);
+        if (rule) {
+          rule[stateKey] = value;
+        }
+      };
+    }
+    return validation;
+  };
+  // oxlint-disable no-use-before-define -- Native sheet and range objects refer to one another lazily.
+  const spreadsheetSheet = () => ({
+    GetName: () => spreadsheetSelection?.sheet || "Sheet1",
+    GetRange: spreadsheetRange,
+    GetSelection: () => spreadsheetRange(spreadsheetSelection?.address || "A1"),
+    SetActive() {},
+    worksheet: nativeValidationModel.worksheet,
+  });
+  // oxlint-enable no-use-before-define
   const spreadsheetRange = (address) => ({
     GetAddress: () => address,
-    GetCol: () =>
-      [...address.replaceAll("$", "").match(/^[A-Z]+/u)[0]].reduce(
-        (index, character) => index * 26 + character.codePointAt(0) - 64,
-        0
-      ),
-    GetColumnsCount: () => 2,
+    GetCol: () => position(normalizedAddress(address)).column,
+    GetColumnsCount: () => {
+      const [first, last = first] = normalizedAddress(address).split(":");
+      return position(last).column - position(first).column + 1;
+    },
     GetFormula: () => "",
-    GetRow: () => Number(address.match(/\d+/u)[0]),
-    GetRowsCount: () => spreadsheetSelection?.rowCount || 5,
-    GetValidation: () => ({
-      Add() {},
-      Delete() {},
-      SetErrorMessage() {},
-      SetIgnoreBlank() {},
-      SetInCellDropdown() {},
-      SetShowError() {},
-    }),
+    GetNumberFormat: () =>
+      spreadsheetNumberFormats.get(normalizedAddress(address)) ?? "General",
+    GetRow: () => position(normalizedAddress(address)).row,
+    GetRowsCount: () => {
+      const [first, last = first] = normalizedAddress(address).split(":");
+      return position(last).row - position(first).row + 1;
+    },
+    GetValidation: () => spreadsheetValidation(address),
     GetValue: () => spreadsheetSelection?.headers || "",
-    GetWorksheet: () => ({ GetRange: spreadsheetRange }),
+    GetWorksheet: spreadsheetSheet,
     SetBorders(border, style, color) {
       spreadsheetBorders.push({ address, border, color, style });
       return true;
     },
-    SetNumberFormat() {},
+    SetNumberFormat(format) {
+      spreadsheetNumberFormats.set(normalizedAddress(address), format);
+      return true;
+    },
+    range: nativeValidationModel.range(normalizedAddress(address)),
   });
   const Api = {
     AddDefName(name, reference) {
@@ -362,13 +440,10 @@ export const createHarness = ({
       return true;
     },
     CreateColorFromRGB: (red, green, blue) => ({ blue, green, red }),
-    GetActiveSheet() {
-      return {
-        GetName: () => spreadsheetSelection?.sheet || "Sheet1",
-        GetSelection: () =>
-          spreadsheetRange(spreadsheetSelection?.address || "A1"),
-      };
+    DeleteDefName(name) {
+      return spreadsheetNames.delete(name);
     },
+    GetActiveSheet: spreadsheetSheet,
     GetDefName(name) {
       const reference = spreadsheetNames.get(name);
       if (!reference) {
@@ -376,9 +451,15 @@ export const createHarness = ({
       }
       return reference
         ? {
+            Delete: () => spreadsheetNames.delete(name),
+            GetName: () => name,
             GetRefersTo: () => reference,
             GetRefersToRange: () =>
               spreadsheetRange(reference.split("!").at(-1)),
+            SetRefersTo(value) {
+              spreadsheetNames.set(name, value);
+              return true;
+            },
           }
         : null;
     },
@@ -395,9 +476,7 @@ export const createHarness = ({
         },
       };
     },
-    GetSheet() {
-      return { GetRange: spreadsheetRange };
-    },
+    GetSheet: spreadsheetSheet,
     Save() {
       saveCalls.push("save");
       return true;
@@ -425,7 +504,8 @@ export const createHarness = ({
       done(
         runInNewContext(`(${command.toString()})()`, {
           Api,
-          Asc: { scope: window.Asc.scope },
+          Asc: window.Asc,
+          AscCommonExcel: nativeValidationModel.AscCommonExcel,
         })
       );
       return;
@@ -470,6 +550,7 @@ export const createHarness = ({
     AbortController,
     Api,
     Asc: window.Asc,
+    AscCommonExcel: nativeValidationModel.AscCommonExcel,
     Headers,
     Response,
     document,
@@ -556,6 +637,8 @@ export const createHarness = ({
     },
     spreadsheetBorders,
     spreadsheetNames,
+    spreadsheetNumberFormats,
+    spreadsheetValidations,
     statusElement,
     visibleSpreadsheetBorders,
     window,
@@ -577,11 +660,9 @@ export const acknowledgeBridge = (harness) => {
     source: harness.parentWindow,
   });
 };
-export const flushPlugin = async () => {
-  for (let attempt = 0; attempt < 30; attempt += 1) {
-    await Promise.resolve();
-  }
-};
+// Drain the current promise chain, including nested editor callbacks, without
+// relying on a fixed number of microtasks or advancing the harness's timers.
+export const flushPlugin = () => nextEventLoopTurn();
 
 export const selectedControl = (
   tag = "title",

@@ -1,6 +1,7 @@
 import { z } from "zod";
 
 import { fail } from "../../http/errors";
+import { spreadsheetBindingAnchors } from "./columns";
 import { parseSpreadsheetRange } from "./contract";
 import type { SpreadsheetBindings } from "./contract";
 import type { SpreadsheetWorkbook } from "./workbook";
@@ -31,6 +32,16 @@ export const validateSpreadsheetSaveSnapshot = (
     ...bindings.fields.map((field) => field.anchor),
     ...(bindings.table ? [bindings.table.anchor] : []),
   ];
+  // Older clients did not snapshot internal column identities. Accept their
+  // original shape only for genuinely legacy workbooks without these names.
+  const trackedAnchors = spreadsheetBindingAnchors(bindings);
+  if (
+    trackedAnchors.some(
+      (anchor) => !anchors.includes(anchor) && workbook.names.has(anchor)
+    )
+  ) {
+    anchors.splice(0, anchors.length, ...trackedAnchors);
+  }
   if (
     expected.size !== snapshot.length ||
     expected.size !== anchors.length ||

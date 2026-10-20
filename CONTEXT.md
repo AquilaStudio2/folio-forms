@@ -46,6 +46,8 @@ The editable document an Admin is currently preparing. Saving it does not change
 
 An XLSX Template Draft may contain unfinished field or table configuration so an Admin can save work in progress. Its configuration uses the shared Draft Field Rules, with optional label/type/options/order and placement-only binding metadata. DOCX draft metadata remains in content controls and uses its existing rules. Publication requires a complete, valid Spreadsheet Contract.
 
+Unapplied field-panel edits remain local drafts and must be resolved before saving or publishing the Template Draft. An uncertain field-settings write blocks further mutations until the current document, revision, and complete bindings establish its outcome. Safe rollback additionally requires settlement of any delayed write and a matching native editor snapshot; dismissing an error notice does not settle the write.
+
 ## Published Template
 
 The immutable document and field contract used to start new Responses. A published Form cannot be structurally edited or republished; changing its structure requires duplicating it into a new Form, including its document and field configuration.
@@ -58,9 +60,13 @@ A mapped input in a Form. For DOCX, it is a tagged content control: its Title/Al
 
 The placement-only JSON attached to a shared Draft Field Rule or Manifest Field. One `ExcelBinding` TypeScript union and its validation schemas in `apps/server/src/forms/excel-binding.ts` define scalar `{id, anchor, computed}`, table `{id, anchor}`, and column `{id, offset, computed}` metadata. Both lifecycle stages use these definitions for reads and writes; common field configuration stays in the normal field columns. It is stored in the existing nullable `binding` column, not a new database model. DOCX bindings remain null.
 
+Tracked table columns also have workbook named ranges derived from their stable binding IDs, allowing the stored offsets to follow supported native insertions and moves. Missing or ambiguous tracked positions stop saving rather than selecting a neighboring column. These names do not recover an unknown historical mapping: an older table rearranged before tracking may require owner-confirmed correction.
+
 ## Spreadsheet Contract
 
 The XLSX field configuration reconstructed from shared Manifest Fields, frozen at publication, and the existing published Prefill Fields. It is not stored as a separate JSON contract. Scalar, table and column definitions share the normal tag/label/type/options/rule columns; binding metadata contains only stable identities, named anchors, column offsets and computed flags. Column tags use `tableKey.columnKey`, while answer JSON retains nested table arrays. Saved results reference the published fields through their Response; current cell positions come from named ranges in each saved workbook rather than copied contract snapshots. Form.documentKind selects DOCX or XLSX processing without repeating the kind on every field or answer. The contract defines scalar Fields and one repeating table in one editable worksheet. The table has a named body range and stable column keys; each nonempty input row becomes one object in the table's array. Wholly empty input rows are skipped, while zero and false count as data. Formula-only rows do not become records. System-managed hidden option data supports dropdowns without becoming an editable worksheet or response field.
+
+Dropdown helper ranges are internal workbook storage. Identical lists can share immutable ranges; Template Draft saving removes only provably unused managed data from the saved copy. Uncertain or custom references retain their data, and live editor history is not compacted during a field edit.
 
 ## Response
 
