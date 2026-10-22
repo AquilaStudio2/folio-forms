@@ -4,7 +4,7 @@ import {
   useSearch,
 } from "@tanstack/react-router";
 import { ArrowRight, KeyRound, LockKeyhole } from "lucide-react";
-import type { FormEvent } from "react";
+import type { CSSProperties, FormEvent } from "react";
 import { useEffect, useRef, useState } from "react";
 
 import { Button, Card, Input, Notice, Spinner } from "@/components/ui";
@@ -14,6 +14,29 @@ import {
   startLegacySso as beginLegacySso,
 } from "@/lib/api";
 import { authErrorMessage, roleFor, useAuth } from "@/lib/auth";
+
+const loginTheme = {
+  "--ink": "#2e1065",
+  "--ink-soft": "#4c4a8a",
+  "--paper": "#ffffff",
+  "--canvas": "#ffffff",
+  "--muted-soft": "#f3f0ff",
+  "--line": "#dbe4ff",
+  "--line-strong": "#6b7fc7",
+  "--accent": "#2563eb",
+  "--accent-soft": "#eff4ff",
+  "--success": "#1d4ed8",
+  "--success-soft": "#e0e7ff",
+  "--shadow-card": "0 8px 24px rgb(76 29 149 / 8%)",
+  "--violet": "#6d28d9",
+} as CSSProperties;
+const loginGradient = "bg-[linear-gradient(135deg,#1d4ed8,#6d28d9)]";
+const focusRing =
+  "focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--accent)]";
+const focusBlue =
+  "focus:border-[var(--accent)] focus:ring-2 focus:ring-[var(--accent)]/40";
+const violetButton =
+  "border-[var(--violet)] bg-[var(--violet)] hover:bg-[#5b21b6] active:bg-[#4c1d95]";
 
 const LoginRoute = () => {
   const { loading: authLoading, signIn, user } = useAuth();
@@ -88,7 +111,10 @@ const LoginRoute = () => {
 
   if (authLoading) {
     return (
-      <div className="grid min-h-screen place-items-center gap-3 bg-[var(--ink)] text-sm text-[var(--paper)]">
+      <div
+        className={`grid min-h-screen place-items-center gap-3 text-sm text-white ${loginGradient}`}
+        style={loginTheme}
+      >
         <Spinner />
         <span>กำลังตรวจสอบเซสชัน…</span>
       </div>
@@ -98,7 +124,10 @@ const LoginRoute = () => {
     const pending = legacySso === "pending";
     const destination = returnTo ?? "/dashboard";
     return (
-      <div className="grid min-h-screen place-items-center bg-[var(--ink)] px-5 py-12">
+      <div
+        className={`grid min-h-screen place-items-center px-5 py-12 ${loginGradient}`}
+        style={loginTheme}
+      >
         <Card className="w-full max-w-[440px] p-6 sm:p-8">
           <h1 className="text-2xl font-bold">สถานะบัญชีระบบเดิม</h1>
           <p className="mt-2 text-sm text-[var(--ink-soft)]">
@@ -112,7 +141,7 @@ const LoginRoute = () => {
             </Notice>
           </div>
           <Button
-            className="mt-5 w-full"
+            className={`mt-5 w-full ${violetButton} ${focusRing}`}
             onClick={async () => {
               await navigate({ replace: true, to: destination });
             }}
@@ -127,7 +156,10 @@ const LoginRoute = () => {
 
   if (user) {
     return (
-      <div className="grid min-h-screen place-items-center gap-3 bg-[var(--ink)] text-sm text-[var(--paper)]">
+      <div
+        className={`grid min-h-screen place-items-center gap-3 text-sm text-white ${loginGradient}`}
+        style={loginTheme}
+      >
         <Spinner />
         <span>กำลังเปิดพื้นที่ทำงาน…</span>
       </div>
@@ -177,10 +209,15 @@ const LoginRoute = () => {
   };
 
   return (
-    <div className="grid min-h-screen lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
-      <aside className="hidden flex-col justify-between bg-[var(--ink)] p-12 text-[var(--paper)] lg:flex">
+    <div
+      className="grid min-h-screen lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]"
+      style={loginTheme}
+    >
+      <aside
+        className={`hidden flex-col justify-between p-12 text-white lg:flex ${loginGradient}`}
+      >
         <div className="flex items-center gap-3">
-          <span className="grid size-10 place-items-center rounded-[10px] bg-[var(--accent)] text-[var(--ink)]">
+          <span className="grid size-10 place-items-center rounded-[10px] bg-white text-[var(--accent)]">
             <LockKeyhole size={19} />
           </span>
           <span className="text-xl font-bold tracking-[-0.03em]">
@@ -190,14 +227,14 @@ const LoginRoute = () => {
         <p className="max-w-[16ch] text-5xl leading-[1.15] font-bold tracking-[-0.04em] [overflow-wrap:anywhere]">
           เข้าสู่พื้นที่ทำงานของคุณ
         </p>
-        <p className="text-xs text-[#b8c5c5]">
+        <p className="text-xs text-white">
           พื้นที่ทำงานภายใน · ใช้โทเค็นเซสชันแบบไม่เปิดเผยข้อมูล
         </p>
       </aside>
-      <main className="grid place-items-center bg-[var(--canvas)] px-5 py-12">
+      <main className="grid place-items-center bg-white px-5 py-12">
         <div className="w-full max-w-[420px] animate-rise">
           <div className="mb-8 flex items-center gap-3 text-[var(--ink)] lg:hidden">
-            <span className="grid size-10 place-items-center rounded-[10px] bg-[var(--ink)] text-[var(--accent)]">
+            <span className="grid size-10 place-items-center rounded-[10px] bg-[var(--violet)] text-white">
               <LockKeyhole size={19} />
             </span>
             <span className="text-xl font-bold tracking-[-0.03em]">
@@ -244,7 +281,7 @@ const LoginRoute = () => {
                 อีเมล
                 <Input
                   id="email"
-                  className="mt-2"
+                  className={`mt-2 ${focusBlue}`}
                   type="email"
                   autoComplete="email"
                   autoFocus
@@ -259,7 +296,7 @@ const LoginRoute = () => {
                 รหัสผ่าน
                 <Input
                   id="password"
-                  className="mt-2"
+                  className={`mt-2 ${focusBlue}`}
                   type="password"
                   autoComplete="current-password"
                   minLength={12}
@@ -272,7 +309,7 @@ const LoginRoute = () => {
                 />
               </label>
               <Button
-                className="w-full"
+                className={`w-full ${violetButton} ${focusRing}`}
                 size="lg"
                 type="submit"
                 disabled={busy}
@@ -290,7 +327,7 @@ const LoginRoute = () => {
                   <span className="h-px flex-1 bg-[var(--line)]" />
                 </div>
                 <Button
-                  className="w-full"
+                  className={`w-full ${focusRing}`}
                   size="lg"
                   type="button"
                   variant="secondary"
