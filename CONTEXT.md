@@ -95,3 +95,7 @@ A tracked asynchronous request to save a Template Draft, publish a Form, save a 
 ## Prefill
 
 A snapshot of application-provided Field values and editability policies applied when a Response starts. Resume does not refresh Prefill; starting again after draft invalidation does.
+
+## 404 page
+
+The page shown for a URL the web app has no route for. It does not cover a missing record on an existing route.
