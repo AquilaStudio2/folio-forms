@@ -43,7 +43,7 @@ import {
   safeReturnPath,
 } from "@/lib/api";
 import type { FillMethod, Operation } from "@/lib/api";
-import { roleFor, useAuth } from "@/lib/auth";
+import { useAuth } from "@/lib/auth";
 import {
   createDeferred,
   isSaveFlowBusy,
@@ -969,9 +969,7 @@ const FillRoute = () => {
             <span className="max-w-40 truncate text-xs text-[var(--ink-soft)]">
               {user.email}
             </span>
-            {roleFor(user) === "user" ? (
-              <LegacySsoSwitchButton compact />
-            ) : null}
+            <LegacySsoSwitchButton compact />
           </div>
         </div>
       </header>

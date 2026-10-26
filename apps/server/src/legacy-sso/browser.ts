@@ -1,13 +1,13 @@
 import { randomBytes, createHash } from "node:crypto";
 
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
-import { auth } from "@onlyoffice/auth";
 import { prisma } from "@onlyoffice/db";
 import { env } from "@onlyoffice/env/server";
 
+import type { AiAuthoringSessions } from "../ai-authoring";
 import type { Identity } from "../auth/identity";
 import { identityFor } from "../auth/identity";
-import { fail } from "../http/errors";
+import { fail, HttpError } from "../http/errors";
 import { readJsonRecord } from "../http/input";
 import { corsOrigin, originOf } from "../http/origins";
 import { handoffCodeMaximumLength } from "../prefill/input";
@@ -31,44 +31,18 @@ import {
   legacySsoPendingResponse,
   legacySsoSwitchLifetimeSeconds,
   legacySsoSessionCookieName,
+  legacySsoDestination,
 } from "./config";
 import type {
   LegacySsoSwitchChallenge,
   LegacySsoConfig,
   LegacySsoTransaction,
 } from "./config";
+import {
+  finalizeLegacySsoLogin,
+  legacySsoSessionTransferLifetimeSeconds,
+} from "./finalize";
 
-const legacySsoSessionTransferLifetimeSeconds = 60;
-
-async function createSsoSessionTransfer(
-  userId: string,
-  now: Date
-): Promise<string> {
-  const authContext = await auth.$context;
-  const session = await authContext.internalAdapter.createSession(
-    userId,
-    false,
-    { isSso: true },
-    true
-  );
-  const transferId = randomBytes(32).toString("base64url");
-  try {
-    await prisma.verification.create({
-      data: {
-        expiresAt: new Date(
-          now.getTime() + legacySsoSessionTransferLifetimeSeconds * 1000
-        ),
-        id: transferId,
-        identifier: legacySsoSessionIdentifier,
-        value: session.token,
-      },
-    });
-  } catch (error) {
-    await authContext.internalAdapter.deleteSession(session.token);
-    throw error;
-  }
-  return transferId;
-}
 function legacySsoSwitchChallenge(
   value: string
 ): LegacySsoSwitchChallenge | null {
@@ -85,15 +59,24 @@ function legacySsoSwitchChallenge(
   if (
     typeof challenge.initiatingSessionId !== "string" ||
     typeof challenge.initiatingUserId !== "string" ||
-    typeof challenge.returnTo !== "string" ||
-    typeof challenge.targetUserId !== "string"
+    (challenge.returnTo !== null && typeof challenge.returnTo !== "string") ||
+    typeof challenge.targetUserId !== "string" ||
+    typeof challenge.providerId !== "string" ||
+    typeof challenge.subject !== "string" ||
+    typeof challenge.generation !== "string" ||
+    !/^[1-9]\d*$/u.test(challenge.generation) ||
+    (challenge.mappedRole !== "admin" && challenge.mappedRole !== "user")
   ) {
     return null;
   }
   return {
+    generation: challenge.generation,
     initiatingSessionId: challenge.initiatingSessionId,
     initiatingUserId: challenge.initiatingUserId,
-    returnTo: challenge.returnTo,
+    mappedRole: challenge.mappedRole,
+    providerId: challenge.providerId,
+    returnTo: challenge.returnTo as string | null,
+    subject: challenge.subject,
     targetUserId: challenge.targetUserId,
   };
 }
@@ -115,9 +98,6 @@ export async function startLegacySso(
   clock: () => Date,
   identity: Identity | null
 ): Promise<globalThis.Response> {
-  if (identity && identity.role !== "user") {
-    fail(403, "legacy_sso_user_required", "Only Users can switch accounts");
-  }
   if (new URL(request.url).search) {
     fail(
       400,
@@ -134,9 +114,9 @@ export async function startLegacySso(
   }
   const returnTo =
     input.returnTo === undefined
-      ? "/dashboard"
+      ? null
       : safeLegacyFormReturnPath(input.returnTo, config.callbackUrl);
-  if (!returnTo) {
+  if (input.returnTo !== undefined && !returnTo) {
     fail(400, "invalid_return_path", "The Form return path is unsafe");
   }
   const state = randomBytes(32).toString("base64url");
@@ -207,7 +187,8 @@ export async function startLegacySso(
 export async function completeLegacySso(
   request: Request,
   config: LegacySsoConfig,
-  clock: () => Date
+  clock: () => Date,
+  aiAuthoring: AiAuthoringSessions
 ): Promise<globalThis.Response> {
   const requestUrl = new URL(request.url);
   const forwardedProtocol = request.headers.get("x-forwarded-proto")?.trim();
@@ -255,13 +236,14 @@ export async function completeLegacySso(
     transaction.state !== state ||
     transaction.clientId !== config.clientId ||
     transaction.callbackUrl !== config.callbackUrl ||
-    !safeLegacyFormReturnPath(transaction.returnTo, config.callbackUrl)
+    (transaction.returnTo !== null &&
+      !safeLegacyFormReturnPath(transaction.returnTo, config.callbackUrl))
   ) {
     return legacySsoFailureResponse();
   }
   const sessionReturnTo =
     transaction.initiatingUserId && transaction.initiatingSessionId
-      ? transaction.returnTo
+      ? (transaction.returnTo ?? undefined)
       : undefined;
   const consumed = await prisma.verification.deleteMany({
     where: {
@@ -296,7 +278,7 @@ export async function completeLegacySso(
     return legacySsoFailureResponse(sessionReturnTo);
   }
   const user = accountResolution.user;
-  if (!user.enabled || user.role !== "user") {
+  if (!user.enabled) {
     return legacySsoFailureResponse(sessionReturnTo);
   }
   if (transaction.initiatingUserId && transaction.initiatingSessionId) {
@@ -320,9 +302,13 @@ export async function completeLegacySso(
           id: challengeId,
           identifier: legacySsoSwitchIdentifier,
           value: JSON.stringify({
+            generation: transaction.generation,
             initiatingSessionId: transaction.initiatingSessionId,
             initiatingUserId: transaction.initiatingUserId,
+            mappedRole: identity.mappedRole,
+            providerId: config.providerId,
             returnTo: transaction.returnTo,
+            subject: identity.subject,
             targetUserId: user.id,
           } satisfies LegacySsoSwitchChallenge),
         },
@@ -346,10 +332,38 @@ export async function completeLegacySso(
       return legacySsoFailureResponse(sessionReturnTo);
     }
   }
-  const transferId = await createSsoSessionTransfer(user.id, now);
+  let finalized;
+  try {
+    finalized = await finalizeLegacySsoLogin(
+      config,
+      {
+        generation: transaction.generation,
+        mappedRole: identity.mappedRole,
+        providerId: config.providerId,
+        subject: identity.subject,
+        targetUserId: user.id,
+      },
+      now,
+      aiAuthoring
+    );
+  } catch (error) {
+    if (error instanceof HttpError) {
+      return legacySsoFailureResponse(
+        sessionReturnTo,
+        error.code === "final_admin_required"
+          ? "final_admin_required"
+          : "failed"
+      );
+    }
+    throw error;
+  }
+  const { transferId, role } = finalized;
   const headers = new Headers({
     "Cache-Control": "no-store",
-    Location: new URL(transaction.returnTo, corsOrigin).href,
+    Location: new URL(
+      legacySsoDestination(transaction.returnTo, role),
+      corsOrigin
+    ).href,
     "Referrer-Policy": "no-referrer",
   });
   headers.append("Set-Cookie", hostOnlySsoCookie(legacySsoCookieName, "", 0));
@@ -437,8 +451,7 @@ export async function claimLegacySsoSession(
     !session ||
     !session.isSso ||
     session.expiresAt.getTime() <= now.getTime() ||
-    !session.user.enabled ||
-    session.user.role !== "user"
+    !session.user.enabled
   ) {
     return legacySsoSessionUnavailableResponse();
   }
@@ -454,13 +467,19 @@ interface LegacySsoSwitchContext {
   challengeId: string;
   confirmationFingerprint: string | null;
   identity: Identity;
-  target: { email: string; id: string; name: string } | null;
+  target: {
+    email: string;
+    id: string;
+    name: string;
+    role: "admin" | "user";
+  } | null;
+  storedValue: string;
 }
 
 function legacySsoConfirmationFingerprint(
   identity: Identity,
   challenge: LegacySsoSwitchChallenge,
-  target: { email: string; id: string; name: string }
+  target: { email: string; id: string; name: string; role: "admin" | "user" }
 ): string {
   return createHash("sha256")
     .update(
@@ -469,9 +488,15 @@ function legacySsoConfirmationFingerprint(
         identity.sessionId,
         identity.email,
         identity.name,
+        identity.role,
         target.id,
         target.email,
         target.name,
+        target.role,
+        challenge.providerId,
+        challenge.subject,
+        challenge.generation,
+        challenge.mappedRole,
         challenge.returnTo,
       ])
     )
@@ -495,13 +520,7 @@ async function legacySsoSwitchContext(
         ].includes(requestOrigin);
   const identity = await identityFor(request);
   const challengeId = cookieValueFor(request, legacySsoSwitchCookieName, 43);
-  if (
-    !config ||
-    !requestOriginAllowed ||
-    !identity ||
-    identity.role !== "user" ||
-    !challengeId
-  ) {
+  if (!config || !requestOriginAllowed || !identity || !challengeId) {
     return null;
   }
   const now = clock();
@@ -515,9 +534,12 @@ async function legacySsoSwitchContext(
       : null;
   if (
     !challenge ||
+    !stored ||
     challenge.initiatingUserId !== identity.id ||
     challenge.initiatingSessionId !== identity.sessionId ||
-    !safeLegacyFormReturnPath(challenge.returnTo, config.callbackUrl)
+    challenge.providerId !== config.providerId ||
+    (challenge.returnTo !== null &&
+      !safeLegacyFormReturnPath(challenge.returnTo, config.callbackUrl))
   ) {
     return null;
   }
@@ -525,9 +547,25 @@ async function legacySsoSwitchContext(
     select: { email: true, enabled: true, id: true, name: true, role: true },
     where: { id: challenge.targetUserId },
   });
+  const account = await prisma.account.findUnique({
+    where: {
+      providerId_accountId: {
+        accountId: challenge.subject,
+        providerId: challenge.providerId,
+      },
+    },
+  });
   const switchTarget =
-    target?.enabled && target.role === "user"
-      ? { email: target.email, id: target.id, name: target.name }
+    target?.enabled && account?.userId === target.id
+      ? {
+          email: target.email,
+          id: target.id,
+          name: target.name,
+          role:
+            account.lastMappedRole === challenge.mappedRole
+              ? target.role
+              : challenge.mappedRole,
+        }
       : null;
   return {
     challenge,
@@ -536,6 +574,7 @@ async function legacySsoSwitchContext(
       ? legacySsoConfirmationFingerprint(identity, challenge, switchTarget)
       : null,
     identity,
+    storedValue: stored.value,
     target: switchTarget,
   };
 }
@@ -555,7 +594,10 @@ export async function readLegacySsoSwitch(
       confirmationFingerprint: context.confirmationFingerprint,
       current: { email: currentIdentity.email, name: currentIdentity.name },
       legacy: { email: context.target.email, name: context.target.name },
-      returnTo: context.challenge.returnTo,
+      returnTo: legacySsoDestination(
+        context.challenge.returnTo,
+        context.target.role
+      ),
       sameUser: context.target.id === currentIdentity.id,
     },
     { headers: { "Cache-Control": "no-store" } }
@@ -566,7 +608,8 @@ export async function consumeLegacySsoSwitch(
   request: Request,
   clock: () => Date,
   config: LegacySsoConfig | null,
-  confirm: boolean
+  confirm: boolean,
+  aiAuthoring: AiAuthoringSessions
 ): Promise<globalThis.Response> {
   const context = await legacySsoSwitchContext(request, clock, config);
   if (!context?.target || !context.confirmationFingerprint) {
@@ -581,22 +624,52 @@ export async function consumeLegacySsoSwitch(
     return legacySsoSwitchFailure();
   }
   const now = clock();
-  const consumed = await prisma.verification.deleteMany({
-    where: {
-      expiresAt: { gt: now },
-      id: context.challengeId,
-      identifier: legacySsoSwitchIdentifier,
-    },
-  });
-  if (consumed.count !== 1) {
-    return legacySsoSwitchFailure();
-  }
   const headers = new Headers({ "Cache-Control": "no-store" });
   headers.append("Set-Cookie", legacySsoSwitchCookie("", 0));
   if (!confirm) {
-    return Response.json({ cancelled: true }, { headers });
+    const consumed = await prisma.verification.deleteMany({
+      where: {
+        expiresAt: { gt: now },
+        id: context.challengeId,
+        identifier: legacySsoSwitchIdentifier,
+        value: context.storedValue,
+      },
+    });
+    if (consumed.count !== 1) {
+      return legacySsoSwitchFailure();
+    }
+    return Response.json(
+      {
+        cancelled: true,
+        returnTo: legacySsoDestination(
+          context.challenge.returnTo,
+          context.identity.role
+        ),
+      },
+      { headers }
+    );
   }
-  const transferId = await createSsoSessionTransfer(context.target.id, now);
+  if (!config) {
+    return legacySsoSwitchFailure();
+  }
+  const { transferId, role } = await finalizeLegacySsoLogin(
+    config,
+    context.challenge,
+    now,
+    aiAuthoring,
+    {
+      id: context.challengeId,
+      initiatingEmail: context.identity.email,
+      initiatingName: context.identity.name,
+      initiatingRole: context.identity.role,
+      initiatingSessionId: context.identity.sessionId,
+      initiatingUserId: context.identity.id,
+      targetEmail: context.target.email,
+      targetName: context.target.name,
+      targetRole: context.target.role,
+      value: context.storedValue,
+    }
+  );
   headers.append(
     "Set-Cookie",
     hostOnlySsoCookie(
@@ -606,5 +679,8 @@ export async function consumeLegacySsoSwitch(
       "None"
     )
   );
-  return Response.json({ returnTo: context.challenge.returnTo }, { headers });
+  return Response.json(
+    { returnTo: legacySsoDestination(context.challenge.returnTo, role) },
+    { headers }
+  );
 }

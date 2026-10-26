@@ -53,10 +53,9 @@ export async function editorAuthorization(
     },
     where: { id: capability.actorId },
   });
-  const ssoUser = capability.isSso === true && user?.role === "user";
+  const ssoUser = capability.isSso === true;
   if (
     !user?.enabled ||
-    (capability.isSso === true && user.role !== "user") ||
     (user.mustChangePassword && !ssoUser) ||
     user.role !== capability.role
   ) {

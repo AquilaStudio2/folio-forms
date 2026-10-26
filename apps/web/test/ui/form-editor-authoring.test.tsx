@@ -13,6 +13,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { OnlyOfficeEditor } from "@/components/onlyoffice-editor";
 import { waitForOperation } from "@/lib/api";
+import { requestEditorSave } from "@/lib/form-lifecycle";
 import { Route } from "@/routes/admin/forms/$formId/index";
 
 vi.mock("@tanstack/react-router", async (original) => ({
@@ -68,6 +69,48 @@ describe("Excel authoring page", () => {
     expect(screen.getByRole("button", { name: "บันทึกแบบร่าง" })).toBeDisabled();
     expect(screen.getByRole("button", { name: "เผยแพร่" })).toBeDisabled();
     expect(editor.props?.saveRequest).toBe(0);
+  });
+
+  it("blocks changing sessions until dirty template edits finish saving", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(() =>
+        Promise.resolve(
+          Response.json({ editorConfigUrl: "/editor-config", form })
+        )
+      )
+    );
+    render(<Editor />);
+    await screen.findByTestId("editor");
+    await act(() => {
+      editor.props?.onDirtyChange?.(true);
+    });
+    let allowed = true;
+    await act(async () => {
+      allowed = await requestEditorSave();
+    });
+    expect(allowed).toBe(false);
+    expect(
+      screen.getByText("กรุณาบันทึกการเปลี่ยนแปลงและรอให้บันทึกสำเร็จก่อนเปลี่ยนเซสชัน")
+    ).toBeVisible();
+    fireEvent.click(screen.getByRole("button", { name: "บันทึกแบบร่าง" }));
+    await act(async () => {
+      allowed = await requestEditorSave();
+    });
+    expect(allowed).toBe(false);
+    await act(async () => {
+      await editor.props?.onBridgeMessage?.({
+        action: "save-template",
+        bridgeId: "editor",
+        source: "form-bridge",
+        status: "completed",
+        type: "operation",
+      });
+    });
+    await act(async () => {
+      allowed = await requestEditorSave();
+    });
+    expect(allowed).toBe(true);
   });
 
   it("reloads the editor only after the plugin confirms the template save", async () => {

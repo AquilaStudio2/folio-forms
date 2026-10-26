@@ -98,11 +98,7 @@ export async function reviewLegacyAccountLink(
       );
     }
     if (decision === "approved") {
-      if (
-        !user.enabled ||
-        user.role !== "user" ||
-        user.email !== linkRequest.email
-      ) {
+      if (!user.enabled || user.email !== linkRequest.email) {
         fail(
           409,
           "account_link_not_eligible",

@@ -44,6 +44,7 @@ import type {
   Role,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useReauthenticationGuard } from "@/lib/use-reauthentication-guard";
 
 const AdminUsersRoute = () => {
   const navigate = useNavigate();
@@ -110,6 +111,12 @@ const AdminUsersRoute = () => {
     creating,
     pendingAction
   );
+  useReauthenticationGuard(credentialRequestInFlight, () => {
+    setFeedback({
+      message: "กรุณารอให้การสร้างบัญชีหรือตั้งรหัสผ่านเสร็จก่อนเปลี่ยนเซสชัน",
+      tone: "danger",
+    });
+  });
   useBlocker({
     disabled: credentialRequestInFlight === false,
     enableBeforeUnload: credentialRequestInFlight,
@@ -662,6 +669,11 @@ const AdminUsersRoute = () => {
         title="จัดการผู้ใช้"
         description="สร้างบัญชี จัดการบทบาทและสถานะ พร้อมควบคุมเซสชันของผู้ใช้ในที่เดียว"
       />
+
+      <p className="mb-5 text-sm text-[var(--ink-soft)]">
+        บทบาทที่ปรับใน Folio จะคงอยู่จนกว่าการเข้า SSO ครั้งถัดไปจะพบว่าบทบาทที่แปลงจาก PDMS
+        เปลี่ยนไป
+      </p>
 
       {feedback ? (
         <Notice tone={feedback.tone}>{feedback.message}</Notice>

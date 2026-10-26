@@ -489,6 +489,29 @@ export const runImmutableAudits = async (
       !Array.isArray(event.safeMetadata)
         ? (event.safeMetadata as Record<string, unknown>)
         : null;
+    if (event.action === "sync_legacy_sso_role") {
+      expect(event.actorId).toBeNull();
+      expect(event.outcome).toBe("success");
+      expect(Object.keys(metadata ?? {}).toSorted()).toEqual([
+        "mappedRole",
+        "previousMappedRole",
+        "previousRole",
+        "role",
+        "source",
+      ]);
+      expect(metadata?.source).toBe("pdms_sso");
+      expect(
+        metadata?.previousMappedRole === null ||
+          metadata?.previousMappedRole === "admin" ||
+          metadata?.previousMappedRole === "user"
+      ).toBe(true);
+      for (const key of ["mappedRole", "previousRole", "role"]) {
+        expect(metadata?.[key] === "admin" || metadata?.[key] === "user").toBe(
+          true
+        );
+      }
+      continue;
+    }
     expect(
       Object.keys(metadata ?? {}).every(
         (key) => key === "change" || key === "errorCode"

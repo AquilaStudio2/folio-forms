@@ -33,7 +33,7 @@ export function registerSessionRoutes(
         fail(401, "unauthorized", "Authentication is required");
       }
       return {
-        session: { expiresAt: identity.expiresAt },
+        session: { expiresAt: identity.expiresAt, isSso: identity.isSso },
         user: {
           email: identity.email,
           id: identity.id,

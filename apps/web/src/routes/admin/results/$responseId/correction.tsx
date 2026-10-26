@@ -11,6 +11,7 @@ import { PageHeader } from "@/components/app-shell";
 import { OnlyOfficeEditor } from "@/components/onlyoffice-editor";
 import { Button, Card, Input, Notice } from "@/components/ui";
 import type { EditorBridgeMessage } from "@/features/onlyoffice/editor-protocol";
+import { useReauthenticationGuard } from "@/lib/use-reauthentication-guard";
 
 const AdminCorrectionRoute = () => {
   const navigate = useNavigate();
@@ -21,7 +22,11 @@ const AdminCorrectionRoute = () => {
   const [saveRequest, setSaveRequest] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [dirty, setDirty] = useState(false);
   const feedbackRef = useRef<HTMLDivElement>(null);
+  useReauthenticationGuard(saving || dirty || Boolean(reason), () => {
+    setMessage("กรุณาบันทึก Correction ให้สำเร็จก่อนเปลี่ยนเซสชัน เพื่อเก็บการแก้ไขไว้");
+  });
   useEffect(() => {
     if (message && !saving) {
       feedbackRef.current?.focus();
@@ -115,6 +120,8 @@ const AdminCorrectionRoute = () => {
         <OnlyOfficeEditor
           configUrl={`/api/admin/results/${responseId}/correction/editor-config`}
           onBridgeMessage={handleBridgeMessage}
+          onDirtyChange={setDirty}
+          trackNativeDirty
           saveAction="save-correction"
           saveReason={reason}
           saveRequest={saveRequest}

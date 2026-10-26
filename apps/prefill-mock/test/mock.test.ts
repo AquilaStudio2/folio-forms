@@ -11,6 +11,7 @@ test("exchanges a code before expiry in the body-read continuation and prevents 
   const identity = {
     email: "body-read@example.test",
     email_verified: true,
+    roles: [] as string[],
     sub: "body-read-subject",
   };
   let now = 0;

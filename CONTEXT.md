@@ -2,7 +2,7 @@
 
 ## Admin
 
-An authenticated person who creates, edits, publishes, and shares Forms and can inspect every Draft and Submission. Admin includes the form-designer responsibility; there is no separate Designer role.
+An authenticated person who creates, edits, publishes, and shares Forms and can inspect every Draft and Submission. Admin includes the form-designer responsibility; there is no separate Designer role. An Admin may sign in locally or through a linked Legacy Identity.
 
 ## User
 
@@ -10,15 +10,19 @@ An authenticated person who fills Forms and can inspect only their own Drafts an
 
 ## Legacy Identity
 
-A person authenticated by PDMS, identified by a stable subject and an explicit provider, whose stored email does not establish mailbox ownership. A Legacy Identity links to at most one Folio User; matching email alone never establishes a link, and changed email does not replace a completed link's owner.
+A person authenticated by PDMS, identified by a stable subject and an explicit provider, whose stored email does not establish mailbox ownership. A Legacy Identity links to at most one Folio account, which may be a User or Admin; matching email alone never establishes a link, and changed email does not replace a completed link's owner.
 
 ## SSO Bridge
 
-The login handoff in which PDMS authenticates a Legacy Identity and Folio creates its own session for an eligible linked User, using authenticated identity evidence rather than verified mailbox ownership. The systems do not share passwords or login tokens.
+The login handoff in which PDMS authenticates a Legacy Identity and Folio creates its own session for an eligible linked account, using authenticated identity evidence rather than verified mailbox ownership. PDMS supplies all currently active role names; either exact name `admin (กปม.)` or `เจ้าหน้าที่ กปม.` maps to Admin, and every other valid list maps to User. The systems do not share passwords or login tokens.
+
+## SSO Role Baseline
+
+The last successfully applied PDMS role mapping stored on the linked Account. The first successful SSO after introduction establishes the baseline and applies that role, including for existing accounts. Later SSO preserves a manual Folio role change while the PDMS mapping is unchanged; an observed mapping transition replaces the effective role. Manual role edits never change the baseline. Effective role is shared by local and SSO login. Raw PDMS role lists are not retained, and changes between logins are not monitored. A downgrade that would remove the last enabled Admin fails without changing the baseline or effective role.
 
 ## Pending Account Link
 
-An authenticated Legacy Identity awaiting an Admin's review of current identity evidence and ownership of an existing Folio User; changed incomplete evidence requires new review. Approval alone grants no access: a fresh SSO attempt after approval must complete the binding.
+An authenticated Legacy Identity awaiting an Admin's review of current identity evidence and ownership of an existing Folio account, including an Admin; changed incomplete evidence requires new review. Approval alone grants no access: a fresh SSO attempt after approval must complete the binding. Privileged PDMS roles never bypass this review.
 
 ## Form
 

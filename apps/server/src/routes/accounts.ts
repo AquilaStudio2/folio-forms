@@ -19,6 +19,7 @@ import {
   generateTemporaryPassword,
   accountTransaction,
   lockAccountUser,
+  requireAnotherEnabledAdmin,
 } from "../accounts/mutations";
 import {
   reviewLegacyAccountLink,
@@ -350,16 +351,7 @@ export function registerAccountRoutes(
                 target.enabled &&
                 (updateData.enabled === false || updateData.role === "user");
               if (removesFinalAdmin) {
-                const enabledAdminCount = await tx.user.count({
-                  where: { enabled: true, role: "admin" },
-                });
-                if (enabledAdminCount <= 1) {
-                  fail(
-                    409,
-                    "final_admin_required",
-                    "At least one enabled Admin is required"
-                  );
-                }
+                await requireAnotherEnabledAdmin(tx);
               }
               if (newEmail !== undefined) {
                 const existing = await tx.user.findUnique({

@@ -118,6 +118,7 @@ const registerPdmsNameCase = (
     const identity = {
       email: `PDMS-Name-${crypto.randomUUID()}@EXAMPLE.COM`,
       email_verified: false,
+      roles: [] as string[],
       sub: "12345",
     };
     const email = identity.email.toLowerCase();
@@ -234,6 +235,7 @@ const pdmsInvalidExchangeCases: {
   response: (identity: {
     email: string;
     email_verified: boolean;
+    roles: string[];
     sub: string;
   }) => Response | Promise<Response>;
 }[] = [
@@ -304,6 +306,20 @@ const pdmsInvalidExchangeCases: {
     response: (identity) =>
       Response.json({ ...identity, email_verified: null }),
   },
+  {
+    label: "missing roles",
+    response: (identity) => Response.json({ ...identity, roles: undefined }),
+  },
+  {
+    label: "nonarray roles",
+    response: (identity) =>
+      Response.json({ ...identity, roles: "admin (กปม.)" }),
+  },
+  {
+    label: "nonstring role member",
+    response: (identity) =>
+      Response.json({ ...identity, roles: ["admin (กปม.)", null] }),
+  },
   { label: "array payload", response: (identity) => Response.json([identity]) },
   { label: "null payload", response: () => Response.json(null) },
   {
@@ -357,6 +373,7 @@ const registerPdmsInvalidExchangeCase = (
     const identity = {
       email: `pdms-invalid-${crypto.randomUUID()}@example.com`,
       email_verified: false,
+      roles: [] as string[],
       sub: `pdms-${crypto.randomUUID()}`,
     };
     const clientId = `folio-${crypto.randomUUID()}`;
@@ -418,6 +435,7 @@ test("PDMS accepts JSON at the 8 KiB boundary and a 255-unit stable subject", as
   const identity = {
     email: `pdms-boundary-${crypto.randomUUID()}@example.com`,
     email_verified: true,
+    roles: [] as string[],
     sub: "s".repeat(255),
   };
   const clientId = `folio-${crypto.randomUUID()}`;
@@ -476,6 +494,7 @@ test("PDMS rejects failed Basic authentication without provisioning or granting 
   const identity = {
     email: `pdms-basic-${crypto.randomUUID()}@example.com`,
     email_verified: false,
+    roles: [] as string[],
     sub: `pdms-${crypto.randomUUID()}`,
   };
   const clientId = `folio-${crypto.randomUUID()}`;
@@ -530,6 +549,7 @@ test("PDMS changed-email completed mapping retains historical linked ownership a
     email: `pdms-free-${crypto.randomUUID()}@example.com`,
     email_verified: false,
     name: "Changed PDMS profile",
+    roles: [] as string[],
     sub: `pdms-${crypto.randomUUID()}`,
   };
   const freeEmail = identity.email;
@@ -740,6 +760,7 @@ test("PDMS completed mapping ignores review metadata but retains immutable stale
   const identity = {
     email: `pdms-current-${crypto.randomUUID()}@example.com`,
     email_verified: false,
+    roles: [] as string[],
     sub: `pdms-${crypto.randomUUID()}`,
   };
   const providerId = `pdms-${crypto.randomUUID()}`;
@@ -822,6 +843,9 @@ test("PDMS completed mapping ignores review metadata but retains immutable stale
       userId: candidate.id,
     });
   }
+  const mappingBeforeFence = await prisma.account.findUniqueOrThrow({
+    where: { id: mapping.id },
+  });
   const browsers = [
     await startLegacySsoBrowser(handle),
     await startLegacySsoBrowser(handle),
@@ -873,7 +897,7 @@ test("PDMS completed mapping ignores review metadata but retains immutable stale
   ).toEqual(fencedRequest);
   expect(
     await prisma.account.findUnique({ where: { id: mapping.id } })
-  ).toEqual(mapping);
+  ).toEqual(mappingBeforeFence);
   const newerCallback = await completeLegacySsoCallback(handle);
   expect(newerCallback.headers.get("location")).toBe(
     new URL("/dashboard", legacySsoWebOrigin).href
@@ -926,6 +950,7 @@ test("PDMS mapped owner eligibility is rechecked at callback, claim, and switch 
   const identity = {
     email: `pdms-changed-${crypto.randomUUID()}@example.com`,
     email_verified: false,
+    roles: [] as string[],
     sub: `pdms-${crypto.randomUUID()}`,
   };
   const providerId = `pdms-${crypto.randomUUID()}`;
@@ -956,10 +981,7 @@ test("PDMS mapped owner eligibility is rechecked at callback, claim, and switch 
     providerId,
   });
   const handle: LegacySsoHttpHandler = (request) => ssoApp.handle(request);
-  for (const ineligible of [
-    { enabled: false, role: "user" },
-    { enabled: true, role: "admin" },
-  ] as const) {
+  for (const ineligible of [{ enabled: false, role: "user" }] as const) {
     await prisma.user.update({
       data: { enabled: true, role: "user" },
       where: { id: owner.id },
@@ -1075,6 +1097,7 @@ test("expired SSO re-entry restores the owned draft", async () => {
   const identity = {
     email,
     email_verified: true,
+    roles: [] as string[],
     sub: `legacy-${crypto.randomUUID()}`,
   };
   const clientId = `folio-${crypto.randomUUID()}`;
@@ -1458,7 +1481,12 @@ test("expired SSO re-entry restores the owned draft", async () => {
 test("first Legacy SSO rejects invalid claims and queues email collisions for review", async () => {
   const email = `ticket-13-rejected-${crypto.randomUUID()}@example.com`;
   const subject = `legacy-${crypto.randomUUID()}`;
-  const identity = { email, email_verified: true, sub: subject };
+  const identity = {
+    email,
+    email_verified: true,
+    roles: [] as string[],
+    sub: subject,
+  };
   const clientId = `folio-${crypto.randomUUID()}`;
   const clientSecret = `ticket-13-secret-${crypto.randomUUID()}`;
   const providerId = `legacy-${crypto.randomUUID()}`;
@@ -1548,6 +1576,7 @@ test("racing first Legacy SSO logins create one User and identity binding", asyn
   const identity = {
     email: `ticket-13-race-${crypto.randomUUID()}@example.com`,
     email_verified: true,
+    roles: [] as string[],
     sub: `legacy-${crypto.randomUUID()}`,
   };
   const clientId = `folio-${crypto.randomUUID()}`;
@@ -1613,6 +1642,7 @@ test("failed first Legacy SSO persistence leaves no partial User or identity bin
   const identity = {
     email: `ticket-13-persistence-${crypto.randomUUID()}@example.com`,
     email_verified: true,
+    roles: [] as string[],
     sub: `legacy-${crypto.randomUUID()}`,
   };
   const clientId = `folio-${crypto.randomUUID()}`;
@@ -1683,6 +1713,7 @@ for (const initialStatus of ["pending", "approved"] as const) {
       email: `pdms-retarget-${crypto.randomUUID()}@example.com`,
       name: "Current PDMS candidate",
       password: fixture.password,
+      role: initialStatus === "approved" ? "admin" : "user",
     });
     const displayed = await legacyAccountLinkSnapshot(
       handle,
@@ -1882,7 +1913,7 @@ for (const initialStatus of ["pending", "approved"] as const) {
     }
   });
 
-  for (const blockedKind of ["unused", "admin", "disabled"] as const) {
+  for (const blockedKind of ["unused", "disabled"] as const) {
     test(`PDMS ${initialStatus} changed ${blockedKind} email stays visibly blocked without provisioning or fence churn`, async () => {
       const fixture = await createPdmsReviewFixture(app);
       retainLegacySsoMock(fixture.mock);
@@ -1908,7 +1939,7 @@ for (const initialStatus of ["pending", "approved"] as const) {
           email: blockedEmail,
           name: "Initially ineligible candidate",
           password: fixture.password,
-          role: blockedKind === "admin" ? "admin" : "user",
+          role: "user",
         });
         if (blockedKind === "disabled") {
           await prisma.user.update({
@@ -1990,9 +2021,7 @@ for (const initialStatus of ["pending", "approved"] as const) {
             new URL(`/api/admin/users/${blockedUser.id}`, legacySsoCallbackUrl)
               .href,
             {
-              body: JSON.stringify(
-                blockedKind === "admin" ? { role: "user" } : { enabled: true }
-              ),
+              body: JSON.stringify({ enabled: true }),
               headers: {
                 ...jsonHeaders,
                 Authorization: `Bearer ${reviewerBearer}`,
@@ -2079,7 +2108,7 @@ for (const initialStatus of ["pending", "approved"] as const) {
   }
 }
 
-for (const loss of ["disabled", "admin"] as const) {
+for (const loss of ["disabled"] as const) {
   test(`PDMS approved candidate becoming ${loss} invalidates unchanged identity evidence once`, async () => {
     const fixture = await createPdmsReviewFixture(app);
     retainLegacySsoMock(fixture.mock);
@@ -2103,9 +2132,7 @@ for (const loss of ["disabled", "admin"] as const) {
       new Request(
         new URL(`/api/admin/users/${candidate.id}`, legacySsoCallbackUrl).href,
         {
-          body: JSON.stringify(
-            loss === "disabled" ? { enabled: false } : { role: "admin" }
-          ),
+          body: JSON.stringify({ enabled: false }),
           headers: {
             ...jsonHeaders,
             Authorization: `Bearer ${reviewerBearer}`,
@@ -2138,9 +2165,7 @@ for (const loss of ["disabled", "admin"] as const) {
       reviewerBearer,
       request.id
     );
-    expect(current.user).toMatchObject(
-      loss === "disabled" ? { enabled: false } : { role: "admin" }
-    );
+    expect(current.user).toMatchObject({ enabled: false });
     const blockedApproval = await submitLegacyAccountLinkReview(
       handle,
       reviewerBearer,

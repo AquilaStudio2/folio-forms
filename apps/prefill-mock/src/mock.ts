@@ -192,6 +192,7 @@ export const startPrefillMock = (
 };
 
 export interface LegacySsoMockIdentity {
+  roles: string[];
   email: string;
   email_verified: boolean;
   name?: string;

@@ -210,6 +210,7 @@ export const createPdmsReviewFixture = async (
   const identity = {
     email: candidate.email,
     email_verified: false,
+    roles: [] as string[],
     sub: `pdms-${crypto.randomUUID()}`,
   };
   const providerId = `pdms-${crypto.randomUUID()}`;

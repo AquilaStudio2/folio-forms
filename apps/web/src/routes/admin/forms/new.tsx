@@ -17,6 +17,7 @@ import {
 } from "@/components/ui";
 import { ApiError, apiPostFormData } from "@/lib/api";
 import type { FormSummary } from "@/lib/api";
+import { useReauthenticationGuard } from "@/lib/use-reauthentication-guard";
 
 const maximumTemplateBytes = 25 * 1024 * 1024;
 type TemplateSource = "blank" | "upload";
@@ -71,6 +72,12 @@ const NewFormRoute = () => {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const feedbackRef = useRef<HTMLDivElement>(null);
+  useReauthenticationGuard(
+    busy || Boolean(title || description || template),
+    () => {
+      setError("กรุณาสร้างแบบฟอร์มให้สำเร็จก่อนเปลี่ยนเซสชัน เพื่อเก็บข้อมูลที่กรอกไว้");
+    }
+  );
   useBlocker({
     disabled: !busy,
     enableBeforeUnload: busy,

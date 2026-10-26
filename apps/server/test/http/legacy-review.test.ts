@@ -558,6 +558,7 @@ test("Ticket 14 Legacy SSO collision requires fresh Admin-approved identity link
   const identity = {
     email: email.toUpperCase(),
     email_verified: true,
+    roles: [] as string[],
     sub: `legacy-${crypto.randomUUID()}`,
   };
   const subject = identity.sub;
@@ -846,7 +847,7 @@ test("Ticket 14 Legacy SSO collision requires fresh Admin-approved identity link
   ).toHaveProperty("status", 200);
 });
 
-test("Ticket 14 Legacy SSO approval rejects Admin and disabled candidates", async () => {
+test("Legacy SSO review permits Admin candidates and continues blocking disabled candidates", async () => {
   const disabledEmail = `ticket-14-disabled-${crypto.randomUUID()}@example.com`;
   const disabledPassword = "Ticket14-disabled-password";
   const disabledUser = await createCredentialFixture({
@@ -877,6 +878,7 @@ test("Ticket 14 Legacy SSO approval rejects Admin and disabled candidates", asyn
   const identity = {
     email: disabledEmail,
     email_verified: true,
+    roles: [] as string[],
     sub: `legacy-${crypto.randomUUID()}`,
   };
   const providerId = `legacy-${crypto.randomUUID()}`;
@@ -929,7 +931,7 @@ test("Ticket 14 Legacy SSO approval rejects Admin and disabled candidates", asyn
       snapshot,
       "approve"
     );
-    expect(response.status).toBe(409);
+    expect(response.status).toBe(request.id === adminRequest.id ? 200 : 409);
   }
   expect(
     await prisma.legacyAccountLinkRequest.findMany({
@@ -940,7 +942,7 @@ test("Ticket 14 Legacy SSO approval rejects Admin and disabled candidates", asyn
   ).toEqual(
     expect.arrayContaining([
       expect.objectContaining({ id: disabledRequest.id, status: "pending" }),
-      expect.objectContaining({ id: adminRequest.id, status: "pending" }),
+      expect.objectContaining({ id: adminRequest.id, status: "approved" }),
     ])
   );
   const rejection = await submitLegacyAccountLinkReview(
@@ -993,6 +995,7 @@ test("Ticket 14 stale SSO callback cannot bypass an account link created concurr
   const identity = {
     email,
     email_verified: true,
+    roles: [] as string[],
     sub: `legacy-${crypto.randomUUID()}`,
   };
   const subject = identity.sub;

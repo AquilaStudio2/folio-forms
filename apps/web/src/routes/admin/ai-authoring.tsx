@@ -25,6 +25,7 @@ import {
 } from "@/lib/api";
 import type { FormSummary } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { useReauthenticationGuard } from "@/lib/use-reauthentication-guard";
 
 const docxContentType =
   "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
@@ -77,6 +78,16 @@ const AiAuthoringWorkspace = ({ sessionToken }: { sessionToken: string }) => {
   const [busyAction, setBusyAction] = useState<BusyAction>(null);
   const busy = busyAction !== null;
   const [error, setError] = useState<string | null>(null);
+  useReauthenticationGuard(
+    loading ||
+      busy ||
+      Boolean(preview || prompt || sourcePdf || revisionPrompt),
+    () => {
+      setError(
+        "Save your document as a Template Draft or end the authoring session before switching accounts or signing in again."
+      );
+    }
+  );
   const mounted = useRef(true);
   const sourcePdfInput = useRef<HTMLInputElement>(null);
   const isCurrent = useCallback(

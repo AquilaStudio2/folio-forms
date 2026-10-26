@@ -73,6 +73,7 @@ test("linked role=user completes browser-bound SSO and receives a normal session
     email,
     email_verified: false,
     name: "PDMS must not rename a linked User",
+    roles: [] as string[],
     sub: `legacy-${crypto.randomUUID()}`,
   };
   const clientId = `folio-${crypto.randomUUID()}`;
@@ -452,7 +453,7 @@ test("linked role=user completes browser-bound SSO and receives a normal session
     targetType: ssoCapabilityClaims.targetType,
   });
   const adminSsoResponse = await capabilityRequest(adminSsoCapability);
-  expect(adminSsoResponse.status).toBe(401);
+  expect(adminSsoResponse.status).toBe(404);
   await prisma.user.update({
     data: { role: "user" },
     where: { id: admin.id },
@@ -556,6 +557,7 @@ test("Legacy SSO switch requires owner confirmation and preserves current sessio
   const identity = {
     email: target.email,
     email_verified: true,
+    roles: [] as string[],
     sub: `legacy-${crypto.randomUUID()}`,
   };
   const targetSubject = identity.sub;
@@ -633,8 +635,8 @@ test("Legacy SSO switch requires owner confirmation and preserves current sessio
       method: "POST",
     })
   );
-  expect(adminStart.status).toBe(403);
-  expect(adminStart.headers.has("set-cookie")).toBe(false);
+  expect(adminStart.status).toBe(200);
+  expect(adminStart.headers.has("set-cookie")).toBe(true);
   const baselineResponses = await handle(
     new Request("https://folio.example.test/api/responses/me", {
       headers: { Authorization: `Bearer ${ownerBearer}` },
@@ -1006,6 +1008,7 @@ test("Legacy SSO exchange failure and expired switch challenge preserve current 
   const identity = {
     email: target.email,
     email_verified: true,
+    roles: [] as string[],
     sub: `legacy-${crypto.randomUUID()}`,
   };
   const clientId = `folio-${crypto.randomUUID()}`;
@@ -1148,6 +1151,7 @@ test("rejects unsafe returns and mismatched callback state or cookie", async () 
   const identity = {
     email,
     email_verified: true,
+    roles: [] as string[],
     sub: `legacy-${crypto.randomUUID()}`,
   };
   const clientId = `folio-${crypto.randomUUID()}`;
@@ -1180,7 +1184,7 @@ test("rejects unsafe returns and mismatched callback state or cookie", async () 
   for (const unsafeReturn of [
     "//attacker.example/",
     "https://attacker.example/",
-    "/admin",
+    "/admin/unknown",
     `/forms/${"a".repeat(32)}/fill?access_token=secret`,
   ]) {
     const unsafeStart = await handle(
@@ -1269,7 +1273,7 @@ test("rejects unsafe returns and mismatched callback state or cookie", async () 
   expect(await disabledStatusResponse.json()).toEqual({ enabled: false });
 });
 
-test("rejects disabled and Admin identities but queues email collisions", async () => {
+test("rejects disabled identities, initializes mapped Admin role, and queues email collisions", async () => {
   const email = `ticket-12-eligibility-${crypto.randomUUID()}@example.com`;
   const password = "Ticket12-eligibility-test-password";
   const user = await createCredentialFixture({
@@ -1280,6 +1284,7 @@ test("rejects disabled and Admin identities but queues email collisions", async 
   const identity = {
     email,
     email_verified: false,
+    roles: [] as string[],
     sub: `legacy-${crypto.randomUUID()}`,
   };
   const linkedSubject = identity.sub;
@@ -1346,13 +1351,15 @@ test("rejects disabled and Admin identities but queues email collisions", async 
     data: { enabled: true, role: "admin" },
     where: { id: user.id },
   });
-  await expectIdentityLocation(legacySsoFailedLocation);
+  await expectIdentityLocation(
+    new URL(`/forms/${"d".repeat(32)}/fill`, legacySsoWebOrigin).href
+  );
   await prisma.user.update({
     data: { role: "user" },
     where: { id: user.id },
   });
   expect(await prisma.user.count()).toBe(userCountBefore);
-  expect(await prisma.session.count({ where: { userId: user.id } })).toBe(0);
+  expect(await prisma.session.count({ where: { userId: user.id } })).toBe(1);
 });
 
 test("expires browser-bound SSO transactions and session handoffs", async () => {
@@ -1367,6 +1374,7 @@ test("expires browser-bound SSO transactions and session handoffs", async () => 
   const identity = {
     email,
     email_verified: true,
+    roles: [] as string[],
     sub: `legacy-${crypto.randomUUID()}`,
   };
   const clientId = `folio-${crypto.randomUUID()}`;
@@ -1459,6 +1467,7 @@ test("old-backend codes bind client, callback, verifier, expiry, and single use"
   const identity = {
     email: `ticket-12-mock-${crypto.randomUUID()}@example.com`,
     email_verified: true,
+    roles: [] as string[],
     sub: `legacy-${crypto.randomUUID()}`,
   };
   const legacySsoServer = startLegacySsoMock({

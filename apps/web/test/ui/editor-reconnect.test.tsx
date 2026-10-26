@@ -139,6 +139,21 @@ describe("ONLYOFFICE plugin reconnect", () => {
       expect(dirty).not.toHaveBeenCalled();
     }
   );
+  it("tracks native DOCX changes for Admin editing without clearing them on Office autosave", async () => {
+    const dirty = vi.fn();
+    render(
+      <OnlyOfficeEditor
+        configUrl="/editor-config"
+        title="Template"
+        onDirtyChange={dirty}
+        trackNativeDirty
+      />
+    );
+    await screen.findByTitle("Office sandbox");
+    act(() => documentStateChanged?.({ data: true }));
+    act(() => documentStateChanged?.({ data: false }));
+    expect(dirty.mock.calls).toEqual([[true]]);
+  });
   it("acknowledges a recreated owned plugin and sends commands only to the current source", async () => {
     const dirty = vi.fn();
     const view = render(

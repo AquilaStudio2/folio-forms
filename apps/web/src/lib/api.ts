@@ -41,7 +41,7 @@ export interface SessionUser {
 }
 export interface Session {
   user: SessionUser;
-  session: { expiresAt: string };
+  session: { expiresAt: string; isSso: boolean };
 }
 export interface SignInResponse {
   error?: string;
@@ -287,7 +287,17 @@ export const clearToken = () => {
 const AUTH_ROUTE_PREFIXES = ["/login", "/change-password"] as const;
 const SAFE_RETURN_QUERY_KEYS = new Set(["responseid"]);
 const RETURN_PATH_MAX_LENGTH = 2048;
+const returnUuidPattern = /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu;
+const returnPublicIdPattern = /^[0-9a-f]{32}$/u;
 const hasSafeReturnQuery = (url: URL): boolean => {
+  if (url.pathname === "/admin/results" || url.pathname === "/admin/results/") {
+    return (
+      url.search === "" ||
+      ([...url.searchParams.keys()].length === 1 &&
+        url.searchParams.getAll("form").length === 1 &&
+        returnPublicIdPattern.test(url.searchParams.get("form") ?? ""))
+    );
+  }
   for (const key of url.searchParams.keys()) {
     if (!SAFE_RETURN_QUERY_KEYS.has(key.toLowerCase())) {
       return false;
@@ -392,32 +402,68 @@ export const safeReturnPath = (value: unknown): string | null => {
   }
   return `${pathname}${search}`;
 };
-export const legacySsoReturnPath = (
-  pathname: string,
-  search: string
-): string => {
-  const isFormPath = /^\/forms\/[0-9a-f]{32}\/fill$/u.test(pathname);
-  if (pathname !== "/dashboard" && !isFormPath) {
-    return "/dashboard";
+
+export const returnPathForRole = (value: unknown, role: Role): string => {
+  const path = safeReturnPath(value);
+  const fallback = role === "admin" ? "/admin" : "/dashboard";
+  if (!path) {
+    return fallback;
   }
-  if (pathname === "/dashboard") {
-    return "/dashboard";
-  }
-  if (!search) {
-    return pathname;
-  }
-  const query = new URLSearchParams(search);
-  const responseIds = query.getAll("responseId");
-  const isValidResponseId =
-    [...query.keys()].length === 1 &&
-    responseIds.length === 1 &&
-    /^[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}$/iu.test(
-      responseIds[0] ?? ""
-    );
-  return isValidResponseId
-    ? (safeReturnPath(`${pathname}${search}`) ?? pathname)
-    : pathname;
+  const pathname = decodeURIComponent(
+    new URL(path, "http://localhost").pathname
+  );
+  return role !== "admin" && /^\/admin(?:\/|$)/iu.test(pathname)
+    ? "/dashboard"
+    : path;
 };
+
+const legacySsoAdminPaths = new Set([
+  "/admin",
+  "/admin/ai-authoring",
+  "/admin/audit",
+  "/admin/forms/new",
+  "/admin/results",
+  "/admin/users",
+]);
+const legacySsoAdminFormPattern =
+  /^\/admin\/forms\/[0-9a-f]{32}(?:\/submissions(?:\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})?)?$/u;
+const legacySsoAdminResultPattern =
+  /^\/admin\/results\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}(?:\/correction)?$/u;
+
+export const safeLegacySsoReturnPath = (value: unknown): string | null => {
+  const path = safeReturnPath(value);
+  if (!path || typeof value !== "string" || value.includes("#")) {
+    return null;
+  }
+  const parsed = new URL(path, "http://localhost");
+  const pathname = parsed.pathname.replace(/\/$/u, "");
+  const isFillPath = /^\/forms\/[0-9a-f]{32}\/fill$/u.test(parsed.pathname);
+  if (
+    parsed.pathname !== "/dashboard" &&
+    !isFillPath &&
+    !legacySsoAdminPaths.has(pathname) &&
+    !legacySsoAdminFormPattern.test(pathname) &&
+    !legacySsoAdminResultPattern.test(pathname)
+  ) {
+    return null;
+  }
+  if (!parsed.search) {
+    return path;
+  }
+  const key = isFillPath ? "responseId" : "form";
+  const pattern = isFillPath ? returnUuidPattern : returnPublicIdPattern;
+  return (isFillPath || pathname === "/admin/results") &&
+    [...parsed.searchParams.keys()].length === 1 &&
+    parsed.searchParams.getAll(key).length === 1 &&
+    pattern.test(parsed.searchParams.get(key) ?? "")
+    ? path
+    : null;
+};
+
+export const legacySsoReturnPath = (pathname: string, search: string): string =>
+  safeLegacySsoReturnPath(`${pathname}${search}`) ??
+  safeLegacySsoReturnPath(pathname) ??
+  "/dashboard";
 
 interface RequestOptions {
   timeoutMs?: number;
@@ -595,9 +641,12 @@ export const confirmLegacySsoSwitch = (confirmationFingerprint: string) =>
   });
 
 export const cancelLegacySsoSwitch = (confirmationFingerprint: string) =>
-  apiPost<{ cancelled: true }>("/api/legacy-sso/switch/cancel", {
-    confirmationFingerprint,
-  });
+  apiPost<{ cancelled: true; returnTo: string }>(
+    "/api/legacy-sso/switch/cancel",
+    {
+      confirmationFingerprint,
+    }
+  );
 
 export const claimLegacySsoSession = async (): Promise<string | null> => {
   const response = await fetch(`${API_ORIGIN}/api/legacy-sso/session`, {

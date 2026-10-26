@@ -12,6 +12,8 @@ import type { NativeFormField } from "../src/components/native-form";
 import {
   getToken,
   legacySsoReturnPath,
+  returnPathForRole,
+  safeLegacySsoReturnPath,
   safeReturnPath,
   setToken,
   signOut,
@@ -247,6 +249,58 @@ test("legacy SSO return paths match server path and query rules", () => {
     "/dashboard"
   );
   expect(legacySsoReturnPath("/receipt/submission-1", "")).toBe("/dashboard");
+});
+
+test("SSO returns preserve only known admin routes and opaque identifiers", () => {
+  const formId = "a".repeat(32);
+  const responseId = "123e4567-e89b-12d3-a456-426614174000";
+  for (const path of [
+    "/admin",
+    "/admin/users",
+    "/admin/audit",
+    "/admin/ai-authoring",
+    "/admin/forms/new",
+    `/admin/forms/${formId}`,
+    `/admin/forms/${formId}/submissions`,
+    `/admin/forms/${formId}/submissions/${responseId}`,
+    `/admin/results/${responseId}`,
+    `/admin/results/${responseId}/correction`,
+    `/admin/results/?form=${formId}`,
+  ]) {
+    expect(safeLegacySsoReturnPath(path)).toBe(path);
+  }
+  expect(legacySsoReturnPath("/admin/results", `?form=${formId}`)).toBe(
+    `/admin/results?form=${formId}`
+  );
+  expect(legacySsoReturnPath("/admin/users", "?token=secret")).toBe(
+    "/admin/users"
+  );
+  for (const path of [
+    "/admin/unlisted",
+    `/ADMIN/results/${responseId}`,
+    "/admin/users/delete",
+    `/admin/forms/${responseId}`,
+    `/admin/results?form=${formId}&form=${formId}`,
+    `/admin/results?form=${responseId}`,
+    `/admin/users?form=${formId}`,
+    "/admin?token=secret",
+    "/admin#secret",
+    "//attacker.example/admin",
+    "/admin/%2f%2fattacker.example",
+  ]) {
+    expect(safeLegacySsoReturnPath(path)).toBeNull();
+  }
+});
+
+test("role-aware landing falls back when a demoted user returns to admin", () => {
+  expect(returnPathForRole(undefined, "admin")).toBe("/admin");
+  expect(returnPathForRole(undefined, "user")).toBe("/dashboard");
+  expect(returnPathForRole("/admin/users", "user")).toBe("/dashboard");
+  expect(returnPathForRole("/ad%6din/users", "user")).toBe("/dashboard");
+  expect(returnPathForRole("/admin/users", "admin")).toBe("/admin/users");
+  expect(returnPathForRole("//attacker.example/admin", "admin")).toBe("/admin");
+  const fillPath = `/forms/${"a".repeat(32)}/fill`;
+  expect(returnPathForRole(fillPath, "user")).toBe(fillPath);
 });
 
 class MemoryStorage implements Pick<

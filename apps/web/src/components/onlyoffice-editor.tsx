@@ -51,6 +51,7 @@ export const OnlyOfficeEditor = ({
   saveAction = "save-draft",
   saveReason = "",
   saveRequest = 0,
+  trackNativeDirty = false,
   title,
 }: {
   clearDirtyRequest?: number;
@@ -69,6 +70,7 @@ export const OnlyOfficeEditor = ({
     | "publish";
   saveReason?: string;
   saveRequest?: number;
+  trackNativeDirty?: boolean;
   title: string;
 }) => {
   const uploadPocFilesRef = useRef<UploadPocPendingFiles | null>(null);
@@ -749,7 +751,7 @@ export const OnlyOfficeEditor = ({
           nativeDocumentDirty = event.data;
           if (
             !readOnly &&
-            config.config?.documentType === "cell" &&
+            (config.config?.documentType === "cell" || trackNativeDirty) &&
             nativeDocumentDirty
           ) {
             // Office autosave is separate from Folio's saved draft/submission.
@@ -822,7 +824,15 @@ export const OnlyOfficeEditor = ({
         mountedHost?.replaceChildren();
       }
     };
-  }, [config, configUrl, editorId, readOnly, reportState, restore]);
+  }, [
+    config,
+    configUrl,
+    editorId,
+    readOnly,
+    reportState,
+    restore,
+    trackNativeDirty,
+  ]);
 
   const retry = () => {
     setError(null);

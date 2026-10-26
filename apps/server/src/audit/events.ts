@@ -20,6 +20,7 @@ export type AccountAuditAction =
   | "demote_user"
   | "reset_user_password"
   | "update_user"
+  | "sync_legacy_sso_role"
   | "approve_legacy_account_link"
   | "reject_legacy_account_link";
 export type FormAuditAction =
@@ -81,6 +82,10 @@ const auditMetadataKeys = new Set([
   "format",
   "revision",
   "source",
+  "previousMappedRole",
+  "mappedRole",
+  "previousRole",
+  "role",
   "sourcePublicId",
   "state",
   "status",
@@ -112,6 +117,11 @@ export function accountAuditTargetId(value: string): string | null {
 interface AccountAuditMetadata {
   change?: string;
   errorCode?: string;
+  source?: "pdms_sso";
+  previousMappedRole?: "admin" | "user" | null;
+  mappedRole?: "admin" | "user";
+  previousRole?: "admin" | "user";
+  role?: "admin" | "user";
 }
 
 export async function createAccountAudit(

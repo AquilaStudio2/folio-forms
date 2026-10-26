@@ -25,6 +25,17 @@ export const adminUserSelect = {
   role: true,
   updatedAt: true,
 } as const;
+
+export async function requireAnotherEnabledAdmin(
+  tx: Prisma.TransactionClient
+): Promise<void> {
+  const enabledAdminCount = await tx.user.count({
+    where: { enabled: true, role: "admin" },
+  });
+  if (enabledAdminCount <= 1) {
+    fail(409, "final_admin_required", "At least one enabled Admin is required");
+  }
+}
 type AdminUser = Prisma.UserGetPayload<{ select: typeof adminUserSelect }>;
 
 export function normalizedAccountEmail(value: string): string {
@@ -69,7 +80,7 @@ async function lockAccountMutationActor(
         "account_actor"."id" = ${identity.id}
         AND "account_actor"."role" = CAST('admin' AS "UserRole")
         AND "account_actor"."enabled" = TRUE
-        AND "account_actor"."must_change_password" = FALSE
+        AND ("account_actor"."must_change_password" = FALSE OR "account_session"."is_sso" = TRUE)
         AND "account_session"."id" = ${identity.sessionId}
         AND "account_session"."expires_at" > NOW()
       FOR UPDATE OF "account_actor", "account_session"
@@ -128,7 +139,7 @@ export async function withAdminMutation<T>(
   let auditAction = action;
   let auditTargetId = typeof targetId === "function" ? null : targetId;
   try {
-    if (identity.mustChangePassword) {
+    if (identity.mustChangePassword && !identity.isSso) {
       fail(403, "password_change_required", "Password replacement is required");
     }
     if (typeof targetId === "function") {

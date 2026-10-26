@@ -4,14 +4,23 @@ import { useEffect, useState } from "react";
 
 import { Button, Card, Notice, Spinner } from "@/components/ui";
 import {
+  ApiError,
   cancelLegacySsoSwitch,
   claimLegacySsoSession,
   confirmLegacySsoSwitch,
   getLegacySsoSwitch,
-  safeReturnPath,
+  safeLegacySsoReturnPath,
   setToken,
 } from "@/lib/api";
 import type { LegacySsoSwitch } from "@/lib/api";
+import { roleFor, useAuth } from "@/lib/auth";
+
+const switchFailureMessage =
+  "คำขอนี้หมดอายุหรือไม่สามารถดำเนินการได้ กรุณาเริ่มเข้าสู่ระบบผ่านระบบเดิมอีกครั้ง";
+const switchErrorMessage = (error: unknown): string =>
+  error instanceof ApiError && error.code === "final_admin_required"
+    ? "ไม่สามารถลดสิทธิ์ผู้ดูแลระบบคนสุดท้ายได้ กรุณาเพิ่มผู้ดูแลระบบอีกคนก่อนลองใหม่ เซสชันปัจจุบันยังไม่เปลี่ยน"
+    : switchFailureMessage;
 
 const IdentityCard = ({
   title,
@@ -30,12 +39,13 @@ const IdentityCard = ({
 );
 
 const LegacySsoConfirmRoute = () => {
+  const { user } = useAuth();
   const [switchDetails, setSwitchDetails] = useState<LegacySsoSwitch | null>(
     null
   );
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let active = true;
@@ -45,14 +55,14 @@ const LegacySsoConfirmRoute = () => {
         if (!active) {
           return;
         }
-        if (!safeReturnPath(details.returnTo)) {
-          setError(true);
+        if (!safeLegacySsoReturnPath(details.returnTo)) {
+          setError(switchFailureMessage);
           return;
         }
         setSwitchDetails(details);
       } catch {
         if (active) {
-          setError(true);
+          setError(switchFailureMessage);
         }
       } finally {
         if (active) {
@@ -70,23 +80,24 @@ const LegacySsoConfirmRoute = () => {
     if (!switchDetails) {
       return;
     }
-    const returnTo = safeReturnPath(switchDetails.returnTo);
-    if (!returnTo) {
-      setError(true);
-      return;
-    }
     setBusy(true);
-    setError(false);
+    setError(null);
     try {
-      await confirmLegacySsoSwitch(switchDetails.confirmationFingerprint);
+      const result = await confirmLegacySsoSwitch(
+        switchDetails.confirmationFingerprint
+      );
+      const returnTo = safeLegacySsoReturnPath(result.returnTo);
+      if (!returnTo) {
+        throw new Error("The confirmed return path is unavailable");
+      }
       const token = await claimLegacySsoSession();
       if (!token) {
         throw new Error("Could not claim transferred session");
       }
       setToken(token);
       window.location.assign(returnTo);
-    } catch {
-      setError(true);
+    } catch (caughtError) {
+      setError(switchErrorMessage(caughtError));
       setBusy(false);
     }
   };
@@ -95,18 +106,19 @@ const LegacySsoConfirmRoute = () => {
     if (!switchDetails) {
       return;
     }
-    const returnTo = safeReturnPath(switchDetails.returnTo);
-    if (!returnTo) {
-      setError(true);
-      return;
-    }
     setBusy(true);
-    setError(false);
+    setError(null);
     try {
-      await cancelLegacySsoSwitch(switchDetails.confirmationFingerprint);
+      const result = await cancelLegacySsoSwitch(
+        switchDetails.confirmationFingerprint
+      );
+      const returnTo = safeLegacySsoReturnPath(result.returnTo);
+      if (!returnTo) {
+        throw new Error("The cancelled return path is unavailable");
+      }
       window.location.assign(returnTo);
     } catch {
-      setError(true);
+      setError(switchFailureMessage);
       setBusy(false);
     }
   };
@@ -121,14 +133,12 @@ const LegacySsoConfirmRoute = () => {
   } else if (error) {
     content = (
       <div className="space-y-4">
-        <Notice tone="danger">
-          คำขอนี้หมดอายุหรือไม่สามารถดำเนินการได้ เซสชันปัจจุบันยังไม่เปลี่ยน
-        </Notice>
+        <Notice tone="danger">{error}</Notice>
         <Link
           className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ink)] underline"
-          to="/dashboard"
+          to={roleFor(user) === "admin" ? "/admin" : "/dashboard"}
         >
-          กลับไปคำตอบของฉัน <ArrowRight size={16} />
+          กลับไปทำงานต่อ <ArrowRight size={16} />
         </Link>
       </div>
     );

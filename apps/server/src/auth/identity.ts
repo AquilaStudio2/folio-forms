@@ -50,7 +50,7 @@ export async function identityFor(request: Request): Promise<Identity | null> {
     typeof sessionUser.id !== "string" ||
     typeof sessionUser.email !== "string" ||
     sessionUser.enabled !== true ||
-    (liveSession.isSso === true && sessionUser.role !== "user") ||
+    (sessionUser.role !== "user" && sessionUser.role !== "admin") ||
     typeof liveSession.id !== "string" ||
     Number.isNaN(expiresAt.getTime()) ||
     expiresAt.getTime() <= Date.now()

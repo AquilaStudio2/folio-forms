@@ -173,6 +173,8 @@ model Account {
   scope                 String?
   password              String?
   issuer                String    @default("local:credential")
+  lastMappedRole        UserRole? @map("last_mapped_role")
+  lastSsoRoleGeneration BigInt?   @map("last_sso_role_generation")
   createdAt             DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt             DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 

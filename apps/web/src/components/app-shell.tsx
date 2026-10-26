@@ -187,15 +187,13 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
                 My responses
               </Link>
             )}
-            {role === "user" ? (
-              <LegacySsoSwitchButton
-                onError={() => setLegacySsoError(true)}
-                onStart={() => {
-                  setOpen(false);
-                  setLegacySsoError(false);
-                }}
-              />
-            ) : null}
+            <LegacySsoSwitchButton
+              onError={() => setLegacySsoError(true)}
+              onStart={() => {
+                setOpen(false);
+                setLegacySsoError(false);
+              }}
+            />
             <Link
               to="/change-password"
               search={{

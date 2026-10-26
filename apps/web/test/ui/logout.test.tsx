@@ -5,7 +5,7 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { render, screen, waitFor } from "@testing-library/react";
+import { act, render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -18,6 +18,9 @@ const fetchMock = vi.fn<typeof fetch>();
 let signOutResponse: () => Response;
 let role: "admin" | "user";
 let expiresIn: number;
+let isSso: boolean;
+let mustChangePassword: boolean;
+let ssoAvailable: boolean;
 
 const mount = async (path = "/admin") => {
   window.history.replaceState(null, "", path);
@@ -36,6 +39,11 @@ const mount = async (path = "/admin") => {
     getParentRoute: () => root,
     path: "/admin",
   });
+  const changePassword = createRoute({
+    component: () => <div>Change password page</div>,
+    getParentRoute: () => root,
+    path: "/change-password",
+  });
   const dashboard = createRoute({
     component: DashboardRoute.options.component,
     getParentRoute: () => root,
@@ -43,7 +51,7 @@ const mount = async (path = "/admin") => {
   });
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: [path] }),
-    routeTree: root.addChildren([login, admin, dashboard]),
+    routeTree: root.addChildren([login, admin, dashboard, changePassword]),
   });
   await router.load();
   render(<RouterProvider router={router} />);
@@ -53,6 +61,9 @@ const mount = async (path = "/admin") => {
 beforeEach(() => {
   role = "admin";
   expiresIn = 60 * 60 * 1000;
+  isSso = false;
+  mustChangePassword = false;
+  ssoAvailable = false;
   signOutResponse = () => Response.json({ ok: true });
   fetchMock.mockReset();
   fetchMock.mockImplementation((input) => {
@@ -62,11 +73,12 @@ beforeEach(() => {
         Response.json({
           session: {
             expiresAt: new Date(Date.now() + expiresIn).toISOString(),
+            isSso,
           },
           user: {
             email: "logout@example.test",
             id: "logout-user",
-            mustChangePassword: false,
+            mustChangePassword,
             role,
           },
         })
@@ -78,7 +90,12 @@ beforeEach(() => {
     if (pathname === "/api/responses/me") {
       return Promise.resolve(Response.json({ responses: [] }));
     }
-    return Promise.resolve(Response.json({ enabled: false }));
+    if (pathname === "/api/legacy-sso/start") {
+      return Promise.resolve(
+        Response.json({ error: "sso_unavailable" }, { status: 503 })
+      );
+    }
+    return Promise.resolve(Response.json({ enabled: ssoAvailable }));
   });
   vi.stubGlobal("fetch", fetchMock);
   localStorage.setItem(SESSION_KEY, "logout-test-token");
@@ -145,13 +162,99 @@ describe("logout navigation", () => {
     expect(router.state.location.search).toEqual({ returnTo: "/admin" });
   });
 
-  it("preserves returnTo when reauthenticating an expiring session", async () => {
-    expiresIn = 2 * 60 * 1000;
-    const router = await mount();
-    await userEvent.click(
-      await screen.findByRole("button", { exact: true, name: "เข้าสู่ระบบใหม่" })
-    );
-    await screen.findByText("Login page");
-    expect(router.state.location.search).toEqual({ returnTo: "/admin" });
+  it.each([
+    ["admin", "/admin"],
+    ["user", "/dashboard"],
+  ] as const)(
+    "renews local %s sessions through password login",
+    async (userRole, path) => {
+      role = userRole;
+      expiresIn = 2 * 60 * 1000;
+      const router = await mount(path);
+      await userEvent.click(
+        await screen.findByRole("button", { exact: true, name: "เข้าสู่ระบบใหม่" })
+      );
+      await screen.findByText("Login page");
+      expect(router.state.location.search).toEqual({ returnTo: path });
+    }
+  );
+
+  it.each([
+    ["admin", "/admin"],
+    ["user", "/dashboard"],
+  ] as const)(
+    "waits for saved work before renewing SSO %s sessions",
+    async (userRole, path) => {
+      role = userRole;
+      isSso = true;
+      expiresIn = 2 * 60 * 1000;
+      let resolveSave: ((allowed: boolean) => void) | undefined;
+      const handleSave = (event: Event) => {
+        const { detail } = event as CustomEvent<{
+          handled: boolean;
+          resolve: (allowed: boolean) => void;
+        }>;
+        detail.handled = true;
+        resolveSave = detail.resolve;
+      };
+      window.addEventListener("folio:before-reauth", handleSave);
+      try {
+        await mount(path);
+        await userEvent.click(
+          await screen.findByRole("button", {
+            exact: true,
+            name: "เข้าสู่ระบบระบบเดิม",
+          })
+        );
+        const ssoCalls = () =>
+          fetchMock.mock.calls.filter(([input]) =>
+            String(input).endsWith("/api/legacy-sso/start")
+          );
+        expect(ssoCalls()).toHaveLength(0);
+        await act(() => resolveSave?.(false));
+        expect(ssoCalls()).toHaveLength(0);
+        await userEvent.click(
+          screen.getByRole("button", { exact: true, name: "เข้าสู่ระบบระบบเดิม" })
+        );
+        await act(() => resolveSave?.(true));
+        await screen.findByText("ไม่สามารถเชื่อมต่อบัญชีระบบเดิมได้ กรุณาลองอีกครั้ง");
+        expect(ssoCalls()).toHaveLength(1);
+        expect(JSON.parse(String(ssoCalls()[0]?.[1]?.body))).toEqual({
+          returnTo: path,
+        });
+        expect(
+          fetchMock.mock.calls.some(([input]) =>
+            String(input).endsWith("/api/auth/sign-out")
+          )
+        ).toBe(false);
+        expect(localStorage.getItem(SESSION_KEY)).toBe("logout-test-token");
+      } finally {
+        window.removeEventListener("folio:before-reauth", handleSave);
+      }
+    }
+  );
+
+  it("offers account switching to Admins when the PDMS bridge is enabled", async () => {
+    ssoAvailable = true;
+    await mount();
+    expect(
+      await screen.findByRole("button", { name: "สลับบัญชีระบบเดิม" })
+    ).toBeVisible();
   });
+
+  it.each([true, false])(
+    "applies the password-change requirement using isSso=%s",
+    async (ssoSession) => {
+      isSso = ssoSession;
+      mustChangePassword = true;
+      const router = await mount();
+      if (ssoSession) {
+        await screen.findByRole("button", { exact: true, name: "ออกจากระบบ" });
+        expect(router.state.location.pathname).toBe("/admin");
+      } else {
+        await screen.findByText("Change password page");
+        expect(router.state.location.pathname).toBe("/change-password");
+      }
+    }
+  );
 });

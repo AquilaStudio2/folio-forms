@@ -28,13 +28,17 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
+const forceSaveWaiters = new Map<string, () => void>();
 const app = createApp({
   legacySso: null,
   onlyOffice: {
     convertDocxToPdf: () =>
       Promise.resolve(new TextEncoder().encode("%PDF-test")),
     // Hold the save at its callback boundary so stale-submission races are deterministic.
-    forceSave: () => Promise.resolve(true),
+    forceSave: (documentKey) => {
+      forceSaveWaiters.get(documentKey)?.();
+      return Promise.resolve(true);
+    },
   },
 });
 const bindings = {
@@ -269,6 +273,10 @@ for (const kind of ["docx", "xlsx"] as const) {
     expect(await readObject(lease.workspaceObjectKey as string)).toEqual(
       await readObject(second.objectKey)
     );
+    const forceSaveReady = Promise.withResolvers<boolean>();
+    forceSaveWaiters.set(editor.config.document.key, () => {
+      forceSaveReady.resolve(true);
+    });
     const saveResponse = await save(editor);
     expect({
       error:
@@ -278,6 +286,9 @@ for (const kind of ["docx", "xlsx"] as const) {
     const { operationId } = (await saveResponse.json()) as {
       operationId: string;
     };
+    // The force-save worker commits pending -> processing before calling the client.
+    await forceSaveReady.promise;
+    forceSaveWaiters.delete(editor.config.document.key);
     const operation = await prisma.operation.findUniqueOrThrow({
       where: { id: operationId },
     });

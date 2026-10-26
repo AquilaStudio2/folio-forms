@@ -34,6 +34,7 @@ import {
   waitForOperation,
 } from "@/lib/api";
 import type { FillMethod, FormDetail, FormSummary } from "@/lib/api";
+import { useReauthenticationGuard } from "@/lib/use-reauthentication-guard";
 
 interface FormDetailResponse {
   editorConfigUrl: string;
@@ -167,6 +168,7 @@ const FormEditorRoute = () => {
     useState<OperationViewStatus | null>(null);
   const [editorRevision, setEditorRevision] = useState(0);
   const [commandReady, setCommandReady] = useState(false);
+  const [editorDirty, setEditorDirty] = useState(false);
   const [saveRequest, setSaveRequest] = useState(0);
   const [saveAction, setSaveAction] = useState<"save-template" | "publish">(
     "save-template"
@@ -176,6 +178,20 @@ const FormEditorRoute = () => {
   const metadataGuardRef = useRef(false);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const restorePublishFocusRef = useRef(false);
+  useReauthenticationGuard(
+    editorDirty ||
+      busy !== null ||
+      metadataBusy !== null ||
+      operationStatus === "pending" ||
+      operationStatus === "processing" ||
+      Boolean(
+        form && (title !== form.title || description !== form.description)
+      ),
+    () => {
+      setError("กรุณาบันทึกการเปลี่ยนแปลงและรอให้บันทึกสำเร็จก่อนเปลี่ยนเซสชัน");
+      setNotice(null);
+    }
+  );
   useEffect(() => {
     if (!publishPrompt) {
       if (restorePublishFocusRef.current) {
@@ -212,6 +228,7 @@ const FormEditorRoute = () => {
     setOperationStatus(null);
     setMetadataBusy(null);
     setEditorState("loading");
+    setEditorDirty(false);
 
     const loadForm = async () => {
       try {
@@ -374,6 +391,7 @@ const FormEditorRoute = () => {
         setEditorRevision((value) => value + 1);
       }
       setOperationStatus("completed");
+      setEditorDirty(false);
       setNotice(
         action === "publish"
           ? "เผยแพร่แบบฟอร์มแล้ว คำตอบใหม่จะใช้เอกสารฉบับนี้"
@@ -598,6 +616,7 @@ const FormEditorRoute = () => {
       setEditorRevision((value) => value + 1);
     }
     setOperationStatus("completed");
+    setEditorDirty(false);
     setError(null);
     setNotice(
       message.action === "publish"
@@ -826,6 +845,8 @@ const FormEditorRoute = () => {
           <OnlyOfficeEditor
             key={publicId}
             onBridgeMessage={handleEditorBridgeMessage}
+            onDirtyChange={setEditorDirty}
+            trackNativeDirty
             onStateChange={setEditorState}
             {...(loadedForm.documentKind === "xlsx"
               ? {

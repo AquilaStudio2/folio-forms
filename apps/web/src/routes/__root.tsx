@@ -9,7 +9,7 @@ import { useEffect, useState } from "react";
 
 import { Button, Notice, Spinner } from "@/components/ui";
 import { legacySsoReturnPath, safeReturnPath, startLegacySso } from "@/lib/api";
-import { AuthProvider, roleFor, useAuth } from "@/lib/auth";
+import { AuthProvider, useAuth } from "@/lib/auth";
 import {
   afterEditorSave,
   SESSION_WARNING_WINDOW_MS,
@@ -32,6 +32,7 @@ const AuthGate = () => {
   const {
     error: authError,
     expiresAt,
+    isSso,
     loading,
     signedOut,
     signOut,
@@ -43,7 +44,7 @@ const AuthGate = () => {
   const [reauthenticating, setReauthenticating] = useState(false);
   const [reauthenticationFailed, setReauthenticationFailed] = useState(false);
   const { pathname } = location;
-  const usesLegacySso = Boolean(user && roleFor(user) === "user");
+  const usesLegacySso = Boolean(user && isSso);
 
   useEffect(() => {
     const expiresAtMs = expiresAt ? Date.parse(expiresAt) : Number.NaN;
@@ -137,6 +138,7 @@ const AuthGate = () => {
 
   const restricted =
     user?.mustChangePassword &&
+    !isSso &&
     pathname !== "/login" &&
     pathname !== "/change-password" &&
     pathname !== "/handoff";

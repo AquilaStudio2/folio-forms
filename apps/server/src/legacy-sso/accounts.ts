@@ -14,8 +14,9 @@ import type { LegacySsoConfig } from "./config";
 
 const legacySsoExchangeBodyMaximumBytes = 8 * 1024;
 const legacyIdentityNameControlPattern = /\p{Cc}/u;
-interface LegacyIdentity {
+export interface LegacyIdentity {
   email: string;
+  mappedRole: Identity["role"];
   name?: string;
   subject: string;
 }
@@ -87,7 +88,9 @@ async function readLegacyIdentityResponse(
     typeof claims.email !== "string" ||
     claims.email.length > accountEmailMaximumLength ||
     !accountEmailPattern.test(claims.email) ||
-    typeof claims.email_verified !== "boolean"
+    typeof claims.email_verified !== "boolean" ||
+    !Array.isArray(claims.roles) ||
+    claims.roles.some((role) => typeof role !== "string")
   ) {
     return null;
   }
@@ -104,7 +107,17 @@ async function readLegacyIdentityResponse(
       name = trimmedName;
     }
   }
-  return { email: normalizeEmail(claims.email), name, subject: claims.sub };
+  const mappedRole = claims.roles.some(
+    (role) => role === "admin (กปม.)" || role === "เจ้าหน้าที่ กปม."
+  )
+    ? "admin"
+    : "user";
+  return {
+    email: normalizeEmail(claims.email),
+    mappedRole,
+    name,
+    subject: claims.sub,
+  };
 }
 
 export async function exchangeLegacyCode(
@@ -219,12 +232,7 @@ async function linkApprovedLegacyAccount(
     select: { email: true, enabled: true, id: true, role: true },
     where: { id: userId },
   });
-  if (
-    !user ||
-    !user.enabled ||
-    user.role !== "user" ||
-    user.email !== linkRequest.email
-  ) {
+  if (!user || !user.enabled || user.email !== linkRequest.email) {
     return null;
   }
   const account = await tx.account.findUnique({
@@ -293,9 +301,7 @@ async function resolveLegacySsoLinkRequest(
       select: { enabled: true, id: true, role: true },
       where: { id: account.userId },
     });
-    return user?.enabled && user.role === "user"
-      ? { kind: "linked", user }
-      : { kind: "failed" };
+    return user?.enabled ? { kind: "linked", user } : { kind: "failed" };
   }
   if (!linkRequest) {
     return null;
@@ -347,14 +353,11 @@ async function resolveLegacySsoLinkRequest(
     select: { enabled: true, id: true, role: true },
     where: { email: identity.email },
   });
-  const selectedUserId =
-    matchingCandidate?.enabled && matchingCandidate.role === "user"
-      ? matchingCandidate.id
-      : currentRequest.userId;
+  const selectedUserId = matchingCandidate?.enabled
+    ? matchingCandidate.id
+    : currentRequest.userId;
   const candidateMatches =
-    candidate?.enabled &&
-    candidate.role === "user" &&
-    candidate.email === identity.email;
+    candidate?.enabled && candidate.email === identity.email;
   if (
     currentRequest.email !== identity.email ||
     selectedUserId !== currentRequest.userId ||
@@ -511,7 +514,7 @@ export async function resolveLegacySsoAccount(
       return { kind: "failed" as const };
     }
     if (account) {
-      return account.user.enabled && account.user.role === "user"
+      return account.user.enabled
         ? { kind: "linked" as const, user: account.user }
         : { kind: "failed" as const };
     }

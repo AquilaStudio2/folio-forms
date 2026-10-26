@@ -19,6 +19,7 @@ interface AuthContextValue {
   signedOut: boolean;
   error: string | null;
   expiresAt: string | null;
+  isSso: boolean;
   clearSession: () => void;
   signIn: (email: string, password: string) => Promise<SessionUser>;
   replacePassword: (
@@ -67,6 +68,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
   const [signedOut, setSignedOut] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [expiresAt, setExpiresAt] = useState<string | null>(null);
+  const [isSso, setIsSso] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -75,6 +77,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       if (active && getToken() === sessionToken) {
         setUser(session.user);
         setExpiresAt(session.session.expiresAt);
+        setIsSso(session.session.isSso === true);
       }
     };
     const loadSession = async () => {
@@ -99,6 +102,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         clearToken();
         setUser(null);
         setExpiresAt(null);
+        setIsSso(false);
         if (!originalToken) {
           return;
         }
@@ -146,6 +150,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       clearToken();
       setUser(null);
       setExpiresAt(null);
+      setIsSso(false);
     };
     const scheduleExpiry = () => {
       const remaining = expiresAtMs - Date.now();
@@ -174,6 +179,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       const session = await getSession();
       setUser(session.user);
       setExpiresAt(session.session.expiresAt);
+      setIsSso(session.session.isSso === true);
       setSignedOut(false);
       return session.user;
     } catch (caughtError) {
@@ -194,6 +200,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
       clearToken();
       setUser(null);
       setExpiresAt(null);
+      setIsSso(false);
     } catch (caughtError) {
       setError(
         caughtError instanceof ApiError
@@ -208,6 +215,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
     clearToken();
     setUser(null);
     setExpiresAt(null);
+    setIsSso(false);
   };
 
   const signOut = async ({ preserveReturnTo = false } = {}) => {
@@ -232,6 +240,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
         clearSession,
         error,
         expiresAt,
+        isSso,
         loading,
         replacePassword,
         signIn,

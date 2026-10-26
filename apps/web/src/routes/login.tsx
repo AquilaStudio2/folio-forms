@@ -10,13 +10,14 @@ import { useEffect, useRef, useState } from "react";
 import { Button, Card, Input, Notice, Spinner } from "@/components/ui";
 import {
   legacySsoEnabled as checkLegacySsoEnabled,
+  returnPathForRole,
   safeReturnPath,
   startLegacySso as beginLegacySso,
 } from "@/lib/api";
 import { authErrorMessage, roleFor, useAuth } from "@/lib/auth";
 
 const LoginRoute = () => {
-  const { loading: authLoading, signIn, user } = useAuth();
+  const { isSso, loading: authLoading, signIn, user } = useAuth();
   const navigate = useNavigate();
   const { legacySso, returnTo } = useSearch({ from: "/login" });
   const [email, setEmail] = useState("");
@@ -56,6 +57,10 @@ const LoginRoute = () => {
   useEffect(() => {
     if (legacySso === "failed") {
       setError("ไม่สามารถเข้าสู่ระบบผ่านระบบเดิมได้ กรุณาลองอีกครั้ง");
+    } else if (legacySso === "final_admin_required") {
+      setError(
+        "ไม่สามารถลดสิทธิ์ผู้ดูแลระบบคนสุดท้ายได้ กรุณาให้ผู้ดูแลเพิ่มผู้ดูแลระบบอีกคน แล้วเข้าสู่ระบบผ่านระบบเดิมอีกครั้ง"
+      );
     }
   }, [legacySso]);
 
@@ -65,7 +70,7 @@ const LoginRoute = () => {
     }
 
     const redirect = async () => {
-      if (user.mustChangePassword) {
+      if (user.mustChangePassword && !isSso) {
         await navigate({
           replace: true,
           search: { returnTo },
@@ -73,18 +78,14 @@ const LoginRoute = () => {
         });
         return;
       }
-      if (returnTo) {
-        await navigate({ replace: true, to: returnTo });
-        return;
-      }
       await navigate({
         replace: true,
-        to: roleFor(user) === "admin" ? "/admin" : "/dashboard",
+        to: returnPathForRole(returnTo, roleFor(user)),
       });
     };
 
     void redirect();
-  }, [legacySso, navigate, returnTo, user]);
+  }, [isSso, legacySso, navigate, returnTo, user]);
 
   if (authLoading) {
     return (
@@ -96,7 +97,14 @@ const LoginRoute = () => {
   }
   if (user && legacySso) {
     const pending = legacySso === "pending";
-    const destination = returnTo ?? "/dashboard";
+    const destination = returnPathForRole(returnTo, roleFor(user));
+    let statusMessage = "ไม่สามารถเปลี่ยนบัญชีผ่านระบบเดิมได้ กรุณาลองเข้าสู่ระบบอีกครั้ง";
+    if (pending) {
+      statusMessage = "บัญชีระบบเดิมกำลังรอผู้ดูแลตรวจสอบ เซสชัน Folio ปัจจุบันยังใช้งานได้";
+    } else if (legacySso === "final_admin_required") {
+      statusMessage =
+        "ไม่สามารถลดสิทธิ์ผู้ดูแลระบบคนสุดท้ายได้ กรุณาเพิ่มผู้ดูแลระบบอีกคนก่อนลองใหม่ เซสชันปัจจุบันยังไม่เปลี่ยน";
+    }
     return (
       <div className="grid min-h-screen place-items-center bg-[var(--ink)] px-5 py-12">
         <Card className="w-full max-w-[440px] p-6 sm:p-8">
@@ -106,9 +114,7 @@ const LoginRoute = () => {
           </p>
           <div className="mt-5">
             <Notice tone={pending ? "neutral" : "danger"}>
-              {pending
-                ? "บัญชีระบบเดิมกำลังรอผู้ดูแลตรวจสอบ เซสชัน Folio ปัจจุบันยังใช้งานได้"
-                : "ไม่สามารถเปลี่ยนบัญชีผ่านระบบเดิมได้ เซสชัน Folio ปัจจุบันยังไม่เปลี่ยน"}
+              {statusMessage}
             </Notice>
           </div>
           <Button
@@ -155,8 +161,7 @@ const LoginRoute = () => {
         return;
       }
       setSuccess("เข้าสู่ระบบสำเร็จ กำลังเปิดพื้นที่ทำงาน…");
-      const destination =
-        returnTo ?? (roleFor(next) === "admin" ? "/admin" : "/dashboard");
+      const destination = returnPathForRole(returnTo, roleFor(next));
       await navigate({ replace: true, to: destination });
     } catch (caughtError) {
       setError(authErrorMessage(caughtError, "signIn"));
@@ -316,7 +321,9 @@ export const Route = createFileRoute("/login")({
   component: LoginRoute,
   validateSearch: (search) => ({
     returnTo: safeReturnPath(search.returnTo) ?? undefined,
-    ...(search.legacySso === "failed" || search.legacySso === "pending"
+    ...(search.legacySso === "failed" ||
+    search.legacySso === "pending" ||
+    search.legacySso === "final_admin_required"
       ? { legacySso: search.legacySso }
       : {}),
   }),

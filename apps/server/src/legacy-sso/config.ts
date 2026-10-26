@@ -26,14 +26,20 @@ export interface LegacySsoTransaction {
   generation: string;
   initiatingSessionId?: string;
   initiatingUserId?: string;
-  returnTo: string;
+  returnTo: string | null;
   state: string;
 }
-export interface LegacySsoSwitchChallenge {
+export interface LegacySsoRoleEvidence {
+  generation: string;
+  mappedRole: "admin" | "user";
+  providerId: string;
+  subject: string;
+  targetUserId: string;
+}
+export interface LegacySsoSwitchChallenge extends LegacySsoRoleEvidence {
   initiatingSessionId: string;
   initiatingUserId: string;
-  returnTo: string;
-  targetUserId: string;
+  returnTo: string | null;
 }
 export const legacySsoSwitchLifetimeSeconds = 5 * 60;
 
@@ -190,12 +196,32 @@ export function safeLegacyFormReturnPath(
   const isFormPath = /^\/forms\/[0-9a-f]{32}\/fill$/u.test(returnUrl.pathname);
   const isDashboardPath =
     returnUrl.pathname === "/dashboard" && !returnUrl.search;
+  const uuid = "[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}";
+  const isAdminPath = new RegExp(
+    `^/admin(?:/(?:users|audit|ai-authoring|forms/new|forms/[0-9a-f]{32}(?:/submissions(?:/${uuid})?)?|results(?:/${uuid}(?:/correction)?)?))?/?$`,
+    "u"
+  ).test(returnUrl.pathname);
   if (
     returnUrl.origin !== callback.origin ||
     returnUrl.hash ||
-    (!isFormPath && !isDashboardPath)
+    (!isFormPath && !isDashboardPath && !isAdminPath)
   ) {
     return null;
+  }
+  if (isAdminPath) {
+    const adminQueryKeys = [...returnUrl.searchParams.keys()];
+    const isResults = /^\/admin\/results\/?$/u.test(returnUrl.pathname);
+    if (adminQueryKeys.length === 0) {
+      return returnUrl.pathname;
+    }
+    const formId = returnUrl.searchParams.get("form");
+    return isResults &&
+      adminQueryKeys.length === 1 &&
+      adminQueryKeys[0] === "form" &&
+      formId &&
+      /^[0-9a-f]{32}$/u.test(formId)
+      ? `${returnUrl.pathname}${returnUrl.search}`
+      : null;
   }
   const queryKeys = [...returnUrl.searchParams.keys()];
   if (queryKeys.some((key) => key !== "responseId") || queryKeys.length > 1) {
@@ -209,6 +235,16 @@ export function safeLegacyFormReturnPath(
     return null;
   }
   return `${returnUrl.pathname}${returnUrl.search}`;
+}
+
+export function legacySsoDestination(
+  returnTo: string | null,
+  role: "admin" | "user"
+): string {
+  if (returnTo && (!returnTo.startsWith("/admin") || role === "admin")) {
+    return returnTo;
+  }
+  return role === "admin" ? "/admin" : "/dashboard";
 }
 
 export function cookieValueFor(
@@ -250,7 +286,7 @@ export function hostOnlySsoCookie(
 }
 
 function legacySsoRedirectResponse(
-  result: "failed" | "pending",
+  result: "failed" | "pending" | "final_admin_required",
   returnTo?: string
 ): globalThis.Response {
   const location = new URL(`/login?legacySso=${result}`, corsOrigin);
@@ -274,9 +310,10 @@ function legacySsoRedirectResponse(
   return new Response(null, { headers, status: 303 });
 }
 export function legacySsoFailureResponse(
-  returnTo?: string
+  returnTo?: string,
+  result: "failed" | "final_admin_required" = "failed"
 ): globalThis.Response {
-  return legacySsoRedirectResponse("failed", returnTo);
+  return legacySsoRedirectResponse(result, returnTo);
 }
 export function legacySsoPendingResponse(
   returnTo?: string
@@ -303,7 +340,8 @@ export function legacySsoTransaction(
     typeof transaction.codeVerifier !== "string" ||
     typeof transaction.generation !== "string" ||
     !/^[1-9]\d*$/u.test(transaction.generation) ||
-    typeof transaction.returnTo !== "string" ||
+    (transaction.returnTo !== null &&
+      typeof transaction.returnTo !== "string") ||
     typeof transaction.state !== "string" ||
     !/^[A-Za-z0-9._~-]{43,128}$/u.test(transaction.codeVerifier) ||
     !/^[A-Za-z0-9_-]{43}$/u.test(transaction.state) ||
@@ -323,7 +361,7 @@ export function legacySsoTransaction(
     generation: transaction.generation,
     initiatingSessionId: transaction.initiatingSessionId as string | undefined,
     initiatingUserId: transaction.initiatingUserId as string | undefined,
-    returnTo: transaction.returnTo,
+    returnTo: transaction.returnTo as string | null,
     state: transaction.state,
   };
 }
