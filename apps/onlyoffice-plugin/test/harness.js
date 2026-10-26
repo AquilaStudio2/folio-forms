@@ -253,8 +253,10 @@ export const createHarness = ({
     },
   };
 
-  const fetch = (input, init = {}) => {
-    const payload = queuedResponses.shift();
+  const fetch = async (input, init = {}) => {
+    const queued = queuedResponses.shift();
+    const payload =
+      typeof queued === "function" ? await queued(input, init) : queued;
     if (payload === undefined) {
       throw new Error("Unexpected plugin request");
     }
@@ -294,6 +296,21 @@ export const createHarness = ({
       if (timer) {
         timer.cancelled = true;
       }
+    },
+    crypto: globalThis.crypto,
+    removeEventListener(type, listener) {
+      if (type === "message") {
+        const index = messageListeners.indexOf(listener);
+        if (index !== -1) {
+          messageListeners.splice(index, 1);
+        }
+      }
+      windowEventListeners.set(
+        type,
+        (windowEventListeners.get(type) || []).filter(
+          (callback) => callback !== listener
+        )
+      );
     },
     setTimeout(callback, milliseconds) {
       const timer = { callback, cancelled: false, milliseconds };
@@ -399,8 +416,35 @@ export const createHarness = ({
   };
   // oxlint-disable no-use-before-define -- Native sheet and range objects refer to one another lazily.
   const spreadsheetSheet = () => ({
+    AddDefName: (name, reference) => {
+      spreadsheetNames.set(name, reference);
+      return true;
+    },
+    GetAllOleObjects: () =>
+      (
+        spreadsheetSelection?.oleObjects ||
+        spreadsheetSelection?.drawings ||
+        []
+      ).filter((object) => !object.Drawing?.removed),
+    GetDefNames: () =>
+      [...spreadsheetNames.keys()].map((name) => Api.GetDefName(name)),
     GetName: () => spreadsheetSelection?.sheet || "Sheet1",
     GetRange: spreadsheetRange,
+    GetRangeByNumber: (row, column) => {
+      let letters = "";
+      for (
+        let value = column + 1;
+        value > 0;
+        value = Math.floor((value - 1) / 26)
+      ) {
+        letters = String.fromCodePoint(65 + ((value - 1) % 26)) + letters;
+      }
+      return spreadsheetRange(`${letters}${row + 1}`);
+    },
+    GetSelectedDrawings: () =>
+      (spreadsheetSelection?.drawings || []).filter(
+        (object) => !object.Drawing?.removed
+      ),
     GetSelection: () => spreadsheetRange(spreadsheetSelection?.address || "A1"),
     SetActive() {},
     worksheet: nativeValidationModel.worksheet,
@@ -413,7 +457,8 @@ export const createHarness = ({
       const [first, last = first] = normalizedAddress(address).split(":");
       return position(last).column - position(first).column + 1;
     },
-    GetFormula: () => "",
+    GetFormula: () =>
+      spreadsheetSelection?.formulas?.[normalizedAddress(address)] || "",
     GetNumberFormat: () =>
       spreadsheetNumberFormats.get(normalizedAddress(address)) ?? "General",
     GetRow: () => position(normalizedAddress(address)).row,
@@ -422,8 +467,14 @@ export const createHarness = ({
       return position(last).row - position(first).row + 1;
     },
     GetValidation: () => spreadsheetValidation(address),
-    GetValue: () => spreadsheetSelection?.headers || "",
+    GetValue: () =>
+      spreadsheetSelection?.values?.[normalizedAddress(address)] ??
+      spreadsheetSelection?.headers ??
+      "",
     GetWorksheet: spreadsheetSheet,
+    Select() {
+      spreadsheetSelection.address = normalizedAddress(address);
+    },
     SetBorders(border, style, color) {
       spreadsheetBorders.push({ address, border, color, style });
       return true;
@@ -619,6 +670,17 @@ export const createHarness = ({
     parentOrigin,
     parentWindow,
     requests,
+    async runDrawingSelectionTimer() {
+      const timer = timers.find(
+        (item) => item.milliseconds === 500 && !item.cancelled
+      );
+      if (!timer) {
+        return false;
+      }
+      timer.cancelled = true;
+      await timer.callback();
+      return true;
+    },
     async runPictureGuardTimer() {
       const timer = timers.find(
         (item) => item.milliseconds === 750 && !item.cancelled

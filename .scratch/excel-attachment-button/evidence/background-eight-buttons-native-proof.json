@@ -1,0 +1,171 @@
+{
+  "source": ".scratch/excel-attachment-button/evidence/background-eight-buttons.xlsx",
+  "sha256": "0ba3763ff6c0859d4010b20929316c1901ea83abb233a10333850fd22500074e",
+  "runtime": "onlyoffice/documentserver:9.4.0.1",
+  "verifiedAt": "2026-10-26T06:37:21.133Z",
+  "nativeReopenIndependentOfBrowserCache": true,
+  "expectedCells": ["B3", "D3", "F3", "H3", "J3", "B7", "B8", "B9"],
+  "sheet": "Form",
+  "objects": [
+    {
+      "applicationId": "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}",
+      "metadata": {
+        "bindingId": "folio_mvovlk58_ibdm527a",
+        "kind": "folio-upload-poc",
+        "rowIndex": null,
+        "tag": "attachment_1",
+        "version": 1
+      },
+      "from": {
+        "column": 1,
+        "row": 2
+      },
+      "to": {
+        "column": 1,
+        "row": 2,
+        "colOff": 16.933333333333334,
+        "rowOff": 3.694555555555555
+      }
+    },
+    {
+      "applicationId": "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}",
+      "metadata": {
+        "bindingId": "folio_mvovp840_ejs8zive",
+        "kind": "folio-upload-poc",
+        "rowIndex": null,
+        "tag": "attachment_2",
+        "version": 1
+      },
+      "from": {
+        "column": 3,
+        "row": 2
+      },
+      "to": {
+        "column": 3,
+        "row": 2,
+        "colOff": 16.933333333333334,
+        "rowOff": 3.694555555555555
+      }
+    },
+    {
+      "applicationId": "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}",
+      "metadata": {
+        "bindingId": "folio_mvovpwvj_eoqls5hu",
+        "kind": "folio-upload-poc",
+        "rowIndex": null,
+        "tag": "attachment_3",
+        "version": 1
+      },
+      "from": {
+        "column": 5,
+        "row": 2
+      },
+      "to": {
+        "column": 5,
+        "row": 2,
+        "colOff": 16.933333333333334,
+        "rowOff": 3.694555555555555
+      }
+    },
+    {
+      "applicationId": "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}",
+      "metadata": {
+        "bindingId": "folio_mvovtmfq_my460a1u",
+        "kind": "folio-upload-poc",
+        "rowIndex": null,
+        "tag": "attachment_4",
+        "version": 1
+      },
+      "from": {
+        "column": 7,
+        "row": 2
+      },
+      "to": {
+        "column": 7,
+        "row": 2,
+        "colOff": 16.933333333333334,
+        "rowOff": 3.694555555555555
+      }
+    },
+    {
+      "applicationId": "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}",
+      "metadata": {
+        "bindingId": "folio_mvovu5e7_3jw68s0f",
+        "kind": "folio-upload-poc",
+        "rowIndex": null,
+        "tag": "attachment_5",
+        "version": 1
+      },
+      "from": {
+        "column": 9,
+        "row": 2
+      },
+      "to": {
+        "column": 9,
+        "row": 2,
+        "colOff": 16.933333333333334,
+        "rowOff": 3.694555555555555
+      }
+    },
+    {
+      "applicationId": "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}",
+      "metadata": {
+        "bindingId": "folio_mvovunf9_x12qpatr",
+        "kind": "folio-upload-poc",
+        "rowIndex": 0,
+        "tag": "items.column_2",
+        "version": 1
+      },
+      "from": {
+        "column": 1,
+        "row": 6
+      },
+      "to": {
+        "column": 1,
+        "row": 6,
+        "colOff": 16.933333333333334,
+        "rowOff": 3.694555555555555
+      }
+    },
+    {
+      "applicationId": "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}",
+      "metadata": {
+        "bindingId": "folio_mvovunf9_x12qpatr",
+        "kind": "folio-upload-poc",
+        "rowIndex": 1,
+        "tag": "items.column_2",
+        "version": 1
+      },
+      "from": {
+        "column": 1,
+        "row": 7
+      },
+      "to": {
+        "column": 1,
+        "row": 7,
+        "colOff": 16.933333333333334,
+        "rowOff": 3.694555555555555
+      }
+    },
+    {
+      "applicationId": "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}",
+      "metadata": {
+        "bindingId": "folio_mvovunf9_x12qpatr",
+        "kind": "folio-upload-poc",
+        "rowIndex": 2,
+        "tag": "items.column_2",
+        "version": 1
+      },
+      "from": {
+        "column": 1,
+        "row": 8
+      },
+      "to": {
+        "column": 1,
+        "row": 8,
+        "colOff": 16.933333333333334,
+        "rowOff": 3.694555555555555
+      }
+    }
+  ]
+}

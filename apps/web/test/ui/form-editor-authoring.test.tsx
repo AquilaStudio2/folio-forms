@@ -1,4 +1,4 @@
-// oxlint-disable require-await avoid-new prefer-await-to-callbacks -- HTTP fixtures model asynchronous responses and abort events.
+// oxlint-disable require-await avoid-new prefer-await-to-callbacks no-await-in-loop -- Fixtures model asynchronous responses and consecutive editor saves that must settle in order.
 import type * as RouterModule from "@tanstack/react-router";
 import {
   act,
@@ -145,6 +145,66 @@ describe("Excel authoring page", () => {
     await waitFor(() =>
       expect(screen.getByRole("button", { name: "บันทึกแบบร่าง" })).toBeEnabled()
     );
+  });
+  it("keeps the Excel revision across confirmed placement, manual save and deletion, with remount as the legacy fallback", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async () =>
+        Response.json({ editorConfigUrl: "/editor-config", form })
+      )
+    );
+    render(<Editor />);
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: "บันทึกแบบร่าง" })).toBeEnabled()
+    );
+    const originalEditor = screen.getByTestId("editor");
+    for (const operationId of [
+      "placement-1",
+      "manual-save-1",
+      "delete-field-1",
+    ]) {
+      await act(async () => {
+        await editor.props?.onBridgeMessage?.({
+          action: "save-template",
+          bridgeId: "editor",
+          operationId,
+          source: "form-bridge",
+          status: "pending",
+          type: "operation",
+        });
+      });
+      expect(screen.getByRole("button", { name: "บันทึกแบบร่าง" })).toBeDisabled();
+      await act(async () => {
+        await editor.props?.onBridgeMessage?.({
+          action: "save-template",
+          bridgeId: "editor",
+          operation: {
+            result: {
+              documentKey: "same-document",
+              editorSessionPreserved: true,
+            },
+          },
+          operationId,
+          source: "form-bridge",
+          status: "completed",
+          type: "operation",
+        });
+      });
+      expect(editor.props?.revision).toBe(0);
+      expect(screen.getByTestId("editor")).toBe(originalEditor);
+      expect(screen.getByRole("button", { name: "บันทึกแบบร่าง" })).toBeEnabled();
+    }
+    await act(async () => {
+      await editor.props?.onBridgeMessage?.({
+        action: "save-template",
+        bridgeId: "editor",
+        operationId: "normal-save",
+        source: "form-bridge",
+        status: "completed",
+        type: "operation",
+      });
+    });
+    expect(editor.props?.revision).toBe(1);
   });
   it("keeps a completed publication immutable when refreshing its details fails", async () => {
     let published = false;

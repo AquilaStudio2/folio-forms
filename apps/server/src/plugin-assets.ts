@@ -39,3 +39,21 @@ export const pluginSettingsIconResponse = (theme: "light" | "dark") =>
     Bun.file(path.resolve(pluginDir, "resources", theme, "settings.svg")),
     { headers: { "content-type": "image/svg+xml" } }
   );
+
+export const uploadPocIndexResponse = async () => {
+  const html = await Bun.file(
+    path.resolve(pluginDir, "upload-poc/index.html")
+  ).text();
+  const sdkUrl = `${env.ONLYOFFICE_URL.replace(/\/+$/u, "")}/sdkjs-plugins/v1/plugins.js`;
+  return new Response(
+    html.replace(onlyOfficePluginSdkUrlPlaceholder, htmlEscape(sdkUrl)),
+    { headers: { "content-type": "text/html; charset=utf-8" } }
+  );
+};
+export const uploadPocScriptResponse = async () =>
+  new Response(
+    env.NODE_ENV === "production"
+      ? Bun.file(path.resolve(pluginDir, "dist/upload-poc-picker.js"))
+      : await buildPlugin(pluginDir, "upload-poc-picker-entry.js"),
+    { headers: { "content-type": "text/javascript; charset=utf-8" } }
+  );

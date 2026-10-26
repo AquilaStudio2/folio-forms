@@ -20,6 +20,7 @@ import type {
   SpreadsheetColumn,
 } from "./contract";
 import { readSpreadsheetPictures } from "./picture-reader";
+import { validateUploadPocEmbeddings } from "./upload-poc-package";
 
 const mainNamespace =
   "http://schemas.openxmlformats.org/spreadsheetml/2006/main";
@@ -69,7 +70,7 @@ export const readSpreadsheetWorkbook = (
   if (
     !workbookType ||
     Object.keys(archive).some((name) =>
-      /^xl\/(?:externalLinks|embeddings|vbaProject)/iu.test(name)
+      /^xl\/(?:externalLinks|vbaProject)/iu.test(name)
     )
   ) {
     throw new Error(
@@ -195,6 +196,7 @@ export const readSpreadsheetWorkbook = (
   if (!sheetPath) {
     throw new Error("Worksheet is unavailable");
   }
+  validateUploadPocEmbeddings(archive, sheetPath);
   const names = new Map(
     [...rawNames].map(([key, value]) => {
       try {

@@ -1,7 +1,9 @@
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { OperationType } from "@onlyoffice/db";
 
+import { spreadsheetEditorSaveOptions } from "../documents/spreadsheets/editor-save-proof";
 import type { SpreadsheetAnchorSnapshot } from "../documents/spreadsheets/save-snapshot";
+import type { SavedUploadPocButton } from "../documents/spreadsheets/upload-poc";
 import { fail } from "../http/errors";
 import { asRecord } from "../http/input";
 import type { JsonRecord } from "../model-types";
@@ -46,6 +48,12 @@ export interface OperationMetadata extends JsonRecord {
   formId: string;
   nativeDocumentStaged?: boolean;
   nextDocumentKey?: string;
+  preserveEditorSession?: true;
+  uploadPocBindingId?: string;
+  preserveEditorSessionPurpose?: "placement" | "manual" | "delete";
+  spreadsheetSaveCheckpoint?: string;
+  spreadsheetUploadPocSnapshot?: SavedUploadPocButton[];
+  deletedUploadPocBindingIds?: string[];
   publicId?: string;
   publishedKey?: string;
   publishedVersion?: number;
@@ -72,6 +80,16 @@ export interface CallbackPayload {
 
 export function operationMetadata(value: unknown): OperationMetadata {
   const metadata = asRecord(value, "Operation metadata is invalid");
+  let editorOptions;
+  try {
+    editorOptions = spreadsheetEditorSaveOptions(metadata);
+  } catch {
+    return fail(
+      500,
+      "invalid_operation",
+      "Operation editor-save metadata is invalid"
+    );
+  }
   const {
     action,
     callbackEmptyFieldTags,
@@ -93,6 +111,8 @@ export function operationMetadata(value: unknown): OperationMetadata {
     typeof formId !== "string" ||
     typeof stagedObjectKey !== "string" ||
     typeof finalObjectKey !== "string" ||
+    (editorOptions &&
+      (action !== "save-template" || metadata.documentKind !== "xlsx")) ||
     (nativeDocumentStaged !== undefined &&
       typeof nativeDocumentStaged !== "boolean") ||
     (callbackEmptyFieldTags !== undefined &&

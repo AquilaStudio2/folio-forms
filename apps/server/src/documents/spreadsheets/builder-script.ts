@@ -1,5 +1,11 @@
 // oxlint-disable complexity -- Validate every executable builder boundary before generating the script.
 import type { SpreadsheetFormulaBinding } from "./formula-bindings";
+import {
+  spreadsheetUploadPocCommand,
+  uploadPocGuid,
+  uploadPocPreview,
+} from "./upload-poc";
+import type { UploadPocTarget } from "./upload-poc";
 
 export interface SpreadsheetRowChange {
   action: "insert" | "delete";
@@ -18,6 +24,7 @@ export interface SpreadsheetBuilderJob {
   clearRanges?: string[];
   formulaBindings?: SpreadsheetFormulaBinding[];
   restorePrototypeValidation?: boolean;
+  uploadPocTargets?: UploadPocTarget[];
 }
 
 /** Only server-created jobs are accepted; user text is never executable code. */
@@ -147,6 +154,12 @@ if (change) {
     if (!defined) throw new Error("Missing internal formula binding");
     defined.SetRefersTo("'" + sheet.GetName().replace(/'/g, "''") + "'!$" + address(firstColumn + binding.firstColumnOffset, firstRow).replace(/(\\d+)$/, "$$$1") + ":$" + address(firstColumn + binding.lastColumnOffset, firstRow + nextCount - 1).replace(/(\\d+)$/, "$$$1"));
   }
+}
+${
+  job.uploadPocTargets?.length
+    ? `var uploadProjection = JSON.parse((${spreadsheetUploadPocCommand.toString()})(${JSON.stringify({ guid: uploadPocGuid, mark: true, preview: uploadPocPreview, targets: job.uploadPocTargets })}));
+if (!uploadProjection.ok) throw new Error(uploadProjection.error);`
+    : ""
 }
 Api.RecalculateAllFormulas();
 builder.SaveFile("xlsx", ${JSON.stringify(outputName)});

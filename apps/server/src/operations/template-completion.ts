@@ -12,6 +12,7 @@ import { contentHash } from "../digests";
 import type { ParsedTemplateField } from "../documents/fields";
 import { parseTemplateFields } from "../documents/fields";
 import { reconcileSpreadsheetColumns } from "../documents/spreadsheets/columns";
+import { validatePreservedSpreadsheetEditorSave } from "../documents/spreadsheets/editor-save-proof";
 import { readSpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
 import { excelBindingSchema } from "../forms/excel-binding";
 import { validateFieldRulePointer } from "../forms/field-rules";
@@ -58,8 +59,29 @@ export async function completeTemplateOperation(
       "The template changed while this operation was running"
     );
   }
+  if (metadata.preserveEditorSession) {
+    if (
+      form.documentKind !== "xlsx" ||
+      metadata.nextDocumentKey !== documentKey
+    ) {
+      fail(
+        422,
+        "invalid_template",
+        "Preserved saves require the current XLSX document key"
+      );
+    }
+    validatePreservedSpreadsheetEditorSave(
+      bytes,
+      await spreadsheetDraftBindings(templateDraft.id),
+      metadata
+    );
+  }
   const nextDocumentKey = metadata.nextDocumentKey ?? documentKey;
-  const result = { documentKey: nextDocumentKey, publicId: form.publicId };
+  const result = {
+    documentKey: nextDocumentKey,
+    publicId: form.publicId,
+    ...(metadata.preserveEditorSession ? { editorSessionPreserved: true } : {}),
+  };
   const cleanupObjectKeys = [metadata.stagedObjectKey, templateDraft.objectKey];
   await prisma.$transaction(
     async (tx) => {

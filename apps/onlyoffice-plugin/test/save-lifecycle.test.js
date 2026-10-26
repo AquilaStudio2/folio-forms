@@ -105,7 +105,10 @@ for (const action of ["save-template", "publish"]) {
       holdEditorSave: true,
       responses: [
         { operationCapability: "poll", operationId: "template-save" },
-        completedOperation(),
+        completedOperation({
+          documentKey: "document-key",
+          editorSessionPreserved: true,
+        }),
       ],
       serializeCommands: true,
       spreadsheetBindings: {
@@ -159,6 +162,14 @@ for (const action of ["save-template", "publish"]) {
     await flushPlugin();
     expect(JSON.parse(harness.requests[0].body)).toEqual({
       documentKey: "document-key",
+      ...(action === "save-template"
+        ? {
+            preserveEditorSession: true,
+            preserveEditorSessionPurpose: "manual",
+            spreadsheetSaveCheckpoint: expect.any(String),
+            spreadsheetUploadPocSnapshot: [],
+          }
+        : {}),
       spreadsheetAnchors: [
         ["folio_month", "'Form'!$E$5"],
         ["folio_unfinished", null],
@@ -183,7 +194,10 @@ test("a failed native template save preserves the workbook and permits retry", a
     holdEditorSave: true,
     responses: [
       { operationCapability: "poll", operationId: "retry" },
-      completedOperation(),
+      completedOperation({
+        documentKey: "document-key",
+        editorSessionPreserved: true,
+      }),
     ],
   });
   acknowledgeBridge(harness);

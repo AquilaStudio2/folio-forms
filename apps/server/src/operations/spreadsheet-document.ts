@@ -3,6 +3,7 @@ import { prisma } from "@onlyoffice/db";
 import { reconcileSpreadsheetColumns } from "../documents/spreadsheets/columns";
 import { spreadsheetColumnName } from "../documents/spreadsheets/contract";
 import type { SpreadsheetRange } from "../documents/spreadsheets/contract";
+import { validatePreservedSpreadsheetEditorSave } from "../documents/spreadsheets/editor-save-proof";
 import { processSpreadsheet } from "../documents/spreadsheets/engine";
 import { compactSpreadsheetDraftOptions } from "../documents/spreadsheets/helper-storage";
 import {
@@ -19,6 +20,11 @@ import {
   validateSpreadsheetEdits,
 } from "../documents/spreadsheets/protection";
 import { validateSpreadsheetSaveSnapshot } from "../documents/spreadsheets/save-snapshot";
+import {
+  normalizeSpreadsheetUploadPocAnchors,
+  spreadsheetUploadPocTargets,
+  stripSpreadsheetUploadPoc,
+} from "../documents/spreadsheets/upload-poc";
 import {
   extractSpreadsheetData,
   readSpreadsheetWorkbook,
@@ -92,7 +98,24 @@ export const prepareSpreadsheetOperation = async (
     // A Template Draft may contain unfinished mappings. Saving preserves the
     // editor snapshot; only publication freezes and validates the contract.
     if (metadata.action === "save-template") {
-      return compactSpreadsheetDraftOptions(snapshot);
+      if (metadata.preserveEditorSession) {
+        validatePreservedSpreadsheetEditorSave(snapshot, bindings, metadata);
+      }
+      const targets = spreadsheetUploadPocTargets(snapshot, bindings);
+      const stripped = stripSpreadsheetUploadPoc(
+        snapshot,
+        new Set(targets.map((target) => target.bindingId))
+      );
+      if (metadata.preserveEditorSession && stripped !== snapshot) {
+        fail(
+          422,
+          "invalid_template",
+          "Obsolete attachment buttons require a normal template save before preserving the editor session"
+        );
+      }
+      return compactSpreadsheetDraftOptions(
+        normalizeSpreadsheetUploadPocAnchors(stripped)
+      );
     }
     validateSpreadsheetPublication(bindings);
     let synchronized: Uint8Array;
@@ -210,6 +233,19 @@ export const prepareSpreadsheetOperation = async (
       rowChange.index < 0)
   ) {
     throw new Error("Invalid spreadsheet row operation");
+  }
+  if (
+    rowChange?.action === "insert" &&
+    contract.table &&
+    spreadsheetUploadPocTargets(
+      baseBytes,
+      storedSpreadsheetBindings(contract)
+    ).some((target) => target.kind === "column")
+  ) {
+    const body = contract.locations[contract.table.anchor];
+    if (!body || rowChange.index !== body.lastRow - body.firstRow + 1) {
+      throw new Error("Upload POC supports appending table rows only");
+    }
   }
   const result = await processSpreadsheet(unprotectSpreadsheet(baseBytes), {
     bindings: storedSpreadsheetBindings(contract),

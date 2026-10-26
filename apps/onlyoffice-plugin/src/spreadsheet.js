@@ -1,4 +1,9 @@
 import { spreadsheetPicturePlaceholder } from "../../server/src/documents/spreadsheets/picture-placeholder.ts";
+import { spreadsheetUploadPocCommand } from "../../server/src/documents/spreadsheets/upload-poc-command.js";
+import {
+  uploadPocGuid,
+  uploadPocPreview,
+} from "../../server/src/documents/spreadsheets/upload-poc-preview.ts";
 import { createApi } from "./api.js";
 import { createBridge } from "./bridge.js";
 import { ACTIONS } from "./constants.js";
@@ -29,6 +34,7 @@ import {
   spreadsheetClearValidationCommand,
   spreadsheetHeadersCommand,
 } from "./spreadsheet-commands.js";
+import { spreadsheetEditorSaveCheckpointCommand } from "./spreadsheet-editor-save.js";
 // oxlint-disable func-style sort-keys no-implicit-globals consistent-function-scoping complexity prefer-named-capture-group require-unicode-regexp avoid-new prefer-await-to-callbacks no-empty-function prefer-await-to-then prefer-destructuring logical-assignment-operators func-names prefer-arrow-callback no-loop-func no-use-before-define throw-new-error no-await-in-loop -- ONLYOFFICE commands are serialized into the editor sandbox.
 import {
   spreadsheetPictureCommand,
@@ -40,6 +46,21 @@ import {
   tableSelection,
   selectedBinding,
 } from "./spreadsheet-selection.js";
+import { spreadsheetUploadPocActivationCommand } from "./spreadsheet-upload-poc-activation.js";
+import { spreadsheetUploadPocDeleteCommand } from "./spreadsheet-upload-poc-delete.js";
+import {
+  selectedUploadPocTarget,
+  selectedUploadPocBinding,
+  existingUploadPocEntry,
+  automaticUploadPocField,
+  spreadsheetUploadPocSelectionCommand,
+  uploadPocCleanupNames,
+  missingUploadPocBindings,
+  spreadsheetUploadPocCleanupCommand,
+  spreadsheetUploadPocHasMarkerCommand,
+} from "./spreadsheet-upload-poc.js";
+import { createUploadPocActivationLifecycle } from "./upload-poc-activation-lifecycle.js";
+import { checkUploadPocPending } from "./upload-poc-pending.js";
 
 const parseDropdownOptions = (text) => {
   const seen = new Set();
@@ -252,12 +273,22 @@ export function initializeSpreadsheet(options, setStatus) {
   let refreshRecoveryControls = () => {};
   let ensureAuthoringReady = async () => {};
   let validatePanelDrafts = () => {};
+  let uploadPocSaveInFlight = false;
+  let uploadPocDeleteNeedsSave = false;
+  let pendingTemplateDeletePurpose = "manual";
+  const deletedUploadPocBindingIds = new Set();
+  const deletedUploadPocTargets = new Map();
+  const pendingUploadPocChanges = new Map();
+  let preparePreservedTemplateSave = () => Promise.resolve({});
   const authoringControls = [];
   const controlStates = new Map();
   const disableAuthoringControls = (disabled) => {
     for (const control of authoringControls) {
       if (disabled) {
-        controlStates.set(control, control.disabled);
+        // Nested operations must retain the state from before the outer button disabled the panel.
+        if (!controlStates.has(control)) {
+          controlStates.set(control, control.disabled);
+        }
         control.disabled = true;
       } else if (controlStates.has(control)) {
         control.disabled = controlStates.get(control);
@@ -279,10 +310,32 @@ export function initializeSpreadsheet(options, setStatus) {
   });
   const prefill = { shouldApplyRuntimePrefill: () => false };
   const operations = createOperations(options, office, prefill, bridge, api, {
-    isInitializationPending: () => busy,
-    beforeAction: async () => {
+    isInitializationPending: () => busy && !uploadPocSaveInFlight,
+    getTemplateSaveContext: () =>
+      uploadPocDeleteNeedsSave && pendingTemplateDeletePurpose === "delete"
+        ? {
+            preserveEditorSessionPurpose: "delete",
+            deletedUploadPocBindingIds: [...deletedUploadPocBindingIds],
+          }
+        : { preserveEditorSessionPurpose: "manual" },
+    onTemplateSaveCompleted: (action, context) => {
+      if (
+        action === ACTIONS.SAVE_TEMPLATE &&
+        context?.preserveEditorSession === true
+      ) {
+        uploadPocDeleteNeedsSave = false;
+        pendingUploadPocChanges.clear();
+      }
+    },
+    beforeAction: async (action, rowChange) => {
+      if (uploadPocDeleteNeedsSave && action !== ACTIONS.SAVE_TEMPLATE) {
+        throw new Error(
+          "การลบปุ่มยังรอบันทึกต้นแบบ กรุณากดบันทึกแบบร่างเพื่อลองอีกครั้งก่อนแก้ไขต่อ"
+        );
+      }
       await ensureAuthoringReady();
       validatePanelDrafts();
+      await checkUploadPocPending(window, options, action, rowChange);
     },
     setActionBusy: (value) => {
       busy = value;
@@ -294,14 +347,19 @@ export function initializeSpreadsheet(options, setStatus) {
         void refreshAfterAction();
       }
     },
-    getTemplateSnapshot: async () => {
+    getTemplateSnapshot: async (context) => {
       validatePanelDrafts();
+      const proof =
+        context?.preserveEditorSession === true &&
+        ["manual", "delete"].includes(context.preserveEditorSessionPurpose)
+          ? await preparePreservedTemplateSave(context)
+          : {};
       const raw = await office.callCommandResult(spreadsheetSelectionCommand);
       const snapshot = typeof raw === "string" ? JSON.parse(raw) : raw;
       if (!Array.isArray(snapshot?.anchors)) {
         throw new TypeError("อ่านตำแหน่งช่องก่อนบันทึกไม่ได้ กรุณาลองใหม่");
       }
-      return { spreadsheetAnchors: snapshot.anchors };
+      return { spreadsheetAnchors: snapshot.anchors, ...proof };
     },
     setStatus,
   });
@@ -373,6 +431,13 @@ export function initializeSpreadsheet(options, setStatus) {
       if (busy) {
         return;
       }
+      if (uploadPocDeleteNeedsSave && !recoveryAction) {
+        setStatus(
+          "การลบปุ่มยังรอบันทึกต้นแบบ กรุณากดบันทึกแบบร่างเพื่อลองอีกครั้งก่อนแก้ไขต่อ",
+          "error"
+        );
+        return;
+      }
       if (pendingRecovery && !recoveryAction) {
         setStatus("ยังยืนยันผลการตั้งค่าไม่ได้ กรุณากด ลองยืนยันอีกครั้ง ก่อนแก้ไขต่อ", "error");
         return;
@@ -402,15 +467,275 @@ export function initializeSpreadsheet(options, setStatus) {
   message.setAttribute("role", "status");
   panel.append(message);
   async function selection() {
+    window.Asc.scope = window.Asc.scope || {};
+    window.Asc.scope.folioSpreadsheetAnchors =
+      spreadsheetBindingAnchors(bindings);
     const result = await office.callCommandResult(spreadsheetSelectionCommand);
     const selected = typeof result === "string" ? JSON.parse(result) : result;
     if (!selected?.sheet || !selected.address) {
       throw new Error("อ่านตำแหน่งที่เลือกไม่ได้");
     }
     selected.address = selected.address.split("!").at(-1);
+    const objectBinding = selectedUploadPocBinding(
+      selected,
+      bindings,
+      uploadPocGuid
+    );
+    if (objectBinding) {
+      selected.address = objectBinding.address;
+      selected.uploadPocBindingId = objectBinding.entry[1].id;
+    }
     selectionPosition(selected.address);
     return selected;
   }
+  const activeUploadPocBindingIds = () =>
+    [...(bindings.fields || []), ...(bindings.table?.columns || [])].map(
+      (field) => field.id
+    );
+  async function captureUploadPocTargets(
+    bindingIds,
+    sourceBindings = bindings
+  ) {
+    window.Asc.scope.folioUploadPocDelete = {
+      phase: "capture",
+      guid: uploadPocGuid,
+      bindingIds,
+    };
+    try {
+      const raw = await office.callCommandResult(
+        spreadsheetUploadPocDeleteCommand
+      );
+      const result = typeof raw === "string" ? JSON.parse(raw) : raw;
+      if (!result?.ok || !Array.isArray(result.targets)) {
+        throw new Error(result?.error || "อ่านข้อมูลปุ่ม POC ก่อนบันทึกไม่ได้");
+      }
+      window.Asc.scope.folioSpreadsheetAnchors =
+        spreadsheetBindingAnchors(sourceBindings);
+      const snapshotRaw = await office.callCommandResult(
+        spreadsheetSelectionCommand
+      );
+      const snapshot =
+        typeof snapshotRaw === "string" ? JSON.parse(snapshotRaw) : snapshotRaw;
+      const slots = new Set();
+      for (const target of result.targets) {
+        const resolved = selectedUploadPocBinding(
+          {
+            ...snapshot,
+            sheet: target.sheet,
+            drawing: {
+              count: 1,
+              applicationId: uploadPocGuid,
+              data: target.data,
+              from: { row: target.row, column: target.column },
+              marker: target.marker,
+            },
+          },
+          sourceBindings,
+          uploadPocGuid
+        );
+        if (resolved?.entry[1].id !== target.bindingId) {
+          throw new Error("ปุ่ม POC ไม่ตรงกับช่องที่กำลังบันทึก");
+        }
+        const data = JSON.parse(target.data);
+        const slot = `${target.bindingId}:${data.rowIndex ?? "scalar"}`;
+        if (slots.has(slot)) {
+          throw new Error("ตำแหน่งปุ่ม POC ซ้ำกัน จึงยังบันทึกโดยไม่เปิดตัวแก้ไขใหม่ไม่ได้");
+        }
+        slots.add(slot);
+      }
+      return result.targets;
+    } finally {
+      delete window.Asc.scope.folioUploadPocDelete;
+    }
+  }
+  preparePreservedTemplateSave = async () => {
+    // Operations invokes this only after freezing the native editor.
+    for (const pending of pendingUploadPocChanges.values()) {
+      const current = [
+        ...(bindings.fields || []),
+        ...(bindings.table?.columns || []),
+      ].filter((field) => pending.bindingIds.includes(field.id));
+      const ineligible = pending.reason === "ineligible/type-change";
+      if (
+        current.length !== pending.bindingIds.length ||
+        current.some((field) =>
+          ineligible
+            ? field.type === "text" && !field.computed
+            : field.type !== "text" || field.computed
+        )
+      ) {
+        throw new Error("การตั้งค่าปุ่มที่รอบันทึกเปลี่ยนไป กรุณาตรวจสอบก่อนลองอีกครั้ง");
+      }
+      const targets = pending.targets.map((target) => {
+        const field = current.find((item) => item.id === target.bindingId);
+        const column = bindings.table?.columns.some(
+          (item) => item.id === field.id
+        );
+        const tag = column ? `${bindings.table.key}.${field.key}` : field.key;
+        return {
+          ...target,
+          nextData: JSON.stringify({ ...JSON.parse(target.data), tag }),
+        };
+      });
+      window.Asc.scope.folioUploadPocDelete = {
+        phase: ineligible ? "remove" : "verify",
+        reason: pending.reason,
+        guid: uploadPocGuid,
+        bindingIds: pending.bindingIds,
+        targets,
+        activeBindingIds: activeUploadPocBindingIds(),
+        currentBindings: current,
+      };
+      try {
+        const raw = await office.callCommandResult(
+          spreadsheetUploadPocDeleteCommand,
+          ineligible
+        );
+        const result = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (!result?.ok) {
+          throw new Error(result?.error || "ยังยืนยันข้อมูลปุ่ม POC ไม่ได้");
+        }
+      } finally {
+        delete window.Asc.scope.folioUploadPocDelete;
+      }
+      if (!ineligible) {
+        // Revalidate old physical anchors, markers and row slots against the captured contract.
+        // Accept only the exact new tag after a partial projection retry.
+        const snapshotRaw = await office.callCommandResult(
+          spreadsheetSelectionCommand
+        );
+        const snapshot =
+          typeof snapshotRaw === "string"
+            ? JSON.parse(snapshotRaw)
+            : snapshotRaw;
+        for (const target of pending.targets) {
+          selectedUploadPocBinding(
+            {
+              ...snapshot,
+              sheet: target.sheet,
+              drawing: {
+                count: 1,
+                applicationId: uploadPocGuid,
+                data: target.data,
+                from: { row: target.row, column: target.column },
+                marker: target.marker,
+              },
+            },
+            pending.bindings,
+            uploadPocGuid
+          );
+        }
+        const projections = current.map((field) => {
+          const column = bindings.table?.columns.some(
+            (item) => item.id === field.id
+          );
+          const captured = pending.targets.filter(
+            (item) => item.bindingId === field.id
+          );
+          if (column) {
+            const reference = new Map(snapshot.anchors).get(
+              bindings.table.anchor
+            );
+            const [first, last = first] = reference
+              .slice(reference.lastIndexOf("!") + 1)
+              .split(":");
+            if (
+              captured.length !==
+                selectionPosition(last).row -
+                  selectionPosition(first).row +
+                  1 ||
+              captured.some(
+                (item, index) => JSON.parse(item.data).rowIndex !== index
+              )
+            ) {
+              throw new Error("ตำแหน่งปุ่มตารางไม่ครบ จึงยังปรับข้อมูลอย่างปลอดภัยไม่ได้");
+            }
+          }
+          return {
+            bindingId: field.id,
+            kind: column ? "column" : "field",
+            anchor: column ? spreadsheetColumnAnchor(field.id) : field.anchor,
+            ...(column
+              ? {
+                  bodyAnchor: bindings.table.anchor,
+                  columnOffset: field.offset,
+                }
+              : {}),
+            tag: column ? `${bindings.table.key}.${field.key}` : field.key,
+            sheet: captured[0].sheet,
+          };
+        });
+        window.Asc.scope.folioSpreadsheetUploadPoc = {
+          targets: projections,
+          preview: uploadPocPreview,
+          guid: uploadPocGuid,
+          mark: false,
+        };
+        try {
+          const raw = await office.callCommandResult(
+            spreadsheetUploadPocCommand,
+            true
+          );
+          const result = typeof raw === "string" ? JSON.parse(raw) : raw;
+          if (!result?.ok) {
+            throw new Error(result?.error || "ปรับข้อมูลปุ่ม POC ไม่สำเร็จ");
+          }
+        } finally {
+          delete window.Asc.scope.folioSpreadsheetUploadPoc;
+        }
+      }
+    }
+    if (deletedUploadPocBindingIds.size) {
+      window.Asc.scope.folioUploadPocDelete = {
+        phase: "remove",
+        guid: uploadPocGuid,
+        bindingIds: [...deletedUploadPocBindingIds],
+        targets: [...deletedUploadPocTargets.values()],
+        activeBindingIds: activeUploadPocBindingIds(),
+      };
+      try {
+        const raw = await office.callCommandResult(
+          spreadsheetUploadPocDeleteCommand,
+          true
+        );
+        const result = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (!result?.ok) {
+          throw new Error(
+            result?.error || "ยังยืนยันการลบปุ่มในชีตไม่ได้ กรุณากดบันทึกแบบร่างเพื่อลองอีกครั้ง"
+          );
+        }
+      } finally {
+        delete window.Asc.scope.folioUploadPocDelete;
+      }
+    }
+    const targets = await captureUploadPocTargets(activeUploadPocBindingIds());
+    if (targets.length > 4096) {
+      throw new Error("จำนวนปุ่ม POC เกินขอบเขตการบันทึกในตัวแก้ไขเดิม");
+    }
+    const spreadsheetUploadPocSnapshot = targets.map((target) => {
+      const data = JSON.parse(target.data);
+      return {
+        bindingId: target.bindingId,
+        tag: data.tag,
+        rowIndex: data.rowIndex ?? null,
+      };
+    });
+    const spreadsheetSaveCheckpoint = window.crypto.randomUUID();
+    window.Asc.scope.folioSpreadsheetSaveCheckpoint = spreadsheetSaveCheckpoint;
+    try {
+      if (
+        (await office.callCommandResult(
+          spreadsheetEditorSaveCheckpointCommand,
+          true
+        )) !== true
+      ) {
+        throw new Error("สร้างรหัสยืนยันการบันทึกต้นแบบไม่ได้");
+      }
+    } finally {
+      delete window.Asc.scope.folioSpreadsheetSaveCheckpoint;
+    }
+    return { spreadsheetSaveCheckpoint, spreadsheetUploadPocSnapshot };
+  };
   async function fetchBindings() {
     const capability = await bridge.requestActionCapability(
       ACTIONS.CONFIGURE_FIELDS
@@ -671,16 +996,33 @@ export function initializeSpreadsheet(options, setStatus) {
     setStatus("บันทึกการตั้งค่าช่องแล้ว กรุณาบันทึกต้นแบบ", "success");
     renderList();
   }
-  async function mutateBinding(change, target, mutate, onCommitted) {
+  async function mutateBinding(change, requestedTarget, mutate, onCommitted) {
+    const cleanupNames = uploadPocCleanupNames(change, bindings);
+    const target = {
+      ...requestedTarget,
+      extraAnchorNames: [
+        ...(requestedTarget.extraAnchorNames || []),
+        ...cleanupNames,
+      ],
+    };
     if (!Number.isSafeInteger(revision)) {
       await readBindings(change.action !== "delete");
     }
+    let pocChange = null;
+    const committed = async () => {
+      if (pocChange?.targets.length) {
+        pendingUploadPocChanges.set(change.value.id, pocChange);
+        uploadPocDeleteNeedsSave = true;
+        pendingTemplateDeletePurpose = "manual";
+      }
+      await onCommitted?.();
+    };
     const native = {
       before: null,
       target: { ...target },
       applied: null,
       checkpoint: null,
-      onCommitted,
+      onCommitted: committed,
       frozen: false,
       lockConfirmed: false,
       attempt: null,
@@ -705,6 +1047,26 @@ export function initializeSpreadsheet(options, setStatus) {
           change.value.columns = bindings.table.columns;
         }
       }
+      if (change.action === "upsert") {
+        const previous = bindingValue(bindings, change.kind, change.value.id);
+        const ineligible =
+          change.kind !== "table" &&
+          (change.value.type !== "text" || change.value.computed);
+        if (previous && (ineligible || previous.key !== change.value.key)) {
+          const bindingIds =
+            change.kind === "table"
+              ? previous.columns.map((field) => field.id)
+              : [previous.id];
+          const targets = await captureUploadPocTargets(bindingIds);
+          pocChange = {
+            reason: ineligible ? "ineligible/type-change" : "key-change",
+            bindingIds: [...new Set(targets.map((item) => item.bindingId))],
+            targets,
+            // oxlint-disable-next-line prefer-structured-clone -- The plugin VM and supported embedded browsers do not expose structuredClone.
+            bindings: JSON.parse(JSON.stringify(bindings)),
+          };
+        }
+      }
       snapshot = await captureNativeState(target);
       native.before = snapshot;
       const parsed =
@@ -716,6 +1078,20 @@ export function initializeSpreadsheet(options, setStatus) {
         });
       }
       await mutate();
+      if (cleanupNames.length) {
+        window.Asc.scope.folioSpreadsheetUploadPocCleanup = cleanupNames;
+        try {
+          if (
+            (await office.callCommandResult(
+              spreadsheetUploadPocCleanupCommand
+            )) !== true
+          ) {
+            throw new Error("ยังยืนยันการล้างตำแหน่งปุ่ม POC ไม่ได้ กรุณาลองอีกครั้ง");
+          }
+        } finally {
+          delete window.Asc.scope.folioSpreadsheetUploadPocCleanup;
+        }
+      }
       native.applied = await captureNativeState(native.target);
       native.checkpoint = native.applied;
       metadataAttempted = true;
@@ -807,7 +1183,7 @@ export function initializeSpreadsheet(options, setStatus) {
         { cause: error }
       );
     }
-    await onCommitted?.();
+    await committed();
   }
   async function retryBindingRecovery() {
     if (recoveryRequestInFlight) {
@@ -1067,13 +1443,15 @@ export function initializeSpreadsheet(options, setStatus) {
         return;
       }
       const draft = panelDraft();
-      drafts.set(target, {
-        ...draft,
-        optionEditor: optionsField.getEditorState(),
-      });
       if (sameValue(draft, draftBaselines.get(target))) {
+        // Pristine defaults are not drafts: their generated key can change after a metadata refresh.
+        drafts.delete(target);
         pendingDrafts.delete(target);
       } else {
+        drafts.set(target, {
+          ...draft,
+          optionEditor: optionsField.getEditorState(),
+        });
         pendingDrafts.add(target);
         bridge.setDirtyState(true);
       }
@@ -1147,17 +1525,11 @@ export function initializeSpreadsheet(options, setStatus) {
           message.textContent = error.message;
         }
       }
-      const configuredAnchors = new Set([
-        ...(bindings?.fields || []).map((field) => field.anchor),
-        ...(bindings?.table ? [bindings.table.anchor] : []),
-      ]);
-      const missing = selected?.anchors?.filter(
-        ([name, reference]) => !reference && configuredAnchors.has(name)
-      );
-      if (missing?.length) {
-        message.textContent = missingAnchor(editing)
-          ? "ไม่พบตำแหน่งช่องนี้ใน Excel เลือกช่วงเซลล์ที่ต้องการ แล้วเลือกช่องเดิมจากช่องที่บันทึกแล้วและกดผูกตำแหน่งใหม่ (ตารางให้เลือกเฉพาะแถวข้อมูล ไม่รวมหัวตาราง)"
-          : `มีช่องที่ไม่พบตำแหน่งใน Excel ${missing.length} รายการ เลือกช่วงเซลล์ แล้วเลือกช่องเดิมจากช่องที่บันทึกแล้วเพื่อผูกตำแหน่งใหม่`;
+      const missing = selected
+        ? missingUploadPocBindings(selected, bindings)
+        : [];
+      if (missing.length) {
+        message.textContent = `มีช่องที่ไม่พบตำแหน่งใน Excel ${missing.length} รายการ: ${missing.join(", ")} เลือกช่วงเซลล์ที่ต้องการ แล้วเลือกช่องเดิมจาก “ช่องที่บันทึกแล้ว” และกด “ผูกตำแหน่งใหม่กับช่วงที่เลือก” (ตารางเลือกเฉพาะแถวข้อมูล ไม่รวมหัวตาราง)`;
       }
       refreshRecoveryControls();
     };
@@ -1207,6 +1579,170 @@ export function initializeSpreadsheet(options, setStatus) {
       captureDraft();
       loadEntry(entries.find((entry) => entry[1].id === targetId));
     });
+    const uploadPocHelp = document.createElement("p");
+    uploadPocHelp.textContent =
+      "เลือกเซลล์ว่างแล้วกดวางปุ่มและบันทึกต้นแบบ ระบบสร้าง Title และ Tag และบันทึกปุ่มก่อนเลือกไฟล์ ถ้าเป็นช่องข้อความหรือคอลัมน์ตารางเดิมจะใช้ข้อมูลเดิม หลังบันทึกสำเร็จจึงดับเบิลคลิกเลือกไฟล์ ไฟล์ยังไม่อัปโหลดหรือบันทึกถาวร";
+    uploadPocHelp.id = "spreadsheet-upload-poc-help";
+    panel.append(uploadPocHelp);
+    const placeUploadPoc = button("วางปุ่มและบันทึกต้นแบบ (POC)", async () => {
+      const clickedSelection = await selection();
+      // Initial identity is only a movement check. Authorize against fresh metadata below.
+      const clickedEntry = selectedBinding(clickedSelection, bindings);
+      await ensureAuthoringReady();
+      validatePanelDrafts();
+      // Reject pending browser Files before creating metadata or native workbook changes.
+      await checkUploadPocPending(window, options, ACTIONS.SAVE_TEMPLATE);
+      await readBindings();
+      const refreshed = await selection();
+      let current = {
+        ...refreshed,
+        sheet: clickedSelection.sheet,
+        address: clickedSelection.address,
+      };
+      let entry = existingUploadPocEntry(current, bindings);
+      if (
+        clickedEntry &&
+        ["field", "column"].includes(clickedEntry[0]) &&
+        bindingValue(bindings, clickedEntry[0], clickedEntry[1].id) &&
+        clickedEntry[1].id !== entry?.[1]?.id
+      ) {
+        throw new Error("ตำแหน่งช่องเปลี่ยนระหว่างวางปุ่ม กรุณาเลือกเซลล์ใหม่แล้วลองอีกครั้ง");
+      }
+      window.Asc.scope.folioUploadPocSelection = {
+        ...current,
+        column: entry?.[0] === "column",
+        requireBlank: !entry,
+      };
+      const preflightRaw = await office.callCommandResult(
+        spreadsheetUploadPocSelectionCommand
+      );
+      const preflight =
+        typeof preflightRaw === "string"
+          ? JSON.parse(preflightRaw)
+          : preflightRaw;
+      if (!preflight?.ok) {
+        throw new Error(preflight?.error || "ตรวจสอบเซลล์ที่เลือกไม่ได้");
+      }
+      current = { ...current, address: preflight.address };
+      entry = existingUploadPocEntry(current, bindings);
+      if (!entry) {
+        const value = automaticUploadPocField(bindings, id());
+        const savedDraftKey = draftKey();
+        await mutateBinding(
+          { action: "upsert", kind: "field", value },
+          {
+            anchor: value.anchor,
+            sheet: current.sheet,
+            address: current.address,
+          },
+          async () => {
+            // Recheck the blank cell under the existing transaction's native lock.
+            window.Asc.scope.folioUploadPocSelection = {
+              ...current,
+              requireBlank: true,
+            };
+            const raw = await office.callCommandResult(
+              spreadsheetUploadPocSelectionCommand
+            );
+            const checked = typeof raw === "string" ? JSON.parse(raw) : raw;
+            if (!checked?.ok || checked.address !== current.address) {
+              throw new Error(
+                checked?.error || "เซลล์ที่เลือกเปลี่ยนระหว่างสร้างช่อง กรุณาลองอีกครั้ง"
+              );
+            }
+            await anchor(value.anchor, current);
+            window.Asc.scope.folioSpreadsheetValidation = value;
+            if (
+              (await office.callCommandResult(
+                spreadsheetValidationCommand,
+                true
+              )) !== true
+            ) {
+              throw new Error("ตั้งค่าช่องแนบไฟล์ไม่ได้ กรุณาลองอีกครั้ง");
+            }
+          },
+          () => {
+            drafts.delete(savedDraftKey);
+            draftBaselines.delete(savedDraftKey);
+            pendingDrafts.delete(savedDraftKey);
+            selected = current;
+            loadEntry(["field", value]);
+          }
+        );
+      }
+      // Bindings must be committed before a marker or drawing can be created.
+      window.Asc.scope.folioSpreadsheetAnchors =
+        spreadsheetBindingAnchors(bindings);
+      const targetSelection = await selection();
+      const target = selectedUploadPocTarget(
+        { ...targetSelection, address: current.address, sheet: current.sheet },
+        bindings
+      );
+      window.Asc.scope.folioSpreadsheetUploadPoc = {
+        mark: true,
+        targets: [target],
+        preview: uploadPocPreview,
+        guid: uploadPocGuid,
+      };
+      // A timed-out drawing command may still complete; retry replaces the same
+      // managed objects. Mark dirty before dispatch so saving retains its marker.
+      bridge.setDirtyState(true);
+      try {
+        const raw = await office.callCommandResult(
+          spreadsheetUploadPocCommand,
+          true
+        );
+        const result = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (!result?.ok) {
+          throw new Error(
+            result?.error || "ยังยืนยันการวางปุ่ม POC ไม่ได้ กรุณาลองวางซ้ำ"
+          );
+        }
+        window.Asc.scope.folioUploadPocSelection = {
+          ...current,
+          restore: true,
+        };
+        const restoredRaw = await office.callCommandResult(
+          spreadsheetUploadPocSelectionCommand
+        );
+        const restored =
+          typeof restoredRaw === "string"
+            ? JSON.parse(restoredRaw)
+            : restoredRaw;
+        if (!restored?.ok) {
+          throw new Error(
+            "วางปุ่มแล้ว แต่ยังเลือกช่องเพื่อแสดง Title และ Tag ไม่ได้ กรุณาคลิกเซลล์เดิม"
+          );
+        }
+        selected = await selection();
+        loadEntry(existingUploadPocEntry(selected, bindings));
+        // mutateBinding has confirmed its commit and released the native edit lock.
+        uploadPocSaveInFlight = true;
+        let saved;
+        try {
+          saved = await operations.runAction(ACTIONS.SAVE_TEMPLATE, "", null, {
+            preserveEditorSession: true,
+            preserveEditorSessionPurpose: "placement",
+            uploadPocBindingId: target.bindingId,
+          });
+        } finally {
+          uploadPocSaveInFlight = false;
+        }
+        if (!saved?.ok) {
+          throw new Error(
+            `วางปุ่มแล้ว แต่บันทึกต้นแบบยังไม่สำเร็จ: ${saved?.error || "ยังยืนยันผลไม่ได้"} กรุณากด “วางปุ่มและบันทึกต้นแบบ (POC)” ที่เซลล์เดิมเพื่อลองบันทึกซ้ำ ปุ่มและ Tag เดิมจะถูกใช้ต่อ ยังเลือกไฟล์ไม่ได้จนกว่าจะบันทึกสำเร็จ`
+          );
+        }
+        setStatus(
+          "วางปุ่มและบันทึกต้นแบบ POC สำเร็จในตัวแก้ไขเดิมแล้ว ดับเบิลคลิกปุ่มเพื่อเลือกไฟล์ได้ ไฟล์ยังไม่อัปโหลดหรือบันทึกถาวร",
+          "success"
+        );
+      } finally {
+        delete window.Asc.scope.folioSpreadsheetUploadPoc;
+        delete window.Asc.scope.folioUploadPocSelection;
+      }
+    });
+    placeUploadPoc.setAttribute("aria-describedby", uploadPocHelp.id);
     const save = button("เพิ่มช่องจากช่วงที่เลือก", async () => {
       if (editing && kind.value !== editingKind) {
         kind.value = editingKind;
@@ -1417,6 +1953,26 @@ export function initializeSpreadsheet(options, setStatus) {
       if (!editing) {
         return;
       }
+      const clicked = await selection();
+      if (
+        clicked.uploadPocBindingId &&
+        clicked.uploadPocBindingId !== editing.id
+      ) {
+        throw new Error("ปุ่มที่เลือกเปลี่ยนแล้ว กรุณารอให้ Title และ Tag อัปเดตก่อนลบ");
+      }
+      const hasPoc = clicked.drawing;
+      const pocNames = uploadPocCleanupNames(
+        { action: "delete", kind: editingKind, id: editing.id },
+        bindings
+      );
+      window.Asc.scope.folioSpreadsheetUploadPocMarkerNames = pocNames;
+      const marked = await office.callCommandResult(
+        spreadsheetUploadPocHasMarkerCommand
+      );
+      delete window.Asc.scope.folioSpreadsheetUploadPocMarkerNames;
+      const deletingPoc = Boolean(hasPoc || marked);
+      validatePanelDrafts();
+      await checkUploadPocPending(window, options, ACTIONS.SAVE_TEMPLATE);
       await readBindings(false);
       const current = bindingValue(bindings, editingKind, editing.id);
       if (!current) {
@@ -1439,10 +1995,18 @@ export function initializeSpreadsheet(options, setStatus) {
       };
       const deletedKind = editingKind;
       const deletedDraftKey = draftKey();
+      const deletedIds =
+        deletedKind === "table"
+          ? current.columns.map((column) => column.id)
+          : [current.id];
+      let nativeDeleteTargets = [];
       await mutateBinding(
         { kind: editingKind, action: "delete", id: current.id },
         target,
         async () => {
+          if (deletingPoc) {
+            nativeDeleteTargets = await captureUploadPocTargets(deletedIds);
+          }
           window.Asc.scope.folioSpreadsheetValidation = target;
           if (
             (await office.callCommandResult(
@@ -1454,6 +2018,19 @@ export function initializeSpreadsheet(options, setStatus) {
           }
         },
         async () => {
+          uploadPocDeleteNeedsSave = true;
+          pendingTemplateDeletePurpose = deletingPoc ? "delete" : "manual";
+          if (deletingPoc) {
+            for (const bindingId of deletedIds) {
+              deletedUploadPocBindingIds.add(bindingId);
+            }
+            for (const deletedTarget of nativeDeleteTargets) {
+              deletedUploadPocTargets.set(
+                deletedTarget.nativeId,
+                deletedTarget
+              );
+            }
+          }
           try {
             await synchronizeColumns(false);
             initializationError = null;
@@ -1476,8 +2053,35 @@ export function initializeSpreadsheet(options, setStatus) {
           }
         }
       );
+      {
+        uploadPocSaveInFlight = true;
+        let saved;
+        try {
+          saved = await operations.runAction(ACTIONS.SAVE_TEMPLATE, "", null, {
+            preserveEditorSession: true,
+            preserveEditorSessionPurpose: deletingPoc ? "delete" : "manual",
+            ...(deletingPoc
+              ? { deletedUploadPocBindingIds: [...deletedUploadPocBindingIds] }
+              : {}),
+          });
+        } finally {
+          uploadPocSaveInFlight = false;
+        }
+        if (!saved?.ok) {
+          throw new Error(
+            `ลบการตั้งค่าปุ่มแล้ว แต่ยังบันทึกต้นแบบไม่สำเร็จ: ${saved?.error || "ยังยืนยันผลไม่ได้"} กรุณากด “บันทึกแบบร่าง” เพื่อลองบันทึกต้นแบบอีกครั้ง ห้ามเลือกไฟล์จากปุ่มเดิม`
+          );
+        }
+        setStatus(
+          deletingPoc
+            ? "ลบช่องและปุ่ม POC พร้อมบันทึกต้นแบบแล้ว"
+            : "ลบช่องและบันทึกต้นแบบในตัวแก้ไขเดิมแล้ว",
+          "success"
+        );
+      }
     });
     remove.className = "secondary-action";
+    remove.title = "ลบช่องแล้วบันทึกต้นแบบทั้งฉบับในตัวแก้ไขเดิมทันที";
     const restorePicture = button("สร้างกรอบรูปอีกครั้ง", async () => {
       if (editingKind !== "field" || editing?.type !== "picture") {
         return;
@@ -1571,7 +2175,7 @@ export function initializeSpreadsheet(options, setStatus) {
         if (control === existing) {
           continue;
         }
-        if (pendingRecovery) {
+        if (pendingRecovery || uploadPocDeleteNeedsSave) {
           if (!recoveryControlStates.has(control)) {
             recoveryControlStates.set(
               control,
@@ -1589,9 +2193,9 @@ export function initializeSpreadsheet(options, setStatus) {
           }
         }
       }
-      if (pendingRecovery) {
+      if (pendingRecovery || uploadPocDeleteNeedsSave) {
         for (const item of buttons) {
-          item.disabled = item !== retryRecovery || busy;
+          item.disabled = !pendingRecovery || item !== retryRecovery || busy;
         }
       } else {
         recoveryControlStates.clear();
@@ -1625,10 +2229,12 @@ export function initializeSpreadsheet(options, setStatus) {
       window.Asc.scope.folioSpreadsheetAnchors =
         spreadsheetBindingAnchors(bindings);
     };
+    let selectionRefreshInFlight = false;
     const refreshSelection = async () => {
-      if (busy) {
+      if (busy || selectionRefreshInFlight) {
         return;
       }
+      selectionRefreshInFlight = true;
       selectionSequence += 1;
       const sequence = selectionSequence;
       try {
@@ -1639,16 +2245,32 @@ export function initializeSpreadsheet(options, setStatus) {
         if (
           selected?.sheet === current.sheet &&
           selected?.address === current.address &&
-          JSON.stringify(selected?.anchors) === JSON.stringify(current.anchors)
+          JSON.stringify(selected?.anchors) ===
+            JSON.stringify(current.anchors) &&
+          JSON.stringify(selected?.drawing) === JSON.stringify(current.drawing)
         ) {
           return;
         }
         captureDraft();
         selected = current;
-        const match = selectedBinding(current, bindings);
+        const objectBinding = selectedUploadPocBinding(
+          current,
+          bindings,
+          uploadPocGuid
+        );
+        const match =
+          objectBinding?.entry || selectedBinding(current, bindings);
         loadEntry(match);
       } catch (error) {
+        if (sequence !== selectionSequence || busy) {
+          return;
+        }
+        captureDraft();
+        selected = null;
+        loadEntry(null);
         message.textContent = error.message;
+      } finally {
+        selectionRefreshInFlight = false;
       }
     };
     refreshAfterAction = async () => {
@@ -1664,6 +2286,31 @@ export function initializeSpreadsheet(options, setStatus) {
     window.Asc.plugin.attachEditorEvent?.("onDocumentContentReady", () => {
       void refreshSelection();
     });
+    // Native caret events do not cover OLE selection in ONLYOFFICE 9.4.
+    // Read-only polling keeps the Admin panel aligned with selected drawings.
+    let selectionPollingStopped = false;
+    let selectionPollTimer;
+    const pollDrawingSelection = () => {
+      if (selectionPollingStopped) {
+        return;
+      }
+      if (pendingRecovery) {
+        selectionPollTimer = window.setTimeout(pollDrawingSelection, 500);
+        return;
+      }
+      void refreshSelection().finally(() => {
+        if (!selectionPollingStopped) {
+          selectionPollTimer = window.setTimeout(pollDrawingSelection, 500);
+        }
+      });
+    };
+    const stopSelectionPolling = () => {
+      selectionPollingStopped = true;
+      window.clearTimeout(selectionPollTimer);
+    };
+    window.addEventListener("pagehide", stopSelectionPolling);
+    window.addEventListener("unload", stopSelectionPolling);
+    selectionPollTimer = window.setTimeout(pollDrawingSelection, 500);
     renderList();
     updateControls();
     let initializationError = null;
@@ -1709,6 +2356,44 @@ export function initializeSpreadsheet(options, setStatus) {
     renderList();
   } else {
     message.hidden = true;
+    if (options.scopeIdentity && options.action !== ACTIONS.CORRECTION) {
+      const activateUploadPoc = () => {
+        window.Asc.scope.folioUploadPocActivation = {
+          bindings,
+          guid: uploadPocGuid,
+        };
+        return office
+          .callCommandResult(spreadsheetUploadPocActivationCommand, true)
+          .then((raw) => {
+            const result = typeof raw === "string" ? JSON.parse(raw) : raw;
+            if (!result?.ok) {
+              throw new Error(
+                result?.error || "ONLYOFFICE รุ่นนี้ยังเปิดปุ่มเลือกไฟล์ POC ไม่ได้"
+              );
+            }
+            if (result.count > 0) {
+              setStatus(
+                "พร้อมเลือกไฟล์ POC ไฟล์อยู่ในหน้านี้เท่านั้น ยังไม่อัปโหลดหรือบันทึกถาวร",
+                "success"
+              );
+            }
+          })
+          .finally(() => {
+            delete window.Asc.scope.folioUploadPocActivation;
+          });
+      };
+      const activation = createUploadPocActivationLifecycle(
+        activateUploadPoc,
+        (error) => setStatus(error.message, "error")
+      );
+      window.Asc.plugin.attachEditorEvent?.("onDocumentContentReady", () => {
+        void activation.ready();
+      });
+      // Autostart may begin after content-ready; every editor remount gets a fresh instance.
+      window.setTimeout(() => {
+        void activation.fallback();
+      }, 1000);
+    }
     const pictureInputs = [];
     const pictureFrames = (options.spreadsheetPictureFrames || []).filter(
       (frame) =>

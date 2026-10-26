@@ -10,7 +10,34 @@ export {
 export function spreadsheetSelectionCommand() {
   const sheet = Api.GetActiveSheet();
   const selection = sheet.GetSelection();
+  const drawings = sheet.GetSelectedDrawings?.() || [];
+  let drawing = null;
+  if (drawings.length) {
+    drawing = { count: drawings.length };
+    if (drawings.length === 1) {
+      const object = drawings[0];
+      drawing.applicationId = object.GetApplicationId?.() || null;
+      drawing.data = object.GetData?.() || null;
+      const from = object.Drawing?.drawingBase?.from;
+      drawing.from = from ? { column: from.col, row: from.row } : null;
+      try {
+        const data =
+          typeof drawing.data === "string" && drawing.data.length <= 4096
+            ? JSON.parse(drawing.data)
+            : null;
+        if (/^folio_[A-Za-z0-9_]+$/u.test(data?.bindingId)) {
+          drawing.marker =
+            Api.GetDefName(
+              `_folio_upload_poc_${data.bindingId}`
+            )?.GetRefersTo() || null;
+        }
+      } catch {
+        drawing.marker = null;
+      }
+    }
+  }
   return JSON.stringify({
+    ...(drawing ? { drawing } : {}),
     address: selection.GetAddress(true, true, "xlA1", false),
     sheet: sheet.GetName(),
     anchors: (Asc.scope.folioSpreadsheetAnchors || []).map((anchor) => {

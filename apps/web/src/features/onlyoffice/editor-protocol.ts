@@ -1,5 +1,7 @@
 import { API_ORIGIN } from "@/lib/api";
 
+import type { UploadPocHostOptions } from "./upload-poc-pending";
+
 type EditorAction =
   | "save-template"
   | "publish"
@@ -39,6 +41,7 @@ export interface EditorConfig {
     id?: string;
     lease?: EditorLease;
     pluginOrigin?: string;
+    uploadPoc?: UploadPocHostOptions;
   };
   config?: Record<string, unknown>;
   editorUrl?: string;
@@ -165,7 +168,11 @@ export const parseFieldSelectionMessage = (
 };
 
 const isValidOperationResult = (value: Record<string, unknown>): boolean =>
-  value.submissionId === undefined || typeof value.submissionId === "string";
+  (value.submissionId === undefined ||
+    typeof value.submissionId === "string") &&
+  (value.documentKey === undefined || isNonEmptyString(value.documentKey)) &&
+  (value.editorSessionPreserved === undefined ||
+    typeof value.editorSessionPreserved === "boolean");
 
 export const parseOperationMessage = (
   value: unknown,
@@ -209,6 +216,8 @@ interface EditorOperationBridgeMessage {
   error?: string;
   operation?: {
     result?: {
+      documentKey?: string;
+      editorSessionPreserved?: boolean;
       submissionId?: string;
     };
   };

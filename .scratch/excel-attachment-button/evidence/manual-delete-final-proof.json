@@ -1,0 +1,94 @@
+{
+  "sameDocumentKey": true,
+  "newArtifact": true,
+  "newHash": true,
+  "buttons": 0,
+  "fields": 0,
+  "tableAbsent": true,
+  "operations": [
+    {
+      "purpose": "manual",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    },
+    {
+      "purpose": "placement",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    },
+    {
+      "purpose": "placement",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    },
+    {
+      "purpose": "placement",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    },
+    {
+      "purpose": "placement",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    },
+    {
+      "purpose": "manual",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    },
+    {
+      "purpose": "delete",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    },
+    {
+      "purpose": "delete",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    },
+    {
+      "purpose": "delete",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    },
+    {
+      "purpose": "delete",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    },
+    {
+      "purpose": "manual",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    },
+    {
+      "purpose": "placement",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    },
+    {
+      "purpose": "manual",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    },
+    {
+      "purpose": "manual",
+      "status": "completed",
+      "preserved": true,
+      "sameKey": true
+    }
+  ]
+}

@@ -17,6 +17,11 @@ import {
   applySpreadsheetPrintAreas,
   prepareSpreadsheetRowFormulas,
 } from "./formula-bindings";
+import {
+  normalizeSpreadsheetUploadPocAnchors,
+  spreadsheetUploadPocTargets,
+  stripSpreadsheetUploadPoc,
+} from "./upload-poc";
 import { applySpreadsheetValidation } from "./validation";
 import { XLSX_CONTENT_TYPE } from "./workbook";
 
@@ -142,9 +147,15 @@ export const processSpreadsheet = async (
   if (input.byteLength > maximumFileBytes) {
     throw new Error("Spreadsheet input is too large");
   }
-  const validatedInput = options.bindings
-    ? applySpreadsheetValidation(input, options.bindings)
+  const uploadPocTargets = options.bindings
+    ? spreadsheetUploadPocTargets(input, options.bindings)
+    : [];
+  const projectionInput = options.bindings
+    ? stripSpreadsheetUploadPoc(input)
     : input;
+  const validatedInput = options.bindings
+    ? applySpreadsheetValidation(projectionInput, options.bindings)
+    : projectionInput;
   const prepared = options.rowChange
     ? prepareSpreadsheetRowFormulas(validatedInput, options.rowChange)
     : { formulaBindings: [], printAreas: [], workbook: validatedInput };
@@ -167,6 +178,7 @@ export const processSpreadsheet = async (
     inputUrl,
     restorePrototypeValidation: options.bindings === undefined,
     rowChange: options.rowChange,
+    uploadPocTargets,
     values: options.values,
     ...(options.pdf && !renderAfterPrintUpdate
       ? { pdfName: "canonical.pdf" }
@@ -208,9 +220,12 @@ export const processSpreadsheet = async (
           await downloadOutput(result.urls?.["canonical.xlsx"]),
           prepared.printAreas
         );
-        const workbook = options.bindings
-          ? applySpreadsheetValidation(output, options.bindings)
+        const projected = options.bindings
+          ? normalizeSpreadsheetUploadPocAnchors(output)
           : output;
+        const workbook = options.bindings
+          ? applySpreadsheetValidation(projected, options.bindings)
+          : projected;
         if (workbook.byteLength > maximumFileBytes) {
           throw new Error("Spreadsheet output is too large");
         }

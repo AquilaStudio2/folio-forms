@@ -587,7 +587,13 @@ const FormEditorRoute = () => {
     if (message.status !== "completed") {
       return;
     }
-    if (message.action === "save-template") {
+    if (
+      message.action === "save-template" &&
+      !(
+        loadedForm.documentKind === "xlsx" &&
+        message.operation?.result?.editorSessionPreserved === true
+      )
+    ) {
       setEditorState("loading");
       setEditorRevision((value) => value + 1);
     }

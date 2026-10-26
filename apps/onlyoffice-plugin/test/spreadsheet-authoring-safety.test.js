@@ -272,7 +272,10 @@ test("a committed PATCH with a lost acknowledgement is verified instead of rolli
       { body: { error: "Lost acknowledgement" }, httpStatus: 502 },
       { bindings: saved, revision: 1 },
       { operationCapability: "poll", operationId: "saved" },
-      completedOperation(),
+      completedOperation({
+        documentKey: "document-key",
+        editorSessionPreserved: true,
+      }),
     ],
   });
   acknowledgeBridge(harness);
@@ -495,7 +498,10 @@ test("a broken column can be removed explicitly and no longer prevents saving", 
       { bindings: initial, revision: 0 },
       { bindings: saved, revision: 1 },
       { operationCapability: "poll", operationId: "save" },
-      completedOperation(),
+      completedOperation({
+        documentKey: "document-key",
+        editorSessionPreserved: true,
+      }),
     ],
     spreadsheetBindings: initial,
     spreadsheetSelection: {
@@ -516,9 +522,17 @@ test("a broken column can be removed explicitly and no longer prevents saving", 
   expect(
     harness.requests.filter((request) => request.method === "PATCH")
   ).toHaveLength(1);
-  await expect(
-    harness.window.FormBridge.runAction("save-template")
-  ).resolves.toMatchObject({ ok: true });
+  expect(harness.statusElement.textContent).toContain(
+    "ลบช่องและบันทึกต้นแบบในตัวแก้ไขเดิมแล้ว"
+  );
+  const save = harness.requests.find((request) => request.method === "POST");
+  expect(JSON.parse(save.body)).toMatchObject({
+    preserveEditorSession: true,
+    preserveEditorSessionPurpose: "manual",
+  });
+  expect(JSON.parse(save.body)).not.toHaveProperty(
+    "deletedUploadPocBindingIds"
+  );
 });
 
 test("editing a moved column submits all live offsets atomically before saving the draft", async () => {
@@ -642,7 +656,10 @@ test("recovery retries only verification, preserves a dismissed error block, and
       { body: { error: "Still offline" }, httpStatus: 503 },
       { bindings: saved, revision: 1 },
       { operationCapability: "poll", operationId: "saved" },
-      completedOperation(),
+      completedOperation({
+        documentKey: "document-key",
+        editorSessionPreserved: true,
+      }),
     ],
   });
   acknowledgeBridge(harness);
@@ -761,12 +778,17 @@ test("recovery proves an uncommitted new field, restores its native state, and r
 test("recovery finishes a committed deletion without replaying it", async () => {
   const saved = { ...bindings, fields: [] };
   const harness = templateHarness({
-    capabilityResponses: ["read", "write", "verify", "retry"],
+    capabilityResponses: ["read", "write", "verify", "retry", "save"],
     responses: [
       { bindings, revision: 0 },
       { body: { error: "Lost acknowledgement" }, httpStatus: 502 },
       { body: { error: "Offline" }, httpStatus: 503 },
       { bindings: saved, revision: 1 },
+      { operationCapability: "poll", operationId: "save-recovered-delete" },
+      completedOperation({
+        documentKey: "document-key",
+        editorSessionPreserved: true,
+      }),
     ],
   });
   acknowledgeBridge(harness);
@@ -775,6 +797,9 @@ test("recovery finishes a committed deletion without replaying it", async () => 
   expect(harness.spreadsheetNames.has(field.anchor)).toBe(false);
   await click(harness, "ลองยืนยันอีกครั้ง");
   expect(control(harness, "ช่องที่บันทึกแล้ว").value).toBe("");
+  expect(control(harness, "Title · ชื่อช่อง").disabled).toBe(true);
+  const result = await harness.window.FormBridge.runAction("save-template");
+  expect(result.ok).toBe(true);
   expect(control(harness, "Title · ชื่อช่อง").disabled).toBe(false);
   expect(harness.spreadsheetNames.has(field.anchor)).toBe(false);
   expect(

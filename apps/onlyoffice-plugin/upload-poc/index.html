@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <style>
+      body {
+        box-sizing: border-box;
+        font:
+          13px/1.5 system-ui,
+          sans-serif;
+        color: #242424;
+        padding: 36px 16px 16px;
+        margin: 0;
+      }
+      h1 {
+        font-size: 16px;
+        line-height: 1.4;
+        margin: 0 0 8px;
+      }
+      p {
+        margin: 8px 0;
+      }
+      label {
+        display: block;
+        margin: 14px 0 6px;
+      }
+      input {
+        max-width: 100%;
+      }
+      .notice {
+        background: #fff7dc !important;
+        color: #3b3216 !important;
+        border: 1px solid #dccb8c;
+        font-size: 12px;
+        line-height: 1.4;
+        padding: 8px;
+      }
+      #filename {
+        overflow-wrap: anywhere;
+      }
+      [data-error="true"] {
+        color: #9b1c1c;
+      }
+    </style>
+    <script src="__ONLYOFFICE_PLUGIN_SDK_URL__"></script>
+    <script defer src="./picker.js"></script>
+  </head>
+  <body>
+    <h1>เลือกไฟล์แนบ (POC)</h1>
+    <p class="notice">
+      ไฟล์อยู่ในหน่วยความจำของหน้านี้เท่านั้น ยังไม่อัปโหลดและยังไม่บันทึกถาวร
+      การรีเฟรชหรือปิดหน้าจะทำให้ไฟล์ที่เลือกหายไป
+    </p>
+    <label for="attachment"
+      >เลือกไฟล์หนึ่งไฟล์ หรือเลือกใหม่เพื่อเปลี่ยนไฟล์</label
+    >
+    <input id="attachment" type="file" disabled />
+    <p>
+      ไฟล์ที่เลือก: <strong id="filename">ยังไม่ได้เลือกไฟล์</strong>
+      <span id="filesize"></span>
+    </p>
+    <p id="status" role="status" aria-live="polite">
+      กำลังเปิดหน้าต่างเลือกไฟล์…
+    </p>
+    <button id="retry" type="button" hidden>ลองยืนยันไฟล์อีกครั้ง</button>
+  </body>
+</html>

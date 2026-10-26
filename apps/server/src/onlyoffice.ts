@@ -4,6 +4,8 @@ import { isDeepStrictEqual } from "node:util";
 
 import { env } from "@onlyoffice/env/server";
 
+import { uploadPocGuid } from "./documents/spreadsheets/upload-poc-preview";
+
 export const pluginGuid = "asc.{E0B14962-3B9D-4E82-923E-89A93E8A1A51}";
 
 const tokenLifetimeSeconds = 5 * 60;
@@ -118,6 +120,11 @@ export interface CallbackClaimInput {
 export interface EditorOptions {
   documentKind?: "docx" | "xlsx";
   spreadsheetBindings?: unknown;
+  uploadPocSavedButtons?: {
+    bindingId: string;
+    tag: string;
+    rowIndex: number | null;
+  }[];
   spreadsheetPictureFrames?: unknown;
   action: PluginAction;
   capabilities: Partial<Record<EditorCapabilityAction, string>>;
@@ -471,6 +478,24 @@ export function editorConfig(
   const officeServerOrigin = trimOrigin(env.ONLYOFFICE_DOCUMENT_BASE_URL);
   const browserServerOrigin = trimOrigin(env.API_BASE);
   const bridgeId = crypto.randomUUID();
+  const uploadPocOptions =
+    options.documentKind === "xlsx"
+      ? {
+          action: options.action,
+          bridgeId,
+          documentKey: options.documentKey,
+          parentOrigin: exactOrigin(env.CORS_ORIGIN),
+          scopeIdentity: JSON.stringify([
+            user.id,
+            options.publicId,
+            options.responseId ?? "template",
+          ]),
+          spreadsheetBindings: options.spreadsheetBindings,
+          ...(options.action === "template-edit"
+            ? { savedButtons: options.uploadPocSavedButtons ?? [] }
+            : {}),
+        }
+      : undefined;
   const config = {
     document: {
       fileType: documentFileType,
@@ -505,14 +530,25 @@ export function editorConfig(
         autostart: [pluginGuid],
         disable: ["asc.{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}"],
         options: {
+          ...(uploadPocOptions ? { [uploadPocGuid]: uploadPocOptions } : {}),
           [pluginGuid]: {
             ...pluginOptions,
+            ...(uploadPocOptions
+              ? { scopeIdentity: uploadPocOptions.scopeIdentity }
+              : {}),
             apiBase: browserServerOrigin,
             bridgeId,
             parentOrigin: exactOrigin(env.CORS_ORIGIN),
           },
         },
-        pluginsData: [`${browserServerOrigin}/onlyoffice-plugin/config.json`],
+        pluginsData: [
+          `${browserServerOrigin}/onlyoffice-plugin/config.json`,
+          ...(uploadPocOptions
+            ? [
+                `${browserServerOrigin}/onlyoffice-plugin/upload-poc/config.json`,
+              ]
+            : []),
+        ],
       },
       user: {
         id: user.id,
@@ -529,6 +565,7 @@ export function editorConfig(
       id: bridgeId,
       lease,
       pluginOrigin: exactOrigin(env.API_BASE),
+      ...(uploadPocOptions ? { uploadPoc: uploadPocOptions } : {}),
     },
     config: { ...config, token: signToken(config, env.ONLYOFFICE_JWT_SECRET) },
   };

@@ -4,6 +4,7 @@ import type { Elysia } from "elysia";
 
 import { registerSpreadsheetBuilderRoutes } from "../documents/spreadsheets/engine";
 import { spreadsheetExportSnapshot } from "../documents/spreadsheets/export-snapshot";
+import { uploadPocGuid } from "../documents/spreadsheets/upload-poc-preview";
 import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
 import { HttpError, fail } from "../http/errors";
 import { readJsonRecord } from "../http/input";
@@ -24,6 +25,8 @@ import type { CallbackPayload } from "../operations/model";
 import { cleanupTerminalOperationObjects } from "../operations/object-cleanup";
 import { SpreadsheetValidationError } from "../operations/spreadsheet-document";
 import {
+  uploadPocIndexResponse,
+  uploadPocScriptResponse,
   pluginIndexResponse,
   pluginOrigins,
   pluginScriptResponse,
@@ -124,6 +127,37 @@ export function registerOnlyOfficeRoutes(
         version: "2.1.0",
       };
     })
+    .get("/onlyoffice-plugin/upload-poc/config.json", ({ request, set }) => {
+      const origin = request.headers.get("origin");
+      if (origin && !pluginOrigins.has(origin)) {
+        fail(403, "forbidden_origin", "Origin is not allowed");
+      }
+      if (origin && origin !== corsOrigin) {
+        set.headers["Access-Control-Allow-Origin"] = origin;
+        set.headers.Vary = "Origin";
+      }
+      return {
+        guid: uploadPocGuid,
+        name: "เลือกไฟล์ (POC)",
+        variations: [
+          {
+            EditorsSupport: ["cell"],
+            buttons: [{ primary: true, text: "ปิด" }],
+            description: "เลือกไฟล์ไว้ในหน้านี้ ยังไม่อัปโหลด",
+            initData: "",
+            initDataType: "ole",
+            isUpdateOleOnResize: false,
+            isVisual: true,
+            size: [460, 240],
+            type: "window",
+            url: "index.html",
+          },
+        ],
+        version: "0.2.0",
+      };
+    })
+    .get("/onlyoffice-plugin/upload-poc/index.html", uploadPocIndexResponse)
+    .get("/onlyoffice-plugin/upload-poc/picker.js", uploadPocScriptResponse)
     .get("/onlyoffice-plugin", pluginIndexResponse)
     .get("/onlyoffice-plugin/", pluginIndexResponse)
     .get("/onlyoffice-plugin/index.html", pluginIndexResponse)

@@ -103,6 +103,7 @@ function normalizeRuntimeOptions() {
     prefill: normalizePrefill(options),
     publicId: firstString(options.publicId),
     responseId: firstString(options.responseId),
+    scopeIdentity: firstString(options.scopeIdentity),
     tagAliases: isRecord(options.tagAliases) ? options.tagAliases : {},
     targetId: firstString(options.targetId),
   };

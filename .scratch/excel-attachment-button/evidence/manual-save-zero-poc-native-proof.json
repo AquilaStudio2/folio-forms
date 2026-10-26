@@ -1,0 +1,17 @@
+{
+  "source": ".scratch/excel-attachment-button/evidence/manual-save-zero-poc.xlsx",
+  "sha256": "f763699eb1812a8d01215b78a367729b1ab2cc0b8044a0c261db302383da0731",
+  "runtime": "onlyoffice/documentserver:9.4.0.1",
+  "verifiedAt": "2026-10-26T07:54:23.745Z",
+  "nativeReopenIndependentOfBrowserCache": true,
+  "A1": {
+    "value": "Saved without refresh",
+    "bold": true
+  },
+  "A2": 21,
+  "B2": {
+    "formula": "A2*2",
+    "value": 42
+  },
+  "oleCount": 0
+}

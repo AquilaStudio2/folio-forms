@@ -25,7 +25,7 @@ export function createOperations(
   const { setStatus, isInitializationPending } = callbacks;
   let actionInFlight = false;
 
-  function actionRequest(action, data, reason, rowChange) {
+  function actionRequest(action, data, reason, rowChange, requestContext) {
     const documentKey = requireOption(options.documentKey, "documentKey");
 
     if (action === ACTIONS.SAVE_TEMPLATE || action === ACTIONS.PUBLISH) {
@@ -36,6 +36,29 @@ export function createOperations(
       return {
         body: {
           documentKey,
+          ...(action === ACTIONS.SAVE_TEMPLATE &&
+          options.documentKind === "xlsx" &&
+          requestContext?.preserveEditorSession === true
+            ? {
+                preserveEditorSession: true,
+                preserveEditorSessionPurpose:
+                  requestContext.preserveEditorSessionPurpose || "placement",
+                ...((requestContext.preserveEditorSessionPurpose ||
+                  "placement") === "placement"
+                  ? { uploadPocBindingId: requestContext.uploadPocBindingId }
+                  : {
+                      spreadsheetSaveCheckpoint: data.spreadsheetSaveCheckpoint,
+                      spreadsheetUploadPocSnapshot:
+                        data.spreadsheetUploadPocSnapshot,
+                    }),
+                ...(requestContext.preserveEditorSessionPurpose === "delete"
+                  ? {
+                      deletedUploadPocBindingIds:
+                        requestContext.deletedUploadPocBindingIds,
+                    }
+                  : {}),
+              }
+            : {}),
           ...(options.documentKind === "xlsx" && data?.spreadsheetAnchors
             ? { spreadsheetAnchors: data.spreadsheetAnchors }
             : {}),
@@ -86,8 +109,21 @@ export function createOperations(
     throw new Error(`Unsupported form action: ${action || "none"}`);
   }
 
-  async function postAction(action, data, reason, capability, rowChange) {
-    const request = actionRequest(action, data, reason, rowChange);
+  async function postAction(
+    action,
+    data,
+    reason,
+    capability,
+    rowChange,
+    requestContext
+  ) {
+    const request = actionRequest(
+      action,
+      data,
+      reason,
+      rowChange,
+      requestContext
+    );
     const result = await api.requestJson(
       request.path,
       {
@@ -219,7 +255,23 @@ export function createOperations(
     throw new Error(`การดำเนินการ ${id} ใช้เวลานานเกินไป`);
   }
 
-  async function runAction(action, reason = "", rowChange = null) {
+  async function runAction(
+    action,
+    reason = "",
+    rowChange = null,
+    requestContext = null
+  ) {
+    const saveContext =
+      requestContext ||
+      (action === ACTIONS.SAVE_TEMPLATE &&
+      options.documentKind === "xlsx" &&
+      options.action === ACTIONS.TEMPLATE_EDIT
+        ? {
+            preserveEditorSession: true,
+            preserveEditorSessionPurpose: "manual",
+            ...callbacks.getTemplateSaveContext?.(),
+          }
+        : null);
     if (actionInFlight || isInitializationPending()) {
       setStatus("มีการดำเนินการของฟอร์มกำลังทำงานอยู่", "pending");
       if (options.documentKind === "xlsx" && !actionInFlight) {
@@ -244,7 +296,36 @@ export function createOperations(
     const correctionReason = typeof reason === "string" ? reason.trim() : "";
 
     try {
-      await callbacks.beforeAction?.(action);
+      if (
+        saveContext?.preserveEditorSession === true &&
+        (action !== ACTIONS.SAVE_TEMPLATE ||
+          options.documentKind !== "xlsx" ||
+          rowChange)
+      ) {
+        throw new Error(
+          "การบันทึกโดยไม่เปิดตัวแก้ไขใหม่ใช้ได้เฉพาะการวางปุ่มแนบไฟล์ในต้นแบบ Excel"
+        );
+      }
+      if (
+        saveContext?.preserveEditorSession === true &&
+        (saveContext.preserveEditorSessionPurpose || "placement") ===
+          "placement" &&
+        (typeof saveContext.uploadPocBindingId !== "string" ||
+          !/^folio_[A-Za-z0-9_]+$/u.test(saveContext.uploadPocBindingId))
+      ) {
+        throw new Error(
+          "ยังยืนยันรหัสปุ่มแนบไฟล์ที่จะบันทึกไม่ได้ กรุณาเลือกเซลล์เดิมแล้วลองวางปุ่มอีกครั้ง"
+        );
+      }
+      if (
+        saveContext?.preserveEditorSession === true &&
+        !["placement", "manual", "delete"].includes(
+          saveContext.preserveEditorSessionPurpose || "placement"
+        )
+      ) {
+        throw new Error("ประเภทการบันทึกต้นแบบในตัวแก้ไขเดิมไม่ถูกต้อง");
+      }
+      await callbacks.beforeAction?.(action, rowChange);
       const needsData =
         action === ACTIONS.SAVE_DRAFT ||
         action === ACTIONS.SAVE_CORRECTION ||
@@ -277,7 +358,7 @@ export function createOperations(
         await office.freezeEditor();
         editorFrozen = true;
         if (options.documentKind === "xlsx") {
-          data = await callbacks.getTemplateSnapshot?.();
+          data = await callbacks.getTemplateSnapshot?.(saveContext);
         }
       }
       await bridge.flushEditorChanges();
@@ -289,7 +370,8 @@ export function createOperations(
         data,
         correctionReason,
         capability,
-        rowChange
+        rowChange,
+        saveContext
       );
       operationId = operationIdFromResponse(response);
       bridge.notifyParent(action, "pending", operationId, response);
@@ -302,22 +384,32 @@ export function createOperations(
         );
       }
 
+      const completion = completedPayload || response;
+      const result = completion?.operation?.result ?? completion?.result;
+      const preservedResult = completedPayload?.operation?.result;
+      if (
+        saveContext?.preserveEditorSession === true &&
+        (preservedResult?.editorSessionPreserved !== true ||
+          preservedResult.documentKey !== options.documentKey)
+      ) {
+        throw new Error(
+          "ยังยืนยันการบันทึกต้นแบบในตัวแก้ไขเดิมไม่ได้ กรุณาลองบันทึกซ้ำ หรือกดบันทึกแบบร่างเพื่อลองบันทึกต้นแบบอีกครั้ง"
+        );
+      }
       setStatus(`${actionLabel(action)} สำเร็จ`, "success");
-      bridge.notifyParent(
-        action,
-        "completed",
-        operationId,
-        completedPayload || response
-      );
+      bridge.notifyParent(action, "completed", operationId, completion);
 
-      if (needsData) {
+      if (needsData || saveContext?.preserveEditorSession === true) {
         bridge.setDirtyState(false);
       }
+      await callbacks.onTemplateSaveCompleted?.(action, saveContext, result);
 
       return {
         ok: true,
         operationId: operationId || null,
         response,
+        completion,
+        result,
       };
     } catch (error) {
       const message = errorMessage(error);

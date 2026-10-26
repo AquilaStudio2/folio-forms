@@ -12,7 +12,9 @@ import { z } from "zod";
 import { createFormFailureAudit, createFormAudit } from "../audit/events";
 import { requireIdentity, requireAdmin } from "../auth/identity";
 import { databaseErrorCode } from "../db-errors";
+import { spreadsheetEditorSaveOptions } from "../documents/spreadsheets/editor-save-proof";
 import { spreadsheetAnchorSnapshotSchema } from "../documents/spreadsheets/save-snapshot";
+import { savedSpreadsheetUploadPocButtons } from "../documents/spreadsheets/upload-poc";
 import {
   actionEditorCapability,
   requireActionEditorAuthorization,
@@ -53,10 +55,14 @@ import { activeOperationForForm } from "../operations/lifecycle";
 import type { OperationMetadata } from "../operations/model";
 import { operationTypeForAction } from "../operations/model";
 import { submissionSummary } from "../responses/query";
-import { objectExists, objectKey } from "../storage";
+import { objectExists, objectKey, readObject } from "../storage";
 import type { RouteDependencies } from "./dependencies";
 
-const readTemplateActionInput = async (request: Request, kind: string) => {
+const readTemplateActionInput = async (
+  request: Request,
+  kind: string,
+  allowPreserveEditorSession = false
+) => {
   if (kind !== "xlsx") {
     return { documentKey: await readDocumentKeyInput(request) };
   }
@@ -64,6 +70,16 @@ const readTemplateActionInput = async (request: Request, kind: string) => {
     .object({
       documentKey: z.string().trim().min(1),
       spreadsheetAnchors: spreadsheetAnchorSnapshotSchema,
+      ...(allowPreserveEditorSession
+        ? {
+            deletedUploadPocBindingIds: z.unknown().optional(),
+            preserveEditorSession: z.unknown().optional(),
+            preserveEditorSessionPurpose: z.unknown().optional(),
+            spreadsheetSaveCheckpoint: z.unknown().optional(),
+            spreadsheetUploadPocSnapshot: z.unknown().optional(),
+            uploadPocBindingId: z.unknown().optional(),
+          }
+        : {}),
     })
     .strict()
     .safeParse(await readJsonRecord(request, 256 * 1024));
@@ -74,7 +90,15 @@ const readTemplateActionInput = async (request: Request, kind: string) => {
       "อ่านตำแหน่งช่อง Excel ก่อนบันทึกไม่ได้ กรุณาเปิดตัวแก้ไขรุ่นล่าสุดแล้วลองใหม่"
     );
   }
-  return input.data;
+  const result = {
+    documentKey: input.data.documentKey,
+    spreadsheetAnchors: input.data.spreadsheetAnchors,
+  };
+  try {
+    return { ...result, ...spreadsheetEditorSaveOptions(input.data) };
+  } catch {
+    return fail(400, "invalid_request", "คำขอบันทึก Excel แบบคงตัวแก้ไขไม่ถูกต้อง");
+  }
 };
 
 export function registerFormAuthoringRoutes(
@@ -123,15 +147,24 @@ export function registerFormAuthoringRoutes(
           capabilityScope.targetId,
           form.id
         );
+        const bindings =
+          form.documentKind === "xlsx"
+            ? await spreadsheetDraftBindings(templateDraft.id)
+            : undefined;
+        const savedButtons = bindings
+          ? savedSpreadsheetUploadPocButtons(
+              await readObject(templateDraft.objectKey),
+              bindings
+            )
+          : undefined;
         return editorConfig(
           {
             action: "template-edit",
             documentKind: form.documentKind,
             ...(form.documentKind === "xlsx"
               ? {
-                  spreadsheetBindings: await spreadsheetDraftBindings(
-                    templateDraft.id
-                  ),
+                  spreadsheetBindings: bindings,
+                  uploadPocSavedButtons: savedButtons,
                 }
               : {}),
             capabilities: {
@@ -411,7 +444,8 @@ export function registerFormAuthoringRoutes(
           await requireActiveEditorLease(authorization, capabilityScope);
           const { documentKey, ...snapshot } = await readTemplateActionInput(
             request,
-            form.documentKind
+            form.documentKind,
+            true
           );
           if (templateDraft.documentKey !== documentKey) {
             fail(
@@ -428,7 +462,12 @@ export function registerFormAuthoringRoutes(
             );
           }
           const operationId = crypto.randomUUID();
-          const nextDocumentKey = `template-${crypto.randomUUID()}`;
+          const preserveEditorSession =
+            "preserveEditorSession" in snapshot &&
+            snapshot.preserveEditorSession === true;
+          const nextDocumentKey = preserveEditorSession
+            ? documentKey
+            : `template-${crypto.randomUUID()}`;
           const stagedObjectKey = objectKey(
             "operations",
             operationId,

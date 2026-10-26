@@ -62,6 +62,25 @@ export async function createOperation(input: {
         input.authorization,
         input.capabilityScope
       );
+      if (input.metadata.spreadsheetSaveCheckpoint) {
+        const reused = await tx.operation.findFirst({
+          select: { id: true },
+          where: {
+            formId: input.formId,
+            metadata: {
+              equals: input.metadata.spreadsheetSaveCheckpoint,
+              path: ["spreadsheetSaveCheckpoint"],
+            },
+          },
+        });
+        if (reused) {
+          fail(
+            409,
+            "stale_document",
+            "จุดตรวจสอบการบันทึกนี้ใช้แล้ว กรุณาลองบันทึกอีกครั้ง"
+          );
+        }
+      }
       const activeOperation = await tx.operation.findFirst({
         select: { id: true },
         where: {

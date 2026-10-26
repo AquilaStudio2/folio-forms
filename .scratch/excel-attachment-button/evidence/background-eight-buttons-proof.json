@@ -1,0 +1,49 @@
+{
+  "sameDocumentKey": true,
+  "newArtifact": true,
+  "newHash": true,
+  "buttonCount": 8,
+  "allTargetProofs": true,
+  "buttons": [
+    {
+      "bindingId": "folio_mvovunf9_x12qpatr",
+      "tag": "items.column_2",
+      "rowIndex": 2
+    },
+    {
+      "bindingId": "folio_mvovunf9_x12qpatr",
+      "tag": "items.column_2",
+      "rowIndex": 1
+    },
+    {
+      "bindingId": "folio_mvovunf9_x12qpatr",
+      "tag": "items.column_2",
+      "rowIndex": 0
+    },
+    {
+      "bindingId": "folio_mvovu5e7_3jw68s0f",
+      "tag": "attachment_5",
+      "rowIndex": null
+    },
+    {
+      "bindingId": "folio_mvovtmfq_my460a1u",
+      "tag": "attachment_4",
+      "rowIndex": null
+    },
+    {
+      "bindingId": "folio_mvovpwvj_eoqls5hu",
+      "tag": "attachment_3",
+      "rowIndex": null
+    },
+    {
+      "bindingId": "folio_mvovp840_ejs8zive",
+      "tag": "attachment_2",
+      "rowIndex": null
+    },
+    {
+      "bindingId": "folio_mvovlk58_ibdm527a",
+      "tag": "attachment_1",
+      "rowIndex": null
+    }
+  ]
+}

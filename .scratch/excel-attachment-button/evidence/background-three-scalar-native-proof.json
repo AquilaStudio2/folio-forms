@@ -1,0 +1,70 @@
+{
+  "source": ".scratch/excel-attachment-button/evidence/background-three-scalar.xlsx",
+  "runtime": "onlyoffice/documentserver:9.4.0.1",
+  "verifiedAt": "2026-10-26T06:33:35.336Z",
+  "nativeReopenIndependentOfBrowserCache": true,
+  "expectedCells": ["B3", "D3", "F3"],
+  "sheet": "Form",
+  "objects": [
+    {
+      "applicationId": "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}",
+      "metadata": {
+        "bindingId": "folio_mvovlk58_ibdm527a",
+        "kind": "folio-upload-poc",
+        "rowIndex": null,
+        "tag": "attachment_1",
+        "version": 1
+      },
+      "from": {
+        "column": 1,
+        "row": 2
+      },
+      "to": {
+        "column": 1,
+        "row": 2,
+        "colOff": 16.933333333333334,
+        "rowOff": 3.694555555555555
+      }
+    },
+    {
+      "applicationId": "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}",
+      "metadata": {
+        "bindingId": "folio_mvovp840_ejs8zive",
+        "kind": "folio-upload-poc",
+        "rowIndex": null,
+        "tag": "attachment_2",
+        "version": 1
+      },
+      "from": {
+        "column": 3,
+        "row": 2
+      },
+      "to": {
+        "column": 3,
+        "row": 2,
+        "colOff": 16.933333333333334,
+        "rowOff": 3.694555555555555
+      }
+    },
+    {
+      "applicationId": "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}",
+      "metadata": {
+        "bindingId": "folio_mvovpwvj_eoqls5hu",
+        "kind": "folio-upload-poc",
+        "rowIndex": null,
+        "tag": "attachment_3",
+        "version": 1
+      },
+      "from": {
+        "column": 5,
+        "row": 2
+      },
+      "to": {
+        "column": 5,
+        "row": 2,
+        "colOff": 16.933333333333334,
+        "rowOff": 3.694555555555555
+      }
+    }
+  ]
+}

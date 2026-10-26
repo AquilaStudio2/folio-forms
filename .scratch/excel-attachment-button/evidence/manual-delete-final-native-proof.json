@@ -1,0 +1,18 @@
+{
+  "source": ".scratch/excel-attachment-button/evidence/manual-delete-final.xlsx",
+  "sha256": "3662aa910feb08f7a48470c16b380505e5364645babd89699580b7da3740e9f3",
+  "runtime": "onlyoffice/documentserver:9.4.0.1",
+  "verifiedAt": "2026-10-26T08:08:00.633Z",
+  "nativeReopenIndependentOfBrowserCache": true,
+  "A1": {
+    "value": "Saved without refresh",
+    "bold": true
+  },
+  "A2": 35,
+  "A7": "Keep this row value",
+  "B2": {
+    "formula": "A2*2",
+    "value": 70
+  },
+  "oleCount": 0
+}

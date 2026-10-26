@@ -22,6 +22,8 @@ import type {
 } from "@/features/onlyoffice/editor-protocol";
 import { EditorSurface } from "@/features/onlyoffice/editor-surface";
 import { isEditorWindowSource } from "@/features/onlyoffice/editor-window-source";
+import type { UploadPocHostOptions } from "@/features/onlyoffice/upload-poc-pending";
+import { UploadPocPendingFiles } from "@/features/onlyoffice/upload-poc-pending";
 import { ApiError, apiDelete, apiGet, apiPost } from "@/lib/api";
 
 interface DocsApi {
@@ -69,6 +71,10 @@ export const OnlyOfficeEditor = ({
   saveRequest?: number;
   title: string;
 }) => {
+  const uploadPocFilesRef = useRef<UploadPocPendingFiles | null>(null);
+  if (!uploadPocFilesRef.current) {
+    uploadPocFilesRef.current = new UploadPocPendingFiles();
+  }
   const hostRef = useRef<HTMLDivElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const feedbackRef = useRef<HTMLDivElement>(null);
@@ -474,6 +480,82 @@ export const OnlyOfficeEditor = ({
       }
     };
 
+    const refreshUploadPocOptions = async (
+      options: UploadPocHostOptions
+    ): Promise<UploadPocHostOptions> => {
+      const requestedLeaseId = leaseRef.current?.id;
+      if (!configUrl || !requestedLeaseId) {
+        throw new Error("ยืนยันการตั้งค่าปุ่มล่าสุดไม่ได้ กรุณาเปิดตัวแก้ไขใหม่");
+      }
+      const fresh = await apiGet<EditorConfig>(editorConfigPath(configUrl));
+      const refreshed = fresh.bridge?.uploadPoc;
+      if (
+        !refreshed ||
+        refreshed.action !== options.action ||
+        refreshed.documentKey !== options.documentKey ||
+        refreshed.scopeIdentity !== options.scopeIdentity ||
+        fresh.bridge?.lease?.id !== requestedLeaseId ||
+        leaseRef.current?.id !== requestedLeaseId
+      ) {
+        throw new Error("ต้นแบบหรือสิทธิ์ตัวแก้ไขเปลี่ยนไป กรุณาเปิดตัวแก้ไขใหม่");
+      }
+      return {
+        ...options,
+        savedButtons: refreshed.savedButtons,
+        spreadsheetBindings: refreshed.spreadsheetBindings,
+      };
+    };
+
+    const respondToUploadPoc = async (
+      event: MessageEvent<unknown>,
+      data: Record<string, unknown>
+    ) => {
+      const options = config.bridge?.uploadPoc;
+      if (!options || !event.source) {
+        return;
+      }
+      let result: Record<string, unknown>;
+      try {
+        const currentOptions =
+          options.action === "template-edit"
+            ? await refreshUploadPocOptions(options)
+            : options;
+        if (
+          cancelled ||
+          !isEditorWindowSource(event.source, surfaceRef.current)
+        ) {
+          return;
+        }
+        result = uploadPocFilesRef.current?.handle(data, currentOptions) ?? {
+          error: "ยังเชื่อมต่อไฟล์ในหน้านี้ไม่ได้",
+        };
+      } catch (caughtError) {
+        result = {
+          error:
+            caughtError instanceof Error
+              ? caughtError.message
+              : "เลือกไฟล์ไม่ได้ กรุณาลองใหม่",
+        };
+      }
+      if (
+        cancelled ||
+        !isEditorWindowSource(event.source, surfaceRef.current)
+      ) {
+        return;
+      }
+      event.source.postMessage(
+        {
+          ...result,
+          bridgeId,
+          documentKey: options.documentKey,
+          requestId: data.requestId,
+          source: "folio-upload-poc-host",
+          type: "pending-file-result",
+        },
+        pluginOrigin
+      );
+    };
+
     // oxlint-disable-next-line complexity -- Dispatches the trusted bridge protocol and capability renewal in one handler.
     const handleBridgeMessage = (event: MessageEvent<unknown>) => {
       if (event.origin !== pluginOrigin) {
@@ -481,6 +563,22 @@ export const OnlyOfficeEditor = ({
       }
 
       const { data } = event;
+      if (isRecord(data) && data.source === "folio-upload-poc") {
+        const options = config.bridge?.uploadPoc;
+        if (
+          !options ||
+          readOnly ||
+          !isEditorWindowSource(event.source, surfaceRef.current) ||
+          data.bridgeId !== bridgeId ||
+          data.documentKey !== options.documentKey ||
+          data.scopeIdentity !== options.scopeIdentity ||
+          typeof data.requestId !== "string"
+        ) {
+          return;
+        }
+        void respondToUploadPoc(event, data);
+        return;
+      }
       if (isBridgeReadyMessage(data, bridgeId)) {
         if (!isEditorWindowSource(event.source, surfaceRef.current)) {
           return;
@@ -555,9 +653,35 @@ export const OnlyOfficeEditor = ({
         onDirtyChangeRef.current?.(dirtyMessage.dirty);
         return;
       }
-      const message = parseOperationMessage(data, bridgeId);
+      let message = parseOperationMessage(data, bridgeId);
       if (!message) {
         return;
+      }
+      const result = message.operation?.result;
+      if (result?.editorSessionPreserved === true) {
+        const uploadPoc = config.bridge?.uploadPoc;
+        const nativeDocumentKey = recordOrEmpty(
+          recordOrEmpty(config.config).document
+        ).key;
+        // Keeping an iframe is valid only for the same editable Excel session.
+        // A changed/missing key falls back to the normal save-and-remount flow.
+        const preserved =
+          !readOnly &&
+          message.action === "save-template" &&
+          message.status === "completed" &&
+          uploadPoc?.action === "template-edit" &&
+          isNonEmptyString(result.documentKey) &&
+          result.documentKey === nativeDocumentKey &&
+          result.documentKey === uploadPoc.documentKey;
+        if (!preserved) {
+          message = {
+            ...message,
+            operation: {
+              ...message.operation,
+              result: { ...result, editorSessionPreserved: false },
+            },
+          };
+        }
       }
       if (pendingCommandRef.current?.action === message.action) {
         clearTimeout(pendingCommandRef.current.timer);

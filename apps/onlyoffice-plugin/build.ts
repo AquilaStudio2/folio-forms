@@ -7,3 +7,7 @@ await Bun.write(
   path.join(pluginDirectory, "dist/plugin.js"),
   await buildPlugin(pluginDirectory)
 );
+await Bun.write(
+  path.join(pluginDirectory, "dist/upload-poc-picker.js"),
+  await buildPlugin(pluginDirectory, "upload-poc-picker-entry.js")
+);

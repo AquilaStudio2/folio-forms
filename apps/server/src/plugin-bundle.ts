@@ -3,10 +3,11 @@ import path from "node:path";
 import type { BuildArtifact } from "bun";
 
 export const buildPlugin = async (
-  pluginDirectory: string
+  pluginDirectory: string,
+  entrypoint = "plugin-entry.js"
 ): Promise<BuildArtifact> => {
   const result = await Bun.build({
-    entrypoints: [path.join(pluginDirectory, "src/plugin-entry.js")],
+    entrypoints: [path.join(pluginDirectory, "src", entrypoint)],
     format: "iife",
     minify: false,
     target: "browser",
