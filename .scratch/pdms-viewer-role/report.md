@@ -50,4 +50,18 @@ Controlled SSO tests use a test PDMS exchange; live PDMS login was not exercised
 
 ## Review
 
-Standards and Spec review pending on the committed diff; findings and fixes will be recorded here.
+Two independent `sol_reviewer` agents reviewed `git diff 617b424...HEAD` at implementation commit `3af232d`.
+
+### Standards
+
+No actionable documented-standard breaches or baseline smell findings. The reviewer checked project instructions, glossary/ADR, migration, authorization, UI, test registration and documentation. Tool-enforced checks were kept separate.
+
+### Spec
+
+No actionable missing/partial requirements, scope creep or incorrect behavior. The reviewer checked mapping/precedence, baseline/session transitions, last-Admin protection, cross-owner reads/history/downloads, own-response mutation denial, capabilities/leases, results-only routing and read-only preview configuration. Independently reran the 14 VIEWER UI tests: all passed. Existing historical-submission navigation and Draft download-button limitations remain as documented above.
+
+Final counts: Standards 0 findings; Spec 0 findings. Neither reviewer claimed a live PDMS verification.
+
+## Local cleanup
+
+Temporary verification servers and the three dedicated test containers were shut down after verification. Source, migration, tests, specification, report and browser evidence remain in this branch. Pre-existing untracked skill directories remain unchanged.

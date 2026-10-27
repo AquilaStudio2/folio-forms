@@ -1,6 +1,10 @@
 # PDMS VIEWER role
 
-Status: ready-for-agent Review base: 617b424d4b6ec21032c433e66bf11b9eef74fd22 Branch: codex/pdms-viewer-role
+Status: ready-for-human
+
+Review base: 617b424d4b6ec21032c433e66bf11b9eef74fd22
+
+Branch: codex/pdms-viewer-role
 
 ## Agreed outcome
 
