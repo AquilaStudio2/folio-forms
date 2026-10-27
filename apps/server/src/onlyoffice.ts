@@ -65,7 +65,7 @@ type PluginAction =
   | "draft"
   | "submit"
   | "correction";
-type UserRole = "admin" | "user";
+type UserRole = "admin" | "viewer" | "user";
 type JsonRecord = Record<string, unknown>;
 
 export interface EditorCapabilityClaims {

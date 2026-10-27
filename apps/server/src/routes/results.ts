@@ -13,6 +13,7 @@ import { createResponseAudit } from "../audit/events";
 import {
   requireIdentity,
   requireAdmin,
+  requireResultReader,
   normalizeEmail,
 } from "../auth/identity";
 import { callbackFieldMetadata } from "../documents/office-values";
@@ -65,7 +66,7 @@ export function registerResultRoutes(
   app
     .get("/api/admin/results", async ({ request, query }) => {
       const identity = await requireIdentity(request);
-      requireAdmin(identity);
+      requireResultReader(identity);
       const queryRecord = query as unknown as JsonRecord;
       const cursor = adminResultCursor(queryString(queryRecord, "cursor"));
       const formPublicId = queryString(queryRecord, "form");
@@ -163,7 +164,7 @@ export function registerResultRoutes(
     })
     .get("/api/admin/results/:id", async ({ request, params, query }) => {
       const identity = await requireIdentity(request);
-      requireAdmin(identity);
+      requireResultReader(identity);
       validateId(params.id, "Response");
       const selector = revisionSelector(query.revision);
       const response = await prisma.response.findUnique({
@@ -307,7 +308,7 @@ export function registerResultRoutes(
       "/api/admin/results/:id/viewer-config",
       async ({ request, params, query }) => {
         const identity = await requireIdentity(request);
-        requireAdmin(identity);
+        requireResultReader(identity);
         validateId(params.id, "Response");
         const selector = revisionSelector(query.revision);
         const response = await prisma.response.findUnique({

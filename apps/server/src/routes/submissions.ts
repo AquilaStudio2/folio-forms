@@ -87,7 +87,9 @@ export function registerSubmissionRoutes(
           formPublicId: submission.form.publicId,
           formTitle: submission.form.title,
           userEmail:
-            identity.role === "admin" ? submission.owner.email : undefined,
+            identity.role === "admin" || identity.role === "viewer"
+              ? submission.owner.email
+              : undefined,
         }),
       };
     })

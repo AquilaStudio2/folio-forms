@@ -22,7 +22,7 @@ const AdminLayout = () => {
       />
     );
   }
-  if (roleFor(user) !== "admin") {
+  if (roleFor(user) !== "admin" && roleFor(user) !== "viewer") {
     return <Navigate to="/dashboard" />;
   }
   return (

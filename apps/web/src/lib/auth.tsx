@@ -263,4 +263,4 @@ export const useAuth = () => {
 };
 
 export const roleFor = (user: SessionUser | null): Role =>
-  user?.role === "admin" ? "admin" : "user";
+  user?.role === "admin" || user?.role === "viewer" ? user.role : "user";

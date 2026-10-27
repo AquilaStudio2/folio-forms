@@ -31,7 +31,7 @@ interface ApiErrorBody {
   code?: unknown;
   sessionRevoked?: unknown;
 }
-export type Role = "admin" | "user";
+export type Role = "admin" | "user" | "viewer";
 export interface SessionUser {
   id: string;
   name?: string;
@@ -403,15 +403,30 @@ export const safeReturnPath = (value: unknown): string | null => {
   return `${pathname}${search}`;
 };
 
+export const isViewerResultPath = (pathname: string): boolean =>
+  /^\/admin\/results(?:\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})?\/?$/u.test(
+    pathname
+  );
+
+const roleHomePaths = {
+  admin: "/admin",
+  user: "/dashboard",
+  viewer: "/admin/results",
+} as const;
+export const homePathForRole = (role: Role) => roleHomePaths[role];
+
 export const returnPathForRole = (value: unknown, role: Role): string => {
   const path = safeReturnPath(value);
-  const fallback = role === "admin" ? "/admin" : "/dashboard";
+  const fallback = homePathForRole(role);
   if (!path) {
     return fallback;
   }
   const pathname = decodeURIComponent(
     new URL(path, "http://localhost").pathname
   );
+  if (role === "viewer") {
+    return isViewerResultPath(pathname) ? path : fallback;
+  }
   return role !== "admin" && /^\/admin(?:\/|$)/iu.test(pathname)
     ? "/dashboard"
     : path;

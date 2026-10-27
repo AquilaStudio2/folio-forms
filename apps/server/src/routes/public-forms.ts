@@ -2,7 +2,7 @@ import { prisma, Prisma, ResponseStatus, FormStatus } from "@onlyoffice/db";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Elysia } from "elysia";
 
-import { requireIdentity } from "../auth/identity";
+import { requireIdentity, requireResponseWriter } from "../auth/identity";
 import { databaseErrorCode } from "../db-errors";
 import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
 import { findFormByPublicId } from "../forms/query";
@@ -120,6 +120,7 @@ export function registerPublicFormRoutes(
     )
     .post("/api/forms/:publicId/start", async ({ request, params, set }) => {
       const identity = await requireIdentity(request);
+      requireResponseWriter(identity);
       const form = await findFormByPublicId(params.publicId);
       const publishedTemplate = form.publishedTemplate;
       const pendingClaimToken = pendingClaimFor(request);

@@ -3,7 +3,7 @@ import { auth } from "@onlyoffice/auth";
 
 import { fail } from "../http/errors";
 
-export type UserRole = "admin" | "user";
+export type UserRole = "admin" | "viewer" | "user";
 export interface Identity {
   email: string;
   expiresAt: Date;
@@ -50,7 +50,9 @@ export async function identityFor(request: Request): Promise<Identity | null> {
     typeof sessionUser.id !== "string" ||
     typeof sessionUser.email !== "string" ||
     sessionUser.enabled !== true ||
-    (sessionUser.role !== "user" && sessionUser.role !== "admin") ||
+    (sessionUser.role !== "user" &&
+      sessionUser.role !== "viewer" &&
+      sessionUser.role !== "admin") ||
     typeof liveSession.id !== "string" ||
     Number.isNaN(expiresAt.getTime()) ||
     expiresAt.getTime() <= Date.now()
@@ -67,7 +69,7 @@ export async function identityFor(request: Request): Promise<Identity | null> {
       typeof sessionUser.name === "string" && sessionUser.name.length > 0
         ? sessionUser.name
         : sessionUser.email,
-    role: sessionUser.role === "admin" ? "admin" : "user",
+    role: sessionUser.role,
     sessionId: liveSession.id,
   };
 }
@@ -98,5 +100,17 @@ export async function requireIdentity(request: Request): Promise<Identity> {
 export function requireAdmin(identity: Pick<Actor, "role">): void {
   if (identity.role !== "admin") {
     fail(403, "forbidden", "Administrator access is required");
+  }
+}
+
+export function requireResultReader(identity: Pick<Actor, "role">): void {
+  if (identity.role !== "admin" && identity.role !== "viewer") {
+    fail(403, "forbidden", "Result access is required");
+  }
+}
+
+export function requireResponseWriter(identity: Pick<Actor, "role">): void {
+  if (identity.role === "viewer") {
+    fail(403, "forbidden", "VIEWER access is read-only");
   }
 }

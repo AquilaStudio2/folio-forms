@@ -503,12 +503,15 @@ export const runImmutableAudits = async (
       expect(
         metadata?.previousMappedRole === null ||
           metadata?.previousMappedRole === "admin" ||
+          metadata?.previousMappedRole === "viewer" ||
           metadata?.previousMappedRole === "user"
       ).toBe(true);
       for (const key of ["mappedRole", "previousRole", "role"]) {
-        expect(metadata?.[key] === "admin" || metadata?.[key] === "user").toBe(
-          true
-        );
+        expect(
+          metadata?.[key] === "admin" ||
+            metadata?.[key] === "viewer" ||
+            metadata?.[key] === "user"
+        ).toBe(true);
       }
       continue;
     }

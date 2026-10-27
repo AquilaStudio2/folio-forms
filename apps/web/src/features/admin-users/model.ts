@@ -47,10 +47,12 @@ export const actionKey = (userId: string, kind: ActionKind) =>
 export const roleBadgeLabels: Record<Role, string> = {
   admin: "ผู้ดูแลระบบ",
   user: "ผู้ใช้",
+  viewer: "VIEWER",
 };
 export const roleBadgeTones: Record<Role, "neutral" | "warning"> = {
   admin: "warning",
   user: "neutral",
+  viewer: "neutral",
 };
 export const errorMessageFor = (caughtError: unknown, fallback: string) => {
   if (caughtError instanceof ApiError) {

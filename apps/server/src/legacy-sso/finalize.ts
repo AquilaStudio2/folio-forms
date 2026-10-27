@@ -27,10 +27,10 @@ interface SwitchProof {
   initiatingUserId: string;
   initiatingEmail: string;
   initiatingName: string;
-  initiatingRole: "admin" | "user";
+  initiatingRole: "admin" | "viewer" | "user";
   targetEmail: string;
   targetName: string;
-  targetRole: "admin" | "user";
+  targetRole: "admin" | "viewer" | "user";
 }
 
 export async function finalizeLegacySsoLogin(
@@ -39,7 +39,7 @@ export async function finalizeLegacySsoLogin(
   now: Date,
   aiAuthoring: AiAuthoringSessions,
   switchProof?: SwitchProof
-): Promise<{ transferId: string; role: "admin" | "user" }> {
+): Promise<{ transferId: string; role: "admin" | "viewer" | "user" }> {
   const authContext = await auth.$context;
   // The token stays private until all role and handoff writes have committed.
   const session = await authContext.internalAdapter.createSession(
@@ -142,7 +142,7 @@ export async function finalizeLegacySsoLogin(
         }
       }
       const roleChanged = role !== user.role;
-      if (roleChanged && user.role === "admin" && role === "user") {
+      if (roleChanged && user.role === "admin" && role !== "admin") {
         await requireAnotherEnabledAdmin(tx);
       }
       const oldSessions = roleChanged

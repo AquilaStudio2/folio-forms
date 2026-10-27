@@ -239,7 +239,7 @@ export function canReadSubmission(
   identity: Identity,
   submission: Submission
 ): void {
-  if (identity.role === "admin") {
+  if (identity.role === "admin" || identity.role === "viewer") {
     return;
   }
   if (submission.userId !== identity.id) {

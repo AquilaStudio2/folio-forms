@@ -8,13 +8,17 @@ An authenticated person who creates, edits, publishes, and shares Forms and can 
 
 An authenticated person who fills Forms and can inspect only their own Drafts and Submissions. A User may sign in locally or through a linked Legacy Identity; their Responses remain owned by the same Folio account.
 
+## Viewer
+
+An authenticated person who can inspect and download every saved Draft, Submission and Correction through the existing results pages. A Viewer cannot fill or change Responses, author Forms, or manage the application.
+
 ## Legacy Identity
 
-A person authenticated by PDMS, identified by a stable subject and an explicit provider, whose stored email does not establish mailbox ownership. A Legacy Identity links to at most one Folio account, which may be a User or Admin; matching email alone never establishes a link, and changed email does not replace a completed link's owner.
+A person authenticated by PDMS, identified by a stable subject and an explicit provider, whose stored email does not establish mailbox ownership. A Legacy Identity links to at most one Folio account, which may be a User, Viewer or Admin; matching email alone never establishes a link, and changed email does not replace a completed link's owner.
 
 ## SSO Bridge
 
-The login handoff in which PDMS authenticates a Legacy Identity and Folio creates its own session for an eligible linked account, using authenticated identity evidence rather than verified mailbox ownership. PDMS supplies all currently active role names; `admin (กปม.)` (case-insensitive, including `Admin` and `ADMIN`) or the exact name `เจ้าหน้าที่ กปม.` maps to Admin, and every other valid list maps to User. The systems do not share passwords or login tokens.
+The login handoff in which PDMS authenticates a Legacy Identity and Folio creates its own session for an eligible linked account, using authenticated identity evidence rather than verified mailbox ownership. PDMS supplies all currently active role names; `admin (กปม.)` (case-insensitive, including `Admin` and `ADMIN`) maps to Admin; otherwise the exact name `เจ้าหน้าที่ กปม.` maps to Viewer, and every other valid list maps to User. The systems do not share passwords or login tokens.
 
 ## SSO Role Baseline
 

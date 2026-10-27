@@ -3,12 +3,18 @@ import {
   Navigate,
   Outlet,
   useLocation,
+  useMatches,
   useNavigate,
 } from "@tanstack/react-router";
 import { useEffect, useState } from "react";
 
 import { Button, Notice, Spinner } from "@/components/ui";
-import { legacySsoReturnPath, safeReturnPath, startLegacySso } from "@/lib/api";
+import {
+  isViewerResultPath,
+  legacySsoReturnPath,
+  safeReturnPath,
+  startLegacySso,
+} from "@/lib/api";
 import { AuthProvider, useAuth } from "@/lib/auth";
 import {
   afterEditorSave,
@@ -39,6 +45,7 @@ const AuthGate = () => {
     user,
   } = useAuth();
   const location = useLocation();
+  const matches = useMatches();
   const navigate = useNavigate();
   const [sessionExpiringSoon, setSessionExpiringSoon] = useState(false);
   const [reauthenticating, setReauthenticating] = useState(false);
@@ -149,6 +156,18 @@ const AuthGate = () => {
         search={{ returnTo: currentReturnPath() ?? undefined }}
         replace
       />
+    );
+  }
+
+  if (
+    user?.role === "viewer" &&
+    !authenticationRoute &&
+    pathname !== "/legacy-sso/confirm" &&
+    (!isViewerResultPath(pathname) ||
+      !isViewerResultPath(matches.at(-1)?.pathname ?? pathname))
+  ) {
+    return isViewerResultPath(pathname) ? null : (
+      <Navigate to="/admin/results" search={{ form: undefined }} replace />
     );
   }
 

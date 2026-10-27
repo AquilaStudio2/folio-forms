@@ -1,0 +1,18 @@
+Frontend VIEWER TDD evidence (2026-10-27, Asia/Bangkok)
+Owner: sol_worker frontend_discovery; files limited to apps/web/**.
+Approved seam: existing generated TanStack route tree, real AuthProvider, rendered routes, HTTP fixtures at fetch boundary.
+
+Vertical cycles completed sequentially:
+1. Landing/nav: viewer-access first test RED (expected /admin/results, received /dashboard), then GREEN after recognizing viewer and using existing results route/nav.
+2. Direct route guard: parameterized prohibited URL behavior RED for 9 direct URLs. Initial root guard redirected but pending TanStack location mounted previous prohibited matches and sent privileged API reads. GREEN after guard also checked current matched route and rendered null while allowed destination was pending. Paths covered /admin, /admin/users, /admin/audit, /admin/ai-authoring, /admin/forms/new, Correction, /dashboard, fill and receipt. Assert no prohibited API requests.
+3. Login return path: RED (allowed result detail was lost, heading absent), GREEN after role-aware return path preserves only viewer result paths.
+4. Draft detail: RED (permanent delete button visible), GREEN after Admin-only delete control.
+5. Submitted detail: RED (Correction button visible), GREEN after Admin-only Correction control. Same public-page scenario verifies Correction history, corrected field values, saved PDF request at revision=1, browser blob download and existing back link.
+6. Mapped account: RED (VIEWER badge absent), GREEN after role-label handling. Same public Admin page disables mapped account and asserts request contains only enabled:false, VIEWER still displayed, and no VIEWER assignment option.
+
+Before formatter: 14 new viewer tests passed, full web tests passed (12 Bun lifecycle + 141 Vitest UI), web check-types passed.
+Review/lint corrections: replaced nested home-path ternaries with one homePathForRole lookup shared by API and shell; flattened independent role nav rendering; moved mappedAccount fixture function to module scope. No lint suppressions added.
+Scoped root bun run fix and bun run check passed for api.ts, app-shell.tsx and viewer-access.test.tsx.
+After lint corrections: full web suite passed again (12 Bun lifecycle + 141 Vitest UI, 12 UI test files); web check-types passed again.
+No commits, push, deployment, production or PDMS changes performed.
+UI test fixtures do not prove live PDMS integration or real ONLYOFFICE rendering. Main agent owns isolated native browser checks.

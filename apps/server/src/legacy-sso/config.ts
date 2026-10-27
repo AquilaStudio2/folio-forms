@@ -31,7 +31,7 @@ export interface LegacySsoTransaction {
 }
 export interface LegacySsoRoleEvidence {
   generation: string;
-  mappedRole: "admin" | "user";
+  mappedRole: "admin" | "viewer" | "user";
   providerId: string;
   subject: string;
   targetUserId: string;
@@ -239,8 +239,13 @@ export function safeLegacyFormReturnPath(
 
 export function legacySsoDestination(
   returnTo: string | null,
-  role: "admin" | "user"
+  role: "admin" | "viewer" | "user"
 ): string {
+  if (role === "viewer") {
+    return returnTo && /^\/admin\/results(?:\/[^/]+)?(?:\?.*)?$/u.test(returnTo)
+      ? returnTo
+      : "/admin/results";
+  }
   if (returnTo && (!returnTo.startsWith("/admin") || role === "admin")) {
     return returnTo;
   }

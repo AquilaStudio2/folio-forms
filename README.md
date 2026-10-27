@@ -195,7 +195,7 @@ Live integration requires PDMS Auth's issue/exchange APIs and Portal's authorize
 
 ### PDMS role mapping
 
-PDMS role `admin (กปม.)` (case-insensitive, including `Admin` and `ADMIN`) or the exact name `เจ้าหน้าที่ กปม.` maps to Folio Admin; every other valid list, including `[]`, maps to User. The first successful SSO with no saved baseline applies this mapping, including for previously linked accounts. Later SSO keeps the effective Folio role when the mapped PDMS role is unchanged, so manual Admin edits persist; an observed mapping transition replaces the effective role. Manual edits never change the PDMS baseline. The role belongs to the account and applies to both password and SSO login.
+PDMS role `admin (กปม.)` (case-insensitive, including `Admin` and `ADMIN`) maps to Folio Admin; otherwise the exact name `เจ้าหน้าที่ กปม.` maps to VIEWER; every other valid list, including `[]`, maps to User. The first successful SSO with no saved baseline applies this mapping, including for previously linked accounts. Later SSO keeps the effective Folio role when the mapped PDMS role is unchanged, so manual Admin edits persist; an observed mapping transition replaces the effective role. Manual edits never change the PDMS baseline. The role belongs to the account and applies to both password and SSO login.
 
 The linked Account stores only `lastMappedRole` and `lastSsoRoleGeneration`, not raw roles. A successful later-started login fences older callbacks and confirmations. Actual role changes revoke older sessions and end their AI authoring work; baseline-only changes do not. A downgrade that would remove the final enabled Admin rejects SSO without advancing the baseline, so another Admin must be available before retrying. SSO Admins retain the SSO exemption from local temporary-password replacement; password login still requires replacement.
 
@@ -203,7 +203,7 @@ Deploy PDMS's additive roles response first, then the nullable Folio migration a
 
 ### Legacy SSO account switching
 
-An authenticated User or Admin can start Legacy SSO from the app shell or Form fill page without replacing the current Session. Folio binds each switch challenge to the initiating User and Session. For a different User, Folio shows both identities and requires confirmation; for the same User, Folio explains the match and still requires confirmation. Cancel clears the pending challenge and preserves the current Session and Responses. Confirm atomically finalizes role mapping and creates a short-lived, one-use transfer; the browser claims the target Session only after confirmation. Cancel does not change roles or baselines, though accounts provisioned or approved links completed before confirmation remain, as before. The switch preserves validated Form and Admin return paths. With no explicit destination it returns to `/admin` for an Admin or `/dashboard` for a User; a demoted account cannot return to an Admin page. Unsaved Admin work blocks switching or renewal until saved or resolved. Pending account links and failed exchanges show a status while preserving the current Session and safe return path. Confirmation URLs contain no provider code or target bearer. Challenges expire after five minutes.
+An authenticated User, Viewer or Admin can start Legacy SSO from the app shell or Form fill page without replacing the current Session. Folio binds each switch challenge to the initiating User and Session. For a different User, Folio shows both identities and requires confirmation; for the same User, Folio explains the match and still requires confirmation. Cancel clears the pending challenge and preserves the current Session and Responses. Confirm atomically finalizes role mapping and creates a short-lived, one-use transfer; the browser claims the target Session only after confirmation. Cancel does not change roles or baselines, though accounts provisioned or approved links completed before confirmation remain, as before. The switch preserves validated Form and Admin return paths. With no explicit destination it returns to `/admin` for an Admin, `/admin/results` for a Viewer or `/dashboard` for a User. Viewer return paths are restricted to the existing results list/detail pages; a demoted User cannot return to an Admin page. Unsaved Admin work blocks switching or renewal until saved or resolved. Pending account links and failed exchanges show a status while preserving the current Session and safe return path. Confirmation URLs contain no provider code or target bearer. Challenges expire after five minutes.
 
 ### Admin workflow
 
@@ -467,7 +467,7 @@ The Admin catalog applies search after typing stops for 2 seconds. Inline feedba
 
 | Route | Access | Purpose |
 | --- | --- | --- |
-| `/` | Authenticated | Redirect Admin to `/admin`, User to `/dashboard` |
+| `/` | Authenticated | Redirect Admin to `/admin`, Viewer to `/admin/results`, User to `/dashboard` |
 | `/login` | Public | Sign in or resume after a Legacy SSO outcome |
 | `/legacy-sso/confirm` | Authenticated User or Admin | Confirm or cancel a Legacy SSO account switch |
 | `/dashboard` | User | View and resume responses |
@@ -477,8 +477,8 @@ The Admin catalog applies search after typing stops for 2 seconds. Inline feedba
 | `/admin/forms/:formId` | Admin | Edit under an exclusive lease, save, publish, and share a template |
 | `/admin/forms/:formId/submissions` | Admin | Review form submissions |
 | `/admin/forms/:formId/submissions/:submissionId` | Admin | Read the latest submission in read-only Document and Fields tabs; download DOCX or PDF |
-| `/admin/results` | Admin | Review all responses and open latest read-only Document and Fields views |
-| `/admin/results/:responseId` | Admin | Read the latest effective revision; download original or latest DOCX/PDF; open Correction separately |
+| `/admin/results` | Admin, Viewer | Review all responses and open latest read-only Document and Fields views |
+| `/admin/results/:responseId` | Admin, Viewer | Read saved Drafts and Submission revisions; download available DOCX/XLSX/PDF exports; only Admin can open Correction or delete |
 | `/forms/:publicId/fill` | Authenticated | Fill, save, or submit a shared form |
 | `/receipt/:submissionId` | Authorized | Select original or any Correction; view fields and download matching DOCX/PDF |
 
@@ -651,3 +651,9 @@ The stack has no application or off-host backup. Attached-disk loss, ransomware,
 - [Repository structure and file placement (Thai)](docs/STRUCTURE.th.md)
 - [Spreadsheet authoring fixes and local verification, 20 October 2026 (Thai)](.scratch/spreadsheet-authoring-reliability/report.md)
 - [Architecture decisions](docs/adr/)
+
+### VIEWER results access
+
+VIEWER uses the existing `/admin/results` pages to inspect every owner's saved Drafts, Submissions and Correction history and download available saved-result exports. It cannot create, fill, reopen, save, submit, correct or delete a Response, including its own older Responses, or enter other Admin areas. Both API authorization and browser routing enforce this scope.
+
+The officer role changes at the next successful SSO under the existing role-baseline rules; old sessions are revoked when the effective role changes. Deploy the additive Viewer enum migration and generated Prisma client before the updated application. Last-Admin protection still applies. See [the VIEWER specification](.scratch/pdms-viewer-role/spec.md) and [ADR 0002](docs/adr/0002-legacy-one-time-code-sso.md) for scope and rollout details.

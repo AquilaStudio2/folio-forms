@@ -176,8 +176,12 @@ export function registerAccountRoutes(
       }
       let role: UserRole | undefined;
       if (roleQuery !== undefined) {
-        if (roleQuery !== "admin" && roleQuery !== "user") {
-          fail(400, "invalid_request", "role must be admin or user");
+        if (
+          roleQuery !== "admin" &&
+          roleQuery !== "viewer" &&
+          roleQuery !== "user"
+        ) {
+          fail(400, "invalid_request", "role must be admin, viewer, or user");
         }
         role = roleQuery;
       }
@@ -349,7 +353,9 @@ export function registerAccountRoutes(
               const removesFinalAdmin =
                 target.role === "admin" &&
                 target.enabled &&
-                (updateData.enabled === false || updateData.role === "user");
+                (updateData.enabled === false ||
+                  (updateData.role !== undefined &&
+                    updateData.role !== "admin"));
               if (removesFinalAdmin) {
                 await requireAnotherEnabledAdmin(tx);
               }
