@@ -251,26 +251,30 @@ export function registerPublicFormRoutes(
       // Reopening a submitted response (e.g. resubmitting a native form)
       // seeds the new draft from the last Submission instead of a blank
       // template, so the user picks up editing where they left off.
+      // Excel forms are re-filled from a blank template every time instead,
+      // so a monthly table can be submitted and refilled from scratch.
       const reopeningSubmitted = existing?.status === ResponseStatus.submitted;
       if (reopeningSubmitted && !latestSubmission) {
         fail(500, "internal_error", "The submitted receipt is unavailable");
       }
+      const seedFromSubmission =
+        reopeningSubmitted && form.documentKind !== "xlsx";
       const sourceObjectKey =
-        reopeningSubmitted && latestSubmission
+        seedFromSubmission && latestSubmission
           ? latestSubmission.objectKey
           : publishedTemplate.objectKey;
       if (!(await objectExists(sourceObjectKey))) {
         fail(
           409,
           "document_unavailable",
-          reopeningSubmitted
+          seedFromSubmission
             ? "Response document artifact is unavailable"
             : "The published document artifact is unavailable"
         );
       }
       const document = await readObject(sourceObjectKey);
       const draftDataSeed =
-        reopeningSubmitted && latestSubmission
+        seedFromSubmission && latestSubmission
           ? jsonValue(latestSubmission.data)
           : Prisma.DbNull;
       const responseId = existing?.id ?? crypto.randomUUID();
@@ -360,7 +364,7 @@ export function registerPublicFormRoutes(
                   },
                   publishedVersion: form.version,
                   spreadsheetInitialized:
-                    form.documentKind === "xlsx" && reopeningSubmitted,
+                    form.documentKind === "xlsx" && seedFromSubmission,
                   status: ResponseStatus.draft,
                 },
               });
@@ -386,7 +390,7 @@ export function registerPublicFormRoutes(
                 publishedTemplateId: lockedForm.publishedTemplate.id,
                 publishedVersion: form.version,
                 spreadsheetInitialized:
-                  form.documentKind === "xlsx" && reopeningSubmitted,
+                  form.documentKind === "xlsx" && seedFromSubmission,
                 status: ResponseStatus.draft,
                 updatedAt: new Date(),
               },
