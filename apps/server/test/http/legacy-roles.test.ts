@@ -179,13 +179,21 @@ async function stageSwitch(
 
 for (const [roles, expected] of [
   [["admin (กปม.)"], "admin"],
+  [["Admin (กปม.)"], "admin"],
+  [["ADMIN (กปม.)"], "admin"],
+  [["aDmIn (กปม.)"], "admin"],
+  [["เจ้าหน้าที่ กวค.", "Admin (กปม.)"], "admin"],
   [["เจ้าหน้าที่ กปม."], "admin"],
   [["other", "เจ้าหน้าที่ กปม.", "another"], "admin"],
   [[], "user"],
   [
     [
       "admin",
-      "Admin (กปม.)",
+      "Admin (กวค.)",
+      " Admin (กปม.)",
+      "Admin (กปม.) ",
+      "Admin (กปม.)อื่น",
+      "เจ้าหน้าที่ กวค.",
       " admin (กปม.)",
       "admin (กปม.) ",
       "เจ้าหน้าที่ กปม.อื่น",
@@ -226,6 +234,21 @@ for (const [roles, expected] of [
     expect(adminAccess.status).toBe(expected === "admin" ? 200 : 403);
   });
 }
+
+test("existing SSO User baseline upgrades when PDMS sends capitalized Admin role", async () => {
+  const f = await fixture({
+    lastMappedRole: "user",
+    roles: ["Admin (กปม.)"],
+  });
+  const { bearer } = await login(f);
+  expect(await readUser(f)).toMatchObject({ id: f.user.id, role: "admin" });
+  expect((await readAccount(f)).lastMappedRole).toBe("admin");
+  expect(await (await readSession(f, bearer)).json()).toMatchObject({
+    session: { isSso: true },
+    user: { id: f.user.id, role: "admin" },
+  });
+  expect((await readSession(f, f.localBearer)).status).toBe(401);
+});
 
 test("first-time SSO provisions and maps Admin without a credential account", async () => {
   const f = await fixture({ roles: ["admin (กปม.)"] });

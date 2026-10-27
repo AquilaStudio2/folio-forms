@@ -14,7 +14,7 @@ A person authenticated by PDMS, identified by a stable subject and an explicit p
 
 ## SSO Bridge
 
-The login handoff in which PDMS authenticates a Legacy Identity and Folio creates its own session for an eligible linked account, using authenticated identity evidence rather than verified mailbox ownership. PDMS supplies all currently active role names; either exact name `admin (กปม.)` or `เจ้าหน้าที่ กปม.` maps to Admin, and every other valid list maps to User. The systems do not share passwords or login tokens.
+The login handoff in which PDMS authenticates a Legacy Identity and Folio creates its own session for an eligible linked account, using authenticated identity evidence rather than verified mailbox ownership. PDMS supplies all currently active role names; `admin (กปม.)` (case-insensitive, including `Admin` and `ADMIN`) or the exact name `เจ้าหน้าที่ กปม.` maps to Admin, and every other valid list maps to User. The systems do not share passwords or login tokens.
 
 ## SSO Role Baseline
 
