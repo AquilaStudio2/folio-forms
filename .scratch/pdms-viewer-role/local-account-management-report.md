@@ -58,3 +58,11 @@ Tool boundaries: the browser tool did not permit entering a new password, so rep
 This extension is local working-tree work. No production change, push or deployment was performed. Controlled SSO tests do not establish live PDMS integration. The earlier report describes the original PDMS-mapping delivery; this report supersedes its initial exclusion of local Viewer creation/assignment.
 
 Cleanup completed: stopped the disposable API and Vite listeners; removed the dedicated ONLYOFFICE, PostgreSQL and object-storage test containers and browser fixtures. Repository evidence contains no test credentials.
+
+## CI follow-up
+
+The first main-branch [CI run](https://github.com/AquilaStudio2/folio-forms/actions/runs/40668424169) passed web build, type checks, lint and web tests but failed the picture-editor spreadsheet test. Its child harness now imports the real role guard, which initializes auth/environment validation; CI has no developer `.env`. Earlier HTTP/web verification did not exercise this missing-environment scenario.
+
+The correction is limited to the test boundary: run the harness in an empty temporary directory, disable Bun environment-file autoload, and provide explicit synthetic fixture environment values. Production validation and guards remain enabled. A fully typed User identity and an explicit VIEWER 403 assertion keep the real role guard under test.
+
+The original missing-environment failure was reproduced in a scrubbed environment before the fix. After the fix, all 94 spreadsheet tests passed with 276 assertions across 18 files under the same clean conditions. An independent reviewer also reran the focused clean-environment case successfully. Local runtime: Bun 1.4.2; the corrected GitHub run establishes the separate CI Bun 1.4.0 result.

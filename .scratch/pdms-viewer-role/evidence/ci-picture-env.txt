@@ -1,0 +1,28 @@
+CI picture-editor environment regression (2026-10-28)
+
+RED before changes, run from empty temporary working directory:
+  env -i PATH="$PATH" CI=true bun --no-env-file test /Users/pyw1tt/Desktop/Github/folio-forms/apps/server/test/spreadsheet-unit/picture-editor.test.ts
+Result:0pass/1fail. Isolated harness newly imports the real identity guard;
+identity imports auth, auth imports env at runtime. Missing required synthetic
+auth/editor/Office/prefill/storage environment causes validation failure.
+Log:/tmp/folio-picture-ci-red.log
+
+GREEN same clean command after scoped test-only fix:
+Result:1pass/0fail,2assertions. Child stderr empty.
+Log:/tmp/folio-picture-ci-green.log
+
+Final CI-like complete spreadsheet suite from empty working directory:
+  env -i PATH="$PATH" CI=true bun --no-env-file test /Users/pyw1tt/Desktop/Github/folio-forms/apps/server/test/spreadsheet-unit/*.test.ts
+Result:94pass/0fail,276assertions across18files; exit0.
+Log:/tmp/folio-picture-ci-all.log
+
+Subprocess now has an explicit synthetic env allowlist, test NODE_ENV,
+unreachable fixture DB/storage URLs, empty temporary cwd, and no dotenv autoload.
+No real services/credentials or developer.env needed. Real identity guard remains
+loaded: complete role=user fixture succeeds; explicit role=viewer is asserted to
+fail403 through real userEditorConfig. Existing picture-frame assertions retained.
+
+Validation:
+  bun run fix apps/server/test/spreadsheet-unit/picture-editor.test.ts apps/server/test/spreadsheet-unit/picture-editor-harness.ts
+  bun run check apps/server/test/spreadsheet-unit/picture-editor.test.ts apps/server/test/spreadsheet-unit/picture-editor-harness.ts
+Both pass. git diff --check passes. Production files unchanged; no commit made.

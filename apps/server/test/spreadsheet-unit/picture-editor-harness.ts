@@ -210,7 +210,24 @@ const { spreadsheetManifestFieldData } =
 rows = spreadsheetManifestFieldData(bindings);
 const { userEditorConfig, correctionEditorConfig } =
   await import("../../src/responses/editor");
-const identity = { id: "user", sessionId: "session" } as Identity;
+const identity: Identity = {
+  email: "picture-fixture@example.test",
+  expiresAt: new Date(Date.now() + 60_000),
+  id: "user",
+  isSso: false,
+  mustChangePassword: false,
+  name: "Picture fixture",
+  role: "user",
+  sessionId: "session",
+};
+await assert.rejects(
+  userEditorConfig(
+    form as FormWithDocuments,
+    { ...identity, role: "viewer" },
+    responseId
+  ),
+  { code: "forbidden", httpStatus: 403 }
+);
 const expected = [
   {
     anchor: "folio_photo",
