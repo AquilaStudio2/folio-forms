@@ -108,7 +108,7 @@ async function readLegacyIdentityResponse(
     }
   }
   const mappedRole = claims.roles.some(
-    (role) => role === "admin (กปม.)" || role === "เจ้าหน้าที่ กปม."
+    (role) => role.toLowerCase() === "admin (กปม.)" || role === "เจ้าหน้าที่ กปม."
   )
     ? "admin"
     : "user";

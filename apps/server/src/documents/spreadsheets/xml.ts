@@ -49,12 +49,16 @@ export const spreadsheetXmlChildren = (
   );
 
 const escapeText = (text: string): string =>
-  text.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;");
+  text
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("\r", "&#13;");
 export const serializeSpreadsheetXml = (node: SpreadsheetXmlNode): string => {
   const attributes = Object.entries(node.attributes)
     .map(
       ([key, value]) =>
-        ` ${key}="${escapeText(value).replaceAll('"', "&quot;")}"`
+        ` ${key}="${escapeText(value).replaceAll('"', "&quot;").replaceAll("\n", "&#10;").replaceAll("\t", "&#9;")}"`
     )
     .join("");
   return `<${node.name}${attributes}>${node.children.map((child) => (typeof child === "string" ? escapeText(child) : serializeSpreadsheetXml(child))).join("")}</${node.name}>`;
