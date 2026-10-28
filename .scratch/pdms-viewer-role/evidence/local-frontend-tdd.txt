@@ -1,0 +1,42 @@
+Local VIEWER account management frontend evidence
+Date: 2026-10-28 (Asia/Bangkok)
+Owner: sol_worker frontend_discovery. Scope: apps/web/** only. No commit/push/deploy.
+Approved plan: .scratch/pdms-viewer-role/local-account-management-plan.md
+Approved seams: existing generated TanStack router + real AuthProvider + rendered existing routes, HTTP fixtures at fetch boundary. Extended existing viewer-access.test.tsx, no parallel harness.
+
+Sequential RED -> GREEN slices:
+1. Create VIEWER through existing account form: RED 'Value viewer not found in options'; GREEN after create role option. Exact normalized name/email/role payload, generated password, default-role reset verified.
+2. Filter VIEWER: RED missing viewer option; GREEN after filter option. GET role=viewer verified.
+3. Explicit role changes: six cases RED missing role-change control; GREEN with labelled target selector + confirmation showing current -> target and account email, exact target PATCH. Current target disabled, successful row role refresh verified.
+4. Eligible VIEWER account link: RED disabled approve; GREEN after removing obsolete User-only restriction. Policy verified against backend: enabled and matching candidate email, no role exclusion. Viewer/Admin/User eligibility verified; approval posts displayed reviewedGeneration.
+5. Cancel focus regression requested by main: RED focus remained on body because disabled role button remounted. GREEN after restoring role-action focus to enabled target selector. No request on cancel; last-Admin rejection retains role/session with actionable error.
+
+Additional public-page regressions passed in focused runs:
+- Local Viewer first login -> required password replacement -> session token cleared -> login again -> safe results/detail landing. Four return destinations cover management, dashboard, fill and allowed detail. No results read before replacement.
+- Admin self-change to Viewer -> local token removed/login required -> next login to results.
+- Disabled Viewer password reset keeps Viewer and disabled state; credential-missing failure shows error and no generated secret.
+- Disabled/email-changed Viewer pending link approval blocked; stale evidence 409 reloads current disabled evidence and blocks approval.
+- Generated secrets clear on pagination, filtering, subsequent action and page exit/re-entry.
+- Pending credential generation blocks competing role/reset actions and navigation until result is received.
+- Original read-only results/history/download/direct-URL regressions retained.
+
+Implementation files:
+apps/web/src/features/admin-users/account-panels.tsx
+apps/web/src/features/admin-users/model.ts
+apps/web/src/features/admin-users/user-list.tsx
+apps/web/src/features/admin-users/legacy-account-links.tsx
+apps/web/src/routes/admin/users.tsx
+apps/web/test/ui/viewer-access.test.tsx
+
+Verification:
+Root bun run fix scoped to all six files: PASS, no suppressions added.
+Root bun run check scoped to all six files: PASS.
+Main independently reports root typecheck (types4) and build (build3) pass on current source; redundant reruns intentionally skipped as requested.
+Full web suite running at handoff preparation; final result appended below.
+
+Limits: fixture UI tests do not prove real server/PDMS/native editor integration. Isolated native browser verification belongs to browser_fixture worker; database/session/audit/concurrency authorization tests belong to backend worker.
+
+Final full web result: bun run --cwd apps/web test PASS.
+12 Bun lifecycle tests passed; 165 Vitest UI tests passed across 12 files.
+viewer-access.test.tsx now has 38 cases (24 added beyond prior 14).
+No frontend work remains pending; ready for independent Standards/Spec review.

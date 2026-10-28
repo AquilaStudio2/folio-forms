@@ -157,6 +157,7 @@ export const CreateUserPanel = ({
         >
           <option value="user">ผู้ใช้</option>
           <option value="admin">ผู้ดูแลระบบ</option>
+          <option value="viewer">VIEWER</option>
         </select>
       </label>
       <div className="border-t border-[var(--line)] pt-4">
@@ -235,6 +236,7 @@ export const UserFilters = ({
           }
         >
           <option value="all">ทุกบทบาท</option>
+          <option value="viewer">VIEWER</option>
           <option value="admin">ผู้ดูแลระบบ</option>
           <option value="user">ผู้ใช้</option>
         </select>

@@ -10,7 +10,7 @@ An authenticated person who fills Forms and can inspect only their own Drafts an
 
 ## Viewer
 
-An authenticated person who can inspect and download every saved Draft, Submission and Correction through the existing results pages. A Viewer cannot fill or change Responses, author Forms, or manage the application.
+An authenticated person who can inspect and download every saved Draft, Submission and Correction through the existing results pages. A Viewer cannot fill or change Responses, author Forms, or manage the application. An Admin can create a local Viewer or change an existing account to Viewer. A Viewer may sign in locally or through a reviewed, linked Legacy Identity; both login methods use the same effective role.
 
 ## Legacy Identity
 

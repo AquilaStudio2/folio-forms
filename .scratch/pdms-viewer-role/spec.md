@@ -4,7 +4,7 @@ Status: ready-for-human
 
 Review base: 617b424d4b6ec21032c433e66bf11b9eef74fd22
 
-Branch: codex/pdms-viewer-role
+Branch: feature/pdms-viewer-role
 
 ## Agreed outcome
 
@@ -12,7 +12,7 @@ PDMS's exact `เจ้าหน้าที่ กปม.` role maps to Folio `
 
 Keep existing `admin (กปม.)` case-insensitive exact-full-name mapping to Admin. Preserve this existing Admin grant when an identity has both names; otherwise the exact officer name grants VIEWER, and all other valid lists grant User. Preserve strict claim validation and identity/linking safeguards.
 
-The user narrowed scope to role mapping and existing results access; do not add a separate Viewer page or a new manual VIEWER-assignment feature. Existing Admin account pages must correctly display and preserve existing VIEWER values when handling mapped accounts.
+The initial implementation covered role mapping and existing results access, with manual VIEWER creation/assignment excluded. On 28 October 2026 the user approved implementation of full VIEWER support through the existing Folio account-management lifecycle. That extension supersedes the manual-assignment exclusion; its requirements and acceptance criteria are in [the local account-management plan](local-account-management-plan.md). Admin can create, filter and assign VIEWER through the existing account pages, including reviewed PDMS linking. Existing Admin account pages must correctly display and preserve existing VIEWER values when handling mapped accounts. Continue using the existing pages.
 
 ## Existing-account semantics
 

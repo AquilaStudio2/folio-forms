@@ -94,8 +94,6 @@ export const LegacyAccountLinks = ({
           let ineligibleReason: string | null = null;
           if (!request.user.enabled) {
             ineligibleReason = "บัญชี Folio Forms ปิดใช้งานอยู่";
-          } else if (request.user.role !== "user") {
-            ineligibleReason = "ไม่สามารถเชื่อมบัญชีกับบัญชีผู้ดูแลระบบ";
           } else if (request.user.email !== request.email) {
             ineligibleReason = "อีเมลบัญชี Folio Forms เปลี่ยนไปแล้ว";
           }

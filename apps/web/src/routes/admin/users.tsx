@@ -308,8 +308,8 @@ const AdminUsersRoute = () => {
     if (restoreFocusKey) {
       window.requestAnimationFrame(() => {
         document
-          .querySelector<HTMLButtonElement>(
-            `button[data-user-action-id="${CSS.escape(restoreFocusKey)}"]`
+          .querySelector<HTMLElement>(
+            `[data-user-action-id="${CSS.escape(restoreFocusKey)}"]`
           )
           ?.focus();
       });
@@ -419,7 +419,11 @@ const AdminUsersRoute = () => {
     }
   };
 
-  const requestConfirmation = (user: AdminUser, kind: ConfirmKind) => {
+  const requestConfirmation = (
+    user: AdminUser,
+    kind: ConfirmKind,
+    targetRole?: Role
+  ) => {
     if (creating || listLoading || pendingAction || confirmingAction) {
       return;
     }
@@ -438,13 +442,14 @@ const AdminUsersRoute = () => {
     }
 
     restoreFocusKeyRef.current = actionKey(user.id, kind);
-    setConfirmingAction({ email, kind, user });
+    setConfirmingAction({ email, kind, targetRole, user });
   };
 
   const mutateUser = async (
     user: AdminUser,
     kind: ActionKind,
-    nextEmail?: string
+    nextEmail?: string,
+    targetRole?: Role
   ) => {
     if (creating || listLoading || pendingAction) {
       return;
@@ -509,7 +514,10 @@ const AdminUsersRoute = () => {
         }
         body = { email };
       } else {
-        body = { role: kind === "promote" ? "admin" : "user" };
+        if (!targetRole) {
+          return;
+        }
+        body = { role: targetRole };
       }
 
       const payload = await apiPatch<AdminUserMutationResponse>(
@@ -648,9 +656,10 @@ const AdminUsersRoute = () => {
   const confirmMutation = (
     user: AdminUser,
     kind: ConfirmKind,
-    nextEmail?: string
+    nextEmail?: string,
+    targetRole?: Role
   ) => {
-    void mutateUser(user, kind, nextEmail);
+    void mutateUser(user, kind, nextEmail, targetRole);
   };
 
   const cancelConfirmation = (user: AdminUser, kind: ConfirmKind) => {

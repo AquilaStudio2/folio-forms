@@ -1,0 +1,84 @@
+Local VIEWER account management backend TDD evidence
+Date: 2026-10-28 (Asia/Bangkok)
+
+Scope: apps/server only. Confirmed seams: real account/session HTTP,
+result/read/mutation HTTP and controlled SSO HTTP. Isolated Postgres database
+folio_viewer_test on 127.0.0.1:55441, private viewer-verification RustFS bucket
+on 127.0.0.1:59441. Browser verification uses a separate database and bucket.
+No production data or PDMS producer changed.
+
+Commands below source /tmp/folio-viewer-verification/env.sh first. Credentials
+and temporary passwords are intentionally absent from this evidence.
+
+SLICE 1: Admin creates local VIEWER and the local password lifecycle works.
+Command:
+  bun test --timeout 120000 apps/server/test/http/viewer-role.test.ts -t 'Admin creates local VIEWER'
+RED: account creation expected HTTP200, received HTTP400. 0pass/1fail.
+Minimal change: accept viewer in the existing create-account role validator.
+GREEN: 1pass/0fail,20assertions. Covers normalized email, enabled Viewer,
+forced password replacement before results, revoked temporary session,
+re-login/results, denied writes/admin access, duplicates and invalid roles.
+Logs: /tmp/folio-viewer-verification/backend/local-create-{red,green}.log
+
+SLICE 2: Admin assigns VIEWER and existing sessions lose access.
+Command:
+  bun test --timeout 120000 apps/server/test/http/viewer-role.test.ts -t 'Admin changes User to VIEWER'
+RED: role PATCH expected HTTP200, received HTTP400. 0pass/1fail.
+Minimal change: accept viewer in the existing role-PATCH validator.
+GREEN: 1pass/0fail,12assertions. Existing saved results stay readable/unchanged.
+Logs: /tmp/folio-viewer-verification/backend/local-role-{red,green}.log
+
+SLICE 3: User/Viewer transitions use a neutral existing audit event.
+Command:
+  bun test --timeout 120000 apps/server/test/http/viewer-role.test.ts -t 'neutral audit'
+RED: expected update_user/change=role_changed; received demote_user/demoted.
+Minimal change: after loading the locked target, select update_user with
+change=role_changed for distinct nonadmin roles; keep Admin promote/demote.
+GREEN: 1pass/0fail,5assertions.
+Logs: /tmp/folio-viewer-verification/backend/local-audit-{red,green}.log
+
+INTEGRATION REGRESSIONS (preserved behavior, initially green)
+- All six distinct role transitions, expected audit meanings, session revocation,
+  fresh-login permissions and same-role PATCH session invalidation.
+- Old editing credentials remain unusable after User -> Viewer -> User.
+- Local Viewer disable/enable, reset while disabled, old password/session rejection,
+  mandatory replacement, email change, role preservation and fresh login.
+- Viewer deletion refuses personal Responses until explicit Admin erasure.
+- Concurrent self-demotions retain one enabled Admin; last Admin cannot become
+  Viewer, disable self or delete self.
+- Viewer email/status filters paginate20+1 records with intact Viewer labels.
+- Manual Viewer assignment preserves unchanged PDMS baseline; later PDMS mapping
+  transition replaces effective role and revokes old sessions.
+- Null baseline applies incoming mapping even to a local Viewer; SSO bypass does
+  not clear the local temporary-password requirement.
+- Local Viewer linking requires current Admin review and fresh SSO; stale pre-review
+  callback fails, manual changes invalidate staged confirmation, disabled Viewer
+  cannot use SSO.
+- SSO-only Viewer reset retains its existing failure behavior and returns no password.
+
+Final focused command:
+  bun test --timeout 120000 apps/server/test/http/viewer-role.test.ts apps/server/test/http/legacy-roles.test.ts
+RESULT:46pass/0fail,602assertions,2files,13.60seconds.
+Includes14 new local-management regressions beyond the prior32 cases.
+Log: /tmp/folio-viewer-verification/backend/local-focused.log
+
+Formatting/lint:
+  bun run fix apps/server/src/routes/accounts.ts apps/server/test/fixtures/http.ts apps/server/test/http/viewer-role.test.ts apps/server/test/http/legacy-roles.test.ts
+  bun run check apps/server/src/routes/accounts.ts apps/server/test/fixtures/http.ts apps/server/test/http/viewer-role.test.ts apps/server/test/http/legacy-roles.test.ts
+RESULT:both passed,4files. No new lint suppression.
+
+Full registered HTTP suite started after the focused suite passed:
+  bun run --cwd apps/server test:http
+Process session35915 completed with exit code0.
+Log: /tmp/folio-viewer-verification/backend/local-full-http.log
+Full-suite result:203pass/0fail,6861assertions across18registered suite files.
+
+Verification notes:
+- An initial attempt found the stopped disposable database; it was infrastructure
+  failure, not a behavioral RED. Restored private test infrastructure and migrations
+  before the valid RED captured above.
+- Fixture corrections used a canonical unique responses/<id>/ artifact for erasure
+  and asserted the existing401 stale-confirmation result. No production authorization
+  or erasure behavior was changed to satisfy these fixtures.
+- Controlled SSO and injected PDF/save clients establish HTTP behavior only;
+  browser rendering and real PDMS connectivity require separate verification.
