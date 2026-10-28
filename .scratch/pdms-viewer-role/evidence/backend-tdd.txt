@@ -1,0 +1,38 @@
+Backend red/green evidence captured from completed tool output, 2026-10-27.
+Every test command sourced /tmp/folio-viewer-verification/env.sh (isolated DB/bucket).
+
+Slice 1 mapping:
+bun test --timeout 120000 apps/server/test/http/legacy-roles.test.ts -t 'initializes exact mapping.*เจ้าหน้าที่'
+RED: 2 pass, 2 fail. Expected officer redirect /admin/results; received /admin.
+GREEN after enum migration, generated client, mapping, identity and destination support: 4 pass, 0 fail, 44 assertions.
+
+Slice 2 result reads:
+bun test --timeout 120000 apps/server/test/http/viewer-role.test.ts
+RED: 0 pass, 1 fail, list expected200 received403.
+GREEN after result reader authorization: 1 pass, 0 fail, 12 assertions.
+
+Slice 3 history/downloads:
+bun test --timeout 120000 apps/server/test/http/viewer-role.test.ts -t 'history and downloads'
+RED: 0 pass, 1 fail, foreign submission data expected200 received403.
+GREEN after shared submission/history and saved Draft export permissions: 1 pass, 0 fail, 13 assertions.
+
+Slice 4 write denial:
+bun test --timeout 120000 apps/server/test/http/viewer-role.test.ts -t 'cannot mutate'
+RED: 0 pass, 1 fail, own response start expected403 received200.
+GREEN after explicit VIEWER denial at response start/editor, editor authorization, discard and lease boundaries: 1 pass, 0 fail, 23 assertions.
+
+Slice 5 last admin:
+bun test --timeout 120000 apps/server/test/http/legacy-roles.test.ts -t 'Admin mapped to VIEWER'
+RED: 0 pass, 1 fail, expected final_admin_required redirect; received /admin/results.
+GREEN after guarding admin -> any nonadmin transition: 1 pass, 0 fail, 15 assertions.
+
+Slice 6 account representation:
+bun test --timeout 120000 apps/server/test/http/viewer-role.test.ts -t 'account management'
+RED: 0 pass, 1 fail, viewer-filtered account list expected200 received400.
+GREEN after read-only viewer role filter support: 1 pass, 0 fail, 7 assertions.
+
+Final focused regression:
+bun test --timeout 120000 apps/server/test/http/legacy-roles.test.ts apps/server/test/http/viewer-role.test.ts
+32 pass, 0 fail, 382 assertions, 2 files. Includes 28 legacy-role cases + 4 viewer API cases.
+bun run --cwd apps/server check-types
+PASS (tsc -b).

@@ -11,7 +11,11 @@ import {
   createResponseAudit,
   createResponseDeletionAudit,
 } from "../audit/events";
-import { requireIdentity, requireAdmin } from "../auth/identity";
+import {
+  requireIdentity,
+  requireAdmin,
+  requireResponseWriter,
+} from "../auth/identity";
 import { responsePicturePresence } from "../documents/pictures";
 import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
 import { spreadsheetPicturePresence } from "../forms/spreadsheet-fields";
@@ -102,7 +106,11 @@ export function registerResponseRoutes(
       ) {
         fail(404, "not_found", "Submitted Response was not found");
       }
-      if (identity.role !== "admin" && response.userId !== identity.id) {
+      if (
+        identity.role !== "admin" &&
+        identity.role !== "viewer" &&
+        response.userId !== identity.id
+      ) {
         fail(403, "forbidden", "You may only access your own Response");
       }
       const actorIds = submission.corrections.map(
@@ -225,7 +233,7 @@ export function registerResponseRoutes(
         if (!response) {
           fail(404, "not_found", "Response was not found");
         }
-        if (response.userId !== identity.id) {
+        if (response.userId !== identity.id && identity.role !== "viewer") {
           fail(403, "forbidden", "You may only export your own Draft");
         }
         if (response.status !== ResponseStatus.draft) {
@@ -319,6 +327,7 @@ export function registerResponseRoutes(
     )
     .delete("/api/responses/:id", async ({ request, params }) => {
       const identity = await requireIdentity(request);
+      requireResponseWriter(identity);
       const responseId = validateId(params.id, "Response");
       try {
         await deleteResponseData({

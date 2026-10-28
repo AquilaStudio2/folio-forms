@@ -9,6 +9,7 @@ datasource db {
 
 enum UserRole {
   admin
+  viewer
   user
 }
 

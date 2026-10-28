@@ -3,19 +3,14 @@ import type { AdminUser, Role } from "@/lib/api";
 
 export type FilterRole = Role | "all";
 export type FilterEnabled = "all" | "true" | "false";
-export type ConfirmKind =
-  | "delete"
-  | "disable"
-  | "email"
-  | "promote"
-  | "demote"
-  | "reset";
+export type ConfirmKind = "delete" | "disable" | "email" | "role" | "reset";
 export type ActionKind = ConfirmKind | "enable";
 
 export interface Confirmation {
   user: AdminUser;
   kind: ConfirmKind;
   email?: string;
+  targetRole?: Role;
 }
 
 export const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+$/u;
@@ -47,10 +42,12 @@ export const actionKey = (userId: string, kind: ActionKind) =>
 export const roleBadgeLabels: Record<Role, string> = {
   admin: "ผู้ดูแลระบบ",
   user: "ผู้ใช้",
+  viewer: "VIEWER",
 };
 export const roleBadgeTones: Record<Role, "neutral" | "warning"> = {
   admin: "warning",
   user: "neutral",
+  viewer: "neutral",
 };
 export const errorMessageFor = (caughtError: unknown, fallback: string) => {
   if (caughtError instanceof ApiError) {
@@ -89,11 +86,8 @@ export const confirmationTitle = (kind: ConfirmKind) => {
   if (kind === "email") {
     return "ยืนยันการเปลี่ยนอีเมล";
   }
-  if (kind === "promote") {
-    return "ยืนยันการเลื่อนเป็นผู้ดูแลระบบ";
-  }
-  if (kind === "demote") {
-    return "ยืนยันการลดสิทธิ์ผู้ดูแลระบบ";
+  if (kind === "role") {
+    return "ยืนยันการเปลี่ยนบทบาท";
   }
   return "ยืนยันการตั้งรหัสผ่านใหม่";
 };
@@ -108,7 +102,7 @@ export const confirmationDescription = (kind: ConfirmKind) => {
   if (kind === "email") {
     return "การเปลี่ยนอีเมลจะออกจากระบบของบัญชีนี้ทุกอุปกรณ์";
   }
-  if (kind === "promote" || kind === "demote") {
+  if (kind === "role") {
     return "การเปลี่ยนบทบาทจะออกจากระบบของบัญชีนี้ทุกอุปกรณ์";
   }
   return "ระบบจะออกจากระบบของบัญชีนี้ทุกอุปกรณ์และสร้างรหัสผ่านชั่วคราวใหม่";
@@ -127,11 +121,8 @@ export const actionSuccessMessage = (kind: ActionKind) => {
   if (kind === "email") {
     return "เปลี่ยนอีเมลแล้ว และยกเลิกเซสชันทั้งหมดแล้ว";
   }
-  if (kind === "promote") {
-    return "เลื่อนบัญชีเป็นผู้ดูแลระบบแล้ว และยกเลิกเซสชันทั้งหมดแล้ว";
-  }
-  if (kind === "demote") {
-    return "ลดสิทธิ์บัญชีแล้ว และยกเลิกเซสชันทั้งหมดแล้ว";
+  if (kind === "role") {
+    return "เปลี่ยนบทบาทแล้ว และยกเลิกเซสชันทั้งหมดแล้ว";
   }
   return "ตั้งรหัสผ่านใหม่แล้ว และยกเลิกเซสชันทั้งหมดแล้ว";
 };
@@ -149,11 +140,8 @@ export const actionFailureMessage = (kind: ActionKind) => {
   if (kind === "email") {
     return "ไม่สามารถเปลี่ยนอีเมลได้ กรุณาลองใหม่อีกครั้ง";
   }
-  if (kind === "promote") {
-    return "ไม่สามารถเลื่อนบัญชีได้ กรุณาลองใหม่อีกครั้ง";
-  }
-  if (kind === "demote") {
-    return "ไม่สามารถลดสิทธิ์บัญชีได้ กรุณาลองใหม่อีกครั้ง";
+  if (kind === "role") {
+    return "ไม่สามารถเปลี่ยนบทบาทได้ กรุณาลองใหม่อีกครั้ง";
   }
   return "ไม่สามารถตั้งรหัสผ่านใหม่ได้ กรุณาลองใหม่อีกครั้ง";
 };

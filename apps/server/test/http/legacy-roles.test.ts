@@ -53,8 +53,8 @@ async function fixture({
   mustChangePassword = false,
 }: {
   roles?: string[];
-  role?: "admin" | "user";
-  lastMappedRole?: "admin" | "user" | null;
+  role?: "admin" | "viewer" | "user";
+  lastMappedRole?: "admin" | "viewer" | "user" | null;
   mustChangePassword?: boolean;
 } = {}) {
   const password = "Folio-role-sync-password";
@@ -183,8 +183,9 @@ for (const [roles, expected] of [
   [["ADMIN (กปม.)"], "admin"],
   [["aDmIn (กปม.)"], "admin"],
   [["เจ้าหน้าที่ กวค.", "Admin (กปม.)"], "admin"],
-  [["เจ้าหน้าที่ กปม."], "admin"],
-  [["other", "เจ้าหน้าที่ กปม.", "another"], "admin"],
+  [["เจ้าหน้าที่ กปม."], "viewer"],
+  [["เจ้าหน้าที่ กปม.", "Admin (กปม.)"], "admin"],
+  [["other", "เจ้าหน้าที่ กปม.", "another"], "viewer"],
   [[], "user"],
   [
     [
@@ -206,7 +207,9 @@ for (const [roles, expected] of [
     const { callback, bearer } = await login(f);
     expect(callback.headers.get("location")).toBe(
       new URL(
-        expected === "admin" ? "/admin" : "/dashboard",
+        { admin: "/admin", user: "/dashboard", viewer: "/admin/results" }[
+          expected
+        ],
         legacySsoWebOrigin
       ).href
     );
@@ -224,7 +227,7 @@ for (const [roles, expected] of [
       name: "Original Folio profile",
     });
     expect((await readSession(f, f.localBearer)).status).toBe(
-      expected === "admin" ? 401 : 200
+      expected === "user" ? 200 : 401
     );
     const adminAccess = await f.handle(
       new Request("https://folio.example.test/api/admin/users", {
@@ -295,7 +298,7 @@ test("unchanged mapping preserves manual role, mapping changes override globally
   expect((await readUser(f)).role).toBe("admin");
   expect((await readAccount(f)).lastMappedRole).toBe("user");
   expect((await readSession(f, localAdminBearer)).status).toBe(200);
-  f.identity.roles = ["เจ้าหน้าที่ กปม."];
+  f.identity.roles = ["admin (กปม.)"];
   const mappedAdmin = await login(f);
   expect((await readAccount(f)).lastMappedRole).toBe("admin");
   expect((await readSession(f, manualRoleLogin.bearer)).status).toBe(200);
@@ -449,7 +452,7 @@ test("confirmation rechecks effective role after preparing the session", async (
 });
 
 test("reviewed local Admin linking requires approval and a fresh SSO before role initialization", async () => {
-  const f = await fixture({ role: "admin", roles: ["เจ้าหน้าที่ กปม."] });
+  const f = await fixture({ role: "admin", roles: ["admin (กปม.)"] });
   await prisma.account.delete({ where: { id: f.account.id } });
   const reviewer = await fixture({ role: "admin" });
   const pending = await completeLegacySsoCallback(f.handle);
@@ -524,6 +527,46 @@ test("last enabled Admin downgrade rejects login without changing mapping, sessi
     const recovered = await login(f);
     expect((await readUser(f)).role).toBe("user");
     expect((await readAccount(f)).lastMappedRole).toBe("user");
+    expect((await readSession(f, recovered.bearer)).status).toBe(200);
+    expect((await readSession(f, f.localBearer)).status).toBe(401);
+  } finally {
+    await prisma.user.updateMany({
+      data: { enabled: true },
+      where: { id: { in: others.map(({ id }) => id) } },
+    });
+  }
+});
+
+test("last enabled Admin mapped to VIEWER rejects login without changing mapping, sessions, or generation", async () => {
+  const f = await fixture({
+    lastMappedRole: "admin",
+    role: "admin",
+    roles: ["เจ้าหน้าที่ กปม."],
+  });
+  const others = await prisma.user.findMany({
+    select: { id: true },
+    where: { enabled: true, id: { not: f.user.id }, role: "admin" },
+  });
+  await prisma.user.updateMany({
+    data: { enabled: false },
+    where: { id: { in: others.map(({ id }) => id) } },
+  });
+  try {
+    const before = await readAccount(f);
+    const callback = await completeLegacySsoCallback(f.handle);
+    expect(callback.headers.get("location")).toBe(
+      new URL("/login?legacySso=final_admin_required", legacySsoWebOrigin).href
+    );
+    expect(await readAccount(f)).toEqual(before);
+    expect((await readUser(f)).role).toBe("admin");
+    expect((await readSession(f, f.localBearer)).status).toBe(200);
+    expect(
+      await prisma.session.count({ where: { isSso: true, userId: f.user.id } })
+    ).toBe(0);
+    await fixture({ role: "admin" });
+    const recovered = await login(f);
+    expect((await readUser(f)).role).toBe("viewer");
+    expect((await readAccount(f)).lastMappedRole).toBe("viewer");
     expect((await readSession(f, recovered.bearer)).status).toBe(200);
     expect((await readSession(f, f.localBearer)).status).toBe(401);
   } finally {
@@ -617,7 +660,7 @@ test("prepared session creation failure cannot change a linked account role or b
 });
 
 test("SSO Admin editor capabilities authorize editing and fail after a mapped demotion", async () => {
-  const f = await fixture({ roles: ["เจ้าหน้าที่ กปม."] });
+  const f = await fixture({ roles: ["admin (กปม.)"] });
   await fixture({ role: "admin" });
   const { bearer } = await login(f);
   const created = await f.handle(
@@ -685,4 +728,186 @@ test("postcommit authoring cleanup failure preserves the completed role sync and
     cleanup.mockRestore();
     log.mockRestore();
   }
+});
+
+test("officer transition replaces the Admin baseline, revokes sessions and preserves later manual override", async () => {
+  const f = await fixture({
+    lastMappedRole: "admin",
+    role: "admin",
+    roles: ["เจ้าหน้าที่ กปม."],
+  });
+  const reviewer = await fixture({ role: "admin" });
+  const { bearer } = await login(f);
+  expect(await (await readSession(f, bearer)).json()).toMatchObject({
+    user: { role: "viewer" },
+  });
+  expect((await readSession(f, f.localBearer)).status).toBe(401);
+  const promotion = await f.handle(
+    new Request(`https://folio.example.test/api/admin/users/${f.user.id}`, {
+      body: JSON.stringify({ role: "admin" }),
+      headers: {
+        ...jsonHeaders,
+        Authorization: `Bearer ${reviewer.localBearer}`,
+      },
+      method: "PATCH",
+    })
+  );
+  expect(promotion.status).toBe(200);
+  const preserved = await login(f);
+  expect(await (await readSession(f, preserved.bearer)).json()).toMatchObject({
+    user: { role: "admin" },
+  });
+  f.identity.roles = [];
+  const changed = await login(f);
+  expect(await (await readSession(f, changed.bearer)).json()).toMatchObject({
+    user: { role: "user" },
+  });
+  expect((await readSession(f, preserved.bearer)).status).toBe(401);
+});
+
+test("account switch confirmation applies VIEWER without allowing an editing return path", async () => {
+  const f = await fixture({ roles: ["เจ้าหน้าที่ กปม."] });
+  const initiator = await fixture();
+  const staged = await stageSwitch(f, initiator, "/admin/forms/new");
+  expect(staged.snapshot.returnTo).toBe("/admin/results");
+  const confirmed = await staged.decide("confirm");
+  expect(confirmed.status).toBe(200);
+  expect(await confirmed.json()).toMatchObject({ returnTo: "/admin/results" });
+});
+
+test("manual VIEWER assignment preserves an unchanged baseline and a later PDMS mapping transition replaces it", async () => {
+  const f = await fixture({ lastMappedRole: "user", roles: [] });
+  const reviewer = await fixture({ role: "admin" });
+  const change = await f.handle(
+    new Request(`https://folio.example.test/api/admin/users/${f.user.id}`, {
+      body: JSON.stringify({ role: "viewer" }),
+      headers: {
+        ...jsonHeaders,
+        Authorization: `Bearer ${reviewer.localBearer}`,
+      },
+      method: "PATCH",
+    })
+  );
+  expect(change.status).toBe(200);
+  const unchanged = await login(f);
+  expect(await (await readSession(f, unchanged.bearer)).json()).toMatchObject({
+    user: { role: "viewer" },
+  });
+  f.identity.roles = ["admin (กปม.)"];
+  const transitioned = await login(f);
+  expect(
+    await (await readSession(f, transitioned.bearer)).json()
+  ).toMatchObject({ user: { role: "admin" } });
+  expect((await readSession(f, unchanged.bearer)).status).toBe(401);
+});
+
+test("a null SSO baseline replaces a local VIEWER role and SSO bypass keeps its local password requirement", async () => {
+  const f = await fixture({ mustChangePassword: true, role: "viewer" });
+  expect(await (await readSession(f, f.localBearer)).json()).toMatchObject({
+    user: { mustChangePassword: true, role: "viewer" },
+  });
+  const first = await login(f);
+  expect(await (await readSession(f, first.bearer)).json()).toMatchObject({
+    session: { isSso: true },
+    user: { mustChangePassword: false, role: "user" },
+  });
+  const local = await bearerFor(f.app, f.user.email, f.password);
+  expect(await (await readSession(f, local)).json()).toMatchObject({
+    user: { mustChangePassword: true, role: "user" },
+  });
+});
+
+test("local VIEWER account linking requires current Admin approval and a fresh SSO", async () => {
+  const f = await fixture({ role: "viewer", roles: ["เจ้าหน้าที่ กปม."] });
+  await prisma.account.delete({ where: { id: f.account.id } });
+  const reviewer = await fixture({ role: "admin" });
+  const pending = await completeLegacySsoCallback(f.handle);
+  expect(pending.headers.get("location")).toBe(legacySsoPendingLocation);
+  const request = await prisma.legacyAccountLinkRequest.findUniqueOrThrow({
+    where: {
+      providerId_subject: { providerId: f.providerId, subject: f.identity.sub },
+    },
+  });
+  const oldBrowser = await startLegacySsoBrowser(f.handle);
+  const snapshot = await legacyAccountLinkSnapshot(
+    f.handle,
+    reviewer.localBearer,
+    request.id
+  );
+  const approval = await submitLegacyAccountLinkReview(
+    f.handle,
+    reviewer.localBearer,
+    snapshot,
+    "approve"
+  );
+  expect(approval.status).toBe(200);
+  const authorization = await fetch(oldBrowser.authorizationUrl, {
+    redirect: "manual",
+  });
+  const stale = await f.handle(
+    new Request(redirectLocation(authorization), {
+      headers: { Cookie: oldBrowser.preLoginCookie },
+    })
+  );
+  expect(stale.headers.get("location")).toBe(legacySsoFailedLocation);
+  const completed = await login(f);
+  expect(await (await readSession(f, completed.bearer)).json()).toMatchObject({
+    user: { id: f.user.id, role: "viewer" },
+  });
+});
+
+test("manual VIEWER change invalidates staged SSO confirmation and disabled VIEWER cannot enter through SSO", async () => {
+  const f = await fixture({ lastMappedRole: "user" });
+  const initiator = await fixture();
+  const reviewer = await fixture({ role: "admin" });
+  const staged = await stageSwitch(f, initiator, "/dashboard");
+  const patch = (body: unknown) =>
+    f.handle(
+      new Request(`https://folio.example.test/api/admin/users/${f.user.id}`, {
+        body: JSON.stringify(body),
+        headers: {
+          ...jsonHeaders,
+          Authorization: `Bearer ${reviewer.localBearer}`,
+        },
+        method: "PATCH",
+      })
+    );
+  expect((await patch({ role: "viewer" })).status).toBe(200);
+  expect((await staged.decide("confirm")).status).toBe(401);
+  expect((await patch({ enabled: false })).status).toBe(200);
+  const denied = await completeLegacySsoCallback(f.handle);
+  expect(denied.headers.get("location")).toBe(legacySsoFailedLocation);
+});
+
+test("SSO-only VIEWER password reset fails without creating a credential or reporting success", async () => {
+  const f = await fixture({
+    lastMappedRole: "viewer",
+    role: "viewer",
+    roles: ["เจ้าหน้าที่ กปม."],
+  });
+  await prisma.account.deleteMany({
+    where: { providerId: "credential", userId: f.user.id },
+  });
+  const reviewer = await fixture({ role: "admin" });
+  const current = await login(f);
+  const reset = await f.handle(
+    new Request(
+      `https://folio.example.test/api/admin/users/${f.user.id}/password-reset`,
+      {
+        body: "{}",
+        headers: {
+          ...jsonHeaders,
+          Authorization: `Bearer ${reviewer.localBearer}`,
+        },
+        method: "POST",
+      }
+    )
+  );
+  expect(reset.status).toBe(500);
+  const result = (await reset.json()) as { temporaryPassword?: unknown };
+  expect(result.temporaryPassword).toBeUndefined();
+  expect(await (await readSession(f, current.bearer)).json()).toMatchObject({
+    session: { isSso: true },
+    user: { role: "viewer" },
+  });
 });

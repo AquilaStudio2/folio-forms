@@ -118,10 +118,10 @@ interface AccountAuditMetadata {
   change?: string;
   errorCode?: string;
   source?: "pdms_sso";
-  previousMappedRole?: "admin" | "user" | null;
-  mappedRole?: "admin" | "user";
-  previousRole?: "admin" | "user";
-  role?: "admin" | "user";
+  previousMappedRole?: "admin" | "viewer" | "user" | null;
+  mappedRole?: "admin" | "viewer" | "user";
+  previousRole?: "admin" | "viewer" | "user";
+  role?: "admin" | "viewer" | "user";
 }
 
 export async function createAccountAudit(

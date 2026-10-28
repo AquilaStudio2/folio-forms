@@ -87,7 +87,7 @@ interface CredentialFixtureOptions {
   email: string;
   name: string;
   password: string;
-  role?: "admin" | "user";
+  role?: "admin" | "viewer" | "user";
   mustChangePassword?: boolean;
 }
 

@@ -21,6 +21,7 @@ import type {
   ReceiptField,
   ResponseRevisionsResponse,
 } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 
 type ResponseRevision = ResponseRevisionsResponse["revisions"][number];
 
@@ -99,6 +100,8 @@ const deletionErrorMessage = (caughtError: unknown) => {
 };
 // oxlint-disable-next-line complexity -- The detail route owns read, history, export, and deletion states.
 const AdminResultDetailRoute = () => {
+  const { user } = useAuth();
+  const canManage = user?.role === "admin";
   const { responseId } = useParams({ from: "/admin/results/$responseId/" });
   const [result, setResult] = useState<AdminResultDetail | null>(null);
   const [viewRevision, setViewRevision] = useState<number | null>(null);
@@ -348,7 +351,7 @@ const AdminResultDetailRoute = () => {
   }
   return (
     <>
-      {deleteConfirmation ? (
+      {canManage && deleteConfirmation ? (
         <div
           className="fixed inset-0 z-50 grid place-items-center bg-black/35 px-5"
           role="presentation"
@@ -427,7 +430,8 @@ const AdminResultDetailRoute = () => {
             <Notice>
               <strong>ฉบับร่างอ่านได้อย่างเดียว</strong>
               <div>
-                Admin ไม่สามารถแก้ไข ยึด Lease หรือส่งออกฉบับร่างจาก workflow นี้ได้
+                หน้านี้แสดงฉบับร่างที่บันทึกไว้สำหรับอ่านเท่านั้น
+                การดาวน์โหลดจากหน้านี้ใช้ได้กับคำตอบที่ส่งแล้ว
               </div>
             </Notice>
           ) : (
@@ -439,13 +443,15 @@ const AdminResultDetailRoute = () => {
                 setViewRevision={setViewRevision}
                 viewRevision={selectedRevision}
               />
-              <Link
-                search={{ form: undefined }}
-                to="/admin/results/$responseId/correction"
-                params={{ responseId }}
-              >
-                <Button variant="primary">เปิด Correction</Button>
-              </Link>
+              {canManage ? (
+                <Link
+                  search={{ form: undefined }}
+                  to="/admin/results/$responseId/correction"
+                  params={{ responseId }}
+                >
+                  <Button variant="primary">เปิด Correction</Button>
+                </Link>
+              ) : null}
               <Button
                 disabled={downloading !== null || !selectedRevisionRecord}
                 onClick={() =>
@@ -472,17 +478,19 @@ const AdminResultDetailRoute = () => {
               <div>{downloadError}</div>
             </Notice>
           ) : null}
-          <div className="mt-5 border-t border-[var(--line)] pt-4">
-            <Button
-              type="button"
-              variant="danger"
-              onClick={(event) => requestDelete(event.currentTarget)}
-              disabled={deleting || downloading !== null}
-            >
-              <Trash2 size={16} />
-              ลบคำตอบถาวร
-            </Button>
-          </div>
+          {canManage ? (
+            <div className="mt-5 border-t border-[var(--line)] pt-4">
+              <Button
+                type="button"
+                variant="danger"
+                onClick={(event) => requestDelete(event.currentTarget)}
+                disabled={deleting || downloading !== null}
+              >
+                <Trash2 size={16} />
+                ลบคำตอบถาวร
+              </Button>
+            </div>
+          ) : null}
         </Card>
         {isSubmitted ? (
           <Card>

@@ -9,6 +9,7 @@ import {
 import { createResponseAudit } from "../audit/events";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Identity } from "../auth/identity";
+import { requireResponseWriter } from "../auth/identity";
 import { onlyOfficeFieldTagAliases } from "../documents/office-values";
 import {
   readSpreadsheetWorkbook,
@@ -299,6 +300,7 @@ export async function userEditorConfig(
   responseId: string | undefined,
   requestedAction?: string
 ): Promise<Record<string, unknown>> {
+  requireResponseWriter(identity);
   const publishedTemplate = form.publishedTemplate;
   if (!publishedTemplate?.objectKey || !publishedTemplate.documentKey) {
     fail(409, "not_published", "This form has no published document");

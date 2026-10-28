@@ -108,10 +108,12 @@ async function readLegacyIdentityResponse(
     }
   }
   const mappedRole = claims.roles.some(
-    (role) => role.toLowerCase() === "admin (กปม.)" || role === "เจ้าหน้าที่ กปม."
+    (role) => role.toLowerCase() === "admin (กปม.)"
   )
     ? "admin"
-    : "user";
+    : claims.roles.includes("เจ้าหน้าที่ กปม.")
+      ? "viewer"
+      : "user";
   return {
     email: normalizeEmail(claims.email),
     mappedRole,

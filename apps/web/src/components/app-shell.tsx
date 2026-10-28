@@ -17,7 +17,7 @@ import { useState } from "react";
 
 import { LegacySsoSwitchButton } from "@/components/legacy-sso-switch-button";
 import { Button, Notice, Spinner } from "@/components/ui";
-import { ApiError } from "@/lib/api";
+import { ApiError, homePathForRole } from "@/lib/api";
 import { roleFor, useAuth } from "@/lib/auth";
 
 const AdminNavigation = ({
@@ -113,6 +113,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
   const navigate = useNavigate();
   const location = useLocation();
   const role = roleFor(user);
+  const homePath = homePathForRole(role);
   const [legacySsoError, setLegacySsoError] = useState(false);
 
   const logout = async () => {
@@ -144,7 +145,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
       <header className="border-b border-[var(--line)] bg-[var(--paper)]">
         <div className="mx-auto flex max-w-[1240px] items-center justify-between px-5 py-4 lg:px-8">
           <Link
-            to={role === "admin" ? "/admin" : "/dashboard"}
+            to={homePath}
             className="flex items-center gap-3"
             onClick={() => setOpen(false)}
           >
@@ -175,7 +176,19 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
                 pathname={location.pathname}
                 onNavigate={() => setOpen(false)}
               />
-            ) : (
+            ) : null}
+            {role === "viewer" ? (
+              <Link
+                to="/admin/results"
+                search={{ form: undefined }}
+                className="rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] hover:bg-[var(--accent-soft)]"
+                onClick={() => setOpen(false)}
+              >
+                <ClipboardList className="mr-1 inline" size={15} />
+                ผลลัพธ์
+              </Link>
+            ) : null}
+            {role === "user" ? (
               <Link
                 to="/dashboard"
                 className="rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] hover:bg-[var(--accent-soft)]"
@@ -186,7 +199,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
               >
                 My responses
               </Link>
-            )}
+            ) : null}
             <LegacySsoSwitchButton
               onError={() => setLegacySsoError(true)}
               onStart={() => {
@@ -197,7 +210,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
             <Link
               to="/change-password"
               search={{
-                returnTo: role === "admin" ? "/admin" : "/dashboard",
+                returnTo: homePath,
               }}
               className="rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] hover:bg-[var(--accent-soft)]"
               onClick={() => setOpen(false)}

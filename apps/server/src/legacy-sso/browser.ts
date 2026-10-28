@@ -65,7 +65,9 @@ function legacySsoSwitchChallenge(
     typeof challenge.subject !== "string" ||
     typeof challenge.generation !== "string" ||
     !/^[1-9]\d*$/u.test(challenge.generation) ||
-    (challenge.mappedRole !== "admin" && challenge.mappedRole !== "user")
+    (challenge.mappedRole !== "admin" &&
+      challenge.mappedRole !== "viewer" &&
+      challenge.mappedRole !== "user")
   ) {
     return null;
   }
@@ -471,7 +473,7 @@ interface LegacySsoSwitchContext {
     email: string;
     id: string;
     name: string;
-    role: "admin" | "user";
+    role: "admin" | "viewer" | "user";
   } | null;
   storedValue: string;
 }
@@ -479,7 +481,12 @@ interface LegacySsoSwitchContext {
 function legacySsoConfirmationFingerprint(
   identity: Identity,
   challenge: LegacySsoSwitchChallenge,
-  target: { email: string; id: string; name: string; role: "admin" | "user" }
+  target: {
+    email: string;
+    id: string;
+    name: string;
+    role: "admin" | "viewer" | "user";
+  }
 ): string {
   return createHash("sha256")
     .update(

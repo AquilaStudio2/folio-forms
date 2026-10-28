@@ -2,7 +2,7 @@ import { prisma } from "@onlyoffice/db";
 
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { EditorCapabilityIdentity } from "../auth/identity";
-import { requireIdentity } from "../auth/identity";
+import { requireIdentity, requireResponseWriter } from "../auth/identity";
 import { fail } from "../http/errors";
 import type {
   EditorCapabilityClaims,
@@ -32,7 +32,9 @@ export async function editorAuthorization(
 ): Promise<EditorAuthorization> {
   const token = request.headers.get("x-editor-capability")?.trim();
   if (!token) {
-    return { actor: await requireIdentity(request), capability: null };
+    const actor = await requireIdentity(request);
+    requireResponseWriter(actor);
+    return { actor, capability: null };
   }
   const capability = verifyEditorCapability(token);
   if (!capability) {
@@ -65,6 +67,7 @@ export async function editorAuthorization(
       "Editor capability is invalid or expired"
     );
   }
+  requireResponseWriter(user);
   return {
     actor: {
       email: user.email,

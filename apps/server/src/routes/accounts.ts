@@ -176,8 +176,12 @@ export function registerAccountRoutes(
       }
       let role: UserRole | undefined;
       if (roleQuery !== undefined) {
-        if (roleQuery !== "admin" && roleQuery !== "user") {
-          fail(400, "invalid_request", "role must be admin or user");
+        if (
+          roleQuery !== "admin" &&
+          roleQuery !== "viewer" &&
+          roleQuery !== "user"
+        ) {
+          fail(400, "invalid_request", "role must be admin, viewer, or user");
         }
         role = roleQuery;
       }
@@ -234,8 +238,12 @@ export function registerAccountRoutes(
           }
           const email = normalizedAccountEmail(requiredString(input, "email"));
           const roleValue = requiredString(input, "role");
-          if (roleValue !== "admin" && roleValue !== "user") {
-            fail(400, "invalid_request", "role must be admin or user");
+          if (
+            roleValue !== "admin" &&
+            roleValue !== "viewer" &&
+            roleValue !== "user"
+          ) {
+            fail(400, "invalid_request", "role must be admin, viewer, or user");
           }
           const temporaryPassword = generateTemporaryPassword();
           const user = await accountTransaction(identity, async (tx) => {
@@ -335,8 +343,16 @@ export function registerAccountRoutes(
               revokeSessions = true;
               updateData = { email: newEmail };
             } else {
-              if (input.role !== "admin" && input.role !== "user") {
-                fail(400, "invalid_request", "role must be admin or user");
+              if (
+                input.role !== "admin" &&
+                input.role !== "viewer" &&
+                input.role !== "user"
+              ) {
+                fail(
+                  400,
+                  "invalid_request",
+                  "role must be admin, viewer, or user"
+                );
               }
               action = input.role === "admin" ? "promote_user" : "demote_user";
               change = input.role === "admin" ? "promoted" : "demoted";
@@ -346,10 +362,22 @@ export function registerAccountRoutes(
             setAction(action);
             const result = await accountTransaction(identity, async (tx) => {
               const target = await lockAccountUser(tx, userId);
+              if (
+                key === "role" &&
+                target.role !== input.role &&
+                target.role !== "admin" &&
+                input.role !== "admin"
+              ) {
+                action = "update_user";
+                change = "role_changed";
+                setAction(action);
+              }
               const removesFinalAdmin =
                 target.role === "admin" &&
                 target.enabled &&
-                (updateData.enabled === false || updateData.role === "user");
+                (updateData.enabled === false ||
+                  (updateData.role !== undefined &&
+                    updateData.role !== "admin"));
               if (removesFinalAdmin) {
                 await requireAnotherEnabledAdmin(tx);
               }

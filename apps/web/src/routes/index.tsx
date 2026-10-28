@@ -14,6 +14,9 @@ const HomeRoute = () => {
   if (!user) {
     return <Navigate to="/login" search={{ returnTo: undefined }} />;
   }
+  if (user.role === "viewer") {
+    return <Navigate to="/admin/results" search={{ form: undefined }} />;
+  }
   if (user.role === "admin") {
     return <Navigate to="/admin" />;
   }

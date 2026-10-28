@@ -11,10 +11,11 @@ import {
   UsersRound,
 } from "lucide-react";
 import type { FormEvent, RefObject } from "react";
+import { useState } from "react";
 
 import { Badge, Button, Card, Input, Notice, Spinner } from "@/components/ui";
 import { formatDate } from "@/lib/api";
-import type { AdminUser } from "@/lib/api";
+import type { AdminUser, Role } from "@/lib/api";
 
 import {
   actionKey,
@@ -23,8 +24,59 @@ import {
   resetIsDisabled,
   roleBadgeLabels,
   roleBadgeTones,
+  selectClass,
 } from "./model";
 import type { Confirmation, ConfirmKind } from "./model";
+
+const RoleChangeControl = ({
+  user,
+  disabled,
+  requestConfirmation,
+}: {
+  user: AdminUser;
+  disabled: boolean;
+  requestConfirmation: (
+    user: AdminUser,
+    kind: ConfirmKind,
+    targetRole?: Role
+  ) => void;
+}) => {
+  const [targetRole, setTargetRole] = useState<Role>(user.role);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <label
+        className="text-sm font-semibold"
+        htmlFor={`role-target-${user.id}`}
+      >
+        บทบาทใหม่
+      </label>
+      <select
+        id={`role-target-${user.id}`}
+        className={selectClass}
+        data-user-action-id={actionKey(user.id, "role")}
+        aria-label={`บทบาทใหม่ ${user.email}`}
+        disabled={disabled}
+        value={targetRole}
+        onChange={(event) => setTargetRole(event.target.value as Role)}
+      >
+        <option value="user">ผู้ใช้</option>
+        <option value="viewer">VIEWER</option>
+        <option value="admin">ผู้ดูแลระบบ</option>
+      </select>
+      <Button
+        type="button"
+        size="sm"
+        variant="secondary"
+        aria-label={`เปลี่ยนบทบาท ${user.email}`}
+        data-user-action-id={actionKey(user.id, "role")}
+        disabled={disabled || targetRole === user.role}
+        onClick={() => requestConfirmation(user, "role", targetRole)}
+      >
+        เปลี่ยนบทบาท
+      </Button>
+    </div>
+  );
+};
 
 export const UserList = ({
   users,
@@ -78,10 +130,15 @@ export const UserList = ({
   confirmMutation: (
     user: AdminUser,
     kind: ConfirmKind,
-    nextEmail?: string
+    nextEmail?: string,
+    targetRole?: Role
   ) => void;
   cancelConfirmation: (user: AdminUser, kind: ConfirmKind) => void;
-  requestConfirmation: (user: AdminUser, kind: ConfirmKind) => void;
+  requestConfirmation: (
+    user: AdminUser,
+    kind: ConfirmKind,
+    targetRole?: Role
+  ) => void;
   beginEmailEdit: (user: AdminUser) => void;
   enableUser: (user: AdminUser) => void;
   goToPreviousPage: () => void;
@@ -313,6 +370,27 @@ export const UserList = ({
                             id={`confirm-description-${user.id}`}
                             className="text-sm text-[var(--ink)]"
                           >
+                            {confirmationForRow.targetRole ? (
+                              <>
+                                <span className="block font-semibold">
+                                  {user.email}
+                                </span>
+                                <span className="block">
+                                  {roleBadgeLabels[user.role]} →{" "}
+                                  {
+                                    roleBadgeLabels[
+                                      confirmationForRow.targetRole
+                                    ]
+                                  }
+                                </span>
+                                {confirmationForRow.targetRole === "viewer" ? (
+                                  <span className="block">
+                                    VIEWER อ่านผลลัพธ์ของทุกคนได้
+                                    แต่กรอกหรือแก้ไขข้อมูลไม่ได้
+                                  </span>
+                                ) : null}
+                              </>
+                            ) : null}
                             {confirmationDescription(confirmationForRow.kind)}
                           </p>
                         </div>
@@ -329,7 +407,8 @@ export const UserList = ({
                               confirmMutation(
                                 user,
                                 confirmationForRow.kind,
-                                confirmationForRow.email
+                                confirmationForRow.email,
+                                confirmationForRow.targetRole
                               );
                             }}
                             disabled={Boolean(pendingAction)}
@@ -377,31 +456,12 @@ export const UserList = ({
                             เปิดใช้งาน
                           </Button>
                         )}
-                        {user.role === "admin" ? (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            data-user-action-id={actionKey(user.id, "demote")}
-                            onClick={() => requestConfirmation(user, "demote")}
-                            disabled={rowDisabled}
-                            aria-label={`ลดสิทธิ์ ${user.email} เป็นผู้ใช้`}
-                          >
-                            ลดสิทธิ์
-                          </Button>
-                        ) : (
-                          <Button
-                            type="button"
-                            variant="secondary"
-                            size="sm"
-                            data-user-action-id={actionKey(user.id, "promote")}
-                            onClick={() => requestConfirmation(user, "promote")}
-                            disabled={rowDisabled}
-                            aria-label={`เลื่อน ${user.email} เป็นผู้ดูแลระบบ`}
-                          >
-                            เลื่อนเป็นผู้ดูแล
-                          </Button>
-                        )}
+                        <RoleChangeControl
+                          key={`${user.id}:${user.role}`}
+                          user={user}
+                          disabled={rowDisabled}
+                          requestConfirmation={requestConfirmation}
+                        />
                         {isEditingEmail ? null : (
                           <Button
                             type="button"
