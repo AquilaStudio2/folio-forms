@@ -14,6 +14,7 @@ import {
   updateOperationFailed,
   operationDocumentKey,
 } from "./lifecycle";
+import { nativeCaptureKey } from "./object-cleanup";
 import { SpreadsheetValidationError } from "./spreadsheet-document";
 
 export function launchForceSave(
@@ -72,17 +73,26 @@ export function launchForceSave(
           const catalogSessionId = (
             operation.metadata as { pdmsCatalogSessionId?: unknown } | null
           )?.pdmsCatalogSessionId;
-          if (
-            typeof catalogSessionId === "string" &&
-            (await prisma.operation.findFirst({
-              select: { id: true },
-              where: {
-                createdAt: { lt: operation.createdAt },
-                documentKey: operation.documentKey,
-                status: OperationStatus.failed,
-              },
-            }))
-          ) {
+          const previous =
+            typeof catalogSessionId === "string"
+              ? await prisma.operation.findFirst({
+                  orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+                  where: {
+                    createdAt: { lt: operation.createdAt },
+                    documentKey: operation.documentKey,
+                    formId: operation.formId,
+                    status: {
+                      in: [OperationStatus.completed, OperationStatus.failed],
+                    },
+                    targetId: operation.targetId,
+                    targetType: operation.targetType,
+                  },
+                })
+              : null;
+          const failed =
+            previous?.status === OperationStatus.failed ? previous : null;
+          const recoveredCaptureKey = failed ? nativeCaptureKey(failed) : null;
+          if (failed && !recoveredCaptureKey) {
             await updateOperationFailed(
               operation.id,
               "document_save_failed",
@@ -94,9 +104,9 @@ export function launchForceSave(
             );
             return;
           }
-          const currentObjectKey = await operationDocumentKey(
-            operation.documentKey
-          );
+          const currentObjectKey =
+            recoveredCaptureKey ??
+            (await operationDocumentKey(operation.documentKey));
           if (!currentObjectKey) {
             fail(
               500,

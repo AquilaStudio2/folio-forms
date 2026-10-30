@@ -546,6 +546,9 @@ export function registerFormCatalogRoutes(
                   typeof metadata.finalObjectKey === "string"
                     ? metadata.finalObjectKey
                     : undefined,
+                  typeof metadata.nativeCaptureObjectKey === "string"
+                    ? metadata.nativeCaptureObjectKey
+                    : undefined,
                   ...(Array.isArray(metadata.cleanupObjectKeys)
                     ? metadata.cleanupObjectKeys.filter(
                         (key): key is string => typeof key === "string"

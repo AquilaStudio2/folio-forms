@@ -1,5 +1,5 @@
 // oxlint-disable sort-keys unicorn/no-await-expression-member no-await-in-loop -- Exercise the public persisted workflow in order.
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, spyOn, test } from "bun:test";
 
 import { prisma } from "@onlyoffice/db";
 
@@ -133,7 +133,7 @@ const workbook = (first: string, second = "") =>
       { address: "D3", value: second },
     ],
   });
-const fixture = async (required: boolean) => {
+const fixture = async (required: boolean, sourceOnly = false) => {
   failing = false;
   failSnapshot = false;
   unchangedNative = false;
@@ -165,25 +165,44 @@ const fixture = async (required: boolean) => {
         type: "dropdown",
         source: "pdms-project-name",
       },
-      {
-        anchor: "folio_note",
-        id: "folio_note",
-        key: "notes",
-        label: "Notes",
-        type: "text",
-      },
-      {
-        anchor: "folio_more",
-        id: "folio_more",
-        key: "more_notes",
-        label: "More notes",
-        type: "text",
-      },
+      ...(sourceOnly
+        ? [
+            {
+              anchor: "folio_second",
+              id: "folio_second",
+              key: "second_project",
+              label: "Second project",
+              required,
+              type: "dropdown",
+              source: "pdms-project-name",
+            },
+          ]
+        : [
+            {
+              anchor: "folio_note",
+              id: "folio_note",
+              key: "notes",
+              label: "Notes",
+              type: "text",
+            },
+            {
+              anchor: "folio_more",
+              id: "folio_more",
+              key: "more_notes",
+              label: "More notes",
+              type: "text",
+            },
+          ]),
     ],
     table: null,
     version: 1,
   });
-  snapshot = workbook("");
+  const fixtureAnchors = sourceOnly
+    ? { folio_project: anchors.folio_project, folio_second: "'Form'!$A$3" }
+    : anchors;
+  snapshot = sourceOnly
+    ? fixtureWorkbook({ merges: ["A1:B1"], names: fixtureAnchors, cells: [] })
+    : workbook("");
   const objectKey = `tests/outage/${id}/template.xlsx`;
   await putObject(
     objectKey,
@@ -214,7 +233,7 @@ const fixture = async (required: boolean) => {
       author.bridge.capabilities.publish as string,
       {
         documentKey: author.config.document.key,
-        spreadsheetAnchors: Object.entries(anchors),
+        spreadsheetAnchors: Object.entries(fixtureAnchors),
       },
       true
     )
@@ -224,8 +243,9 @@ const fixture = async (required: boolean) => {
   expect(start.status).toBe(200);
   const responseId = ((await start.json()) as { response: { id: string } })
     .response.id;
-  const opening = crypto.randomUUID();
+  let opening = crypto.randomUUID();
   const config = async (openingId = opening) => {
+    opening = openingId;
     const result = await request(
       `/api/forms/${publicId}/editor-config?responseId=${responseId}&pdmsOpeningId=${openingId}`,
       token
@@ -240,7 +260,8 @@ const fixture = async (required: boolean) => {
   const act = (
     editor: Editor,
     action: "draft" | "submit",
-    selection?: string
+    selection?: string,
+    bindingId = "folio_project"
   ) =>
     request(
       `/api/forms/${publicId}/${action}`,
@@ -258,7 +279,7 @@ const fixture = async (required: boolean) => {
           : {
               pdmsSelection: {
                 sessionId: editor.pdmsProjectCatalog.sessionId,
-                bindingId: "folio_project",
+                bindingId,
                 name: selection,
               },
             }),
@@ -382,6 +403,179 @@ runtimeTest(
       notes: "native edits awaiting reliable capture",
       more_notes: "another unsaved input",
     });
+  }
+);
+
+runtimeTest(
+  "an incomplete source-only Submit can reopen, choose the missing required project, and submit without a native edit",
+  async () => {
+    const f = await fixture(true, true);
+    unchangedNative = true;
+    let editor = await f.config();
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    editor = await f.config();
+    const submittedKey = editor.config.document.key;
+    const incomplete = await complete(await f.act(editor, "submit"));
+    expect(incomplete.status).toBe("failed");
+    expect(incomplete.result?.validationErrors).toContainEqual({
+      address: "A3",
+      message: expect.any(String),
+    });
+    editor = await f.config(crypto.randomUUID());
+    expect(editor.config.document.key).toBe(submittedKey);
+    expect(
+      (
+        await complete(
+          await f.act(editor, "draft", "โครงการหลังคืนบริการ", "folio_second")
+        )
+      ).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      second_project: "โครงการหลังคืนบริการ",
+    });
+    const saved = readSpreadsheetWorkbook(await f.bytes());
+    expect(saved.cells.get("A1")?.value).toBe("โครงการหลังคืนบริการ");
+    expect(saved.cells.get("A3")?.value).toBe("โครงการหลังคืนบริการ");
+    editor = await f.config();
+    expect((await complete(await f.act(editor, "submit"))).status).toBe(
+      "completed"
+    );
+    expect(
+      await (
+        await request(`/api/forms/${f.publicId}/my-submissions/export`, f.token)
+      ).json()
+    ).toMatchObject([
+      {
+        data: {
+          project_name: "โครงการหลังคืนบริการ",
+          second_project: "โครงการหลังคืนบริการ",
+        },
+      },
+    ]);
+  }
+);
+
+runtimeTest(
+  "a picker retry after required validation preserves the failed Submit's newly captured ordinary values",
+  async () => {
+    const f = await fixture(true);
+    let editor = await f.config();
+    snapshot = workbook("ordinary canonical baseline");
+    expect((await complete(await f.act(editor, "draft"))).status).toBe(
+      "completed"
+    );
+    editor = await f.config();
+    snapshot = workbook(
+      "new ordinary value captured only by the failed Submit",
+      "new second value"
+    );
+    expect((await complete(await f.act(editor, "submit"))).status).toBe(
+      "failed"
+    );
+    expect(await (await f.read("json")).json()).toMatchObject({
+      notes: "ordinary canonical baseline",
+    });
+    unchangedNative = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      notes: "new ordinary value captured only by the failed Submit",
+      more_notes: "new second value",
+    });
+    const saved = readSpreadsheetWorkbook(await f.bytes());
+    expect(saved.cells.get("D1")?.value).toBe(
+      "new ordinary value captured only by the failed Submit"
+    );
+    expect(saved.cells.get("D3")?.value).toBe("new second value");
+    editor = await f.config();
+    expect((await complete(await f.act(editor, "submit"))).status).toBe(
+      "completed"
+    );
+  }
+);
+
+runtimeTest(
+  "a newer uncertain capture fences an older retained snapshot until a fresh native capture succeeds",
+  async () => {
+    const f = await fixture(true);
+    const editor = await f.config();
+    snapshot = workbook("retained but now older unsaved input");
+    expect((await complete(await f.act(editor, "submit"))).status).toBe(
+      "failed"
+    );
+    snapshot = workbook("newer input whose first capture fails");
+    failSnapshot = true;
+    expect((await complete(await f.act(editor, "draft"))).status).toBe(
+      "failed"
+    );
+    failSnapshot = false;
+    unchangedNative = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("failed");
+    expect(await (await f.read("json")).json()).toEqual({});
+    unchangedNative = false;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      notes: "newer input whose first capture fails",
+      more_notes: null,
+    });
+  }
+);
+
+runtimeTest(
+  "a transient Builder failure does not block an unchanged source-only picker retry",
+  async () => {
+    const f = await fixture(true, true);
+    const editor = await f.config();
+    unchangedNative = true;
+    const nativeFetch = globalThis.fetch;
+    const failBuilder: typeof fetch = Object.assign(
+      (
+        input: Parameters<typeof fetch>[0],
+        init?: Parameters<typeof fetch>[1]
+      ) => {
+        const url = new URL(
+          input instanceof Request ? input.url : String(input)
+        );
+        return url.pathname === "/docbuilder"
+          ? Promise.resolve(
+              new Response("temporary Builder outage", { status: 503 })
+            )
+          : nativeFetch(input, init);
+      },
+      { preconnect: nativeFetch.preconnect }
+    );
+    const builderFailure = spyOn(globalThis, "fetch").mockImplementation(
+      failBuilder
+    );
+    try {
+      expect(
+        (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ")))
+          .status
+      ).toBe("failed");
+    } finally {
+      builderFailure.mockRestore();
+    }
+    expect(await (await f.read("json")).json()).toEqual({});
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      second_project: null,
+    });
+    expect(
+      readSpreadsheetWorkbook(await f.bytes()).cells.get("A1")?.value
+    ).toBe("โครงการหลังคืนบริการ");
   }
 );
 

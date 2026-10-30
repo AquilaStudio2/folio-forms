@@ -1,93 +1,24 @@
 import { ACTIONS } from "./constants.js";
 import { createPdmsPopupOwner } from "./pdms-popup-owner.js";
 
-/** Search lives in the plugin; only a committed choice enters the existing native-save action. */
+/** Own the opening's catalog and trusted save action; the adjacent iframe owns presentation. */
 export const createPdmsProjectPicker = (
   options,
   bindings,
-  panel,
   operations,
   setStatus,
   readSelection,
   isEditorBusy = () => false
 ) => {
-  const columns = (bindings?.table?.columns || []).filter(
-    (field) => field.source === "pdms-project-name"
-  );
-  const fields = [...(bindings?.fields || []), ...columns].filter(
-    (field) => field.source === "pdms-project-name"
-  );
-  if (!fields.length) {
+  const fields = [
+    ...(bindings?.fields || []),
+    ...(bindings?.table?.columns || []),
+  ];
+  if (!fields.some((field) => field.source === "pdms-project-name")) {
     return null;
   }
   const preview = options.action === ACTIONS.TEMPLATE_EDIT;
   let catalog = options.pdmsProjectCatalog;
-  const section = document.createElement("section");
-  section.className = "pdms-project-picker";
-  section.hidden = true;
-  section.setAttribute("aria-label", "เลือกชื่อโครงการ PDMS");
-  const labelled = (caption, control) => {
-    const label = document.createElement("label");
-    const text = document.createElement("span");
-    text.textContent = caption;
-    label.className = "field-label";
-    label.append(text, control);
-    section.append(label);
-    return control;
-  };
-  const target = labelled("ช่องโครงการ", document.createElement("select"));
-  for (const field of fields) {
-    const option = document.createElement("option");
-    option.value = field.id;
-    option.textContent = `${columns.includes(field) ? `${bindings.table.label} · ` : ""}${field.label} (${field.key})`;
-    target.append(option);
-  }
-  target.value = fields[0].id;
-  const row = labelled("แถวโครงการ", document.createElement("select"));
-  const body = bindings?.locations?.[bindings.table?.anchor];
-  if (body) {
-    for (let index = 0; index <= body.lastRow - body.firstRow; index += 1) {
-      const option = document.createElement("option");
-      option.value = String(index);
-      option.textContent = `รายการ ${index + 1} · แถว ${body.firstRow + index + 1}`;
-      row.append(option);
-    }
-    row.value = "0";
-  }
-  const isColumn = () => columns.some((field) => field.id === target.value);
-  const updateRow = () => {
-    row.parentNode.hidden = !isColumn();
-  };
-  target.addEventListener("change", updateRow);
-  updateRow();
-  const query = labelled("ค้นหาชื่อโครงการ", document.createElement("input"));
-  query.type = "search";
-  query.autocomplete = "off";
-  query.setAttribute("role", "combobox");
-  query.setAttribute("aria-autocomplete", "list");
-  query.setAttribute("aria-expanded", "true");
-  query.setAttribute("aria-controls", "pdms-project-results");
-  const count = document.createElement("p");
-  count.setAttribute("role", "status");
-  const results = document.createElement("div");
-  results.id = "pdms-project-results";
-  results.className = "pdms-project-results";
-  results.setAttribute("role", "listbox");
-  results.setAttribute("aria-label", "ชื่อโครงการที่พบ");
-  const more = document.createElement("button");
-  more.type = "button";
-  more.textContent = "แสดงเพิ่ม 100 โครงการ";
-  const cancel = document.createElement("button");
-  cancel.type = "button";
-  cancel.textContent = "ยกเลิกการค้นหา";
-  const retry = document.createElement("button");
-  retry.type = "button";
-  retry.textContent = "ลองโหลดรายการอีกครั้ง";
-  section.append(count, results, more, cancel, retry);
-  panel.append(section);
-  let shown = 100;
-  let active = 0;
-  let composing = false;
   let busy = false;
   let retrying = false;
   let popupOwner = null;
@@ -97,35 +28,10 @@ export const createPdmsProjectPicker = (
     if (changed) {
       popupOwner?.busyChanged();
     }
-    retry.disabled = value || retrying;
-    for (const control of [
-      target,
-      row,
-      query,
-      more,
-      cancel,
-      ...results.children,
-    ]) {
-      control.disabled =
-        value ||
-        retrying ||
-        catalog?.status !== "ready" ||
-        (preview && control.parentNode === results);
-    }
   };
   const choose = async (name, capturedTarget) => {
     if (busy || preview || catalog?.status !== "ready") {
       return;
-    }
-    if (!capturedTarget && isColumn() && (!body || !row.children.length)) {
-      throw new Error("ไม่พบแถวโครงการ กรุณาเปิดตัวแก้ไขใหม่");
-    }
-    let selectedRow = capturedTarget?.row;
-    if (!capturedTarget && isColumn()) {
-      selectedRow = {
-        documentKey: options.documentKey,
-        index: Number(row.value),
-      };
     }
     setBusy(true);
     const outcome = await operations.runAction(
@@ -136,10 +42,10 @@ export const createPdmsProjectPicker = (
       null,
       {
         pdmsSelection: {
-          bindingId: capturedTarget?.bindingId || target.value,
+          bindingId: capturedTarget.bindingId,
           name,
           sessionId: catalog.sessionId,
-          ...(selectedRow ? { row: selectedRow } : {}),
+          ...(capturedTarget.row ? { row: capturedTarget.row } : {}),
         },
       }
     );
@@ -147,114 +53,21 @@ export const createPdmsProjectPicker = (
       setBusy(false);
     }
   };
-  const render = () => {
-    const names = catalog?.status === "ready" ? catalog.names : [];
-    const matches = names.filter((name) => name.includes(query.value));
-    const visible = matches.slice(0, shown);
-    active = Math.min(active, Math.max(0, visible.length - 1));
-    results.replaceChildren(
-      ...visible.map((name, index) => {
-        const choice = document.createElement("button");
-        choice.type = "button";
-        choice.id = `pdms-project-${index}`;
-        choice.textContent = name;
-        choice.setAttribute("role", "option");
-        choice.setAttribute("aria-selected", String(index === active));
-        choice.addEventListener("click", async () => {
-          try {
-            await choose(name);
-          } catch (error) {
-            setBusy(false);
-            setStatus(error.message, "error");
-          }
-        });
-        return choice;
-      })
-    );
-    retry.hidden = catalog?.status === "ready";
-    if (retrying || catalog?.status === "loading") {
-      count.textContent = "กำลังโหลดรายการโครงการ";
-    } else if (catalog?.status === "ready") {
-      count.textContent = `${matches.length} โครงการ · แสดง ${visible.length}${preview ? " · ตัวอย่างรายการ" : ""}`;
-    } else {
-      count.textContent = "โหลดรายการโครงการไม่สำเร็จ ยังบันทึกแบบร่างได้";
-    }
-    more.hidden = visible.length >= matches.length;
-    query.setAttribute(
-      "aria-activedescendant",
-      visible.length ? `pdms-project-${active}` : ""
-    );
-    setBusy(busy);
-  };
-  query.addEventListener("compositionstart", () => {
-    composing = true;
-  });
-  query.addEventListener("compositionend", () => {
-    composing = false;
-    shown = 100;
-    active = 0;
-    render();
-  });
-  query.addEventListener("input", () => {
-    if (!composing) {
-      shown = 100;
-      active = 0;
-      render();
-    }
-  });
-  const cancelSearch = () => {
-    query.value = "";
-    shown = 100;
-    active = 0;
-    render();
-    query.focus();
-  };
-  query.addEventListener("keydown", (event) => {
-    if (composing || event.isComposing || busy) {
-      return;
-    }
-    if (event.key === "Escape") {
-      cancelSearch();
-      return;
-    }
-    if (["ArrowDown", "ArrowUp"].includes(event.key)) {
-      event.preventDefault();
-      active = Math.max(
-        0,
-        Math.min(
-          results.children.length - 1,
-          active + (event.key === "ArrowDown" ? 1 : -1)
-        )
-      );
-      render();
-      results.children[active]?.scrollIntoView({ block: "nearest" });
-    }
-    if (event.key === "Enter") {
-      event.preventDefault();
-      results.children[active]?.click();
-    }
-  });
-  more.addEventListener("click", () => {
-    shown += 100;
-    render();
-  });
-  cancel.addEventListener("click", cancelSearch);
   const retryCatalog = async () => {
     if (busy || retrying || catalog?.status === "ready") {
       return;
     }
     retrying = true;
-    render();
+    popupOwner?.busyChanged();
     try {
       catalog = await operations.retryPdmsCatalog();
     } catch (error) {
       setStatus(error.message, "error");
     } finally {
       retrying = false;
-      render();
+      popupOwner?.busyChanged();
     }
   };
-  retry.addEventListener("click", retryCatalog);
   popupOwner = createPdmsPopupOwner({
     bindings,
     choose,
@@ -266,7 +79,6 @@ export const createPdmsProjectPicker = (
     retry: retryCatalog,
     setStatus,
   });
-  render();
   return {
     destroy() {
       popupOwner?.destroy();
@@ -275,7 +87,6 @@ export const createPdmsProjectPicker = (
     updateCatalog(value) {
       catalog = value;
       popupOwner?.changed();
-      render();
     },
   };
 };

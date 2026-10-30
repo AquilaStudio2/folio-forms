@@ -53,6 +53,7 @@ export interface OperationMetadata extends JsonRecord {
   finalObjectKey: string;
   formId: string;
   nativeDocumentStaged?: boolean;
+  nativeCaptureObjectKey?: string;
   nextDocumentKey?: string;
   preserveEditorSession?: true;
   uploadPocBindingId?: string;

@@ -212,6 +212,7 @@ export async function deleteResponseData({
             operation.stagingObjectKey,
             metadata.finalObjectKey,
             metadata.stagedObjectKey,
+            metadata.nativeCaptureObjectKey,
             ...(metadata.cleanupObjectKeys ?? []),
             metadata.workspaceObjectKey,
           ];

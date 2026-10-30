@@ -17,7 +17,11 @@ import { jsonValue } from "../responses/data";
 import { objectExists } from "../storage";
 import type { OperationErrorCode, OperationMetadata } from "./model";
 import { operationMetadata } from "./model";
-import { deleteObjects, deleteObjectUnlessCanonical } from "./object-cleanup";
+import {
+  cleanupNativeCaptures,
+  deleteObjects,
+  deleteObjectUnlessCanonical,
+} from "./object-cleanup";
 
 export const operationTimeoutMs = 4 * 60_000;
 export const callbackClaimLifetimeSeconds = 5 * 60;
@@ -71,7 +75,15 @@ export async function updateOperationFailed(
 ): Promise<boolean> {
   const operation = await prisma.$transaction(async (tx) => {
     const current = await tx.operation.findUnique({
-      select: { actorId: true, metadata: true, stagingObjectKey: true },
+      select: {
+        actorId: true,
+        documentKey: true,
+        formId: true,
+        metadata: true,
+        stagingObjectKey: true,
+        targetId: true,
+        targetType: true,
+      },
       where: { id: operationId },
     });
     if (!current) {
@@ -150,6 +162,7 @@ export async function updateOperationFailed(
   }
   await deleteObjects([operation.stagingObjectKey]);
   await deleteObjectUnlessCanonical(operation.metadata.finalObjectKey);
+  await cleanupNativeCaptures(operation);
   return true;
 }
 

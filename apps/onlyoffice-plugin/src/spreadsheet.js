@@ -2712,15 +2712,11 @@ export function initializeSpreadsheet(options, setStatus) {
       extractFormData: (callback) => callback(null, { data: {} }),
     };
   }
-  const pdmsPanel = document.createElement("div");
-  panel.append(pdmsPanel);
   refreshPdmsPicker = () => {
     pdmsPicker?.destroy?.();
-    pdmsPanel.replaceChildren();
     pdmsPicker = createPdmsProjectPicker(
       options,
       bindings,
-      pdmsPanel,
       operations,
       setStatus,
       selection,

@@ -7,6 +7,82 @@ import { operationMetadata } from "./model";
 
 export const objectCleanupIntentGraceMs = 15 * 60_000;
 
+/** Only server-created captures beside this operation's own staging object are recoverable. */
+export function nativeCaptureKey(
+  operation: Pick<Operation, "metadata" | "stagingObjectKey">
+): string | null {
+  const metadata = operationMetadata(operation.metadata);
+  return operation.stagingObjectKey &&
+    typeof metadata.pdmsCatalogSessionId === "string" &&
+    metadata.nativeCaptureObjectKey === `${operation.stagingObjectKey}.native`
+    ? metadata.nativeCaptureObjectKey
+    : null;
+}
+
+/** Keep the latest failed capture only while its exact target revision remains current. */
+export async function cleanupNativeCaptures(
+  operation: Pick<
+    Operation,
+    "documentKey" | "formId" | "targetId" | "targetType"
+  >
+): Promise<void> {
+  if (!operation.documentKey) {
+    return;
+  }
+  const attempts = await prisma.operation.findMany({
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    where: {
+      documentKey: operation.documentKey,
+      formId: operation.formId,
+      targetId: operation.targetId,
+      targetType: operation.targetType,
+    },
+  });
+  if (!attempts.some((attempt) => nativeCaptureKey(attempt))) {
+    return;
+  }
+  const current =
+    operation.targetType === "template_draft"
+      ? await prisma.templateDraft.findFirst({
+          where: { documentKey: operation.documentKey, id: operation.targetId },
+        })
+      : operation.targetType === "response"
+        ? await prisma.response.findFirst({
+            where: {
+              draftDocumentKey: operation.documentKey,
+              id: operation.targetId,
+            },
+          })
+        : operation.targetType === "correction"
+          ? await prisma.editorLease.findFirst({
+              where: {
+                targetId: operation.targetId,
+                targetType: "correction",
+                workspaceDocumentKey: operation.documentKey,
+              },
+            })
+          : null;
+  const [latest] = attempts;
+  if (
+    current &&
+    (latest?.status === OperationStatus.pending ||
+      latest?.status === OperationStatus.processing)
+  ) {
+    // An in-flight retry may still need the previous failed attempt's capture.
+    return;
+  }
+  const retained =
+    current && latest?.status === OperationStatus.failed
+      ? nativeCaptureKey(latest)
+      : null;
+  await Promise.all(
+    attempts
+      .map(nativeCaptureKey)
+      .filter((key): key is string => Boolean(key) && key !== retained)
+      .map((key) => deleteObjectUnlessCanonical(key))
+  );
+}
+
 export function uniqueObjectKeys(
   keys: readonly (string | null | undefined)[]
 ): string[] {
@@ -110,6 +186,7 @@ export async function cleanupTerminalOperationObjects(
     return;
   }
   const metadata = operationMetadata(operation.metadata);
+  await cleanupNativeCaptures(operation);
   if (operation.status === OperationStatus.completed) {
     const keys = metadata.cleanupObjectKeys ?? [metadata.stagedObjectKey];
     await (metadata.action === "save-correction" ||
