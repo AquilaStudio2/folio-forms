@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { env } from "@onlyoffice/env/server";
 
 import { uploadPocGuid } from "./documents/spreadsheets/upload-poc-preview";
+import type { PdmsProjectCatalog } from "./pdms/catalog";
 
 export const pluginGuid = "asc.{E0B14962-3B9D-4E82-923E-89A93E8A1A51}";
 
@@ -120,6 +121,8 @@ export interface CallbackClaimInput {
 export interface EditorOptions {
   documentKind?: "docx" | "xlsx";
   spreadsheetBindings?: unknown;
+  pdmsProjectCatalog?: PdmsProjectCatalog;
+  pdmsProjectEnabled?: boolean;
   uploadPocSavedButtons?: {
     bindingId: string;
     tag: string;

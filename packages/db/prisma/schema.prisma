@@ -252,6 +252,7 @@ model DraftFieldRule {
   /// XLSX display/type metadata; DOCX metadata continues to come from content controls.
   label           String?
   type            FieldType?
+  source          String?
   options         Json?
   position        Int?
   /// ExcelBinding JSON: scalar, table or column placement; shared with ManifestField.binding.
@@ -311,6 +312,7 @@ model ManifestField {
   type             FieldType
   required         Boolean       @default(false)
   prefillPolicy    PrefillPolicy @default(editable) @map("prefill_policy")
+  source           String?
   options          Json?
   /// ExcelBinding JSON: scalar, table or column placement; shared with DraftFieldRule.binding.
   /// Types and validation: apps/server/src/forms/excel-binding.ts. DOCX uses null.
@@ -625,4 +627,28 @@ model DeletionTombstone {
 
   @@index([actorId, createdAt])
   @@map("deletion_tombstones")
+}
+
+/// An immutable successful catalog belongs to one authorized editor opening.
+model PdmsProjectCatalogSession {
+  id            String   @id @default(uuid()) @db.Uuid
+  openingId     String   @map("opening_id") @db.Uuid
+  leaseId       String   @map("lease_id") @db.Uuid
+  actorId       String   @map("actor_id")
+  authSessionId String   @map("auth_session_id")
+  formId        String   @map("form_id") @db.Uuid
+  targetType    String   @map("target_type")
+  targetId      String   @map("target_id") @db.Uuid
+  documentKey   String   @map("document_key")
+  status        String   @default("pending")
+  names         Json?
+  loadToken     String?  @map("load_token") @db.Uuid
+  loadExpiresAt DateTime? @map("load_expires_at") @db.Timestamptz(3)
+  expiresAt     DateTime @map("expires_at") @db.Timestamptz(3)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+
+  @@unique([openingId, leaseId])
+  @@index([expiresAt])
+  @@index([targetId])
+  @@map("pdms_project_catalog_sessions")
 }
