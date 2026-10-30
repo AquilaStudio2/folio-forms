@@ -15,11 +15,7 @@ export const createPdmsProjectPicker = (
     return null;
   }
   const preview = options.action === ACTIONS.TEMPLATE_EDIT;
-  const catalog = options.pdmsProjectCatalog;
-  const names =
-    catalog?.status === "ready" && Array.isArray(catalog.names)
-      ? catalog.names
-      : [];
+  let catalog = options.pdmsProjectCatalog;
   const section = document.createElement("section");
   section.className = "pdms-project-picker";
   section.setAttribute("aria-label", "เลือกชื่อโครงการ PDMS");
@@ -60,17 +56,23 @@ export const createPdmsProjectPicker = (
   const cancel = document.createElement("button");
   cancel.type = "button";
   cancel.textContent = "ยกเลิกการค้นหา";
-  section.append(count, results, more, cancel);
+  const retry = document.createElement("button");
+  retry.type = "button";
+  retry.textContent = "ลองโหลดรายการอีกครั้ง";
+  section.append(count, results, more, cancel, retry);
   panel.append(section);
   let shown = 100;
   let active = 0;
   let composing = false;
   let busy = false;
+  let retrying = false;
   const setBusy = (value) => {
     busy = value;
+    retry.disabled = value || retrying;
     for (const control of [target, query, more, cancel, ...results.children]) {
       control.disabled =
         value ||
+        retrying ||
         catalog?.status !== "ready" ||
         (preview && control.parentNode === results);
     }
@@ -92,6 +94,7 @@ export const createPdmsProjectPicker = (
     }
   };
   const render = () => {
+    const names = catalog?.status === "ready" ? catalog.names : [];
     const matches = names.filter((name) => name.includes(query.value));
     const visible = matches.slice(0, shown);
     active = Math.min(active, Math.max(0, visible.length - 1));
@@ -114,10 +117,11 @@ export const createPdmsProjectPicker = (
         return choice;
       })
     );
-    if (catalog?.status === "ready") {
-      count.textContent = `${matches.length} โครงการ · แสดง ${visible.length}${preview ? " · ตัวอย่างรายการ" : ""}`;
-    } else if (catalog?.status === "loading") {
+    retry.hidden = catalog?.status === "ready";
+    if (retrying || catalog?.status === "loading") {
       count.textContent = "กำลังโหลดรายการโครงการ";
+    } else if (catalog?.status === "ready") {
+      count.textContent = `${matches.length} โครงการ · แสดง ${visible.length}${preview ? " · ตัวอย่างรายการ" : ""}`;
     } else {
       count.textContent = "โหลดรายการโครงการไม่สำเร็จ ยังบันทึกแบบร่างได้";
     }
@@ -181,6 +185,21 @@ export const createPdmsProjectPicker = (
     render();
   });
   cancel.addEventListener("click", cancelSearch);
+  retry.addEventListener("click", async () => {
+    if (busy || retrying || catalog?.status === "ready") {
+      return;
+    }
+    retrying = true;
+    render();
+    try {
+      catalog = await operations.retryPdmsCatalog();
+    } catch (error) {
+      setStatus(error.message, "error");
+    } finally {
+      retrying = false;
+      render();
+    }
+  });
   render();
   return { setBusy };
 };
