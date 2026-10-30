@@ -4,7 +4,7 @@
 
 **Blocked by:** 05 — Select and save project names in repeating-table rows.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 Type: task
 

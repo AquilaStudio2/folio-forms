@@ -110,6 +110,8 @@ Previously saved names remain valid unchanged after upstream removal or renaming
 
 ## Further Notes
 
+- Latest UI clarification: the user supplied an image of an in-cell validation arrow and dropdown, reiterating that clicking the configured cell control should show all project names there. The implemented side panel alone does not establish acceptance of that clarified interaction. Investigate and demonstrate the in-cell route while preserving selection-only protection; do not silently weaken the prohibition on typing or claim native behavior without a pinned-editor proof. The earlier fallback authorization and its technical findings remain recorded, but the clarified UI is still an outstanding acceptance item.
+
 - Product behavior was agreed through Q1–Q12 plus the added Title/Tag requirement. The existing name-answer ADR and domain vocabulary remain authoritative.
 - The real PDMS record count, payload size and latency were not measured. Measure a representative authorized catalog before accepting performance; document list size, full-result reachability, search latency, editor-open latency and Thai input responsiveness without inventing an unagreed numerical SLA.
 - Repository source and a local test container identify the pinned editor family as 9.4.0.1; production deployment was not verified.
