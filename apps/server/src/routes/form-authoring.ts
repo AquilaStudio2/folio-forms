@@ -175,6 +175,12 @@ export function registerFormAuthoringRoutes(
               scope: capabilityScope,
             })
           : null;
+        const catalogScope = {
+          ...capabilityScope,
+          ...(pdmsProjectCatalog
+            ? { pdmsCatalogSessionId: pdmsProjectCatalog.sessionId }
+            : {}),
+        };
         return editorConfig(
           {
             action: "template-edit",
@@ -190,19 +196,19 @@ export function registerFormAuthoringRoutes(
             capabilities: {
               "configure-fields": actionEditorCapability(
                 identity,
-                capabilityScope,
+                catalogScope,
                 "configure-fields",
                 lease
               ),
               publish: actionEditorCapability(
                 identity,
-                capabilityScope,
+                catalogScope,
                 "publish",
                 lease
               ),
               "save-template": actionEditorCapability(
                 identity,
-                capabilityScope,
+                catalogScope,
                 "save-template",
                 lease
               ),

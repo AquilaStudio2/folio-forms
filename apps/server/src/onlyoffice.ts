@@ -82,6 +82,7 @@ export interface EditorCapabilityClaims {
   leaseId?: string;
   leaseProof?: string;
   operationId?: string;
+  pdmsCatalogSessionId?: string;
   role: UserRole;
   targetId: string;
   targetType: EditorCapabilityTarget;
@@ -98,6 +99,7 @@ export interface EditorCapabilityInput {
   leaseId?: string;
   leaseProof?: string;
   operationId?: string;
+  pdmsCatalogSessionId?: string;
   role: UserRole;
   targetId: string;
   targetType: EditorCapabilityTarget;
@@ -288,7 +290,18 @@ function validCapabilityTimes(claims: JsonRecord): boolean {
   );
 }
 
+function validPdmsCatalogScope(claims: JsonRecord): boolean {
+  return (
+    claims.pdmsCatalogSessionId === undefined ||
+    (typeof claims.pdmsCatalogSessionId === "string" &&
+      uuidPattern.test(claims.pdmsCatalogSessionId))
+  );
+}
+
 function validOperationScope(claims: JsonRecord): boolean {
+  if (!validPdmsCatalogScope(claims)) {
+    return false;
+  }
   if (claims.action === "poll-operation") {
     return (
       typeof claims.operationId === "string" &&

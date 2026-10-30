@@ -38,6 +38,7 @@ import { registerFormCatalogRoutes } from "./routes/form-catalog";
 import { registerLegacySsoRoutes } from "./routes/legacy-sso";
 import { registerOnlyOfficeRoutes } from "./routes/onlyoffice";
 import { registerOperationRoutes } from "./routes/operations";
+import { registerPdmsProjectCatalogRoutes } from "./routes/pdms-project-catalog";
 import {
   registerPrefillEntryRoutes,
   registerPrefillMethodRoute,
@@ -187,6 +188,7 @@ export function createApp(options: AppOptions = {}) {
   registerAuditRoutes(app, dependencies);
   registerResultRoutes(app, dependencies);
   registerPublicFormRoutes(app, dependencies);
+  registerPdmsProjectCatalogRoutes(app, dependencies);
   registerResponseRoutes(app, dependencies);
   registerResponseActionRoutes(app, dependencies);
   registerOperationRoutes(app, dependencies);
