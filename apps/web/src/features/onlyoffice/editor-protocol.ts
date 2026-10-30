@@ -30,8 +30,17 @@ export interface EditorLease {
 
 export const leaseRenewalIntervalMs = 30_000;
 
-export const editorConfigPath = (configUrl: string): string =>
-  configUrl.startsWith("http") ? configUrl.replace(API_ORIGIN, "") : configUrl;
+export const editorConfigPath = (
+  configUrl: string,
+  openingId?: string
+): string => {
+  const path = configUrl.startsWith("http")
+    ? configUrl.replace(API_ORIGIN, "")
+    : configUrl;
+  return openingId
+    ? `${path}${path.includes("?") ? "&" : "?"}pdmsOpeningId=${encodeURIComponent(openingId)}`
+    : path;
+};
 
 export interface EditorConfig {
   apiScriptUrl?: string;

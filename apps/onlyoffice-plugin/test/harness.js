@@ -17,6 +17,8 @@ export const createHarness = ({
   documentKind = "docx",
   spreadsheetBindings = { fields: [], table: null, version: 1 },
   spreadsheetPictureFrames = [],
+  pdmsProjectEnabled = false,
+  pdmsProjectCatalog,
   spreadsheetSelection = {},
   browserGlobals = {},
   bodyDataset = {},
@@ -80,6 +82,11 @@ export const createHarness = ({
       },
       checked: false,
       children: [],
+      click() {
+        if (!this.disabled) {
+          this.dispatchEvent({ type: "click" });
+        }
+      },
       dataset: {},
       disabled: false,
       dispatchEvent(event = {}) {
@@ -252,6 +259,8 @@ export const createHarness = ({
         documentKey: "document-key",
         documentKind,
         parentOrigin,
+        pdmsProjectCatalog,
+        pdmsProjectEnabled,
         prefill,
         publicId: "public-id",
         responseId: "response-id",

@@ -28,7 +28,10 @@ import {
   editorLeaseBridge,
 } from "../editor/leases";
 import { nativeFields } from "../forms/query";
-import { spreadsheetContractForTemplate } from "../forms/spreadsheet-fields";
+import {
+  spreadsheetContractForTemplate,
+  spreadsheetBindingsForTemplate,
+} from "../forms/spreadsheet-fields";
 import { spreadsheetPictureFramesForTemplate } from "../forms/spreadsheet-picture-frames";
 import { fail } from "../http/errors";
 import { validateId, jsonRecord } from "../http/input";
@@ -36,6 +39,8 @@ import type { FormWithDocuments } from "../model-types";
 import { editorConfig } from "../onlyoffice";
 import { operationTimeoutMs } from "../operations/lifecycle";
 import { deleteObjectUnlessCanonical } from "../operations/object-cleanup";
+import { openPdmsProjectCatalog } from "../pdms/catalog";
+import type { PdmsProjectsConfiguration } from "../pdms/projects";
 import {
   lockedPrefillForSnapshot,
   editableFieldsForSnapshot,
@@ -298,7 +303,9 @@ export async function userEditorConfig(
   form: FormWithDocuments,
   identity: Identity,
   responseId: string | undefined,
-  requestedAction?: string
+  requestedAction?: string,
+  pdmsOpeningId?: string,
+  pdmsProjects: PdmsProjectsConfiguration | null = null
 ): Promise<Record<string, unknown>> {
   requireResponseWriter(identity);
   const publishedTemplate = form.publishedTemplate;
@@ -385,9 +392,24 @@ export async function userEditorConfig(
       responseId: response.id,
     };
   }
+  const pdmsProjectCatalog =
+    form.documentKind === "xlsx"
+      ? await openPdmsProjectCatalog({
+          bindings: await spreadsheetBindingsForTemplate(
+            response.publishedTemplateId
+          ),
+          configuration: pdmsProjects,
+          identity,
+          lease,
+          openingId: pdmsOpeningId,
+          scope: { ...capabilityScope, documentKey: response.draftDocumentKey },
+        })
+      : null;
   return {
+    ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
     ...editorConfig(
       {
+        ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
         action:
           requestedAction === "submit"
             ? "submit"

@@ -485,6 +485,9 @@ export const spreadsheetFieldValue = (
     }
     throw new Error(`Choose yes or no at ${cell.address}`);
   }
+  if (field.source === "pdms-project-name") {
+    return String(cell.value);
+  }
   if (field.type === "dropdown") {
     if (!field.options.includes(String(cell.value))) {
       throw new Error(`Invalid selection at ${cell.address}`);

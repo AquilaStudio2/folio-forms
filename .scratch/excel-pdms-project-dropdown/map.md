@@ -2,7 +2,7 @@
 
 Date: 2026-10-30 (Asia/Bangkok)
 
-This document records discovery and the agreed product decisions. The user has answered Q1–Q12 and added the Title/Tag requirement; the product interview frontier is empty. Technical execution is tracked below: prototype 01 is resolved and the implementation frontier is 02. The production PDMS source is not implemented; the prototype also fixes an existing merged-cell save bug.
+This document records discovery and the agreed product decisions. The user has answered Q1–Q12 and added the Title/Tag requirement; the product interview frontier is empty. Technical execution is tracked below: prototype 01 and scalar slice 02 are resolved, and the implementation frontier is 03/04/05. The scalar source is implemented behind the development/test gate; the complete feature remains unfinished and production exposure stays disabled. The prototype also fixes an existing merged-cell save bug.
 
 ## Requested behavior
 
@@ -137,7 +137,7 @@ Use existing domain terms in root `CONTEXT.md`; do not create a competing glossa
 
 ### Resumed execution
 
-The user resumed implementation after changing model. Ticket01 is integrated at51d9f18 with a demonstrated protected server-save/reload path and merged-cell resave fix. Ticket02 is claimed on codex/pdms-project-02; its full scalar operation/UI roundtrip gates03/04/05. Shared UI control is exclusive to root. All prior prototype tabs are closed, the owned prototype listener is stopped, and further UI proof must use one necessary temporary tab with immediate cleanup. User's provider config was corrected and independently returned200 with3606 rows and2696 exact unique names; no private names/credentials are stored in the repo.
+The user resumed implementation after changing model. Ticket01 is integrated at51d9f18 with a demonstrated protected server-save/reload path and merged-cell resave fix. Ticket02 is resolved on codex/pdms-project-02 through0444b21 with the production scalar operation/UI roundtrip; its completion unblocks03/04/05. Shared UI control is exclusive to root. All prior proof tabs are closed, and further UI proof must use one necessary temporary tab with immediate cleanup. User's provider config was corrected and independently returned200 with3606 rows and2696 exact unique names; no private names/credentials are stored in the repo.
 
 ## to-spec / to-tickets publication review
 
@@ -147,10 +147,12 @@ The user subsequently requested the to-spec and to-tickets workflows. A [review 
 
 The user invoked implement-spec and explicitly instructed implementation. This accepts the previously proposed test boundaries and ticket graph. The canonical spec and eight tickets are published as ready-for-agent. Integration branch: codex/excel-pdms-project-dropdown; baseline commit: ced39002574331a347b59cd868535fc4eb90ef05.
 
-Execution frontier: 02. Each implementation ticket has its own branch/worktree and fresh TDD implementer; merger agents integrate completed work. Completion uses the local wayfinding convention: Type prototype/task, Status claimed while active and resolved only with acceptance evidence in Comments. The ready-for-agent value records initial triage. No deployment is planned.
+Execution frontier: 03, 04, 05 (ready-for-agent; their ticket02 blocker is resolved). Each implementation ticket has its own branch/worktree and fresh TDD implementer; merger agents integrate completed work. Completion uses the local wayfinding convention: Type prototype/task, Status claimed while active and resolved only with acceptance evidence in Comments. The ready-for-agent value records initial triage. No deployment is planned.
 
 ### Active work
 
 Ticket [01](issues/01-prove-protected-project-picker.md) is resolved as a prototype, integrated from `codex/pdms-project-01` through `96a0559`. The pinned real editor demonstrated a supported custom picker and protected server-save/reload path, consecutive merged/table selections, unsaved ordinary-input preservation and representative row insertion. Direct protected live writes failed and were not adopted. Native protection checks plus exported lock styles support the managed-cell policy; physical IME composition and fill-handle dragging were not performed and remain explicit verification limits.
 
-Ticket [02](issues/02-scalar-project-field-roundtrip.md) is now unblocked. Implement the first production scalar slice behind the agreed development/test configuration, integrating selection overlay, source/protection state and save completion atomically in the actual operation boundary. Do not adopt the fixture's postprocessing adapter as production state. Preserve logical editor-open identity across controlled remounts and load again on a separately authorized opening. Tickets 03–08 retain their existing blockers. Shared environment research remains outside the repository; integration uses private isolated test resources, not existing demo data.
+Ticket [02](issues/02-scalar-project-field-roundtrip.md) is resolved and integrated from `codex/pdms-project-02` through `0444b21`. The scalar slice persists common source metadata, loads a durable catalog per logical opening, and applies server-authorized selections through the real protected save/callback boundary with atomic artifact/data/session advancement. Root demonstrated actual merged/scalar selection, preservation of unsaved ordinary inputs, consecutive selection, submit and matching immutable JSON/XLSX results. Deterministic HTTP/plugin/web/runtime checks are recorded in the ticket; no fixture postprocessing adapter became production state.
+
+Tickets [03](issues/03-session-refresh-and-outage-recovery.md), [04](issues/04-saved-name-history.md) and [05](issues/05-repeating-project-column-roundtrip.md) are ready. They own catalog Retry/session reliability, scalar historical values, and table selection/row provenance respectively. Ticket03 must include the deferred post-fix native new-entry smoke: the existing submit→start transition now advances the logical-opening nonce, with passing web/real-office HTTP regressions, but root has not repeated that transition in the native UI since the fix. Physical IME/fill-handle checks from01 remain explicit limits. Tickets06–08 retain their existing blockers. `PDMS_PROJECT_NAME_SOURCE_ENABLED` remains false until all acceptance slices are complete. Shared environment research remains outside the repository; integration uses private isolated test resources, not existing demo data.

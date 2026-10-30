@@ -76,7 +76,16 @@ export function createOperations(
         data: data.data,
         documentKey,
         ...(options.documentKind === "xlsx"
-          ? { fillMethod: "onlyoffice", ...(rowChange ? { rowChange } : {}) }
+          ? {
+              fillMethod: "onlyoffice",
+              ...(rowChange ? { rowChange } : {}),
+              ...(options.pdmsProjectCatalog?.sessionId
+                ? { pdmsCatalogSessionId: options.pdmsProjectCatalog.sessionId }
+                : {}),
+              ...(requestContext?.pdmsSelection
+                ? { pdmsSelection: requestContext.pdmsSelection }
+                : {}),
+            }
           : {}),
       };
 
@@ -293,6 +302,7 @@ export function createOperations(
     let operationId;
     let completedPayload;
     let editorFrozen = false;
+    let waitForReload = false;
     const correctionReason = typeof reason === "string" ? reason.trim() : "";
 
     try {
@@ -396,6 +406,12 @@ export function createOperations(
           "ยังยืนยันการบันทึกต้นแบบในตัวแก้ไขเดิมไม่ได้ กรุณาลองบันทึกซ้ำ หรือกดบันทึกแบบร่างเพื่อลองบันทึกต้นแบบอีกครั้ง"
         );
       }
+      waitForReload =
+        options.documentKind === "xlsx" &&
+        Boolean(options.pdmsProjectCatalog) &&
+        (action === ACTIONS.SUBMIT ||
+          (typeof result?.documentKey === "string" &&
+            result.documentKey !== options.documentKey));
       setStatus(`${actionLabel(action)} สำเร็จ`, "success");
       bridge.notifyParent(action, "completed", operationId, completion);
 
@@ -428,7 +444,7 @@ export function createOperations(
         operationId: operationId || null,
       };
     } finally {
-      if (editorFrozen) {
+      if (editorFrozen && !waitForReload) {
         try {
           await office.executeMethodResult("SetEditingRestrictions", [
             options.documentKind === "xlsx" ||
@@ -440,8 +456,8 @@ export function createOperations(
           setStatus("ไม่สามารถคืนค่าการแก้ไขเฉพาะช่องกรอกได้", "error");
         }
       }
-      actionInFlight = false;
-      if (options.documentKind === "xlsx") {
+      actionInFlight = waitForReload;
+      if (options.documentKind === "xlsx" && !waitForReload) {
         callbacks.setActionBusy?.(false);
       }
     }

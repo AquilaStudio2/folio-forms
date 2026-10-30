@@ -105,6 +105,17 @@ export const initializeSpreadsheetResponse = async (
         value,
       };
     });
+  // Template examples are not saved picker answers. A new Response starts each
+  // managed scalar empty; resume/resubmission already has an initialized baseline.
+  for (const field of contract.fields.filter(
+    (candidate) => candidate.source === "pdms-project-name"
+  )) {
+    const range = contract.locations[field.anchor] as SpreadsheetRange;
+    values.push({
+      address: `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`,
+      value: null,
+    });
+  }
   const result = await (dependencies.processSpreadsheet ?? processSpreadsheet)(
     unprotectSpreadsheet(sourceBytes),
     { bindings: storedSpreadsheetBindings(contract), values }

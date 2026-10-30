@@ -1,12 +1,24 @@
 // oxlint-disable require-await -- HTTP fixtures use fetch's asynchronous contract.
 import type * as RouterModule from "@tanstack/react-router";
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import {
+  act,
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+} from "@testing-library/react";
 import type { ComponentType } from "react";
 import { useEffect } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+import type { EditorBridgeMessage } from "@/features/onlyoffice/editor-protocol";
 import { Route } from "@/routes/forms/$publicId/fill";
 
+const bridge = vi.hoisted(() => ({
+  onMessage: undefined as
+    | ((message: EditorBridgeMessage) => Promise<void>)
+    | undefined,
+}));
 const auth = vi.hoisted(() => ({
   commandReady: true,
   user: { email: "user@example.test", id: "user", role: "user" },
@@ -30,11 +42,16 @@ vi.mock("@/components/onlyoffice-editor", () => ({
     saveAction,
     saveRequest,
     onCommandReadyChange,
+    openingRevision = 0,
+    onBridgeMessage,
   }: {
+    openingRevision?: number;
+    onBridgeMessage: (message: EditorBridgeMessage) => Promise<void>;
     saveAction: string;
     saveRequest: number;
     onCommandReadyChange: (ready: boolean) => void;
   }) => {
+    bridge.onMessage = onBridgeMessage;
     useEffect(
       () => onCommandReadyChange(auth.commandReady),
       [onCommandReadyChange]
@@ -42,6 +59,7 @@ vi.mock("@/components/onlyoffice-editor", () => ({
     return (
       <div
         data-testid="editor"
+        data-opening={openingRevision}
         data-action={saveAction}
         data-request={saveRequest}
       />
@@ -122,4 +140,36 @@ describe("Excel response actions", () => {
     expect(screen.getByTestId("editor")).toHaveAttribute("data-request", "1");
     expect(screen.getByRole("button", { name: "ส่งคำตอบ" })).toBeDisabled();
   });
+});
+
+it("starts a new catalog opening only after the existing submit-to-new-entry transition", async () => {
+  mount();
+  await screen.findByTestId("editor");
+  expect(screen.getByTestId("editor")).toHaveAttribute("data-opening", "0");
+  await act(async () => {
+    await bridge.onMessage?.({
+      action: "save-draft",
+      bridgeId: "test-bridge",
+      operation: { result: { documentKey: "saved-document" } },
+      operationId: "saved",
+      source: "form-bridge",
+      status: "completed",
+      type: "operation",
+    });
+  });
+  expect(screen.getByTestId("editor")).toHaveAttribute("data-opening", "0");
+  await act(async () => {
+    await bridge.onMessage?.({
+      action: "submit",
+      bridgeId: "test-bridge",
+      operation: { result: { submissionId: "immutable-submission" } },
+      operationId: "submitted",
+      source: "form-bridge",
+      status: "completed",
+      type: "operation",
+    });
+  });
+  await waitFor(() =>
+    expect(screen.getByTestId("editor")).toHaveAttribute("data-opening", "1")
+  );
 });

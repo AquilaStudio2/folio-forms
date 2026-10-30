@@ -18,6 +18,7 @@ const fieldSchema = z
     options: z.array(z.string().min(1)).default([]),
     placeholder: z.string().trim().min(1).max(255).nullable().default(null),
     required: z.boolean().default(false),
+    source: z.literal("pdms-project-name").optional(),
     type: z.enum(["text", "number", "date", "dropdown", "boolean"]),
   })
   .strict();
@@ -117,7 +118,26 @@ export const spreadsheetBindingSchema = z
       ...bindings.fields,
       ...(bindings.table?.columns ?? []),
     ]) {
-      if (field.type === "dropdown" && field.options.length === 0) {
+      if (
+        field.source &&
+        (field.type !== "dropdown" ||
+          field.computed ||
+          field.options.length > 0 ||
+          ("prefillPointer" in field &&
+            (field.prefillPointer !== null ||
+              field.prefillPolicy !== "editable")))
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "PDMS project fields must be picker-managed dropdowns without static options, formulas or Prefill",
+        });
+      }
+      if (
+        field.type === "dropdown" &&
+        !field.source &&
+        field.options.length === 0
+      ) {
         context.addIssue({
           code: "custom",
           message: `Dropdown options are required: ${field.key}`,

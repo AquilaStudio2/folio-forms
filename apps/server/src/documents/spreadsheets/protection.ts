@@ -32,13 +32,16 @@ export const spreadsheetInputRanges = (
   const ranges = contract.fields
     .filter(
       (field) =>
-        !field.computed && field.type !== "picture" && !locked.has(field.key)
+        !field.computed &&
+        !field.source &&
+        field.type !== "picture" &&
+        !locked.has(field.key)
     )
     .map((field) => contract.locations[field.anchor] as SpreadsheetRange);
   if (contract.table) {
     const body = contract.locations[contract.table.anchor] as SpreadsheetRange;
     for (const column of contract.table.columns.filter(
-      (field) => !field.computed
+      (field) => !field.computed && !field.source
     )) {
       ranges.push({
         ...body,

@@ -65,6 +65,7 @@ interface SpreadsheetStoredField {
   prefillPointer?: string | null;
   prefillPolicy: string;
   required: boolean;
+  source?: string | null;
   tag: string;
   type: FieldType | null;
 }
@@ -144,6 +145,7 @@ export const spreadsheetBindingsFromFields = (
           ? storedOptions.parse(row.options).map((option) => option.value)
           : [],
       required: row.required,
+      ...(row.source ? { source: row.source } : {}),
       type: spreadsheetFieldType(row.type),
     };
     if (row.type !== FieldType.dropdown && row.options !== null) {
@@ -216,6 +218,7 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
     prefillPointer: field.prefillPointer,
     prefillPolicy: field.prefillPolicy,
     required: field.required,
+    source: field.source ?? null,
     tag: field.key,
     type: sharedType(field.type),
   }));
@@ -230,6 +233,7 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
       prefillPointer: null,
       prefillPolicy: "editable",
       required: false,
+      source: null,
       tag: bindings.table.key,
       type: FieldType.table,
     });
@@ -249,12 +253,17 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
         prefillPointer: null,
         prefillPolicy: "editable",
         required: column.required,
+        source: column.source ?? null,
         tag: `${bindings.table.key}.${column.key}`,
         type: sharedType(column.type),
       });
     }
   }
-  return rows.map((row, position) => ({ ...row, position }));
+  return rows.map(({ source, ...row }, position) => ({
+    ...row,
+    position,
+    ...(source ? { source } : {}),
+  }));
 };
 
 export const spreadsheetDraftFieldData = (bindings: SpreadsheetBindings) =>

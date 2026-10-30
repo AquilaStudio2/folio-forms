@@ -19,6 +19,8 @@ import {
   callbackOrigins,
   maxCallbackDocumentBytes,
 } from "./operations/callback";
+import { pdmsProjectsConfigurationFromEnv } from "./pdms/projects";
+import type { PdmsProjectsConfiguration } from "./pdms/projects";
 import { configuredPrefillReturnUrl } from "./prefill/input";
 import { readinessStatus } from "./readiness";
 import { registerAccountRoutes } from "./routes/accounts";
@@ -49,6 +51,7 @@ import { registerSubmissionRoutes } from "./routes/submissions";
 import { putObject, deleteObject } from "./storage";
 
 export interface AppOptions {
+  pdmsProjects?: PdmsProjectsConfiguration | null;
   clock?: () => Date;
   deleteObject?: (key: string) => Promise<void>;
   putObject?: typeof putObject;
@@ -98,6 +101,10 @@ export function createApp(options: AppOptions = {}) {
     handoffClock,
     legacySso,
     onlyOffice,
+    pdmsProjects:
+      options.pdmsProjects === undefined
+        ? pdmsProjectsConfigurationFromEnv()
+        : options.pdmsProjects,
     prefillHandoffSecret,
     prefillReturnUrl,
     removeObject,

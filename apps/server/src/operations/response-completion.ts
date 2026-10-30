@@ -12,6 +12,7 @@ import { fail, HttpError } from "../http/errors";
 import { jsonRecord } from "../http/input";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Operation } from "../model-types";
+import { advancePdmsCatalogSession } from "../pdms/catalog";
 import { jsonValue, changedResponseData } from "../responses/data";
 import { nativeResponseDocument } from "../responses/native-document";
 import type { putObject } from "../storage";
@@ -74,6 +75,12 @@ export async function completeDraftOperation(
       if (updated.count !== 1) {
         fail(409, "stale_operation", "The response is no longer editable");
       }
+      await advancePdmsCatalogSession(
+        tx,
+        metadata.pdmsCatalogSessionId,
+        documentKey,
+        nextDocumentKey
+      );
       await markOperationCompleted(
         tx,
         operation.id,

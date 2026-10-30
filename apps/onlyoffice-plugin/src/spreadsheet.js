@@ -9,6 +9,7 @@ import { createBridge } from "./bridge.js";
 import { ACTIONS } from "./constants.js";
 import { createOffice } from "./office.js";
 import { createOperations } from "./operations.js";
+import { createPdmsProjectPicker } from "./pdms-project-picker.js";
 import {
   spreadsheetBindingAttempt,
   spreadsheetBindingOutcome,
@@ -299,6 +300,7 @@ export function initializeSpreadsheet(options, setStatus) {
     }
   };
 
+  let pdmsPicker = null;
   let renderList = () => {};
   let refreshAfterAction = () => {};
   const bridge = createBridge(options, office, {
@@ -343,6 +345,7 @@ export function initializeSpreadsheet(options, setStatus) {
         item.disabled = value;
       }
       disableAuthoringControls(value);
+      pdmsPicker?.setBusy(value);
       if (!value) {
         void refreshAfterAction();
       }
@@ -1399,6 +1402,9 @@ export function initializeSpreadsheet(options, setStatus) {
       ["number", "ตัวเลข"],
       ["dropdown", "รายการเลือก"],
       ["boolean", "ใช่ / ไม่ใช่"],
+      ...(options.pdmsProjectEnabled
+        ? [["pdms-project-name", "PDMS · ชื่อโครงการ"]]
+        : []),
       ["picture", "รูปภาพ (JPEG / PNG)"],
     ]);
     const required = input("บังคับกรอก", "checkbox");
@@ -1540,7 +1546,10 @@ export function initializeSpreadsheet(options, setStatus) {
       caption.value =
         editing?.label || (selected ? `ช่อง ${selected.address}` : "ช่องใหม่");
       key.value = editing?.key || defaultKey();
-      type.value = editing?.type || "text";
+      type.value =
+        editing?.source === "pdms-project-name"
+          ? "pdms-project-name"
+          : editing?.type || "text";
       required.checked = Boolean(editing?.required);
       placeholder.value = editing?.placeholder || "";
       optionsField.setOptions(editing?.options || []);
@@ -1791,15 +1800,21 @@ export function initializeSpreadsheet(options, setStatus) {
         id: bindingId,
         key: bindingKey,
         label: labelText,
-        type: type.value,
+        type: type.value === "pdms-project-name" ? "dropdown" : type.value,
         required: required.checked,
         placeholder: placeholder.value.trim() || null,
         computed: false,
         options: type.value === "dropdown" ? optionsField.getOptions() : [],
       };
+      if (type.value === "pdms-project-name") {
+        value.source = "pdms-project-name";
+      } else {
+        delete value.source;
+      }
       if (
         kind.value !== "table" &&
         value.type === "dropdown" &&
+        !value.source &&
         !value.options.length
       ) {
         throw new Error(
@@ -1862,9 +1877,11 @@ export function initializeSpreadsheet(options, setStatus) {
       } else if (kind.value !== "column") {
         value.anchor = editing?.anchor || bindingId;
         value.prefillPointer =
-          value.type === "picture" ? null : (editing?.prefillPointer ?? null);
+          value.type === "picture" || value.source
+            ? null
+            : (editing?.prefillPointer ?? null);
         value.prefillPolicy =
-          value.type === "picture"
+          value.type === "picture" || value.source
             ? "editable"
             : editing?.prefillPolicy || "editable";
       }
@@ -2610,5 +2627,12 @@ export function initializeSpreadsheet(options, setStatus) {
       extractFormData: (callback) => callback(null, { data: {} }),
     };
   }
+  pdmsPicker = createPdmsProjectPicker(
+    options,
+    bindings,
+    panel,
+    operations,
+    setStatus
+  );
   return { operations, bridge };
 }

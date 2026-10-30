@@ -1214,3 +1214,36 @@ test("moving a column before the freeze acknowledgement still edits its stable i
   expect(harness.spreadsheetValidations.has("D3:D4")).toBe(true);
   expect(harness.spreadsheetValidations.has("C3:C4")).toBe(false);
 });
+
+test("Admin chooses PDMS source without losing the existing Field Title, Tag or identity", async () => {
+  const project = { ...field, options: [], source: "pdms-project-name" };
+  const saved = { ...bindings, fields: [project] };
+  const harness = templateHarness({
+    capabilityResponses: ["read", "write"],
+    pdmsProjectEnabled: true,
+    responses: [
+      { bindings, revision: 0 },
+      { bindings: saved, revision: 1 },
+    ],
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  const type = control(harness, "ชนิดข้อมูล");
+  expect(
+    type.children.some((option) => option.value === "pdms-project-name")
+  ).toBe(true);
+  type.value = "pdms-project-name";
+  type.dispatchEvent({ type: "change" });
+  await click(harness, "บันทึกการแก้ไข");
+  const patch = harness.requests.find((request) => request.method === "PATCH");
+  expect(patch).toBeDefined();
+  expect(JSON.parse(patch.body).change.value).toMatchObject({
+    id: field.id,
+    key: field.key,
+    label: field.label,
+    options: [],
+    source: "pdms-project-name",
+    type: "dropdown",
+  });
+  expect(control(harness, "ชนิดข้อมูล").value).toBe("pdms-project-name");
+});

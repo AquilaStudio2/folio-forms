@@ -1,9 +1,11 @@
 import type { AiAuthoringSessions } from "../ai-authoring";
 import type { LegacySsoConfig } from "../legacy-sso/config";
 import type { OnlyOfficeClient } from "../onlyoffice";
+import type { PdmsProjectsConfiguration } from "../pdms/projects";
 import type { putObject } from "../storage";
 
 export interface RouteDependencies {
+  pdmsProjects: PdmsProjectsConfiguration | null;
   onlyOffice: OnlyOfficeClient;
   removeObject: (key: string) => Promise<void>;
   storeObject: typeof putObject;

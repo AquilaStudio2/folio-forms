@@ -25,6 +25,7 @@ import {
   findFormByPublicId,
   nativePictureManifestFields,
 } from "../forms/query";
+import { spreadsheetBindingsForTemplate } from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 import { requiredString } from "../http/input";
 import type { Operation } from "../model-types";
@@ -37,6 +38,7 @@ import {
 import type { OperationMetadata } from "../operations/model";
 import { operationTypeForAction } from "../operations/model";
 import { processNativeResponseOperation } from "../operations/response-completion";
+import { pdmsOperationContext } from "../pdms/catalog";
 import {
   normalizeResponseData,
   jsonValue,
@@ -98,6 +100,19 @@ export function registerResponseActionRoutes(
           action: "save-draft",
         });
         await requireActiveEditorLease(authorization, capabilityScope);
+        const pdmsContext =
+          form.documentKind === "xlsx"
+            ? await pdmsOperationContext({
+                authorization,
+                bindings: await spreadsheetBindingsForTemplate(
+                  response.publishedTemplateId
+                ),
+                requireReady: false,
+                scope: capabilityScope,
+                selection: input.pdmsSelection,
+                sessionId: input.pdmsCatalogSessionId,
+              })
+            : {};
         const data =
           form.documentKind === "xlsx"
             ? {}
@@ -149,6 +164,7 @@ export function registerResponseActionRoutes(
           form.documentKind
         );
         const metadata: OperationMetadata = {
+          ...pdmsContext,
           action: "save-draft",
           documentKind: form.documentKind,
           ...(form.documentKind === "xlsx" && input.rowChange !== undefined
@@ -261,6 +277,19 @@ export function registerResponseActionRoutes(
           action: "submit",
         });
         await requireActiveEditorLease(authorization, capabilityScope);
+        const pdmsContext =
+          form.documentKind === "xlsx"
+            ? await pdmsOperationContext({
+                authorization,
+                bindings: await spreadsheetBindingsForTemplate(
+                  response.publishedTemplateId
+                ),
+                requireReady: true,
+                scope: capabilityScope,
+                selection: input.pdmsSelection,
+                sessionId: input.pdmsCatalogSessionId,
+              })
+            : {};
         const data =
           form.documentKind === "xlsx"
             ? {}
@@ -314,6 +343,7 @@ export function registerResponseActionRoutes(
           form.documentKind
         );
         const metadata: OperationMetadata = {
+          ...pdmsContext,
           action: "submit",
           data,
           documentKind: form.documentKind,

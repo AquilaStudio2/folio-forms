@@ -136,6 +136,7 @@ const FillRoute = () => {
   const [nativeSaving, setNativeSaving] = useState(false);
   const [editorCommandReady, setEditorCommandReady] = useState(false);
   const [editorRevision, setEditorRevision] = useState(0);
+  const [editorOpeningRevision, setEditorOpeningRevision] = useState(0);
   const [activeResponseId, setActiveResponseId] = useState(responseId);
   const [loading, setLoading] = useState(true);
   const [startBusy, setStartBusy] = useState(false);
@@ -409,6 +410,9 @@ const FillRoute = () => {
     }
     setActiveResponseId(result.response?.id ?? activeResponseId);
     setEditorConfigUrl(result.editorConfigUrl);
+    // The existing submit-to-new-entry flow opens a new document even when its
+    // editor URL and active lease stay the same. It needs a fresh catalog scope.
+    setEditorOpeningRevision((value) => value + 1);
     setEditorRevision((value) => value + 1);
     setDirty(false);
   };
@@ -1209,6 +1213,7 @@ const FillRoute = () => {
                 onBridgeMessage={handleBridgeMessage}
                 onDirtyChange={setDirty}
                 onCommandReadyChange={setEditorCommandReady}
+                openingRevision={editorOpeningRevision}
                 revision={editorRevision}
                 saveAction={editorAction}
                 saveRequest={saveRequest}

@@ -38,6 +38,7 @@ import {
 } from "../forms/spreadsheet-fields";
 import { spreadsheetPictureFramesForTemplate } from "../forms/spreadsheet-picture-frames";
 import { fail } from "../http/errors";
+import { pdmsSelectionValue } from "../pdms/selection";
 import { readObject } from "../storage";
 import type { OperationMetadata } from "./model";
 
@@ -232,6 +233,14 @@ export const prepareSpreadsheetOperation = async (
         )
     )
     .map((cell) => ({ address: cell.address, value: cell.value }));
+  const selectedProject = await pdmsSelectionValue(
+    metadata,
+    contract,
+    response
+  );
+  if (selectedProject) {
+    values.push(selectedProject);
+  }
   const rowChange = metadata.spreadsheetRowChange as
     | { action: "insert" | "delete"; index: number }
     | undefined;

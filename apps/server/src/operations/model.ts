@@ -7,6 +7,8 @@ import type { SavedUploadPocButton } from "../documents/spreadsheets/upload-poc"
 import { fail } from "../http/errors";
 import { asRecord } from "../http/input";
 import type { JsonRecord } from "../model-types";
+import type { PdmsSelection } from "../pdms/catalog";
+import { pdmsSelectionSchema } from "../pdms/selection";
 
 type OperationAction =
   | "save-template"
@@ -34,6 +36,8 @@ export type OperationErrorCode =
   | "operation_timeout"
   | "pdf_conversion_failed";
 export interface OperationMetadata extends JsonRecord {
+  pdmsSelection?: PdmsSelection;
+  pdmsCatalogSessionId?: string;
   spreadsheetAnchors?: SpreadsheetAnchorSnapshot;
   documentKind?: "docx" | "xlsx";
   bindingRevision?: number;
@@ -129,6 +133,14 @@ export function operationMetadata(value: unknown): OperationMetadata {
     (workspaceObjectKey !== undefined && typeof workspaceObjectKey !== "string")
   ) {
     fail(500, "invalid_operation", "Operation metadata is invalid");
+  }
+  if (
+    (metadata.pdmsSelection !== undefined &&
+      !pdmsSelectionSchema.safeParse(metadata.pdmsSelection).success) ||
+    (metadata.pdmsCatalogSessionId !== undefined &&
+      typeof metadata.pdmsCatalogSessionId !== "string")
+  ) {
+    fail(500, "invalid_operation", "Operation picker metadata is invalid");
   }
   return metadata as unknown as OperationMetadata;
 }
