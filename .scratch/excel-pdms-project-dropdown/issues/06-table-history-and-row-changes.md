@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — Resume and submit unchanged historical project names; 05 — Select and save project names in repeating-table rows.
 
-**Status:** claimed
+**Status:** resolved
 
 Type: task
 
@@ -16,7 +16,7 @@ Approval: Published after the user instructed implementation of the proposed spe
 - [x] A copied value, duplicated row or reused physical cell cannot inherit another record's historical exception merely because its text matches.
 - [x] Prevent delayed selections and replayed operations from applying to a moved, deleted or recreated row after revision changes.
 - [x] Verify saved workbook rows, nested extracted answers and historical provenance remain aligned across Draft save/resume and submission.
-- [ ] Demonstrate row-change scenarios using the real editor and HTTP save workflow; retain existing table formatting and unrelated row values on failed operations.
+- [x] Demonstrate row-change scenarios using the real editor and HTTP save workflow; retain existing table formatting and unrelated row values on failed operations.
 
 ## Comments
 
@@ -26,3 +26,7 @@ Approval: Published after the user instructed implementation of the proposed spe
 - Regression sensitivity was checked by temporarily removing only the table source exclusion from `spreadsheetInputRanges`: the new copy case failed because an unauthorized historical copy completed. Restored the existing guard byte-for-byte, then the complete suite passed. This is mutation verification of an existing safeguard, not a claimed new production implementation.
 - Root formatting/lint, workspace types, web build and spreadsheet unit94 passed. The fixture's initially inferred UUID-only opening argument was explicitly annotated as string for types, without changing runtime behavior. Root owns the final actual visible historical-row proof; its economical private fixture and independent public export verifier are documented in `/tmp/folio-pdms-implementation/notes/06-history.md`. No worker browser/CUA/UI activity occurred.05's actual native row-change evidence remains available; the checkbox above waits for root's historical-row acceptance.
 - Production source flag remains false. The newer in-cell-arrow requirement remains separate outstanding UI acceptance; these historical-row regressions do not resolve that interaction. No push, deployment or PR was performed.07's target-specific Correction baseline handoff is `/tmp/folio-pdms-implementation/notes/06-history.md`.
+- Root actual pinned9.4 editor acceptance subsequently completed against isolated native06 stores. A fresh ready2500-name catalog excluded both saved historical names; root visibly verified the old values at physical rows5/7. The first Append failed because the private seeding launcher retained a seed-only callback-origin override, producing `callback_document_unavailable`. This fixture setup failure is separate from the successful preservation proof. Only the owned API was resumed with normal trusted Office origins; no reseed/auth/start/save/lease writes occurred, and a read-only fingerprint confirmed saved artifact/data/revision unchanged. Vite and the live editor stayed open with unsaved ordinary notes.
+- Root then made a genuinely fresh C5 edit, `UI06 record A confirmed`, while D1 remained `UI06 resumed ordinary note`, and retried actual Append. It succeeded and new source A8 was visibly blank. Deleting the initial empty A4 through the actual control saved/reloaded the old name with its edited note to A4/C4 and the other removed name to A6. No stale no-change fallback was used after the failed capture.
+- Actual Submit succeeded and the UI opened a new blank ready entry with2500 choices. Independent public immutable revision0JSON/XLSX checks matched exactly two historical records: A4oldName with C4confirmed note, A6removedName/B6oldName with the original second-record note, and D1resumed ordinary note. Empty original row5 and appended prototype row7 stayed blank and were excluded from JSON; body A4:C7, sheet protection, locked source A/B cells and editable ordinary C cells agree. Artifacts `/tmp/folio-pdms-implementation/artifacts/06-history-submitted.json` and `.xlsx`; root acceptance note `/tmp/folio-pdms-implementation/notes/native-06-acceptance.md`. Worker performed no browser actions; physical unsupported move/undo/redo claims remain limited to automated save-boundary rejection evidence.
+- Final automated suite passed3tests485assertions (poll counts vary); root formatting/lint/types/build and spreadsheet94passed. Merged latest integration `5931d9c` before completion. Only owned06 API/Vite listeners are stopped after root moves its sole proof tab to the separate native-dropdown investigation. Source default staysfalse; this resolves historical table behavior only.
