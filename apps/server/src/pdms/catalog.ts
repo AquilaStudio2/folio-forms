@@ -139,6 +139,23 @@ export const openPdmsProjectCatalog = async (input: {
     fail(400, "invalid_request", "Editor opening is invalid");
   }
   const { identity, scope, lease } = input;
+  // A replaced lease cannot authorize any earlier opening. Drop its catalog
+  // contents and loading claim so a late network response cannot revive it.
+  await prisma.pdmsProjectCatalogSession.updateMany({
+    data: {
+      expiresAt: new Date(),
+      loadExpiresAt: null,
+      loadToken: null,
+      names: [],
+      status: "error",
+    },
+    where: {
+      formId: scope.formId,
+      leaseId: { not: lease.id },
+      targetId: scope.targetId,
+      targetType: scope.targetType,
+    },
+  });
   const session = await prisma.pdmsProjectCatalogSession.upsert({
     create: {
       actorId: identity.id,

@@ -14,6 +14,7 @@ import {
   updateOperationFailed,
   operationDocumentKey,
 } from "./lifecycle";
+import { operationMetadata } from "./model";
 import { SpreadsheetValidationError } from "./spreadsheet-document";
 
 export function launchForceSave(
@@ -69,6 +70,29 @@ export function launchForceSave(
         }
         let snapshot: Uint8Array | undefined;
         if (saveResult === false) {
+          const metadata = operationMetadata(operation.metadata);
+          if (
+            metadata.pdmsCatalogSessionId &&
+            (await prisma.operation.findFirst({
+              select: { id: true },
+              where: {
+                createdAt: { lt: operation.createdAt },
+                documentKey: operation.documentKey,
+                status: OperationStatus.failed,
+              },
+            }))
+          ) {
+            await updateOperationFailed(
+              operation.id,
+              "document_save_failed",
+              undefined,
+              {
+                errorMessage:
+                  "ยังยืนยันข้อมูลล่าสุดจากตัวแก้ไขไม่ได้ ข้อมูลในตัวแก้ไขยังอยู่ กรุณาแก้ไขช่องกรอกแล้วบันทึกอีกครั้งก่อนปิดหน้านี้",
+              }
+            );
+            return;
+          }
           const currentObjectKey = await operationDocumentKey(
             operation.documentKey
           );
