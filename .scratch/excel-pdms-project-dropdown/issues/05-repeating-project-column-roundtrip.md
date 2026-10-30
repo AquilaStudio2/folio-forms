@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — Author and complete a scalar PDMS project-name Field.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 Type: task
 
