@@ -8,6 +8,7 @@ import { uploadPocGuid } from "./documents/spreadsheets/upload-poc-preview";
 import type { PdmsProjectCatalog } from "./pdms/catalog";
 
 export const pluginGuid = "asc.{E0B14962-3B9D-4E82-923E-89A93E8A1A51}";
+export const pdmsPopupGuid = "asc.{1ABF6AE1-DB72-42D2-A8EC-9056A50EFB94}";
 
 const tokenLifetimeSeconds = 5 * 60;
 const operationCapabilityLifetimeSeconds = tokenLifetimeSeconds + 60;
@@ -484,6 +485,7 @@ export function documentUrl(documentKey: string): string {
   return `${trimOrigin(env.ONLYOFFICE_DOCUMENT_BASE_URL)}/onlyoffice/document/${encodeURIComponent(documentKey)}?token=${encodeURIComponent(token)}`;
 }
 
+// oxlint-disable-next-line complexity -- Compose the existing plugin capabilities and optional source popup in one signed editor config.
 export function editorConfig(
   options: EditorOptions,
   user: { id: string; name: string }
@@ -496,6 +498,10 @@ export function editorConfig(
   const officeServerOrigin = trimOrigin(env.ONLYOFFICE_DOCUMENT_BASE_URL);
   const browserServerOrigin = trimOrigin(env.API_BASE);
   const bridgeId = crypto.randomUUID();
+  const pdmsProjectPopup =
+    options.documentKind === "xlsx" && options.pdmsProjectCatalog
+      ? { channelId: randomUUID(), documentKey: options.documentKey }
+      : undefined;
   const uploadPocOptions =
     options.documentKind === "xlsx"
       ? {
@@ -545,12 +551,25 @@ export function editorConfig(
       callbackUrl: `${officeServerOrigin}/onlyoffice/callback`,
       mode: "edit",
       plugins: {
-        autostart: [pluginGuid],
+        autostart: [pluginGuid, ...(pdmsProjectPopup ? [pdmsPopupGuid] : [])],
         disable: ["asc.{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}"],
         options: {
+          ...(pdmsProjectPopup
+            ? {
+                [pdmsPopupGuid]: {
+                  bridgeId,
+                  documentKey: options.documentKey,
+                  parentOrigin: exactOrigin(env.CORS_ORIGIN),
+                  pdmsPopupChannelId: pdmsProjectPopup.channelId,
+                },
+              }
+            : {}),
           ...(uploadPocOptions ? { [uploadPocGuid]: uploadPocOptions } : {}),
           [pluginGuid]: {
             ...pluginOptions,
+            ...(pdmsProjectPopup
+              ? { pdmsPopupChannelId: pdmsProjectPopup.channelId }
+              : {}),
             ...(uploadPocOptions
               ? { scopeIdentity: uploadPocOptions.scopeIdentity }
               : {}),
@@ -561,6 +580,11 @@ export function editorConfig(
         },
         pluginsData: [
           `${browserServerOrigin}/onlyoffice-plugin/config.json`,
+          ...(pdmsProjectPopup
+            ? [
+                `${browserServerOrigin}/onlyoffice-plugin/pdms-project/config.json`,
+              ]
+            : []),
           ...(uploadPocOptions
             ? [
                 `${browserServerOrigin}/onlyoffice-plugin/upload-poc/config.json`,
@@ -577,12 +601,16 @@ export function editorConfig(
     width: "100%",
   };
   return {
+    ...(options.pdmsProjectCatalog
+      ? { pdmsProjectCatalog: options.pdmsProjectCatalog }
+      : {}),
     apiUrl: trimOrigin(env.ONLYOFFICE_URL),
     bridge: {
       capabilities,
       id: bridgeId,
       lease,
       pluginOrigin: exactOrigin(env.API_BASE),
+      ...(pdmsProjectPopup ? { pdmsProjectPopup } : {}),
       ...(uploadPocOptions ? { uploadPoc: uploadPocOptions } : {}),
     },
     config: { ...config, token: signToken(config, env.ONLYOFFICE_JWT_SECRET) },

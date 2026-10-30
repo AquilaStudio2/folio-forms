@@ -37,7 +37,7 @@ export function tableSelection(address, headers = false) {
     headerAddress: `${firstColumn}${first.row + 1}:${lastColumn}${first.row + 1}`,
   };
 }
-export function selectedBinding(selected, bindings) {
+export function selectedBinding(selected, bindings, preferColumn = false) {
   const point = selectionPosition(selected.address);
   for (const [anchor, reference] of selected.anchors || []) {
     if (!reference) {
@@ -69,8 +69,9 @@ export function selectedBinding(selected, bindings) {
     }
     if (bindings?.table?.anchor === anchor) {
       if (
+        !preferColumn &&
         selected.address.replaceAll("$", "") ===
-        reference.slice(separator + 1).replaceAll("$", "")
+          reference.slice(separator + 1).replaceAll("$", "")
       ) {
         return ["table", bindings.table];
       }

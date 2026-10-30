@@ -1,4 +1,5 @@
 import { ACTIONS } from "./constants.js";
+import { createPdmsPopupOwner } from "./pdms-popup-owner.js";
 
 /** Search lives in the plugin; only a committed choice enters the existing native-save action. */
 export const createPdmsProjectPicker = (
@@ -6,7 +7,9 @@ export const createPdmsProjectPicker = (
   bindings,
   panel,
   operations,
-  setStatus
+  setStatus,
+  readSelection,
+  isEditorBusy = () => false
 ) => {
   const columns = (bindings?.table?.columns || []).filter(
     (field) => field.source === "pdms-project-name"
@@ -21,6 +24,7 @@ export const createPdmsProjectPicker = (
   let catalog = options.pdmsProjectCatalog;
   const section = document.createElement("section");
   section.className = "pdms-project-picker";
+  section.hidden = true;
   section.setAttribute("aria-label", "เลือกชื่อโครงการ PDMS");
   const labelled = (caption, control) => {
     const label = document.createElement("label");
@@ -86,8 +90,13 @@ export const createPdmsProjectPicker = (
   let composing = false;
   let busy = false;
   let retrying = false;
+  let popupOwner = null;
   const setBusy = (value) => {
+    const changed = busy !== value;
     busy = value;
+    if (changed) {
+      popupOwner?.busyChanged();
+    }
     retry.disabled = value || retrying;
     for (const control of [
       target,
@@ -104,12 +113,19 @@ export const createPdmsProjectPicker = (
         (preview && control.parentNode === results);
     }
   };
-  const choose = async (name) => {
+  const choose = async (name, capturedTarget) => {
     if (busy || preview || catalog?.status !== "ready") {
       return;
     }
-    if (isColumn() && (!body || !row.children.length)) {
+    if (!capturedTarget && isColumn() && (!body || !row.children.length)) {
       throw new Error("ไม่พบแถวโครงการ กรุณาเปิดตัวแก้ไขใหม่");
+    }
+    let selectedRow = capturedTarget?.row;
+    if (!capturedTarget && isColumn()) {
+      selectedRow = {
+        documentKey: options.documentKey,
+        index: Number(row.value),
+      };
     }
     setBusy(true);
     const outcome = await operations.runAction(
@@ -120,17 +136,10 @@ export const createPdmsProjectPicker = (
       null,
       {
         pdmsSelection: {
-          bindingId: target.value,
+          bindingId: capturedTarget?.bindingId || target.value,
           name,
           sessionId: catalog.sessionId,
-          ...(isColumn()
-            ? {
-                row: {
-                  documentKey: options.documentKey,
-                  index: Number(row.value),
-                },
-              }
-            : {}),
+          ...(selectedRow ? { row: selectedRow } : {}),
         },
       }
     );
@@ -230,7 +239,7 @@ export const createPdmsProjectPicker = (
     render();
   });
   cancel.addEventListener("click", cancelSearch);
-  retry.addEventListener("click", async () => {
+  const retryCatalog = async () => {
     if (busy || retrying || catalog?.status === "ready") {
       return;
     }
@@ -244,12 +253,28 @@ export const createPdmsProjectPicker = (
       retrying = false;
       render();
     }
+  };
+  retry.addEventListener("click", retryCatalog);
+  popupOwner = createPdmsPopupOwner({
+    bindings,
+    choose,
+    getBusy: () => busy || retrying || isEditorBusy(),
+    getCatalog: () => catalog,
+    options,
+    preview,
+    readSelection,
+    retry: retryCatalog,
+    setStatus,
   });
   render();
   return {
+    destroy() {
+      popupOwner?.destroy();
+    },
     setBusy,
     updateCatalog(value) {
       catalog = value;
+      popupOwner?.changed();
       render();
     },
   };

@@ -22,7 +22,11 @@ interface Catalog {
 interface Editor {
   pdmsProjectCatalog: Catalog;
   config: { document: { key: string } };
-  bridge: { capabilities: Record<string, string>; lease: { id: string } };
+  bridge: {
+    capabilities: Record<string, string>;
+    lease: { id: string };
+    pdmsProjectPopup?: unknown;
+  };
 }
 const fixture = async (
   options: { source?: boolean; timeoutMs?: number } = {}
@@ -429,6 +433,7 @@ test("ordinary source-free editors do not fetch or accept catalog Retry", async 
       await f.config(crypto.randomUUID())
     ).json()) as Editor;
     expect(editor.pdmsProjectCatalog).toBeUndefined();
+    expect(editor.bridge.pdmsProjectPopup).toBeUndefined();
     const retried = await f.request(
       "/api/editor/pdms-project-catalog/retry",
       {

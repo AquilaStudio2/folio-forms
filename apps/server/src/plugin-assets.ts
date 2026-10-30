@@ -57,3 +57,23 @@ export const uploadPocScriptResponse = async () =>
       : await buildPlugin(pluginDir, "upload-poc-picker-entry.js"),
     { headers: { "content-type": "text/javascript; charset=utf-8" } }
   );
+
+export const pdmsPopupIndexResponse = async () => {
+  const html = await Bun.file(
+    path.resolve(pluginDir, "pdms-project/index.html")
+  ).text();
+  const sdkUrl = `${env.ONLYOFFICE_URL.replace(/\/+$/u, "")}/sdkjs-plugins/v1/plugins.js`;
+  return new Response(
+    html.replace(onlyOfficePluginSdkUrlPlaceholder, htmlEscape(sdkUrl)),
+    {
+      headers: { "content-type": "text/html; charset=utf-8" },
+    }
+  );
+};
+export const pdmsPopupScriptResponse = async () =>
+  new Response(
+    env.NODE_ENV === "production"
+      ? Bun.file(path.resolve(pluginDir, "dist/pdms-popup.js"))
+      : await buildPlugin(pluginDir, "pdms-popup-entry.js"),
+    { headers: { "content-type": "text/javascript; charset=utf-8" } }
+  );

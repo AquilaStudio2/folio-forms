@@ -13,6 +13,7 @@ import {
   verifyDocumentAccessToken,
   verifyOnlyOfficeAuthorization,
   pluginGuid,
+  pdmsPopupGuid,
   callbackClaim,
 } from "../onlyoffice";
 import { maxCallbackBodyBytes, finalizeCallback } from "../operations/callback";
@@ -31,6 +32,8 @@ import {
   pluginOrigins,
   pluginScriptResponse,
   pluginSettingsIconResponse,
+  pdmsPopupIndexResponse,
+  pdmsPopupScriptResponse,
 } from "../plugin-assets";
 import { nativePdfDocument } from "../responses/native-document";
 import { DOCX_CONTENT_TYPE, objectExists, streamObject } from "../storage";
@@ -127,6 +130,36 @@ export function registerOnlyOfficeRoutes(
         version: "2.1.0",
       };
     })
+    .get("/onlyoffice-plugin/pdms-project/config.json", ({ request, set }) => {
+      const origin = request.headers.get("origin");
+      if (origin && !pluginOrigins.has(origin)) {
+        fail(403, "forbidden_origin", "Origin is not allowed");
+      }
+      if (origin && origin !== corsOrigin) {
+        set.headers["Access-Control-Allow-Origin"] = origin;
+        set.headers.Vary = "Origin";
+      }
+      return {
+        guid: pdmsPopupGuid,
+        name: "เลือกชื่อโครงการ PDMS",
+        variations: [
+          {
+            EditorsSupport: ["cell"],
+            buttons: [],
+            description: "เลือกรายการข้างเซลล์โครงการ",
+            initData: "",
+            initDataType: "none",
+            initOnSelectionChanged: true,
+            isViewer: false,
+            type: "background",
+            url: "index.html",
+          },
+        ],
+        version: "1.0.0",
+      };
+    })
+    .get("/onlyoffice-plugin/pdms-project/index.html", pdmsPopupIndexResponse)
+    .get("/onlyoffice-plugin/pdms-project/popup.js", pdmsPopupScriptResponse)
     .get("/onlyoffice-plugin/upload-poc/config.json", ({ request, set }) => {
       const origin = request.headers.get("origin");
       if (origin && !pluginOrigins.has(origin)) {

@@ -275,6 +275,7 @@ export function initializeSpreadsheet(options, setStatus) {
   let ensureAuthoringReady = async () => {};
   let validatePanelDrafts = () => {};
   let uploadPocSaveInFlight = false;
+  let pdmsSourceSaveInFlight = false;
   let uploadPocDeleteNeedsSave = false;
   let pendingTemplateDeletePurpose = "manual";
   const deletedUploadPocBindingIds = new Set();
@@ -314,7 +315,8 @@ export function initializeSpreadsheet(options, setStatus) {
   });
   const prefill = { shouldApplyRuntimePrefill: () => false };
   const operations = createOperations(options, office, prefill, bridge, api, {
-    isInitializationPending: () => busy && !uploadPocSaveInFlight,
+    isInitializationPending: () =>
+      busy && !uploadPocSaveInFlight && !pdmsSourceSaveInFlight,
     getTemplateSaveContext: () =>
       uploadPocDeleteNeedsSave && pendingTemplateDeletePurpose === "delete"
         ? {
@@ -471,7 +473,8 @@ export function initializeSpreadsheet(options, setStatus) {
   const message = document.createElement("p");
   message.setAttribute("role", "status");
   panel.append(message);
-  async function selection() {
+  let selectionRead;
+  async function readSelection() {
     window.Asc.scope = window.Asc.scope || {};
     window.Asc.scope.folioSpreadsheetAnchors =
       spreadsheetBindingAnchors(bindings);
@@ -492,6 +495,16 @@ export function initializeSpreadsheet(options, setStatus) {
     }
     selectionPosition(selected.address);
     return selected;
+  }
+  function selection() {
+    // The native plugin has one command-callback slot. The popup and authoring
+    // panel share an in-flight read rather than overwriting each other's callback.
+    if (!selectionRead) {
+      selectionRead = readSelection().finally(() => {
+        selectionRead = null;
+      });
+    }
+    return selectionRead;
   }
   const activeUploadPocBindingIds = () =>
     [...(bindings.fields || []), ...(bindings.table?.columns || [])].map(
@@ -1763,7 +1776,10 @@ export function initializeSpreadsheet(options, setStatus) {
       }
     });
     placeUploadPoc.setAttribute("aria-describedby", uploadPocHelp.id);
-    const save = button("เพิ่มช่องจากช่วงที่เลือก", async () => {
+    const saveBinding = async (
+      requestedSelection = null,
+      bindingsAlreadyRead = false
+    ) => {
       if (editing && kind.value !== editingKind) {
         kind.value = editingKind;
         throw new Error("เปลี่ยนประเภทของช่องเดิมไม่ได้ กรุณาบันทึกการแก้ไขอีกครั้ง");
@@ -1776,7 +1792,7 @@ export function initializeSpreadsheet(options, setStatus) {
       if (kind.value === "column" && !editing) {
         throw new Error("เลือกคอลัมน์จากช่องที่บันทึกแล้ว หรือเลือกเซลล์ในตาราง");
       }
-      const current = await selection();
+      const current = requestedSelection || (await selection());
       const targetAnchor =
         kind.value === "column" ? bindings?.table?.anchor : editing?.anchor;
       if (
@@ -1789,7 +1805,9 @@ export function initializeSpreadsheet(options, setStatus) {
           "ไม่พบตำแหน่งช่องนี้ กรุณาเลือกช่องหรือตารางเดิมแล้วกดผูกตำแหน่งใหม่ก่อนบันทึกการแก้ไข"
         );
       }
-      await readBindings();
+      if (!bindingsAlreadyRead) {
+        await readBindings();
+      }
       if (editing) {
         editing = bindingValue(bindings, editingKind, editing.id);
         if (!editing) {
@@ -1976,7 +1994,58 @@ export function initializeSpreadsheet(options, setStatus) {
           }
         }
       );
-    });
+    };
+    const save = button("เพิ่มช่องจากช่วงที่เลือก", () => saveBinding());
+    if (options.pdmsProjectEnabled) {
+      button("สร้าง dropdown ชื่อโครงการ", async () => {
+        validatePanelDrafts();
+        const clicked = await selection();
+        if (clicked.drawing || clicked.uploadPocBindingId) {
+          throw new Error("กรุณาเลือกเซลล์สำหรับชื่อโครงการ");
+        }
+        await readBindings();
+        const current = await selection();
+        if (
+          current.sheet !== clicked.sheet ||
+          current.address !== clicked.address
+        ) {
+          throw new Error("ตำแหน่งที่เลือกเปลี่ยนแล้ว กรุณาคลิกสร้าง dropdown อีกครั้ง");
+        }
+        const match = selectedBinding(current, bindings, true);
+        if (match?.[0] === "table") {
+          throw new Error("เลือกเซลล์ในคอลัมน์ตารางที่ต้องการก่อน");
+        }
+        selected = current;
+        loadEntry(match);
+        if (editing?.computed) {
+          throw new Error("ช่องสูตรไม่รองรับชื่อโครงการ");
+        }
+        if (editing?.source !== "pdms-project-name") {
+          type.value = "pdms-project-name";
+          await saveBinding(current, true);
+        }
+        pdmsSourceSaveInFlight = true;
+        let saved;
+        try {
+          // A normal native capture keeps every unsaved cell and reloads the
+          // signed source/catalog/background config for this same opening.
+          saved = await operations.runAction(
+            ACTIONS.SAVE_TEMPLATE,
+            "",
+            null,
+            {}
+          );
+        } finally {
+          pdmsSourceSaveInFlight = false;
+        }
+        if (!saved?.ok) {
+          throw new Error(
+            `สร้าง dropdown แล้ว แต่บันทึกต้นแบบไม่สำเร็จ: ${saved?.error || "กรุณาลองอีกครั้งที่เซลล์เดิม"}`
+          );
+        }
+      });
+    }
+
     const remove = button("ลบช่องนี้", async () => {
       if (!editing) {
         return;
@@ -2646,13 +2715,16 @@ export function initializeSpreadsheet(options, setStatus) {
   const pdmsPanel = document.createElement("div");
   panel.append(pdmsPanel);
   refreshPdmsPicker = () => {
+    pdmsPicker?.destroy?.();
     pdmsPanel.replaceChildren();
     pdmsPicker = createPdmsProjectPicker(
       options,
       bindings,
       pdmsPanel,
       operations,
-      setStatus
+      setStatus,
+      selection,
+      () => busy
     );
   };
   refreshPdmsPicker();
