@@ -784,7 +784,7 @@ runtimeTest(
           .status
       ).toBe("failed");
       expect(await (await f.read("json")).json()).toEqual({});
-      expect(await f.bytes()).toEqual(weakened);
+      expect(await f.bytes()).toEqual(new Uint8Array(weakened));
     }
   }
 );
