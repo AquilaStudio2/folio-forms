@@ -46,6 +46,7 @@ export const OnlyOfficeEditor = ({
   onDirtyChange,
   onCommandReadyChange,
   onStateChange,
+  openingRevision = 0,
   readOnly = false,
   revision = 0,
   saveAction = "save-draft",
@@ -60,6 +61,7 @@ export const OnlyOfficeEditor = ({
   onDirtyChange?: (dirty: boolean) => void;
   onCommandReadyChange?: (ready: boolean) => void;
   onStateChange?: (state: OnlyOfficeEditorState) => void;
+  openingRevision?: number;
   readOnly?: boolean;
   revision?: number;
   saveAction?:
@@ -76,9 +78,18 @@ export const OnlyOfficeEditor = ({
   const editorOpeningRef = useRef<{
     url: string | undefined;
     id: string;
+    revision: number;
   } | null>(null);
-  if (!editorOpeningRef.current || editorOpeningRef.current.url !== configUrl) {
-    editorOpeningRef.current = { id: crypto.randomUUID(), url: configUrl };
+  if (
+    !editorOpeningRef.current ||
+    editorOpeningRef.current.url !== configUrl ||
+    editorOpeningRef.current.revision !== openingRevision
+  ) {
+    editorOpeningRef.current = {
+      id: crypto.randomUUID(),
+      revision: openingRevision,
+      url: configUrl,
+    };
   }
   const pdmsOpeningId = readOnly ? undefined : editorOpeningRef.current.id;
   const uploadPocFilesRef = useRef<UploadPocPendingFiles | null>(null);
@@ -345,8 +356,9 @@ export const OnlyOfficeEditor = ({
     }
   }, [editorState]);
 
+  // oxlint-disable-next-line complexity -- Guard and coordinate one native editor generation, its bridge and save acknowledgements.
   useEffect(() => {
-    if (!config) {
+    if (!config || loadedConfigUrlRef.current !== configUrl) {
       return;
     }
 

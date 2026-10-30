@@ -838,3 +838,29 @@ it("retains one logical PDMS opening across capability refresh and document relo
     ).searchParams.get("pdmsOpeningId")
   ).not.toBe(opening);
 });
+
+it("creates a fresh catalog opening when an existing new-entry transition reuses the editor URL", async () => {
+  const view = render(
+    <OnlyOfficeEditor configUrl="/editor-config" title="Entry editor" />
+  );
+  await screen.findByTitle("Office sandbox");
+  const first = new URL(
+    transport.get.mock.calls[0]?.[0] as string,
+    window.location.origin
+  ).searchParams.get("pdmsOpeningId");
+  view.rerender(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Entry editor"
+      revision={1}
+      openingRevision={1}
+    />
+  );
+  await waitFor(() => expect(transport.get).toHaveBeenCalledTimes(2));
+  const next = new URL(
+    transport.get.mock.calls[1]?.[0] as string,
+    window.location.origin
+  ).searchParams.get("pdmsOpeningId");
+  expect(next).toBeTruthy();
+  expect(next).not.toBe(first);
+});

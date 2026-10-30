@@ -400,6 +400,37 @@ workflowTest(
         },
       },
     ]);
+    // The existing submit-to-new-entry flow opens a new document under the same Response.
+    const nextEntry = await request(
+      `/api/forms/${publicId}/start`,
+      userToken,
+      {}
+    );
+    expect(nextEntry.status).toBe(200);
+    const nextConfig = await request(
+      `/api/forms/${publicId}/editor-config?responseId=${responseId}&pdmsOpeningId=${crypto.randomUUID()}`,
+      userToken
+    );
+    expect(nextConfig.status).toBe(200);
+    const nextEditor = (await nextConfig.json()) as Config;
+    expect(nextEditor.pdmsProjectCatalog.status).toBe("ready");
+    expect(nextEditor.pdmsProjectCatalog.sessionId).not.toBe(
+      firstCatalog.sessionId
+    );
+    expect(nextEditor.config.document.key).not.toBe(editor.config.document.key);
+    const stillSaved = await request(
+      `/api/forms/${publicId}/my-submissions/export`,
+      userToken
+    );
+    expect(await stillSaved.json()).toMatchObject([
+      {
+        data: {
+          project_name: "โครงการ ก",
+          notes: "unsaved ordinary input",
+          second_project: "00123",
+        },
+      },
+    ]);
   },
   120_000
 );
