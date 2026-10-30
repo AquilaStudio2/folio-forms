@@ -11,6 +11,7 @@ const pluginArtifact = await buildPlugin(pluginDirectory);
 const pluginSource = await pluginArtifact.text();
 const recordEntries = (value) => Object.entries(value ?? {});
 
+// oxlint-disable-next-line complexity -- Shared browser fixture supports the prototype bundle without changing default callers.
 export const createHarness = ({
   action = "fill",
   documentKind = "docx",
@@ -18,6 +19,9 @@ export const createHarness = ({
   spreadsheetPictureFrames = [],
   spreadsheetSelection = {},
   browserGlobals = {},
+  bodyDataset = {},
+  entrySource = pluginSource,
+  extraElementIds = [],
   capabilityResponses = [],
   clipboard,
   controls = [],
@@ -95,6 +99,9 @@ export const createHarness = ({
         }
         return true;
       },
+      focus() {
+        // Focus is observed through accessible state in real-browser verification.
+      },
       hidden: false,
       id,
       remove() {
@@ -114,6 +121,9 @@ export const createHarness = ({
       replaceChildren(...children) {
         this.children = [];
         this.append(...children);
+      },
+      scrollIntoView() {
+        // Scrolling is verified in the real editor, not this DOM shim.
       },
       select() {
         // Text selection is not modeled by this DOM shim.
@@ -149,7 +159,7 @@ export const createHarness = ({
     "field-panel-status",
     "form-bridge-status",
   ];
-  for (const id of panelIds) {
+  for (const id of [...panelIds, ...extraElementIds]) {
     createElement("div", id);
   }
   elements.get("field-panel").hidden = true;
@@ -596,6 +606,7 @@ export const createHarness = ({
       return statusElement;
     },
   };
+  Object.assign(document.body.dataset, bodyDataset);
   const context = {
     ...browserGlobals,
     AbortController,
@@ -611,7 +622,7 @@ export const createHarness = ({
     window,
   };
 
-  runInNewContext(pluginSource, context, {
+  runInNewContext(entrySource, context, {
     filename: "apps/onlyoffice-plugin/dist/plugin.js",
   });
   window.Asc.plugin.init();

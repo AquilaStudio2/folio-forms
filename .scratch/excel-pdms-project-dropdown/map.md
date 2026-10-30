@@ -2,7 +2,7 @@
 
 Date: 2026-10-30 (Asia/Bangkok)
 
-This document records discovery and the agreed product decisions. The user has answered Q1–Q12 and added the Title/Tag requirement; the product interview frontier is empty. Technical implementation proposals remain subject to the documented prototype gates. No production code has been changed.
+This document records discovery and the agreed product decisions. The user has answered Q1–Q12 and added the Title/Tag requirement; the product interview frontier is empty. Technical execution is tracked below: prototype 01 is resolved and the implementation frontier is 02. The production PDMS source is not implemented; the prototype also fixes an existing merged-cell save bug.
 
 ## Requested behavior
 
@@ -107,7 +107,7 @@ Verified existing behavior:
 
 ## Current frontier and completion
 
-No product questions remain open: Q1–Q12 were individually answered, including the concrete Title/Tag and removal clarification. The product-design interview is complete and consolidated in `spec.md`. Remaining technical work is explicitly listed as prototype/implementation gates; no implementation outcome is claimed and no production code has been changed. The original request was feature design, so implementation is a separate follow-on task.
+No product questions remain open: Q1–Q12 were individually answered, including the concrete Title/Tag and removal clarification. The product-design interview is complete and consolidated in `spec.md`. The user subsequently authorized implementation; current outcomes and remaining technical work are tracked under Implementation started below.
 
 ## Selection-only enforcement findings
 
@@ -143,8 +143,10 @@ The user subsequently requested the to-spec and to-tickets workflows. A [review 
 
 The user invoked implement-spec and explicitly instructed implementation. This accepts the previously proposed test boundaries and ticket graph. The canonical spec and eight tickets are published as ready-for-agent. Integration branch: codex/excel-pdms-project-dropdown; baseline commit: ced39002574331a347b59cd868535fc4eb90ef05.
 
-Execution frontier: 01. Each implementation ticket has its own branch/worktree and fresh TDD implementer; merger agents integrate completed work. Completion uses the local wayfinding convention: Type prototype/task, Status claimed while active and resolved only with acceptance evidence in Comments. The ready-for-agent value records initial triage. No deployment is planned.
+Execution frontier: 02. Each implementation ticket has its own branch/worktree and fresh TDD implementer; merger agents integrate completed work. Completion uses the local wayfinding convention: Type prototype/task, Status claimed while active and resolved only with acceptance evidence in Comments. The ready-for-agent value records initial triage. No deployment is planned.
 
 ### Active work
 
-Ticket 01 is claimed by the fresh implementer on codex/pdms-project-01 in its isolated worktree. Its runtime feasibility results gate ticket 02. Shared environment research is available outside the repository; integration uses private isolated test resources, not existing demo data.
+Ticket [01](issues/01-prove-protected-project-picker.md) is resolved as a prototype, integrated from `codex/pdms-project-01` through `96a0559`. The pinned real editor demonstrated a supported custom picker and protected server-save/reload path, consecutive merged/table selections, unsaved ordinary-input preservation and representative row insertion. Direct protected live writes failed and were not adopted. Native protection checks plus exported lock styles support the managed-cell policy; physical IME composition and fill-handle dragging were not performed and remain explicit verification limits.
+
+Ticket [02](issues/02-scalar-project-field-roundtrip.md) is now unblocked. Implement the first production scalar slice behind the agreed development/test configuration, integrating selection overlay, source/protection state and save completion atomically in the actual operation boundary. Do not adopt the fixture's postprocessing adapter as production state. Preserve logical editor-open identity across controlled remounts and load again on a separately authorized opening. Tickets 03–08 retain their existing blockers. Shared environment research remains outside the repository; integration uses private isolated test resources, not existing demo data.

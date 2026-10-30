@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="utf-8" />
+    <script src="__OFFICE__/sdkjs-plugins/v1/plugins.js"></script>
+    <style>
+      body {
+        font: 14px system-ui;
+        margin: 12px;
+      }
+      input,
+      select,
+      button {
+        font: inherit;
+        padding: 7px;
+        margin: 4px 0;
+        width: 100%;
+        box-sizing: border-box;
+      }
+      button {
+        text-align: left;
+      }
+      #results {
+        max-height: 300px;
+        overflow: auto;
+      }
+      #status {
+        white-space: pre-wrap;
+        overflow-wrap: anywhere;
+      }
+      label {
+        display: block;
+      }
+      #cancel {
+        width: auto;
+      }
+    </style>
+  </head>
+  <body data-session="__SESSION__">
+    <h2>เลือกโครงการ</h2>
+    <p>
+      ต้นแบบ: เมื่อเลือก ระบบจะบันทึกข้อมูลปัจจุบันทั้งหมดและเปิดเอกสารอีกครั้ง
+      โดยคงรายการโครงการเดิมในรอบนี้
+    </p>
+    <label for="target">ช่องโครงการ</label
+    ><select id="target">
+      <option value="project">โครงการหลัก · A1:B1</option>
+      <option value="table">โครงการในตาราง · A4</option></select
+    ><label for="query">ค้นหาชื่อโครงการ</label
+    ><input
+      id="query"
+      type="search"
+      autocomplete="off"
+      role="combobox"
+      aria-controls="results"
+      aria-expanded="true"
+    />
+    <div id="count" role="status"></div>
+    <div id="results" role="listbox" aria-label="ผลการค้นหาโครงการ"></div>
+    <button id="more" type="button">แสดงเพิ่ม</button
+    ><button id="cancel" type="button">ยกเลิกการค้นหา</button>
+    <hr />
+    <button id="read" type="button">ตรวจสอบค่าปัจจุบัน</button
+    ><button id="row" type="button">เพิ่มแถวตัวอย่างในตาราง</button
+    ><button id="save" type="button">บันทึก Draft ผ่าน Folio</button>
+    <pre id="status" role="status" aria-live="polite"></pre>
+    <script src="picker.js"></script>
+  </body>
+</html>

@@ -211,14 +211,25 @@ export const prepareSpreadsheetOperation = async (
     : [];
   const inputs = spreadsheetInputRanges(contract, locked);
   const values = [...current.cells.values()]
-    .filter((cell) =>
-      inputs.some(
-        (range) =>
-          cell.row >= range.firstRow &&
-          cell.row <= range.lastRow &&
-          cell.column >= range.firstColumn &&
-          cell.column <= range.lastColumn
-      )
+    .filter(
+      (cell) =>
+        inputs.some(
+          (range) =>
+            cell.row >= range.firstRow &&
+            cell.row <= range.lastRow &&
+            cell.column >= range.firstColumn &&
+            cell.column <= range.lastColumn
+        ) &&
+        // Native/canonical XLSX may include empty cells inside a merged input.
+        // Writing a subordinate cell after its anchor clears the whole merge.
+        !current.merges.some(
+          (range) =>
+            cell.row >= range.firstRow &&
+            cell.row <= range.lastRow &&
+            cell.column >= range.firstColumn &&
+            cell.column <= range.lastColumn &&
+            (cell.row !== range.firstRow || cell.column !== range.firstColumn)
+        )
     )
     .map((cell) => ({ address: cell.address, value: cell.value }));
   const rowChange = metadata.spreadsheetRowChange as
