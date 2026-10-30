@@ -11,3 +11,7 @@ await Bun.write(
   path.join(pluginDirectory, "dist/upload-poc-picker.js"),
   await buildPlugin(pluginDirectory, "upload-poc-picker-entry.js")
 );
+await Bun.write(
+  path.join(pluginDirectory, "dist/pdms-popup.js"),
+  await buildPlugin(pluginDirectory, "pdms-popup-entry.js")
+);

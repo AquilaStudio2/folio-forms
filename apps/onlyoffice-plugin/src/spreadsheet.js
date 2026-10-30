@@ -470,7 +470,8 @@ export function initializeSpreadsheet(options, setStatus) {
   const message = document.createElement("p");
   message.setAttribute("role", "status");
   panel.append(message);
-  async function selection() {
+  let selectionRead;
+  async function readSelection() {
     window.Asc.scope = window.Asc.scope || {};
     window.Asc.scope.folioSpreadsheetAnchors =
       spreadsheetBindingAnchors(bindings);
@@ -491,6 +492,16 @@ export function initializeSpreadsheet(options, setStatus) {
     }
     selectionPosition(selected.address);
     return selected;
+  }
+  function selection() {
+    // The native plugin has one command-callback slot. The popup and authoring
+    // panel share an in-flight read rather than overwriting each other's callback.
+    if (!selectionRead) {
+      selectionRead = readSelection().finally(() => {
+        selectionRead = null;
+      });
+    }
+    return selectionRead;
   }
   const activeUploadPocBindingIds = () =>
     [...(bindings.fields || []), ...(bindings.table?.columns || [])].map(
@@ -2633,7 +2644,8 @@ export function initializeSpreadsheet(options, setStatus) {
     bindings,
     panel,
     operations,
-    setStatus
+    setStatus,
+    selection
   );
   return { operations, bridge };
 }

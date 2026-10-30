@@ -22,6 +22,7 @@ import type {
 } from "@/features/onlyoffice/editor-protocol";
 import { EditorSurface } from "@/features/onlyoffice/editor-surface";
 import { isEditorWindowSource } from "@/features/onlyoffice/editor-window-source";
+import { createPdmsPopupRelay } from "@/features/onlyoffice/pdms-popup-relay";
 import type { UploadPocHostOptions } from "@/features/onlyoffice/upload-poc-pending";
 import { UploadPocPendingFiles } from "@/features/onlyoffice/upload-poc-pending";
 import { ApiError, apiDelete, apiGet, apiPost } from "@/lib/api";
@@ -401,6 +402,14 @@ export const OnlyOfficeEditor = ({
     let nativeDocumentDirty: boolean | null = null;
     let nativeSaveError: string | null = null;
     let pendingEditorSaveId: string | null = null;
+    const pdmsPopupRelay = createPdmsPopupRelay({
+      bridgeId,
+      getPrimary: () => pinnedSourceRef.current,
+      isLive: (source): source is Window =>
+        !cancelled && isEditorWindowSource(source, surfaceRef.current),
+      pluginOrigin,
+      scope: readOnly ? undefined : config.bridge?.pdmsProjectPopup,
+    });
     const respondToEditorSave = (saveFailure?: string) => {
       const requestId = pendingEditorSaveId;
       const source = pinnedSourceRef.current;
@@ -619,6 +628,10 @@ export const OnlyOfficeEditor = ({
       }
 
       const { data } = event;
+      pdmsPopupRelay.handle(event);
+      if (pdmsPopupRelay.isPopupSource(event.source)) {
+        return;
+      }
       if (isRecord(data) && data.source === "folio-upload-poc") {
         const options = config.bridge?.uploadPoc;
         if (
@@ -655,6 +668,7 @@ export const OnlyOfficeEditor = ({
           bridgeId,
           !config.editorUrl && !readOnly
         );
+        pdmsPopupRelay.primaryReady();
         setBridgeReadyVersion((value) => value + 1);
         return;
       }
@@ -764,6 +778,7 @@ export const OnlyOfficeEditor = ({
     const detachBridge = () => {
       respondToEditorSave("The native editor closed before changes were saved");
       cancelled = true;
+      pdmsPopupRelay.close();
       window.removeEventListener("message", handleBridgeMessage);
       pinnedSourceRef.current = null;
       onCommandReadyChangeRef.current?.(false);

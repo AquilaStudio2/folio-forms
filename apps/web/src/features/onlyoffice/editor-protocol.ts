@@ -1,5 +1,6 @@
 import { API_ORIGIN } from "@/lib/api";
 
+import type { PdmsProjectPopupScope } from "./pdms-popup-relay";
 import type { UploadPocHostOptions } from "./upload-poc-pending";
 
 type EditorAction =
@@ -57,6 +58,7 @@ export interface EditorConfig {
     id?: string;
     lease?: EditorLease;
     pluginOrigin?: string;
+    pdmsProjectPopup?: PdmsProjectPopupScope;
     uploadPoc?: UploadPocHostOptions;
   };
   config?: Record<string, unknown>;
