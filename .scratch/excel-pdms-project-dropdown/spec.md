@@ -8,7 +8,7 @@ Admins need project-name choices in Excel Forms without copying and maintaining 
 
 ## Solution
 
-An Admin maps a scalar cell, complete merged cell, or repeating-table column to the PDMS Project Name Source using the existing Title, Tag and required-field controls. Every applicable authorized opening of Folio's web editor requests the current PDMS names through Folio's backend. All source-enabled Fields in that editor session share the successfully loaded list, which remains fixed while the editor is open.
+An Admin selects a scalar cell, complete merged cell, or repeating-table column and clicks one create-dropdown button to map it to the PDMS Project Name Source with the normal generated Title and Tag. Existing Title, Tag and required-field controls remain available for editing. Every applicable authorized opening of Folio's web editor requests the current PDMS names through Folio's backend. All source-enabled Fields in that editor session share the successfully loaded list, which remains fixed while the editor is open.
 
 Users click a source-enabled cell to open a searchable dropdown beside that cell, as accepted after the pinned-editor prototype. Only the selected name is written to the cell and stored under its configured Tag. Direct typing, formula entry, paste and autofill into these managed cells are blocked. Search-input typing does not write an answer. There is no Clear-answer button.
 
@@ -64,6 +64,7 @@ Previously saved names remain valid unchanged after upstream removal or renaming
 46. As a User, I want expired permissions and stale selection requests rejected without changing another document or row, so that delayed operations cannot corrupt my answers.
 47. As an Admin, I want PDMS access credentials kept on the backend, so that workbook and browser clients cannot obtain service credentials.
 48. As a User, I want clicking a mapped project cell to open all available choices in a searchable dropdown beside that cell, so that I can choose in the spreadsheet without selecting a target from a side panel.
+49. As an Admin, I want one button to create a project dropdown at my current valid cell or table-column selection with normal generated Title/Tag, so that I do not configure it through a side-panel project selector and list.
 
 ## Implementation Decisions
 
@@ -83,6 +84,7 @@ Previously saved names remain valid unchanged after upstream removal or renaming
 14. Published source configuration is immutable with the published Field contract; runtime choices may change between openings. Structural changes to a published Form follow duplication. Existing static dropdowns and unrelated DOCX/XLSX Fields remain compatible. Do not redefine unrelated Prefill or resubmission policies.
 15. Direct protected live writes remain unproven. If a server-authorized save/reload flow is required, verify all unsaved work is preserved and document the resulting interaction before accepting it. Prototype failure is not permission to weaken picker-only input.
 16. Deliver behind an unexposed development/test configuration until all acceptance slices are complete. Each slice remains independently verifiable and preserves existing behavior; partial completion is not a production release of the complete source.
+17. Remove the old project target-selector/search/results region. Admin Template Draft authoring exposes one create-project-dropdown button using the existing binding upsert and native-save barrier, preserving all unsaved Template work. Reuse a current valid Field identity/metadata rather than creating duplicates, and retain normal Title/Tag editing and Published Template immutability. User filling and editable Corrections select values through the adjacent-cell popup and do not create structural mappings. If the first source is added during an initially source-free authoring opening, activate its catalog/popup after successful saving while retaining the logical opening and one-snapshot rule.
 
 ## Testing Decisions
 
@@ -113,6 +115,7 @@ Previously saved names remain valid unchanged after upstream removal or renaming
 
 - Latest UI decision: after supplying an in-cell dropdown image, the user reviewed the working adjacent-popup prototype and explicitly selected “ใช้ dropdown ชิดเซลล์จากต้นแบบ (แนะนำ)”. Clicking the mapped cell opens the searchable list beside it; the original native arrow is no longer required. The prototype proves placement,2500-choice reachability and Thai search while retaining locked cells; production save integration and lifecycle acceptance are tracked in ticket09. The earlier side-panel proof still supports the protected-write mechanism, not final presentation acceptance.
 - The user further reiterated that after selecting a value they must be able to return and change it, and that the dropdown must remain. Retain the source and Title/Tag after save/reopen, with immediate reopening for the same selected cell after choice or cancellation.
+- The user then requested removing the old side-panel project selector/search/list and replacing it with one button that creates the dropdown immediately. The implementation response scopes creation to Admin Template Draft authoring, with generated Title/Tag and normal validation; runtime User/Correction selection stays in the adjacent-cell dropdown. Ticket09 includes this one-click authoring flow.
 
 - Product behavior was agreed through Q1–Q12 plus the added Title/Tag requirement. The existing name-answer ADR and domain vocabulary remain authoritative.
 - The real PDMS record count, payload size and latency were not measured. Measure a representative authorized catalog before accepting performance; document list size, full-result reachability, search latency, editor-open latency and Thai input responsiveness without inventing an unagreed numerical SLA.

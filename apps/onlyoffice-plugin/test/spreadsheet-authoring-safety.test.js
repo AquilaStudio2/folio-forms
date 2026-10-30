@@ -420,7 +420,8 @@ test("deleting a table removes all tracking names while preserving outside cells
       },
       validations: {
         A1: { formula1: '"one,two"', type: "list" },
-        "B3:C4": { formula1: "0", type: "decimal" },
+        "B3:B4": { formula1: "0", type: "decimal" },
+        "C3:C4": { formula1: "0", type: "decimal" },
       },
     },
   });
@@ -436,7 +437,8 @@ test("deleting a table removes all tracking names while preserving outside cells
   }
   expect(harness.spreadsheetNames.get(field.anchor)).toBe("'Sheet1'!$A$1");
   expect(harness.spreadsheetNames.get("unrelated")).toBe("'Sheet1'!$F$6");
-  expect(harness.spreadsheetValidations.has("B3:C4")).toBe(false);
+  expect(harness.spreadsheetValidations.has("B3:B4")).toBe(false);
+  expect(harness.spreadsheetValidations.has("C3:C4")).toBe(false);
   expect(harness.spreadsheetValidations.get("A1")).toMatchObject({
     formula1: '"one,two"',
     type: "list",
@@ -1246,4 +1248,79 @@ test("Admin chooses PDMS source without losing the existing Field Title, Tag or 
     type: "dropdown",
   });
   expect(control(harness, "ชนิดข้อมูล").value).toBe("pdms-project-name");
+});
+
+test("an uncertain PDMS source write stays blocked when verification returns different source management", async () => {
+  const initial = { ...bindings, fields: [{ ...field, options: [] }] };
+  const harness = templateHarness({
+    capabilityResponses: ["read", "write", "verify"],
+    pdmsProjectEnabled: true,
+    responses: [
+      { bindings: initial, revision: 0 },
+      { body: { error: "Lost acknowledgement" }, httpStatus: 502 },
+      { bindings: initial, revision: 1 },
+    ],
+    spreadsheetBindings: initial,
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  const type = control(harness, "ชนิดข้อมูล");
+  type.value = "pdms-project-name";
+  type.dispatchEvent({ type: "change" });
+  await click(harness, "บันทึกการแก้ไข");
+  expect(control(harness, "Title · ชื่อช่อง").disabled).toBe(true);
+  const result = await harness.window.FormBridge.runAction("save-template");
+  expect(result.ok).toBe(false);
+  expect(
+    harness.requests.filter((request) => request.method === "PATCH")
+  ).toHaveLength(1);
+});
+
+test("Admin removing the last project Field clears its preview and source state through the existing save barrier", async () => {
+  const project = { ...field, options: [], source: "pdms-project-name" };
+  const initial = { ...bindings, fields: [project] };
+  const removed = { ...bindings, fields: [] };
+  const harness = templateHarness({
+    capabilityResponses: ["read", "write", "save"],
+    pdmsProjectCatalog: {
+      names: ["Project one"],
+      sessionId: "catalog",
+      status: "ready",
+    },
+    pdmsProjectEnabled: true,
+    responses: [
+      { bindings: initial, revision: 0 },
+      { bindings: removed, revision: 1 },
+      { operationCapability: "poll", operationId: "saved-removal" },
+      completedOperation({
+        documentKey: "document-key",
+        editorSessionPreserved: true,
+      }),
+    ],
+    spreadsheetBindings: initial,
+    spreadsheetSelection: {
+      address: "A1",
+      formats: { A1: "dd/mm/yyyy" },
+      names: { custom_name: "'Sheet1'!$F$6", saved_choice: "'Sheet1'!$A$1" },
+      values: { A1: "Visible project" },
+    },
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  expect(control(harness, "ช่องโครงการ")).toBeDefined();
+  await click(harness, "ลบช่องนี้");
+  expect(control(harness, "ช่องโครงการ")).toBeUndefined();
+  expect(
+    harness.window.FormBridge.getRuntimeOptions().pdmsProjectCatalog
+  ).toBeNull();
+  expect(harness.spreadsheetNumberFormats.get("A1")).toBe("dd/mm/yyyy");
+  expect(harness.spreadsheetNames.get("custom_name")).toBe("'Sheet1'!$F$6");
+  const save = harness.requests.find((request) =>
+    request.url.endsWith("/save")
+  );
+  expect(save).toBeDefined();
+  expect(JSON.parse(save.body)).toMatchObject({
+    preserveEditorSession: true,
+    preserveEditorSessionPurpose: "manual",
+  });
 });
