@@ -128,6 +128,9 @@ test("a fresh authorized editor opening loads usable names once and preserves it
           confirmation_document_number: "DOC-5",
           name: requests === 1 ? "Project B" : "Project C",
         },
+        { confirmation_document_number: "DOC-6", name: " Project B" },
+        { confirmation_document_number: "DOC-7", name: "Project B " },
+        { confirmation_document_number: "DOC-8" },
       ]);
     },
     hostname: "127.0.0.1",
@@ -231,7 +234,7 @@ test("a fresh authorized editor opening loads usable names once and preserves it
       };
     };
     expect(opened.pdmsProjectCatalog).toMatchObject({
-      names: ["โครงการ ก", "Project B"],
+      names: ["โครงการ ก", "Project B", " Project B", "Project B "],
       status: "ready",
     });
     const reconnect = await getConfig(opening);
@@ -242,8 +245,71 @@ test("a fresh authorized editor opening loads usable names once and preserves it
     expect(
       ((await (await getConfig(crypto.randomUUID())).json()) as typeof opened)
         .pdmsProjectCatalog.names
-    ).toEqual(["โครงการ ก", "Project C"]);
+    ).toEqual(["โครงการ ก", "Project C", " Project B", "Project B "]);
     expect(requests).toBe(2);
+    const saveCapability = (
+      opened as unknown as { bridge: { capabilities: Record<string, string> } }
+    ).bridge.capabilities["save-draft"] as string;
+    const select = (
+      selection: unknown,
+      override: Record<string, unknown> = {}
+    ) =>
+      catalogApp.handle(
+        new Request(`http://test.local/api/forms/${catalogPublicId}/draft`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "X-Editor-Capability": saveCapability,
+          },
+          body: JSON.stringify({
+            responseId: response.id,
+            documentKey: `response-${fixtureId}`,
+            fillMethod: "onlyoffice",
+            data: {},
+            pdmsCatalogSessionId: opened.pdmsProjectCatalog.sessionId,
+            pdmsSelection: selection,
+            ...override,
+          }),
+        })
+      );
+    const acceptedShape = {
+      sessionId: opened.pdmsProjectCatalog.sessionId,
+      bindingId: "folio_project",
+      name: "โครงการ ก",
+    };
+    expect((await select({ ...acceptedShape, actorId: user.id })).status).toBe(
+      400
+    );
+    expect(
+      (await select({ ...acceptedShape, bindingId: "folio_foreign" })).status
+    ).toBe(422);
+    expect(
+      (await select({ ...acceptedShape, name: "Arbitrary text" })).status
+    ).toBe(422);
+    expect(
+      (
+        await select(
+          { ...acceptedShape, sessionId: crypto.randomUUID() },
+          { pdmsCatalogSessionId: undefined }
+        )
+      ).status
+    ).toBe(409);
+    expect(
+      (await select(acceptedShape, { documentKey: "old-document" })).status
+    ).toBe(409);
+    const unchanged = await catalogApp.handle(
+      new Request(`http://test.local/api/responses/${response.id}/draft/json`, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+    );
+    expect(await unchanged.json()).toEqual({});
+    await prisma.editorLease.deleteMany({ where: { targetId: response.id } });
+    expect((await select(acceptedShape)).status).toBe(409);
+    const replaced = (await (await getConfig(opening)).json()) as typeof opened;
+    expect(replaced.pdmsProjectCatalog.sessionId).not.toBe(
+      opened.pdmsProjectCatalog.sessionId
+    );
+    expect(requests).toBe(3);
   } finally {
     upstream.stop(true);
   }

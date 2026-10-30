@@ -92,6 +92,11 @@ export const env = createEnv({
 
     ONLYOFFICE_URL: z.url().default(localOnlyOfficeUrl),
 
+    PDMS_PROJECT_NAME_SOURCE_ENABLED: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
+
     PREFILL_HANDOFF_SECRET: z.string().min(32),
 
     PREFILL_RETURN_URL: z.url().default("http://localhost:3010/return"),

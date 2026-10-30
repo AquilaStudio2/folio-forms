@@ -73,6 +73,14 @@ export const OnlyOfficeEditor = ({
   trackNativeDirty?: boolean;
   title: string;
 }) => {
+  const editorOpeningRef = useRef<{
+    url: string | undefined;
+    id: string;
+  } | null>(null);
+  if (!editorOpeningRef.current || editorOpeningRef.current.url !== configUrl) {
+    editorOpeningRef.current = { id: crypto.randomUUID(), url: configUrl };
+  }
+  const pdmsOpeningId = readOnly ? undefined : editorOpeningRef.current.id;
   const uploadPocFilesRef = useRef<UploadPocPendingFiles | null>(null);
   if (!uploadPocFilesRef.current) {
     uploadPocFilesRef.current = new UploadPocPendingFiles();
@@ -290,7 +298,7 @@ export const OnlyOfficeEditor = ({
       };
     }
 
-    const path = editorConfigPath(configUrl);
+    const path = editorConfigPath(configUrl, pdmsOpeningId);
     onCommandReadyChangeRef.current?.(false);
     loadedConfigUrlRef.current = null;
     setConfig(null);
@@ -329,7 +337,7 @@ export const OnlyOfficeEditor = ({
     return () => {
       cancelled = true;
     };
-  }, [configUrl, reportState, retryToken, revision]);
+  }, [configUrl, pdmsOpeningId, reportState, retryToken, revision]);
 
   useEffect(() => {
     if (editorState === "blocked" || editorState === "error") {
@@ -443,7 +451,7 @@ export const OnlyOfficeEditor = ({
 
       const requestedLeaseId = leaseRef.current?.id;
       try {
-        const path = editorConfigPath(configUrl);
+        const path = editorConfigPath(configUrl, pdmsOpeningId);
         const fresh = await apiGet<EditorConfig>(path);
         if (cancelled || pinnedSourceRef.current !== requestedSource) {
           return;
@@ -489,7 +497,9 @@ export const OnlyOfficeEditor = ({
       if (!configUrl || !requestedLeaseId) {
         throw new Error("ยืนยันการตั้งค่าปุ่มล่าสุดไม่ได้ กรุณาเปิดตัวแก้ไขใหม่");
       }
-      const fresh = await apiGet<EditorConfig>(editorConfigPath(configUrl));
+      const fresh = await apiGet<EditorConfig>(
+        editorConfigPath(configUrl, pdmsOpeningId)
+      );
       const refreshed = fresh.bridge?.uploadPoc;
       if (
         !refreshed ||
@@ -827,6 +837,7 @@ export const OnlyOfficeEditor = ({
   }, [
     config,
     configUrl,
+    pdmsOpeningId,
     editorId,
     readOnly,
     reportState,

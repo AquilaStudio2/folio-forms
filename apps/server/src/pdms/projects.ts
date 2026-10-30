@@ -7,7 +7,7 @@ export interface PdmsProjectsConfiguration {
   timeoutMs?: number;
 }
 export const pdmsProjectSourceEnabled = (): boolean =>
-  env.NODE_ENV !== "production";
+  env.NODE_ENV !== "production" || env.PDMS_PROJECT_NAME_SOURCE_ENABLED;
 
 export const pdmsProjectsConfigurationFromEnv =
   (): PdmsProjectsConfiguration | null =>

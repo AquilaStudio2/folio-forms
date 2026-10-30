@@ -259,7 +259,11 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
       });
     }
   }
-  return rows.map((row, position) => ({ ...row, position }));
+  return rows.map(({ source, ...row }, position) => ({
+    ...row,
+    position,
+    ...(source ? { source } : {}),
+  }));
 };
 
 export const spreadsheetDraftFieldData = (bindings: SpreadsheetBindings) =>

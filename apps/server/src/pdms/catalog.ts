@@ -11,7 +11,6 @@ import type {
 } from "../editor/authorization";
 import type { EditorLeaseGrant } from "../editor/leases";
 import { fail } from "../http/errors";
-import { jsonValue } from "../responses/data";
 import { loadPdmsProjectNames, pdmsProjectSourceEnabled } from "./projects";
 import type { PdmsProjectsConfiguration } from "./projects";
 
@@ -76,7 +75,7 @@ export const loadPdmsCatalogSession = async (
         data: {
           loadExpiresAt: null,
           loadToken: null,
-          names: jsonValue(names),
+          names,
           status: "ready",
         },
         where: { id: sessionId, loadToken, status: "loading" },

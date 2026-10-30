@@ -54,6 +54,8 @@ import { launchForceSave } from "../operations/force-save";
 import { activeOperationForForm } from "../operations/lifecycle";
 import type { OperationMetadata } from "../operations/model";
 import { operationTypeForAction } from "../operations/model";
+import { openPdmsProjectCatalog } from "../pdms/catalog";
+import { pdmsProjectSourceEnabled } from "../pdms/projects";
 import { submissionSummary } from "../responses/query";
 import { objectExists, objectKey, readObject } from "../storage";
 import type { RouteDependencies } from "./dependencies";
@@ -103,13 +105,16 @@ const readTemplateActionInput = async (
 
 export function registerFormAuthoringRoutes(
   app: Elysia,
-  dependencies: Pick<RouteDependencies, "onlyOffice" | "allowedCallbackOrigins">
+  dependencies: Pick<
+    RouteDependencies,
+    "onlyOffice" | "allowedCallbackOrigins" | "pdmsProjects"
+  >
 ): void {
   const { onlyOffice, allowedCallbackOrigins } = dependencies;
   app
     .get(
       "/api/admin/forms/:publicId/editor-config",
-      async ({ request, params }) => {
+      async ({ request, params, query }) => {
         const identity = await requireIdentity(request);
         requireAdmin(identity);
         const form = await findFormByPublicId(params.publicId);
@@ -157,9 +162,24 @@ export function registerFormAuthoringRoutes(
               bindings
             )
           : undefined;
+        const pdmsProjectCatalog = bindings
+          ? await openPdmsProjectCatalog({
+              bindings,
+              configuration: dependencies.pdmsProjects,
+              identity,
+              lease,
+              openingId:
+                typeof query.pdmsOpeningId === "string"
+                  ? query.pdmsOpeningId
+                  : undefined,
+              scope: capabilityScope,
+            })
+          : null;
         return editorConfig(
           {
             action: "template-edit",
+            pdmsProjectEnabled: pdmsProjectSourceEnabled(),
+            ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
             documentKind: form.documentKind,
             ...(form.documentKind === "xlsx"
               ? {

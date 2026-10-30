@@ -207,7 +207,7 @@ export const applySpreadsheetValidation = (
     }
   }
   for (const { field, range } of fields) {
-    if (field.computed) {
+    if (field.computed || field.source) {
       continue;
     }
     if (field.type === "text" && !field.placeholder) {

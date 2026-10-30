@@ -90,6 +90,10 @@ function normalizeRuntimeOptions() {
     bridgeId: firstString(options.bridgeId),
     documentKey: firstString(options.documentKey),
     documentKind: options.documentKind === "xlsx" ? "xlsx" : "docx",
+    pdmsProjectEnabled: options.pdmsProjectEnabled === true,
+    pdmsProjectCatalog: isRecord(options.pdmsProjectCatalog)
+      ? options.pdmsProjectCatalog
+      : null,
     spreadsheetBindings: isRecord(options.spreadsheetBindings)
       ? options.spreadsheetBindings
       : {},

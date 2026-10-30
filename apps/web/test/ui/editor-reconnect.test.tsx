@@ -779,3 +779,62 @@ it("accepts a preserved session only for a completed Excel save with matching na
     expect(transport.get).toHaveBeenCalledTimes(1);
   }
 });
+
+it("retains one logical PDMS opening across capability refresh and document reload, and renews it on reopen", async () => {
+  const view = render(
+    <OnlyOfficeEditor
+      configUrl="/api/forms/source/editor-config?responseId=response"
+      title="PDMS editor"
+    />
+  );
+  const office = (await screen.findByTitle(
+    "Office sandbox"
+  )) as HTMLIFrameElement;
+  const plugin = pluginFrame(office);
+  const firstPath = transport.get.mock.calls[0]?.[0] as string;
+  const opening = new URL(firstPath, window.location.origin).searchParams.get(
+    "pdmsOpeningId"
+  );
+  expect(opening).toMatch(/^[0-9a-f-]{36}$/u);
+  send(plugin.source, { type: "bridge-ready" });
+  send(plugin.source, {
+    action: "configure-fields",
+    requestId: "pdms-refresh",
+    type: "capability-request",
+  });
+  await waitFor(() => expect(transport.get).toHaveBeenCalledTimes(2));
+  expect(
+    new URL(
+      transport.get.mock.calls[1]?.[0] as string,
+      window.location.origin
+    ).searchParams.get("pdmsOpeningId")
+  ).toBe(opening);
+  view.rerender(
+    <OnlyOfficeEditor
+      configUrl="/api/forms/source/editor-config?responseId=response"
+      title="PDMS editor"
+      revision={1}
+    />
+  );
+  await waitFor(() => expect(transport.get).toHaveBeenCalledTimes(3));
+  expect(
+    new URL(
+      transport.get.mock.calls[2]?.[0] as string,
+      window.location.origin
+    ).searchParams.get("pdmsOpeningId")
+  ).toBe(opening);
+  view.unmount();
+  render(
+    <OnlyOfficeEditor
+      configUrl="/api/forms/source/editor-config?responseId=response"
+      title="Reopened PDMS editor"
+    />
+  );
+  await waitFor(() => expect(transport.get).toHaveBeenCalledTimes(4));
+  expect(
+    new URL(
+      transport.get.mock.calls[3]?.[0] as string,
+      window.location.origin
+    ).searchParams.get("pdmsOpeningId")
+  ).not.toBe(opening);
+});
