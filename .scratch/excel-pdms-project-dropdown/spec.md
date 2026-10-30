@@ -112,6 +112,7 @@ Previously saved names remain valid unchanged after upstream removal or renaming
 ## Further Notes
 
 - Latest UI decision: after supplying an in-cell dropdown image, the user reviewed the working adjacent-popup prototype and explicitly selected “ใช้ dropdown ชิดเซลล์จากต้นแบบ (แนะนำ)”. Clicking the mapped cell opens the searchable list beside it; the original native arrow is no longer required. The prototype proves placement,2500-choice reachability and Thai search while retaining locked cells; production save integration and lifecycle acceptance are tracked in ticket09. The earlier side-panel proof still supports the protected-write mechanism, not final presentation acceptance.
+- The user further reiterated that after selecting a value they must be able to return and change it, and that the dropdown must remain. Retain the source and Title/Tag after save/reopen, with immediate reopening for the same selected cell after choice or cancellation.
 
 - Product behavior was agreed through Q1–Q12 plus the added Title/Tag requirement. The existing name-answer ADR and domain vocabulary remain authoritative.
 - The real PDMS record count, payload size and latency were not measured. Measure a representative authorized catalog before accepting performance; document list size, full-result reachability, search latency, editor-open latency and Thai input responsiveness without inventing an unagreed numerical SLA.

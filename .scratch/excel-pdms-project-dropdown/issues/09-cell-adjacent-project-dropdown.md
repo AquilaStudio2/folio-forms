@@ -12,6 +12,7 @@ Approval: The user reviewed the pinned-editor adjacent-popup prototype after rei
 
 - [ ] Automatically target the selected scalar/complete merged cell or physical table row and source column; show its existing Title/Tag and preserve stable identities.
 - [ ] Open the dropdown beside the selected mapped cell, using supported pinned-editor APIs; ordinary and static-dropdown cells retain their normal behavior. The project workflow must not require choosing a target from a side panel.
+- [ ] After choosing, saving or reopening, the source remains a dropdown under the same Title/Tag. Reopen the already-selected cell directly and replace its answer; cancelling must also leave an immediate way to reopen that same cell without selecting another cell first.
 - [ ] Offer every session name, Thai substring search, keyboard navigation and IME-safe query entry, bounded rendering without truncated reachability, and Escape/cancel that leaves the answer unchanged. Render untrusted names as text.
 - [ ] Reuse the current opening's immutable catalog, scoped capabilities and Retry; do not add provider requests for selection changes, background catalog refresh, or catalog data in worksheet validation shared by different openings.
 - [ ] Preserve default sheet protection and all direct-input prohibitions. A committed choice uses the existing freeze/native-flush/operation/poll/reload boundary, retaining all ordinary unsaved inputs and other managed answers.
@@ -23,3 +24,5 @@ Approval: The user reviewed the pinned-editor adjacent-popup prototype after rei
 ## Comments
 
 The original native validation menu was shown with2500 synthetic choices. Under normal sheet protection it displayed choices but rejected the selected write. A diagnostic formatting permission allowed a native choice while paste remained blocked, but broadens unrelated sheet permissions and needs extra native capture/session isolation; this path was not adopted. A separate background variation with initOnSelectionChanged and ShowInputHelper demonstrated the accepted adjacent popup. Querying the last Thai item left the locked source cell unchanged. Production integration and complete cancellation remain to implement; no vendor patch or protection relaxation is authorized by this ticket.
+
+The user subsequently reiterated that an answer must remain editable through the dropdown after selection, and that the dropdown must remain present. Preserve the source definition and a persistent reopen affordance; do not reduce this to a one-time popup or require clicking an unrelated cell to activate it again.
