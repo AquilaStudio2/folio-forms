@@ -140,7 +140,8 @@ const workbook = (first: string, second = "") =>
 const fixture = async (
   required: boolean,
   sourceOnly = false,
-  tableMode?: "source" | "mixed"
+  tableMode?: "source" | "mixed",
+  lockedPrefill = false
 ) => {
   failing = false;
   failSnapshot = false;
@@ -195,6 +196,12 @@ const fixture = async (
                   key: "notes",
                   label: "Notes",
                   type: "text",
+                  ...(lockedPrefill
+                    ? {
+                        prefillPointer: "/person/name",
+                        prefillPolicy: "lock_when_available",
+                      }
+                    : {}),
                 },
                 {
                   anchor: "folio_more",
@@ -202,6 +209,12 @@ const fixture = async (
                   key: "more_notes",
                   label: "More notes",
                   type: "text",
+                  ...(lockedPrefill
+                    ? {
+                        prefillPointer: "/account/contact/email",
+                        prefillPolicy: "lock_when_available",
+                      }
+                    : {}),
                 },
               ]),
         ],
@@ -305,11 +318,41 @@ const fixture = async (
       true
     )
   );
-  expect(publication.status).toBe("completed");
-  const start = await request(`/api/forms/${publicId}/start`, token, {});
-  expect(start.status).toBe(200);
-  const responseId = ((await start.json()) as { response: { id: string } })
-    .response.id;
+  expect(publication).toMatchObject({ status: "completed" });
+  let responseId: string;
+  if (lockedPrefill) {
+    // Fixture represents completed authoritative Prefill redemption before public editor opening.
+    const published = await prisma.publishedTemplate.findUniqueOrThrow({
+      where: { formId: id },
+    });
+    const response = await prisma.response.create({
+      data: {
+        formId: id,
+        userId: user.id,
+        publishedTemplateId: published.id,
+        publishedVersion: published.version,
+        draftDocumentKey: `prefilled-${crypto.randomUUID()}`,
+        draftObjectKey: published.objectKey,
+        prefillSnapshot: {
+          create: {
+            formId: id,
+            userId: user.id,
+            values: {
+              notes: "prefilled read-only note",
+              more_notes: "second read-only note",
+            },
+            lockedFields: { notes: true, more_notes: true },
+          },
+        },
+      },
+    });
+    responseId = response.id;
+  } else {
+    const start = await request(`/api/forms/${publicId}/start`, token, {});
+    expect(start.status).toBe(200);
+    responseId = ((await start.json()) as { response: { id: string } }).response
+      .id;
+  }
   let opening = crypto.randomUUID();
   const config = async (openingId = opening) => {
     opening = openingId;
@@ -743,6 +786,60 @@ runtimeTest(
       notes: "ordinary input retained across storage read failure",
       more_notes: null,
     });
+  }
+);
+
+runtimeTest(
+  "locked workbook styles do not substitute for authoritative true Prefill locks",
+  async () => {
+    const f = await fixture(false, false, undefined, true);
+    const editor = await f.config();
+    const canonical = await f.bytes();
+    // Represent a saved artifact whose native styles remain locked but whose saved policy is editable.
+    await prisma.prefillSnapshot.update({
+      where: { responseId: f.responseId },
+      data: { lockedFields: { notes: false, more_notes: false } },
+    });
+    failNativeCommand = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("failed");
+    failNativeCommand = false;
+    unchangedNative = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("failed");
+    expect(await (await f.read("json")).json()).toEqual({});
+    expect(await f.bytes()).toEqual(canonical);
+  }
+);
+
+runtimeTest(
+  "a protected Response with authoritative locked Prefill recovers without an impossible native edit",
+  async () => {
+    const f = await fixture(false, false, undefined, true);
+    let editor = await f.config();
+    failNativeCommand = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("failed");
+    failNativeCommand = false;
+    unchangedNative = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      notes: "prefilled read-only note",
+      more_notes: "second read-only note",
+    });
+    const saved = readSpreadsheetWorkbook(await f.bytes());
+    expect(saved.cells.get("D1")?.value).toBe("prefilled read-only note");
+    expect(saved.cells.get("D3")?.value).toBe("second read-only note");
+    editor = await f.config();
+    expect((await complete(await f.act(editor, "submit"))).status).toBe(
+      "completed"
+    );
   }
 );
 

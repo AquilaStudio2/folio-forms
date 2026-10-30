@@ -2,6 +2,7 @@ import { prisma, OperationStatus } from "@onlyoffice/db";
 
 import { tokenDigest } from "../digests";
 import { templateArchiveText } from "../documents/package";
+import { spreadsheetInputRanges } from "../documents/spreadsheets/protection";
 import { readSpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
 import type { SpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
 import {
@@ -82,7 +83,11 @@ async function pickerOnlyCanonicalSnapshot(
     return null;
   }
   const response = await prisma.response.findFirst({
-    select: { draftDocumentKey: true, publishedTemplateId: true },
+    select: {
+      draftDocumentKey: true,
+      prefillSnapshot: { select: { lockedFields: true } },
+      publishedTemplateId: true,
+    },
     where: { formId: operation.formId, id: metadata.responseId },
   });
   if (
@@ -117,13 +122,24 @@ async function pickerOnlyCanonicalSnapshot(
     workbook
   );
   const fields = [...contract.fields, ...(contract.table?.columns ?? [])];
+  // Response Prefill locks are authoritative; Corrections deliberately ignore them.
+  // spreadsheetInputRanges applies these locks only to scalars, never same-key table columns.
+  const snapshotLocks =
+    operation.targetType === "response"
+      ? ((response.prefillSnapshot?.lockedFields ?? {}) as Record<
+          string,
+          unknown
+        >)
+      : {};
+  const locked = new Set(
+    Object.entries(snapshotLocks)
+      .filter(([, value]) => value === true)
+      .map(([key]) => key)
+  );
   return hasLockedNativeSurface(workbook) &&
     fields.some((field) => field.source === "pdms-project-name") &&
-    fields.every(
-      (field) =>
-        field.type !== "picture" &&
-        (field.source === "pdms-project-name" || field.computed)
-    )
+    fields.every((field) => field.type !== "picture") &&
+    spreadsheetInputRanges(contract, locked).length === 0
     ? snapshot
     : null;
 }
