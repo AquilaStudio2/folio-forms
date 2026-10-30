@@ -108,6 +108,7 @@ export function registerResponseActionRoutes(
                   response.publishedTemplateId
                 ),
                 requireReady: false,
+                rowChange: input.rowChange,
                 scope: capabilityScope,
                 selection: input.pdmsSelection,
                 sessionId: input.pdmsCatalogSessionId,

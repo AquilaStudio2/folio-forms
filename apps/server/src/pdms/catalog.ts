@@ -5,14 +5,23 @@ import { z } from "zod";
 
 import type { Identity } from "../auth/identity";
 import type { SpreadsheetBindings } from "../documents/spreadsheets/contract";
+import {
+  readSpreadsheetWorkbook,
+  resolveSpreadsheetContract,
+} from "../documents/spreadsheets/workbook";
 import type {
   ActionEditorAuthorization,
   EditorCapabilityScope,
 } from "../editor/authorization";
 import type { EditorLeaseGrant } from "../editor/leases";
 import { fail } from "../http/errors";
+import { readObject } from "../storage";
 import { loadPdmsProjectNames, pdmsProjectSourceEnabled } from "./projects";
 import type { PdmsProjectsConfiguration } from "./projects";
+import {
+  pdmsSelectionRowSchema,
+  resolvePdmsSelectionTarget,
+} from "./selection";
 
 export interface PdmsProjectCatalog {
   sessionId: string;
@@ -26,6 +35,7 @@ export interface PdmsSelection {
   documentKey: string;
   leaseId: string;
   actorId: string;
+  row?: { index: number; documentKey: string };
 }
 export type PdmsEditorScope = Omit<
   EditorCapabilityScope,
@@ -210,6 +220,7 @@ const selectionRequest = z
     bindingId: z.string(),
     name: z.string().min(1).max(100_000),
     sessionId: z.uuid(),
+    row: pdmsSelectionRowSchema.optional(),
   })
   .strict();
 // oxlint-disable-next-line complexity -- Validate source, immutable catalog and scalar target together before creating trusted operation metadata.
@@ -220,6 +231,7 @@ export const pdmsOperationContext = async (input: {
   sessionId?: unknown;
   selection?: unknown;
   requireReady?: boolean;
+  rowChange?: unknown;
 }): Promise<{
   pdmsCatalogSessionId?: string;
   pdmsSelection?: PdmsSelection;
@@ -261,15 +273,46 @@ export const pdmsOperationContext = async (input: {
   if (!request) {
     return { pdmsCatalogSessionId: session.id };
   }
-  const field = input.bindings.fields.find(
-    (candidate) => candidate.id === request.bindingId
-  );
+  const field = [
+    ...input.bindings.fields,
+    ...(input.bindings.table?.columns ?? []),
+  ].find((candidate) => candidate.id === request.bindingId);
   if (
     !field ||
     field.source !== "pdms-project-name" ||
     !catalogNames.parse(session.names).includes(request.name)
   ) {
     fail(422, "invalid_pdms_selection", "เลือกชื่อโครงการจากรายการปัจจุบัน");
+  }
+  if (input.rowChange !== undefined) {
+    fail(400, "invalid_pdms_selection", "เลือกโครงการและเปลี่ยนแถวแยกกัน");
+  }
+  // Both target coordinates and row bounds come from the saved artifact. Native
+  // structure edits cannot establish a new row mapping through callback values.
+  if (
+    request.row ||
+    !input.bindings.fields.some((candidate) => candidate.id === field.id)
+  ) {
+    const response =
+      input.scope.targetType === "response"
+        ? await prisma.response.findUnique({
+            where: { id: input.scope.targetId },
+          })
+        : null;
+    if (
+      !response?.draftObjectKey ||
+      response.draftDocumentKey !== input.scope.documentKey
+    ) {
+      fail(409, "pdms_selection_stale", "แถวไม่ตรงกับเอกสารปัจจุบัน");
+    }
+    resolvePdmsSelectionTarget(
+      resolveSpreadsheetContract(
+        input.bindings,
+        readSpreadsheetWorkbook(await readObject(response.draftObjectKey))
+      ),
+      request,
+      input.scope.documentKey
+    );
   }
   return {
     pdmsCatalogSessionId: session.id,

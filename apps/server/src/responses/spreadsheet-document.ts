@@ -106,7 +106,7 @@ export const initializeSpreadsheetResponse = async (
       };
     });
   // Template examples are not saved picker answers. A new Response starts each
-  // managed scalar empty; resume/resubmission already has an initialized baseline.
+  // managed answer empty; resume/resubmission already has an initialized baseline.
   for (const field of contract.fields.filter(
     (candidate) => candidate.source === "pdms-project-name"
   )) {
@@ -115,6 +115,19 @@ export const initializeSpreadsheetResponse = async (
       address: `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`,
       value: null,
     });
+  }
+  if (contract.table) {
+    const body = contract.locations[contract.table.anchor] as SpreadsheetRange;
+    for (const column of contract.table.columns.filter(
+      (candidate) => candidate.source === "pdms-project-name"
+    )) {
+      for (let row = body.firstRow; row <= body.lastRow; row += 1) {
+        values.push({
+          address: `${spreadsheetColumnName(body.firstColumn + column.offset)}${row + 1}`,
+          value: null,
+        });
+      }
+    }
   }
   const result = await (dependencies.processSpreadsheet ?? processSpreadsheet)(
     unprotectSpreadsheet(sourceBytes),
