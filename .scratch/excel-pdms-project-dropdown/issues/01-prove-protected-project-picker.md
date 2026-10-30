@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 Type: prototype
 
@@ -17,3 +17,7 @@ Approval: Published after the user instructed implementation of the proposed spe
 - [ ] Demonstrate a safe protected-write path, merged-cell targeting and representative row insertion; do not expose protection credentials or temporarily unlock project cells.
 - [ ] Determine whether direct live writes work; if safe save/reload is required, demonstrate unsaved-work preservation and document the interaction.
 - [ ] Record supported APIs, representative latency/list size, actual executed checks and limitations. An unproven or failing path is reported as a blocker, not a passed gate.
+
+## Comments
+
+- 2026-10-30: Claimed on `codex/pdms-project-01`. Confirmed clean ancestry from integration `1a4bf05`. Test seams are user-approved: HTTP operation workflow, real pinned ONLYOFFICE/plugin UI, and existing plugin harness. CodeGraph reports no index in this worktree; following its instructed built-in-tool fallback.
