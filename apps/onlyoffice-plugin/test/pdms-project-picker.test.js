@@ -169,3 +169,60 @@ test("failed picker saving keeps the current editor and permits retry", async ()
     )
   ).toBe(false);
 });
+
+test("Retry recovers a failed catalog without saving or replacing the current editor", async () => {
+  const harness = createHarness({
+    capabilityResponses: ["retry-capability"],
+    documentKind: "xlsx",
+    pdmsProjectCatalog: {
+      names: [],
+      sessionId: "catalog-session",
+      status: "error",
+    },
+    responses: [
+      {
+        pdmsProjectCatalog: {
+          names: ["โครงการหลังคืนบริการ"],
+          sessionId: "catalog-session",
+          status: "ready",
+        },
+      },
+    ],
+    spreadsheetBindings: { fields: [project], table: null, version: 1 },
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  const query = labelled(harness, "ค้นหาชื่อโครงการ");
+  expect(query.disabled).toBe(true);
+  const retry = descendants(harness.body).find(
+    (node) =>
+      node.tagName === "BUTTON" && node.textContent === "ลองโหลดรายการอีกครั้ง"
+  );
+  expect(retry).toBeDefined();
+  retry.click();
+  await flushPlugin();
+  expect(harness.requests).toHaveLength(1);
+  expect(harness.requests[0].url).toEndWith(
+    "/api/editor/pdms-project-catalog/retry"
+  );
+  expect(JSON.parse(harness.requests[0].body)).toEqual({
+    documentKey: "document-key",
+    sessionId: "catalog-session",
+  });
+  expect(query.disabled).toBe(false);
+  expect(
+    descendants(harness.body).some(
+      (node) =>
+        node.role === "option" && node.textContent === "โครงการหลังคืนบริการ"
+    )
+  ).toBe(true);
+  expect(harness.saveCalls).toHaveLength(0);
+  expect(
+    harness.methodInvocations.some(
+      ({ method }) => method === "SetEditingRestrictions"
+    )
+  ).toBe(false);
+  expect(
+    harness.messages.some(({ message }) => message.type === "operation")
+  ).toBe(false);
+});

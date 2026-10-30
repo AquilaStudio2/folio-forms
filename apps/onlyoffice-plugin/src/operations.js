@@ -463,9 +463,51 @@ export function createOperations(
     }
   }
 
+  async function retryPdmsCatalog() {
+    const current = options.pdmsProjectCatalog;
+    if (!current || actionInFlight) {
+      throw new Error("กรุณารอการบันทึกก่อนลองโหลดรายการอีกครั้ง");
+    }
+    if (current.status === "ready") {
+      return current;
+    }
+    let action = ACTIONS.SAVE_DRAFT;
+    if (options.action === ACTIONS.TEMPLATE_EDIT) {
+      action = ACTIONS.CONFIGURE_FIELDS;
+    } else if (options.action === ACTIONS.CORRECTION) {
+      action = ACTIONS.SAVE_CORRECTION;
+    } else if (options.action === ACTIONS.SUBMIT) {
+      action = ACTIONS.SUBMIT;
+    }
+    const capability = await bridge.requestActionCapability(action);
+    const payload = await api.requestJson(
+      "/api/editor/pdms-project-catalog/retry",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          documentKey: requireOption(options.documentKey, "documentKey"),
+          sessionId: current.sessionId,
+        }),
+      },
+      capability
+    );
+    const loaded = payload?.pdmsProjectCatalog;
+    if (
+      !isRecord(loaded) ||
+      loaded.sessionId !== current.sessionId ||
+      !["ready", "error", "loading"].includes(loaded.status) ||
+      !Array.isArray(loaded.names) ||
+      loaded.names.some((name) => typeof name !== "string")
+    ) {
+      throw new Error("โหลดรายการโครงการไม่สำเร็จ กรุณาลองอีกครั้ง");
+    }
+    options.pdmsProjectCatalog = loaded;
+    return loaded;
+  }
+
   function submitForm() {
     return runAction(ACTIONS.SUBMIT);
   }
 
-  return { pollOperation, runAction, submitForm };
+  return { pollOperation, retryPdmsCatalog, runAction, submitForm };
 }
