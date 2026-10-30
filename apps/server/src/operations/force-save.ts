@@ -14,7 +14,6 @@ import {
   updateOperationFailed,
   operationDocumentKey,
 } from "./lifecycle";
-import { operationMetadata } from "./model";
 import { SpreadsheetValidationError } from "./spreadsheet-document";
 
 export function launchForceSave(
@@ -70,9 +69,11 @@ export function launchForceSave(
         }
         let snapshot: Uint8Array | undefined;
         if (saveResult === false) {
-          const metadata = operationMetadata(operation.metadata);
+          const catalogSessionId = (
+            operation.metadata as { pdmsCatalogSessionId?: unknown } | null
+          )?.pdmsCatalogSessionId;
           if (
-            metadata.pdmsCatalogSessionId &&
+            typeof catalogSessionId === "string" &&
             (await prisma.operation.findFirst({
               select: { id: true },
               where: {

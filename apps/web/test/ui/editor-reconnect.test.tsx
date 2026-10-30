@@ -864,3 +864,98 @@ it("creates a fresh catalog opening when an existing new-entry transition reuses
   expect(next).toBeTruthy();
   expect(next).not.toBe(first);
 });
+
+it("delivers the replacement opening catalog with its renewed capability without remounting the current editor", async () => {
+  const lease = {
+    expiresAt: "2099-01-01T00:00:00.000Z",
+    id: "old-lease",
+    releaseUrl: "/old-release",
+    renewUrl: "/old-renew",
+  };
+  const previous = {
+    names: ["old snapshot"],
+    sessionId: "previous-catalog",
+    status: "ready",
+  };
+  const replacement = {
+    names: ["fresh snapshot"],
+    sessionId: "replacement-catalog",
+    status: "ready",
+  };
+  transport.get
+    .mockResolvedValueOnce({
+      ...config(),
+      bridge: { ...config().bridge, lease },
+      pdmsProjectCatalog: previous,
+    })
+    .mockResolvedValue({
+      ...config(),
+      bridge: {
+        ...config().bridge,
+        capabilities: { "configure-fields": "replacement-capability" },
+        lease: { ...lease, id: "replacement-lease" },
+      },
+      pdmsProjectCatalog: replacement,
+    });
+  render(<OnlyOfficeEditor configUrl="/editor-config" title="Editor" />);
+  const office = (await screen.findByTitle(
+    "Office sandbox"
+  )) as HTMLIFrameElement;
+  const plugin = pluginFrame(office);
+  send(plugin.source, { type: "bridge-ready" });
+  send(plugin.source, {
+    action: "configure-fields",
+    requestId: "replacement-request",
+    type: "capability-request",
+  });
+  await waitFor(() =>
+    expect(plugin.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        capability: "replacement-capability",
+        pdmsProjectCatalog: replacement,
+        type: "capability-response",
+      }),
+      window.location.origin
+    )
+  );
+  expect(screen.getByTitle("Office sandbox")).toBe(office);
+});
+
+it("rejects renewal into another document while preserving the live editor", async () => {
+  transport.get.mockResolvedValueOnce(config()).mockResolvedValue({
+    ...config(),
+    config: { ...config().config, document: { key: "different-document" } },
+    pdmsProjectCatalog: {
+      names: [],
+      sessionId: "different-document-catalog",
+      status: "ready",
+    },
+  });
+  render(<OnlyOfficeEditor configUrl="/editor-config" title="Editor" />);
+  const office = (await screen.findByTitle(
+    "Office sandbox"
+  )) as HTMLIFrameElement;
+  const plugin = pluginFrame(office);
+  send(plugin.source, { type: "bridge-ready" });
+  send(plugin.source, {
+    action: "configure-fields",
+    requestId: "stale-document-request",
+    type: "capability-request",
+  });
+  await waitFor(() =>
+    expect(plugin.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.any(String),
+        type: "capability-response",
+      }),
+      window.location.origin
+    )
+  );
+  expect(
+    plugin.send.mock.calls.some(
+      ([message]) =>
+        message.type === "capability-response" && "capability" in message
+    )
+  ).toBe(false);
+  expect(screen.getByTitle("Office sandbox")).toBe(office);
+});

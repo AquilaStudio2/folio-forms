@@ -166,8 +166,11 @@ export const openPdmsProjectCatalog = async (input: {
       targetType: scope.targetType,
     },
   });
-  const session = await prisma.pdmsProjectCatalogSession.upsert({
-    create: {
+  // Concurrent authorized config requests can arrive before any row exists.
+  // Insert-or-ignore is atomic even when Prisma's empty-update upsert would
+  // otherwise race its read and create and surface a unique conflict.
+  await prisma.pdmsProjectCatalogSession.createMany({
+    data: {
       actorId: identity.id,
       authSessionId: identity.sessionId,
       documentKey: scope.documentKey,
@@ -178,7 +181,9 @@ export const openPdmsProjectCatalog = async (input: {
       targetId: scope.targetId,
       targetType: scope.targetType,
     },
-    update: {},
+    skipDuplicates: true,
+  });
+  const session = await prisma.pdmsProjectCatalogSession.findUniqueOrThrow({
     where: { openingId_leaseId: { leaseId: lease.id, openingId } },
   });
   if (

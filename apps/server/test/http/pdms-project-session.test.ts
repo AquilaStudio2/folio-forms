@@ -539,3 +539,29 @@ test("an expired lease is rejected and its replacement opening loads a fresh sna
     f.dispose();
   }
 });
+
+test("simultaneous config requests for one fresh opening all receive its one shared snapshot", async () => {
+  const f = await fixture();
+  try {
+    const opening = crypto.randomUUID();
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () => f.config(opening))
+    );
+    expect(responses.map((response) => response.status)).toEqual([
+      200, 200, 200, 200, 200, 200, 200, 200,
+    ]);
+    const editors = await Promise.all(
+      responses.map((response) => response.json() as Promise<Editor>)
+    );
+    const [first] = editors;
+    if (!first) {
+      throw new Error("Opening fixture is empty");
+    }
+    expect(editors.map((editor) => editor.pdmsProjectCatalog)).toEqual(
+      Array.from({ length: 8 }, () => first.pdmsProjectCatalog)
+    );
+    expect(f.requests).toBe(1);
+  } finally {
+    f.dispose();
+  }
+});
