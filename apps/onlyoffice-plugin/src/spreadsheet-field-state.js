@@ -291,25 +291,51 @@ export function spreadsheetClearValidationCommand() {
       );
   }
   if (range) {
-    range.GetValidation().Delete();
-    // Only reset the date mask installed by this plugin. Leave currency,
-    // precision, font, borders, fills and other author formatting intact.
-    for (
-      let row = range.GetRow();
-      row < range.GetRow() + range.GetRowsCount();
-      row += 1
-    ) {
+    const targets = input.clearOffsets
+      ? input.clearOffsets.map((offset) => {
+          if (
+            !Number.isSafeInteger(offset) ||
+            offset < 0 ||
+            offset >= range.GetColumnsCount()
+          ) {
+            throw new Error("ตำแหน่งคอลัมน์ไม่ถูกต้อง");
+          }
+          return {
+            range: range
+              .GetWorksheet()
+              .GetRange(
+                `${addressAt(range.GetCol() + offset, range.GetRow())}:${addressAt(range.GetCol() + offset, range.GetRow() + range.GetRowsCount() - 1)}`
+              ),
+            clearDateFormat: input.dateOffsets?.includes(offset) === true,
+          };
+        })
+      : [{ range, clearDateFormat: input.clearDateFormat !== false }];
+    for (const target of targets) {
+      target.range.GetValidation().Delete();
+      // Only reset the date mask installed by this plugin. Leave currency,
+      // precision, font, borders, fills and other author formatting intact.
+      if (!target.clearDateFormat) {
+        continue;
+      }
       for (
-        let column = range.GetCol();
-        column < range.GetCol() + range.GetColumnsCount();
-        column += 1
+        let row = target.range.GetRow();
+        row < target.range.GetRow() + target.range.GetRowsCount();
+        row += 1
       ) {
-        const cell = range.GetWorksheet().GetRange(addressAt(column, row));
-        if (
-          cell.GetNumberFormat().toLowerCase() === "dd/mm/yyyy" &&
-          cell.SetNumberFormat("General") !== true
+        for (
+          let column = target.range.GetCol();
+          column < target.range.GetCol() + target.range.GetColumnsCount();
+          column += 1
         ) {
-          throw new Error("ล้างรูปแบบวันที่ไม่สำเร็จ");
+          const cell = target.range
+            .GetWorksheet()
+            .GetRange(addressAt(column, row));
+          if (
+            cell.GetNumberFormat().toLowerCase() === "dd/mm/yyyy" &&
+            cell.SetNumberFormat("General") !== true
+          ) {
+            throw new Error("ล้างรูปแบบวันที่ไม่สำเร็จ");
+          }
         }
       }
     }
