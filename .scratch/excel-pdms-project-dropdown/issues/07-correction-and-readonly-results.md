@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Preserve work across fresh openings, catalog failures and Retry; 06 — Keep historical selections attached to their correct table records.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 Type: task
 
