@@ -42,7 +42,14 @@ export const editorConfigPath = (
     : path;
 };
 
+export interface PdmsProjectCatalog {
+  names: string[];
+  sessionId: string;
+  status: "ready" | "error" | "loading";
+}
+
 export interface EditorConfig {
+  pdmsProjectCatalog?: PdmsProjectCatalog;
   apiScriptUrl?: string;
   apiUrl?: string;
   bridge?: {

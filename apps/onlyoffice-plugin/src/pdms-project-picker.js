@@ -239,5 +239,11 @@ export const createPdmsProjectPicker = (
     }
   });
   render();
-  return { setBusy };
+  return {
+    setBusy,
+    updateCatalog(value) {
+      catalog = value;
+      render();
+    },
+  };
 };

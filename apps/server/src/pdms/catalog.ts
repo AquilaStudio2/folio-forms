@@ -149,8 +149,28 @@ export const openPdmsProjectCatalog = async (input: {
     fail(400, "invalid_request", "Editor opening is invalid");
   }
   const { identity, scope, lease } = input;
-  const session = await prisma.pdmsProjectCatalogSession.upsert({
-    create: {
+  // A replaced lease cannot authorize any earlier opening. Drop its catalog
+  // contents and loading claim so a late network response cannot revive it.
+  await prisma.pdmsProjectCatalogSession.updateMany({
+    data: {
+      expiresAt: new Date(),
+      loadExpiresAt: null,
+      loadToken: null,
+      names: [],
+      status: "error",
+    },
+    where: {
+      formId: scope.formId,
+      leaseId: { not: lease.id },
+      targetId: scope.targetId,
+      targetType: scope.targetType,
+    },
+  });
+  // Concurrent authorized config requests can arrive before any row exists.
+  // Insert-or-ignore is atomic even when Prisma's empty-update upsert would
+  // otherwise race its read and create and surface a unique conflict.
+  await prisma.pdmsProjectCatalogSession.createMany({
+    data: {
       actorId: identity.id,
       authSessionId: identity.sessionId,
       documentKey: scope.documentKey,
@@ -161,7 +181,9 @@ export const openPdmsProjectCatalog = async (input: {
       targetId: scope.targetId,
       targetType: scope.targetType,
     },
-    update: {},
+    skipDuplicates: true,
+  });
+  const session = await prisma.pdmsProjectCatalogSession.findUniqueOrThrow({
     where: { openingId_leaseId: { leaseId: lease.id, openingId } },
   });
   if (

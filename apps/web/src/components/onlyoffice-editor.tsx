@@ -39,6 +39,16 @@ declare global {
   }
 }
 
+const changedPdmsDocument = (
+  current: EditorConfig,
+  fresh: EditorConfig
+): boolean =>
+  Boolean(
+    fresh.pdmsProjectCatalog &&
+    recordOrEmpty(fresh.config?.document).key !==
+      recordOrEmpty(current.config?.document).key
+  );
+
 export const OnlyOfficeEditor = ({
   clearDirtyRequest = 0,
   configUrl,
@@ -415,7 +425,12 @@ export const OnlyOfficeEditor = ({
     };
     const respondToCapabilityRequest = (
       request: CapabilityRequestMessage,
-      response: { capability: string } | { error: string },
+      response:
+        | {
+            capability: string;
+            pdmsProjectCatalog?: EditorConfig["pdmsProjectCatalog"];
+          }
+        | { error: string },
       requestedSource: MessageEventSource
     ) => {
       if (cancelled) {
@@ -468,6 +483,14 @@ export const OnlyOfficeEditor = ({
         if (cancelled || pinnedSourceRef.current !== requestedSource) {
           return;
         }
+        if (changedPdmsDocument(config, fresh)) {
+          respondToCapabilityRequest(
+            request,
+            { error: "เอกสารเปลี่ยนแล้ว กรุณาเก็บข้อมูลในตัวแก้ไขก่อนเปิดใหม่" },
+            requestedSource
+          );
+          return;
+        }
         const freshLease = fresh.bridge?.lease;
         if (
           freshLease &&
@@ -488,7 +511,16 @@ export const OnlyOfficeEditor = ({
           );
           return;
         }
-        respondToCapabilityRequest(request, { capability }, requestedSource);
+        respondToCapabilityRequest(
+          request,
+          {
+            capability,
+            ...(fresh.pdmsProjectCatalog
+              ? { pdmsProjectCatalog: fresh.pdmsProjectCatalog }
+              : {}),
+          },
+          requestedSource
+        );
       } catch {
         if (!cancelled) {
           respondToCapabilityRequest(
