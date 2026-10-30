@@ -301,6 +301,7 @@ export function initializeSpreadsheet(options, setStatus) {
   };
 
   let pdmsPicker = null;
+  let refreshPdmsPicker = () => {};
   let renderList = () => {};
   let refreshAfterAction = () => {};
   const bridge = createBridge(options, office, {
@@ -760,6 +761,15 @@ export function initializeSpreadsheet(options, setStatus) {
   function applyBindings(result) {
     bindings = result.bindings;
     metadataBindings = result.bindings;
+    options.spreadsheetBindings = result.bindings;
+    if (
+      ![...bindings.fields, ...(bindings.table?.columns || [])].some(
+        (field) => field.source === "pdms-project-name"
+      )
+    ) {
+      options.pdmsProjectCatalog = null;
+    }
+    refreshPdmsPicker();
     revision = result.revision;
   }
   async function readBindings(reconcile = true) {
@@ -2002,8 +2012,13 @@ export function initializeSpreadsheet(options, setStatus) {
             ? spreadsheetColumnAnchor(current.id)
             : current.anchor,
         removeAnchor: true,
+        clearDateFormat: current.type === "date",
         ...(editingKind === "table"
           ? {
+              clearOffsets: current.columns.map((column) => column.offset),
+              dateOffsets: current.columns
+                .filter((column) => column.type === "date")
+                .map((column) => column.offset),
               extraAnchorNames: spreadsheetBindingAnchors({
                 fields: [],
                 table: current,
@@ -2628,12 +2643,18 @@ export function initializeSpreadsheet(options, setStatus) {
       extractFormData: (callback) => callback(null, { data: {} }),
     };
   }
-  pdmsPicker = createPdmsProjectPicker(
-    options,
-    bindings,
-    panel,
-    operations,
-    setStatus
-  );
+  const pdmsPanel = document.createElement("div");
+  panel.append(pdmsPanel);
+  refreshPdmsPicker = () => {
+    pdmsPanel.replaceChildren();
+    pdmsPicker = createPdmsProjectPicker(
+      options,
+      bindings,
+      pdmsPanel,
+      operations,
+      setStatus
+    );
+  };
+  refreshPdmsPicker();
   return { operations, bridge };
 }

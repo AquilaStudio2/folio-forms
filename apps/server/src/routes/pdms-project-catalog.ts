@@ -139,7 +139,9 @@ export const registerPdmsProjectCatalogRoutes = (
     // result to an editor whose canonical document changed while waiting.
     await requireActiveEditorLease(authorization, scope);
     await requirePdmsCatalogSession(authorization, scope, input.data.sessionId);
-    await currentBindings(authorization, scope);
+    if (!hasPdmsProjectSource(await currentBindings(authorization, scope))) {
+      fail(409, "pdms_session_stale", "ไม่พบช่องโครงการในตัวแก้ไขปัจจุบัน");
+    }
     return { pdmsProjectCatalog };
   });
 };
