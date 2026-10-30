@@ -392,3 +392,187 @@ test.each([false, true])(
     ).toBe(true);
   }
 );
+
+test("a server-validated legacy source column without tracking names opens at its saved physical row", async () => {
+  const harness = createHarness({
+    documentKind: "xlsx",
+    pdmsPopupChannelId: "popup-channel",
+    pdmsProjectCatalog: {
+      names: ["00123"],
+      sessionId: "catalog",
+      status: "ready",
+    },
+    spreadsheetBindings: {
+      fields: [],
+      locations: {
+        folio_body: {
+          firstColumn: 0,
+          firstRow: 3,
+          lastColumn: 2,
+          lastRow: 6,
+          sheet: "Form",
+        },
+      },
+      table: {
+        anchor: "folio_body",
+        columns: [
+          { ...project, id: "folio_project", key: "project", offset: 0 },
+          { ...project, id: "folio_second", key: "second_project", offset: 1 },
+          {
+            id: "folio_row_note",
+            key: "note",
+            label: "Note",
+            offset: 2,
+            type: "text",
+          },
+        ],
+        id: "folio_table",
+        key: "projects",
+        label: "Projects",
+      },
+      version: 1,
+    },
+    spreadsheetSelection: {
+      address: "A5",
+      names: { folio_body: "'Form'!$A$4:$C$7" },
+      sheet: "Form",
+    },
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  popup(harness, "locate");
+  await flushPlugin();
+  expect(state(harness).target).toMatchObject({
+    bindingId: "folio_project",
+    key: "projects.project",
+    row: { documentKey: "document-key", index: 1 },
+  });
+  expect(harness.requests).toHaveLength(0);
+});
+
+const tableTarget = async ({
+  names,
+  address = "A5",
+  lastRow = 6,
+  trusted = true,
+}) => {
+  const harness = createHarness({
+    documentKind: "xlsx",
+    pdmsPopupChannelId: "popup-channel",
+    pdmsProjectCatalog: {
+      names: ["00123"],
+      sessionId: "catalog",
+      status: "ready",
+    },
+    spreadsheetBindings: {
+      fields: [],
+      locations: trusted
+        ? {
+            folio_body: {
+              firstColumn: 0,
+              firstRow: 3,
+              lastColumn: 2,
+              lastRow,
+              sheet: "Form",
+            },
+          }
+        : {},
+      table: {
+        anchor: "folio_body",
+        columns: [
+          { ...project, id: "folio_project", key: "project", offset: 0 },
+          { ...project, id: "folio_second", key: "second_project", offset: 1 },
+          {
+            id: "folio_row_note",
+            key: "note",
+            label: "Note",
+            offset: 2,
+            type: "text",
+          },
+        ],
+        id: "folio_table",
+        key: "projects",
+        label: "Projects",
+      },
+      version: 1,
+    },
+    spreadsheetSelection: { address, names, sheet: "Form" },
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  popup(harness, "locate");
+  await flushPlugin();
+  return { harness, target: state(harness).target };
+};
+const trackedNames = {
+  folio_body: "'Form'!$A$4:$C$7",
+  folio_column_folio_project: "'Form'!$A$4:$A$7",
+  folio_column_folio_row_note: "'Form'!$C$4:$C$7",
+  folio_column_folio_second: "'Form'!$B$4:$B$7",
+  folio_columns_folio_table: "'Form'!$A$4:$C$7",
+};
+
+test.each([
+  {
+    label: "an untracked body moves to different rows",
+    names: { folio_body: "'Form'!$A$5:$C$8" },
+  },
+  {
+    label: "an untracked body changes width",
+    names: { folio_body: "'Form'!$A$4:$D$7" },
+  },
+  {
+    label: "an untracked table has no server-resolved body",
+    names: { folio_body: "'Form'!$A$4:$C$7" },
+    trusted: false,
+  },
+  {
+    label: "tracked column B disappears",
+    names: { ...trackedNames, folio_column_folio_second: null },
+  },
+  {
+    label: "the tracking marker disappears",
+    names: { ...trackedNames, folio_columns_folio_table: null },
+  },
+  {
+    label: "an ordinary tracked column conflicts with source A",
+    names: { ...trackedNames, folio_column_folio_row_note: "'Form'!$A$4:$A$7" },
+  },
+])("a table popup stays closed when $label", async (scenario) => {
+  const { harness, target } = await tableTarget(scenario);
+  expect(target).toBeNull();
+  expect(harness.requests).toHaveLength(0);
+});
+
+test.each([
+  {
+    address: "A8",
+    index: 4,
+    label: "a valid legacy table grows",
+    lastRow: 7,
+    names: { folio_body: "'Form'!$A$4:$C$8" },
+  },
+  {
+    address: "A8",
+    index: 4,
+    label: "a tracked table grows beyond its column anchors",
+    lastRow: 7,
+    names: { ...trackedNames, folio_body: "'Form'!$A$4:$C$8" },
+  },
+  {
+    address: "A5",
+    index: 1,
+    label: "a tracked column anchor spans only its first body row",
+    names: { ...trackedNames, folio_column_folio_project: "'Form'!$A$4" },
+  },
+])(
+  "a source popup covers the complete physical body when $label",
+  async (scenario) => {
+    const { harness, target } = await tableTarget(scenario);
+    expect(target).toMatchObject({
+      bindingId: "folio_project",
+      row: { documentKey: "document-key", index: scenario.index },
+    });
+    expect(harness.requests).toHaveLength(0);
+  }
+);

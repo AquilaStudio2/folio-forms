@@ -1,4 +1,8 @@
-import { spreadsheetColumnAnchor } from "./spreadsheet-columns.js";
+import { reconcileSpreadsheetColumns as reconcileSavedSpreadsheetColumns } from "../../server/src/documents/spreadsheets/columns.ts";
+import {
+  spreadsheetColumnAnchor,
+  spreadsheetTableColumnsAnchor,
+} from "./spreadsheet-columns.js";
 // oxlint-disable complexity prefer-destructuring prefer-await-to-callbacks prefer-await-to-then -- Keep origin, target and asynchronous generation fences together at the plugin boundary.
 import { selectionPosition } from "./spreadsheet-selection.js";
 
@@ -60,17 +64,58 @@ const mappedTarget = (selected, bindings, documentKey) => {
   if (!contains(body)) {
     return null;
   }
-  const columns = bindings.table.columns.filter((field) => {
-    const range = location(spreadsheetColumnAnchor(field.id));
-    return (
+  const marker = spreadsheetTableColumnsAnchor(bindings.table.id);
+  const columnNames = bindings.table.columns.map((field) =>
+    spreadsheetColumnAnchor(field.id)
+  );
+  const trackingNames = [marker, ...columnNames];
+  const tracked = trackingNames.some(
+    (name) =>
+      references.get(name) !== null && references.get(name) !== undefined
+  );
+  const nativeRanges = new Map();
+  for (const name of [bindings.table.anchor, ...trackingNames]) {
+    const range = location(name);
+    if (range) {
+      nativeRanges.set(name, {
+        firstColumn: range.first.column,
+        firstRow: range.first.row,
+        lastColumn: range.last.column,
+        lastRow: range.last.row,
+        sheet: selected.sheet,
+      });
+    }
+  }
+  if (tracked) {
+    // An incomplete/invalid tracked table must never fall back to ordinals.
+    if (trackingNames.some((name) => !nativeRanges.has(name))) {
+      return null;
+    }
+  } else {
+    // Existing saved workbooks can legitimately predate column tracking. Only
+    // the server-resolved body for this document revision can authorize that
+    // fallback, and every native coordinate must still match it exactly.
+    const saved = bindings.locations?.[bindings.table.anchor];
+    if (
+      !saved ||
+      saved.sheet !== selected.sheet ||
+      saved.firstRow !== body.first.row ||
+      saved.lastRow !== body.last.row ||
+      saved.firstColumn !== body.first.column ||
+      saved.lastColumn !== body.last.column
+    ) {
+      return null;
+    }
+  }
+  // Share the server's pure legacy-width / complete-tracking / offset rules.
+  // A tracked range identifies its column across the whole table body, even
+  // when a later inserted row lies beyond that range's original last row.
+  const resolved = reconcileSavedSpreadsheetColumns(bindings, nativeRanges);
+  const columns = resolved.table.columns.filter(
+    (field) =>
       field.source === "pdms-project-name" &&
-      range &&
-      range.first.column === point.column &&
-      range.last.column === point.column &&
-      range.first.row <= point.row &&
-      range.last.row >= point.row
-    );
-  });
+      field.offset === point.column - body.first.column
+  );
   if (columns.length !== 1) {
     return null;
   }
