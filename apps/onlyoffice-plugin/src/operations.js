@@ -375,6 +375,15 @@ export function createOperations(
 
       setStatus(`${actionLabel(action)} กำลังรอดำเนินการ…`, "pending");
       const capability = await bridge.requestActionCapability(action);
+      if (
+        saveContext?.pdmsSelection &&
+        saveContext.pdmsSelection.sessionId !==
+          options.pdmsProjectCatalog?.sessionId
+      ) {
+        throw new Error(
+          "สิทธิ์ตัวแก้ไขเปลี่ยนแล้ว กรุณาเลือกชื่อโครงการจากรายการปัจจุบันอีกครั้ง"
+        );
+      }
       const response = await postAction(
         action,
         data,
@@ -480,13 +489,17 @@ export function createOperations(
       action = ACTIONS.SUBMIT;
     }
     const capability = await bridge.requestActionCapability(action);
+    const active = options.pdmsProjectCatalog;
+    if (active?.status === "ready") {
+      return active;
+    }
     const payload = await api.requestJson(
       "/api/editor/pdms-project-catalog/retry",
       {
         method: "POST",
         body: JSON.stringify({
           documentKey: requireOption(options.documentKey, "documentKey"),
-          sessionId: current.sessionId,
+          sessionId: active.sessionId,
         }),
       },
       capability
@@ -494,7 +507,7 @@ export function createOperations(
     const loaded = payload?.pdmsProjectCatalog;
     if (
       !isRecord(loaded) ||
-      loaded.sessionId !== current.sessionId ||
+      loaded.sessionId !== active.sessionId ||
       !["ready", "error", "loading"].includes(loaded.status) ||
       !Array.isArray(loaded.names) ||
       loaded.names.some((name) => typeof name !== "string")

@@ -24,6 +24,74 @@ const project = {
   type: "dropdown",
 };
 
+test("a table project picker targets the selected physical row in its saved document revision", async () => {
+  const harness = createHarness({
+    capabilityResponses: ["save-capability"],
+    documentKind: "xlsx",
+    holdEditorSave: true,
+    pdmsProjectCatalog: {
+      names: ["Project B"],
+      sessionId: "catalog-session",
+      status: "ready",
+    },
+    spreadsheetBindings: {
+      version: 1,
+      fields: [],
+      table: {
+        id: "folio_table",
+        anchor: "folio_body",
+        key: "projects",
+        label: "Projects",
+        columns: [
+          { ...project, id: "folio_project_column", key: "project", offset: 0 },
+        ],
+      },
+      locations: {
+        folio_body: {
+          sheet: "Form",
+          firstRow: 3,
+          lastRow: 5,
+          firstColumn: 0,
+          lastColumn: 1,
+        },
+      },
+    },
+    responses: [
+      { operationId: "picker-save", operationCapability: "poll-capability" },
+      completedOperation({ documentKey: "next-document" }),
+    ],
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  const row = labelled(harness, "แถวโครงการ");
+  expect(row).toBeDefined();
+  expect(row.children.map((option) => option.textContent)).toEqual([
+    "รายการ 1 · แถว 4",
+    "รายการ 2 · แถว 5",
+    "รายการ 3 · แถว 6",
+  ]);
+  row.value = "1";
+  row.dispatchEvent({ type: "change" });
+  labelled(harness, "ค้นหาชื่อโครงการ").dispatchEvent({
+    key: "Enter",
+    type: "keydown",
+  });
+  await flushPlugin();
+  expect(harness.requests).toHaveLength(0);
+  harness.finishEditorSave();
+  await flushPlugin();
+  await flushPlugin();
+  expect(JSON.parse(harness.requests[0].body)).toMatchObject({
+    documentKey: "document-key",
+    pdmsSelection: {
+      bindingId: "folio_project_column",
+      name: "Project B",
+      sessionId: "catalog-session",
+      row: { index: 1, documentKey: "document-key" },
+    },
+  });
+});
+
 test("search selects a name through native freeze and flush before saving and keeps editing frozen until reload", async () => {
   const harness = createHarness({
     capabilityResponses: ["save-capability"],
@@ -224,5 +292,100 @@ test("Retry recovers a failed catalog without saving or replacing the current ed
   ).toBe(false);
   expect(
     harness.messages.some(({ message }) => message.type === "operation")
+  ).toBe(false);
+});
+
+test("a replacement lease's ready catalog reaches the live picker during Retry without another provider request or native reload", async () => {
+  const replacement = {
+    sessionId: "replacement-catalog",
+    status: "ready",
+    names: ["ชื่อจากตัวแก้ไขใหม่"],
+  };
+  const harness = createHarness({
+    documentKind: "xlsx",
+    pdmsProjectCatalog: {
+      sessionId: "expired-catalog",
+      status: "error",
+      names: [],
+    },
+    capabilityResponses: [
+      { capability: "replacement-capability", pdmsProjectCatalog: replacement },
+    ],
+    spreadsheetBindings: { fields: [project], table: null, version: 1 },
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  descendants(harness.body)
+    .find(
+      (node) =>
+        node.tagName === "BUTTON" && node.textContent === "ลองโหลดรายการอีกครั้ง"
+    )
+    .click();
+  await flushPlugin();
+  expect(
+    descendants(harness.body)
+      .filter((node) => node.role === "option")
+      .map((node) => node.textContent)
+  ).toEqual(["ชื่อจากตัวแก้ไขใหม่"]);
+  expect(
+    harness.window.FormBridge.getRuntimeOptions().pdmsProjectCatalog.sessionId
+  ).toBe("replacement-catalog");
+  expect(harness.requests).toHaveLength(0);
+  expect(harness.saveCalls).toHaveLength(0);
+  expect(
+    harness.methodInvocations.some(
+      ({ method }) => method === "SetEditingRestrictions"
+    )
+  ).toBe(false);
+});
+
+test("a choice started before lease replacement is rejected while the new catalog becomes usable in the same editor", async () => {
+  const harness = createHarness({
+    documentKind: "xlsx",
+    responses: [
+      {
+        httpStatus: 409,
+        body: { error: "pdms_session_stale", message: "เลือกใหม่จากรายการปัจจุบัน" },
+      },
+    ],
+    pdmsProjectCatalog: {
+      sessionId: "previous-catalog",
+      status: "ready",
+      names: ["ชื่อเดิม"],
+    },
+    capabilityResponses: [
+      {
+        capability: "replacement-capability",
+        pdmsProjectCatalog: {
+          sessionId: "replacement-catalog",
+          status: "ready",
+          names: ["ชื่อปัจจุบัน"],
+        },
+      },
+    ],
+    spreadsheetBindings: { fields: [project], table: null, version: 1 },
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  descendants(harness.body)
+    .find((node) => node.role === "option" && node.textContent === "ชื่อเดิม")
+    .click();
+  await flushPlugin();
+  await flushPlugin();
+  expect(harness.requests).toHaveLength(0);
+  const current = descendants(harness.body).find(
+    (node) => node.role === "option" && node.textContent === "ชื่อปัจจุบัน"
+  );
+  expect(current).toBeDefined();
+  expect(current.disabled).toBe(false);
+  expect(harness.methodInvocations).toContainEqual({
+    args: ["none"],
+    method: "SetEditingRestrictions",
+  });
+  expect(
+    harness.messages.some(
+      ({ message }) =>
+        message.type === "operation" && message.status === "completed"
+    )
   ).toBe(false);
 });

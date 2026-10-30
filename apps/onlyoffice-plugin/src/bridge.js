@@ -241,6 +241,31 @@ export function createBridge(options, office, callbacks) {
         return;
       }
 
+      if (Object.hasOwn(message, "pdmsProjectCatalog")) {
+        const catalog = message.pdmsProjectCatalog;
+        if (
+          !isRecord(catalog) ||
+          typeof catalog.sessionId !== "string" ||
+          !catalog.sessionId ||
+          !["ready", "error", "loading"].includes(catalog.status) ||
+          !Array.isArray(catalog.names) ||
+          catalog.names.some((name) => typeof name !== "string")
+        ) {
+          settleCapabilityRequest(
+            message.requestId,
+            pending.reject,
+            new Error("ยืนยันรายการโครงการของตัวแก้ไขใหม่ไม่ได้ กรุณาลองอีกครั้ง")
+          );
+          return;
+        }
+        if (
+          catalog.sessionId !== options.pdmsProjectCatalog?.sessionId ||
+          options.pdmsProjectCatalog?.status !== "ready"
+        ) {
+          options.pdmsProjectCatalog = catalog;
+          callbacks.onPdmsCatalogChanged?.(catalog);
+        }
+      }
       settleCapabilityRequest(
         message.requestId,
         pending.resolve,

@@ -307,6 +307,7 @@ export function initializeSpreadsheet(options, setStatus) {
     getFieldSelection: () => null,
     loadFieldRules: () => Promise.resolve(),
     runAction: (...args) => operations.runAction(...args),
+    onPdmsCatalogChanged: (catalog) => pdmsPicker?.updateCatalog(catalog),
     setPanelStatus: setStatus,
     setStatus,
   });

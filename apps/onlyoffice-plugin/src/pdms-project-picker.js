@@ -8,7 +8,10 @@ export const createPdmsProjectPicker = (
   operations,
   setStatus
 ) => {
-  const fields = (bindings?.fields || []).filter(
+  const columns = (bindings?.table?.columns || []).filter(
+    (field) => field.source === "pdms-project-name"
+  );
+  const fields = [...(bindings?.fields || []), ...columns].filter(
     (field) => field.source === "pdms-project-name"
   );
   if (!fields.length) {
@@ -32,10 +35,27 @@ export const createPdmsProjectPicker = (
   for (const field of fields) {
     const option = document.createElement("option");
     option.value = field.id;
-    option.textContent = `${field.label} (${field.key})`;
+    option.textContent = `${columns.includes(field) ? `${bindings.table.label} · ` : ""}${field.label} (${field.key})`;
     target.append(option);
   }
   target.value = fields[0].id;
+  const row = labelled("แถวโครงการ", document.createElement("select"));
+  const body = bindings?.locations?.[bindings.table?.anchor];
+  if (body) {
+    for (let index = 0; index <= body.lastRow - body.firstRow; index += 1) {
+      const option = document.createElement("option");
+      option.value = String(index);
+      option.textContent = `รายการ ${index + 1} · แถว ${body.firstRow + index + 1}`;
+      row.append(option);
+    }
+    row.value = "0";
+  }
+  const isColumn = () => columns.some((field) => field.id === target.value);
+  const updateRow = () => {
+    row.parentNode.hidden = !isColumn();
+  };
+  target.addEventListener("change", updateRow);
+  updateRow();
   const query = labelled("ค้นหาชื่อโครงการ", document.createElement("input"));
   query.type = "search";
   query.autocomplete = "off";
@@ -69,7 +89,14 @@ export const createPdmsProjectPicker = (
   const setBusy = (value) => {
     busy = value;
     retry.disabled = value || retrying;
-    for (const control of [target, query, more, cancel, ...results.children]) {
+    for (const control of [
+      target,
+      row,
+      query,
+      more,
+      cancel,
+      ...results.children,
+    ]) {
       control.disabled =
         value ||
         retrying ||
@@ -81,12 +108,23 @@ export const createPdmsProjectPicker = (
     if (busy || preview || catalog?.status !== "ready") {
       return;
     }
+    if (isColumn() && (!body || !row.children.length)) {
+      throw new Error("ไม่พบแถวโครงการ กรุณาเปิดตัวแก้ไขใหม่");
+    }
     setBusy(true);
     const outcome = await operations.runAction(ACTIONS.SAVE_DRAFT, "", null, {
       pdmsSelection: {
         bindingId: target.value,
         name,
         sessionId: catalog.sessionId,
+        ...(isColumn()
+          ? {
+              row: {
+                documentKey: options.documentKey,
+                index: Number(row.value),
+              },
+            }
+          : {}),
       },
     });
     if (!outcome.ok) {
@@ -201,5 +239,11 @@ export const createPdmsProjectPicker = (
     }
   });
   render();
-  return { setBusy };
+  return {
+    setBusy,
+    updateCatalog(value) {
+      catalog = value;
+      render();
+    },
+  };
 };

@@ -6,6 +6,10 @@ import { prisma } from "@onlyoffice/db";
 import { createApp } from "../../src/app";
 import { spreadsheetBindingSchema } from "../../src/documents/spreadsheets/contract";
 import { spreadsheetManifestFieldData } from "../../src/forms/spreadsheet-fields";
+import {
+  createEditorCapability,
+  verifyEditorCapability,
+} from "../../src/onlyoffice";
 import { putObject } from "../../src/storage";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
 import { fixtureWorkbook } from "../spreadsheet-unit/fixture";
@@ -211,6 +215,38 @@ const fixture = async (
         )
       );
     },
+    async viewerRequests() {
+      const viewer = await createCredentialFixture({
+        email: `viewer-${id}@example.test`,
+        name: "Session Viewer",
+        password,
+        role: "viewer",
+      });
+      const viewerToken = await bearerFor(app, viewer.email, password);
+      const asViewer = (path: string, body?: unknown) =>
+        app.handle(
+          new Request(`http://test.local${path}`, {
+            method: body === undefined ? "GET" : "POST",
+            headers: {
+              Authorization: `Bearer ${viewerToken}`,
+              "Content-Type": "application/json",
+            },
+            ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+          })
+        );
+      return {
+        preview: await asViewer(
+          `/api/admin/results/${response.id}/viewer-config`
+        ),
+        edit: await asViewer(
+          `/api/forms/${publicId}/editor-config?responseId=${response.id}`
+        ),
+        retry: await asViewer("/api/editor/pdms-project-catalog/retry", {
+          documentKey: response.draftDocumentKey,
+          sessionId: crypto.randomUUID(),
+        }),
+      };
+    },
     dispose() {
       upstream.stop(true);
     },
@@ -403,6 +439,132 @@ test("ordinary source-free editors do not fetch or accept catalog Retry", async 
     );
     expect(retried.status).toBe(409);
     expect(f.requests).toBe(0);
+  } finally {
+    f.dispose();
+  }
+});
+
+test("read-only Viewer results never load a catalog or acquire write/Retry access", async () => {
+  const f = await fixture();
+  try {
+    const viewed = await f.viewerRequests();
+    expect(viewed.preview.status).toBe(200);
+    const preview = (await viewed.preview.json()) as {
+      bridge?: unknown;
+      pdmsProjectCatalog?: unknown;
+      config: { editorConfig: { mode: string } };
+    };
+    expect(preview.config.editorConfig.mode).toBe("view");
+    expect(preview.pdmsProjectCatalog).toBeUndefined();
+    expect(preview.bridge).toBeUndefined();
+    expect(viewed.edit.status).toBe(403);
+    expect(viewed.retry.status).toBe(403);
+    expect(f.requests).toBe(0);
+  } finally {
+    f.dispose();
+  }
+});
+
+test("catalog Retry rejects unsigned, expired and cross-document requests without an upstream load", async () => {
+  const f = await fixture();
+  try {
+    f.fail();
+    const editor = (await (
+      await f.config(crypto.randomUUID())
+    ).json()) as Editor;
+    const body = {
+      documentKey: editor.config.document.key,
+      sessionId: editor.pdmsProjectCatalog.sessionId,
+    };
+    expect(
+      (await f.request("/api/editor/pdms-project-catalog/retry", body)).status
+    ).toBe(401);
+    const claims = verifyEditorCapability(
+      editor.bridge.capabilities["save-draft"] as string
+    );
+    if (!claims) {
+      throw new Error("Fixture capability missing");
+    }
+    const expired = createEditorCapability({
+      ...claims,
+      expiresAt: Math.floor(Date.now() / 1000) - 1,
+    });
+    expect(
+      (await f.request("/api/editor/pdms-project-catalog/retry", body, expired))
+        .status
+    ).toBe(401);
+    expect(
+      (
+        await f.request(
+          "/api/editor/pdms-project-catalog/retry",
+          { ...body, documentKey: "another-document" },
+          editor.bridge.capabilities["save-draft"]
+        )
+      ).status
+    ).toBe(403);
+    expect(f.requests).toBe(1);
+    expect(
+      await (
+        await f.request(`/api/responses/${f.responseId}/draft/json`)
+      ).json()
+    ).toEqual({ notes: "saved ordinary answer" });
+  } finally {
+    f.dispose();
+  }
+});
+
+test("an expired lease is rejected and its replacement opening loads a fresh snapshot", async () => {
+  const f = await fixture();
+  try {
+    const opening = crypto.randomUUID();
+    const first = (await (await f.config(opening)).json()) as Editor;
+    // Time is an approved system seam: move this isolated fixture lease beyond expiry.
+    await prisma.editorLease.update({
+      where: { id: first.bridge.lease.id },
+      data: {
+        createdAt: new Date(0),
+        renewedAt: new Date(0),
+        expiresAt: new Date(1),
+      },
+    });
+    expect((await f.retry(first)).status).toBe(409);
+    f.healthy();
+    const next = (await (await f.config(opening)).json()) as Editor;
+    expect(next.pdmsProjectCatalog.sessionId).not.toBe(
+      first.pdmsProjectCatalog.sessionId
+    );
+    expect(next.pdmsProjectCatalog.names).toEqual(["โครงการหลังคืนบริการ"]);
+    expect(f.requests).toBe(2);
+  } finally {
+    f.dispose();
+  }
+});
+
+test("simultaneous config requests for one fresh opening all receive its one shared snapshot", async () => {
+  const f = await fixture();
+  try {
+    const opening = crypto.randomUUID();
+    const responses = await Promise.all(
+      Array.from({ length: 8 }, () => f.config(opening))
+    );
+    expect(responses.map((response) => response.status)).toEqual([
+      200, 200, 200, 200, 200, 200, 200, 200,
+    ]);
+    const editors = await Promise.all(
+      responses.map((response) => response.json() as Promise<Editor>)
+    );
+    const [first] = editors;
+    if (!first) {
+      throw new Error("Opening fixture is empty");
+    }
+    expect(first.pdmsProjectCatalog).toMatchObject({
+      status: "ready",
+      names: ["โครงการแรก"],
+    });
+    expect(editors.map((editor) => editor.pdmsProjectCatalog)).toEqual(
+      Array.from({ length: 8 }, () => first.pdmsProjectCatalog)
+    );
+    expect(f.requests).toBe(1);
   } finally {
     f.dispose();
   }
