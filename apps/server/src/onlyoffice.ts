@@ -22,6 +22,7 @@ const editorCapabilityActions = new Set<unknown>([
   "save-draft",
   "submit",
   "save-correction",
+  "save-correction-workspace",
   "configure-fields",
   "poll-operation",
 ]);
@@ -54,6 +55,7 @@ export type EditorCapabilityAction =
   | "save-draft"
   | "submit"
   | "save-correction"
+  | "save-correction-workspace"
   | "configure-fields"
   | "poll-operation";
 export type EditorCapabilityTarget =

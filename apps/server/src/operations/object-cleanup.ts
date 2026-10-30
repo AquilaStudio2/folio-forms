@@ -111,14 +111,20 @@ export async function cleanupTerminalOperationObjects(
   }
   const metadata = operationMetadata(operation.metadata);
   if (operation.status === OperationStatus.completed) {
-    await deleteObjects(
-      metadata.cleanupObjectKeys ?? [metadata.stagedObjectKey]
-    );
+    const keys = metadata.cleanupObjectKeys ?? [metadata.stagedObjectKey];
+    await (metadata.action === "save-correction" ||
+    metadata.action === "save-correction-workspace"
+      ? Promise.all(keys.map((key) => deleteObjectUnlessCanonical(key)))
+      : deleteObjects(keys));
     return;
   }
   await deleteObjects([metadata.stagedObjectKey]);
   await deleteObjectUnlessCanonical(metadata.finalObjectKey);
-  if (metadata.action === "save-correction" && metadata.workspaceDocumentKey) {
+  if (
+    (metadata.action === "save-correction" ||
+      metadata.action === "save-correction-workspace") &&
+    metadata.workspaceDocumentKey
+  ) {
     const workspaceLease = await prisma.editorLease.findUnique({
       select: { workspaceObjectKey: true },
       where: { workspaceDocumentKey: metadata.workspaceDocumentKey },

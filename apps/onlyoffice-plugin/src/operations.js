@@ -101,7 +101,10 @@ export function createOperations(
       };
     }
 
-    if (action === ACTIONS.SAVE_CORRECTION) {
+    if (
+      action === ACTIONS.SAVE_CORRECTION ||
+      action === ACTIONS.SAVE_CORRECTION_WORKSPACE
+    ) {
       const responseId = encodeURIComponent(
         requireOption(options.responseId, "responseId")
       );
@@ -109,9 +112,24 @@ export function createOperations(
         body: {
           data: data.data,
           documentKey,
-          reason: requireOption(reason, "correction reason"),
+          ...(action === ACTIONS.SAVE_CORRECTION
+            ? { reason: requireOption(reason, "correction reason") }
+            : {}),
+          ...(options.documentKind === "xlsx"
+            ? {
+                ...(options.pdmsProjectCatalog?.sessionId
+                  ? {
+                      pdmsCatalogSessionId:
+                        options.pdmsProjectCatalog.sessionId,
+                    }
+                  : {}),
+                ...(requestContext?.pdmsSelection
+                  ? { pdmsSelection: requestContext.pdmsSelection }
+                  : {}),
+              }
+            : {}),
         },
-        path: `${API_ROUTES.ADMIN_RESULTS}/${responseId}/correction`,
+        path: `${API_ROUTES.ADMIN_RESULTS}/${responseId}/correction${action === ACTIONS.SAVE_CORRECTION_WORKSPACE ? "/workspace" : ""}`,
       };
     }
 
@@ -339,6 +357,7 @@ export function createOperations(
       const needsData =
         action === ACTIONS.SAVE_DRAFT ||
         action === ACTIONS.SAVE_CORRECTION ||
+        action === ACTIONS.SAVE_CORRECTION_WORKSPACE ||
         action === ACTIONS.SUBMIT;
       let data;
 

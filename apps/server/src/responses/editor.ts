@@ -56,7 +56,9 @@ import { initializeSpreadsheetResponse } from "./spreadsheet-document";
 
 export async function correctionEditorConfig(
   responseId: string,
-  identity: Identity
+  identity: Identity,
+  pdmsOpeningId?: string,
+  pdmsProjects: PdmsProjectsConfiguration | null = null
 ): Promise<Record<string, unknown>> {
   validateId(responseId, "Response");
   const response = await prisma.response.findUnique({
@@ -260,43 +262,75 @@ export async function correctionEditorConfig(
     targetId: response.id,
     targetType: "correction",
   } as const;
-  return editorConfig(
-    {
-      action: "correction",
-      documentKind: form.documentKind,
-      ...(form.documentKind === "xlsx"
-        ? {
-            spreadsheetBindings: await spreadsheetContractForTemplate(
-              response.publishedTemplateId,
-              readSpreadsheetWorkbook(await readObject(sourceObjectKey))
-            ),
-            spreadsheetPictureFrames: await spreadsheetPictureFramesForTemplate(
-              response.publishedTemplateId
-            ),
-          }
-        : {}),
-      capabilities: {
-        "save-correction": actionEditorCapability(
+  const pdmsProjectCatalog =
+    form.documentKind === "xlsx"
+      ? await openPdmsProjectCatalog({
+          bindings: await spreadsheetBindingsForTemplate(
+            response.publishedTemplateId
+          ),
+          configuration: pdmsProjects,
           identity,
-          capabilityScope,
-          "save-correction",
-          lease
-        ),
+          lease,
+          openingId: pdmsOpeningId,
+          scope: capabilityScope,
+        })
+      : null;
+  const catalogScope = {
+    ...capabilityScope,
+    ...(pdmsProjectCatalog
+      ? { pdmsCatalogSessionId: pdmsProjectCatalog.sessionId }
+      : {}),
+  };
+  return {
+    ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
+    ...editorConfig(
+      {
+        action: "correction",
+        ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
+        documentKind: form.documentKind,
+        ...(form.documentKind === "xlsx"
+          ? {
+              spreadsheetBindings: await spreadsheetContractForTemplate(
+                response.publishedTemplateId,
+                readSpreadsheetWorkbook(
+                  await readObject(lease.workspaceObjectKey as string)
+                )
+              ),
+              spreadsheetPictureFrames:
+                await spreadsheetPictureFramesForTemplate(
+                  response.publishedTemplateId
+                ),
+            }
+          : {}),
+        capabilities: {
+          "save-correction": actionEditorCapability(
+            identity,
+            catalogScope,
+            "save-correction",
+            lease
+          ),
+          "save-correction-workspace": actionEditorCapability(
+            identity,
+            catalogScope,
+            "save-correction-workspace",
+            lease
+          ),
+        },
+        documentKey: capabilityScope.documentKey,
+        lease: editorLeaseBridge(lease),
+        prefill: lockedPrefillForSnapshot(response.prefillSnapshot),
+        publicId: form.publicId,
+        responseId: response.id,
+        tagAliases:
+          form.documentKind !== "xlsx" && form.publishedTemplate?.objectKey
+            ? onlyOfficeFieldTagAliases(
+                await readObject(form.publishedTemplate.objectKey)
+              )
+            : {},
       },
-      documentKey: capabilityScope.documentKey,
-      lease: editorLeaseBridge(lease),
-      prefill: lockedPrefillForSnapshot(response.prefillSnapshot),
-      publicId: form.publicId,
-      responseId: response.id,
-      tagAliases:
-        form.documentKind !== "xlsx" && form.publishedTemplate?.objectKey
-          ? onlyOfficeFieldTagAliases(
-              await readObject(form.publishedTemplate.objectKey)
-            )
-          : {},
-    },
-    identity
-  );
+      identity
+    ),
+  };
 }
 
 export async function userEditorConfig(

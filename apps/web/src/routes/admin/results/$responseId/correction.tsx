@@ -20,6 +20,7 @@ const AdminCorrectionRoute = () => {
   });
   const [reason, setReason] = useState("");
   const [saveRequest, setSaveRequest] = useState(0);
+  const [revision, setRevision] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
@@ -36,13 +37,18 @@ const AdminCorrectionRoute = () => {
   const handleBridgeMessage = (bridgeMessage: EditorBridgeMessage) => {
     if (
       bridgeMessage.type !== "operation" ||
-      bridgeMessage.action !== "save-correction"
+      (bridgeMessage.action !== "save-correction" &&
+        bridgeMessage.action !== "save-correction-workspace")
     ) {
       return;
     }
     if (bridgeMessage.status === "pending") {
       setSaving(true);
-      setMessage("กำลังบันทึก Correction…");
+      setMessage(
+        bridgeMessage.action === "save-correction-workspace"
+          ? "กำลังบันทึกการเลือกโครงการ…"
+          : "กำลังบันทึก Correction…"
+      );
       return;
     }
     if (bridgeMessage.status === "failed") {
@@ -51,6 +57,11 @@ const AdminCorrectionRoute = () => {
       return;
     }
     setSaving(false);
+    if (bridgeMessage.action === "save-correction-workspace") {
+      setMessage(null);
+      setRevision((value) => value + 1);
+      return;
+    }
     void navigate({
       params: { responseId },
       search: { form: undefined },
@@ -122,6 +133,7 @@ const AdminCorrectionRoute = () => {
           onBridgeMessage={handleBridgeMessage}
           onDirtyChange={setDirty}
           trackNativeDirty
+          revision={revision}
           saveAction="save-correction"
           saveReason={reason}
           saveRequest={saveRequest}

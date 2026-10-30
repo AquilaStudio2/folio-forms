@@ -112,21 +112,28 @@ export const createPdmsProjectPicker = (
       throw new Error("ไม่พบแถวโครงการ กรุณาเปิดตัวแก้ไขใหม่");
     }
     setBusy(true);
-    const outcome = await operations.runAction(ACTIONS.SAVE_DRAFT, "", null, {
-      pdmsSelection: {
-        bindingId: target.value,
-        name,
-        sessionId: catalog.sessionId,
-        ...(isColumn()
-          ? {
-              row: {
-                documentKey: options.documentKey,
-                index: Number(row.value),
-              },
-            }
-          : {}),
-      },
-    });
+    const outcome = await operations.runAction(
+      options.action === ACTIONS.CORRECTION
+        ? ACTIONS.SAVE_CORRECTION_WORKSPACE
+        : ACTIONS.SAVE_DRAFT,
+      "",
+      null,
+      {
+        pdmsSelection: {
+          bindingId: target.value,
+          name,
+          sessionId: catalog.sessionId,
+          ...(isColumn()
+            ? {
+                row: {
+                  documentKey: options.documentKey,
+                  index: Number(row.value),
+                },
+              }
+            : {}),
+        },
+      }
+    );
     if (!outcome.ok) {
       setBusy(false);
     }

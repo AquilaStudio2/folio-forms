@@ -119,7 +119,11 @@ export function createBridge(options, office, callbacks) {
         return action === ACTIONS.SAVE_DRAFT || action === ACTIONS.SUBMIT;
       }
       case ACTIONS.CORRECTION: {
-        return action === ACTIONS.SAVE_CORRECTION;
+        return (
+          action === ACTIONS.SAVE_CORRECTION ||
+          (options.documentKind === "xlsx" &&
+            action === ACTIONS.SAVE_CORRECTION_WORKSPACE)
+        );
       }
       case ACTIONS.SUBMIT: {
         return action === ACTIONS.SUBMIT;
@@ -382,6 +386,11 @@ export function createBridge(options, office, callbacks) {
       if (
         message.action !== ACTIONS.SAVE_DRAFT &&
         message.action !== ACTIONS.SAVE_CORRECTION &&
+        !(
+          options.documentKind === "xlsx" &&
+          options.action === ACTIONS.CORRECTION &&
+          message.action === ACTIONS.SAVE_CORRECTION_WORKSPACE
+        ) &&
         !(
           options.documentKind === "xlsx" &&
           options.action === ACTIONS.TEMPLATE_EDIT &&
