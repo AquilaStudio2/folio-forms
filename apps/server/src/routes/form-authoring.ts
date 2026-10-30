@@ -54,7 +54,10 @@ import { launchForceSave } from "../operations/force-save";
 import { activeOperationForForm } from "../operations/lifecycle";
 import type { OperationMetadata } from "../operations/model";
 import { operationTypeForAction } from "../operations/model";
-import { openPdmsProjectCatalog } from "../pdms/catalog";
+import {
+  openPdmsProjectCatalog,
+  requirePdmsCatalogSession,
+} from "../pdms/catalog";
 import { pdmsProjectSourceEnabled } from "../pdms/projects";
 import { submissionSummary } from "../responses/query";
 import { objectExists, objectKey, readObject } from "../storage";
@@ -488,6 +491,15 @@ export function registerFormAuthoringRoutes(
             );
           }
           const operationId = crypto.randomUUID();
+          const pdmsCatalogSessionId =
+            authorization.capability.pdmsCatalogSessionId;
+          if (pdmsCatalogSessionId) {
+            await requirePdmsCatalogSession(
+              authorization,
+              capabilityScope,
+              pdmsCatalogSessionId
+            );
+          }
           const preserveEditorSession =
             "preserveEditorSession" in snapshot &&
             snapshot.preserveEditorSession === true;
@@ -503,6 +515,7 @@ export function registerFormAuthoringRoutes(
           );
           const metadata: OperationMetadata = {
             action: "save-template",
+            ...(pdmsCatalogSessionId ? { pdmsCatalogSessionId } : {}),
             ...snapshot,
             bindingRevision: templateDraft.bindingRevision,
             documentKind: form.documentKind,

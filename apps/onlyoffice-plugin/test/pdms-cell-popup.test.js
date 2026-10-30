@@ -7,6 +7,7 @@ import {
   flushPlugin,
 } from "./harness.js";
 
+const descendants = (node) => [node, ...node.children.flatMap(descendants)];
 const project = {
   anchor: "folio_project",
   id: "folio_project",
@@ -240,3 +241,154 @@ test("a one-cell table body still opens its source column rather than requiring 
     row: { documentKey: "document-key", index: 0 },
   });
 });
+
+test("Admin creates a merged-cell project dropdown with one button and saves all native work before activation", async () => {
+  const initial = { fields: [], table: null, version: 1 };
+  let created;
+  const harness = createHarness({
+    action: "template-edit",
+    capabilityResponses: ["read", "write", "save"],
+    documentKind: "xlsx",
+    holdEditorSave: true,
+    pdmsProjectEnabled: true,
+    responses: [
+      { bindings: initial, documentKey: "document-key", revision: 0 },
+      (_url, request) => {
+        created = JSON.parse(request.body).change.value;
+        return {
+          bindings: { ...initial, fields: [created] },
+          documentKey: "document-key",
+          revision: 1,
+        };
+      },
+      { operationCapability: "poll", operationId: "source-created" },
+      completedOperation({ documentKey: "next-template" }),
+    ],
+    spreadsheetBindings: initial,
+    spreadsheetSelection: { address: "A2:B2", sheet: "Form" },
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  const create = descendants(harness.body).find(
+    (node) =>
+      node.tagName === "BUTTON" &&
+      node.textContent === "สร้าง dropdown ชื่อโครงการ"
+  );
+  expect(create).toBeDefined();
+  create.click();
+  await flushPlugin();
+  await flushPlugin();
+  expect(created).toMatchObject({
+    key: "field_1",
+    label: "ช่อง A2:B2",
+    options: [],
+    source: "pdms-project-name",
+    type: "dropdown",
+  });
+  expect(
+    harness.requests.some((request) => request.url.endsWith("/save"))
+  ).toBe(false);
+  harness.finishEditorSave();
+  await flushPlugin();
+  await flushPlugin();
+  const saved = harness.requests.find((request) =>
+    request.url.endsWith("/save")
+  );
+  expect(saved).toBeDefined();
+  expect(JSON.parse(saved.body)).toMatchObject({
+    documentKey: "document-key",
+    spreadsheetAnchors: [[created.anchor, "'Form'!A2:B2"]],
+  });
+  expect(JSON.parse(saved.body).preserveEditorSession).toBeUndefined();
+});
+
+test.each([false, true])(
+  "the create button preserves an existing column's Title/Tag/id and is idempotent when source=%s",
+  async (alreadySource) => {
+    const column = {
+      id: "folio_column",
+      key: "stable_project",
+      label: "Stable project title",
+      offset: 0,
+      type: alreadySource ? "dropdown" : "text",
+      ...(alreadySource ? { source: "pdms-project-name" } : {}),
+      options: [],
+      required: true,
+    };
+    const table = {
+      anchor: "folio_body",
+      columns: [column],
+      id: "folio_table",
+      key: "projects",
+      label: "Projects",
+    };
+    const initial = { fields: [], table, version: 1 };
+    let persisted;
+    const harness = createHarness({
+      action: "template-edit",
+      capabilityResponses: alreadySource
+        ? ["read", "save"]
+        : ["read", "write", "save"],
+      documentKind: "xlsx",
+      pdmsProjectEnabled: true,
+      responses: [
+        { bindings: initial, documentKey: "document-key", revision: 0 },
+        ...(alreadySource
+          ? []
+          : [
+              (_url, request) => {
+                persisted = JSON.parse(request.body).change;
+                return {
+                  bindings: {
+                    ...initial,
+                    table: { ...table, columns: [persisted.value] },
+                  },
+                  documentKey: "document-key",
+                  revision: 1,
+                };
+              },
+            ]),
+        { operationCapability: "poll", operationId: "source-created" },
+        completedOperation({ documentKey: "next-template" }),
+      ],
+      spreadsheetBindings: initial,
+      spreadsheetSelection: {
+        address: "A4",
+        names: {
+          folio_body: "'Form'!$A$4",
+          folio_column_folio_column: "'Form'!$A$4",
+          folio_columns_folio_table: "'Form'!$A$4",
+        },
+        sheet: "Form",
+      },
+    });
+    acknowledgeBridge(harness);
+    await flushPlugin();
+    descendants(harness.body)
+      .find((node) => node.textContent === "สร้าง dropdown ชื่อโครงการ")
+      .click();
+    await flushPlugin();
+    await flushPlugin();
+    const patches = harness.requests.filter(
+      (request) => request.method === "PATCH"
+    );
+    expect(patches).toHaveLength(alreadySource ? 0 : 1);
+    if (!alreadySource) {
+      expect(persisted).toMatchObject({
+        kind: "column",
+        value: {
+          id: "folio_column",
+          key: "stable_project",
+          label: "Stable project title",
+          offset: 0,
+          required: true,
+          source: "pdms-project-name",
+          type: "dropdown",
+        },
+      });
+    }
+    expect(
+      harness.requests.some((request) => request.url.endsWith("/save"))
+    ).toBe(true);
+  }
+);

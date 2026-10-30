@@ -17,6 +17,7 @@ import { fixtureWorkbook } from "../spreadsheet-unit/fixture";
 const enabled = process.env.RUN_PDMS_POPUP_HTTP === "1";
 const nativeTest = enabled ? test : test.skip;
 let providerRequests = 0;
+let providerStatus = 200;
 let snapshot: Uint8Array | null = null;
 const upstream = enabled
   ? Bun.serve({
@@ -24,10 +25,13 @@ const upstream = enabled
       port: 0,
       fetch: () => {
         providerRequests += 1;
-        return Response.json([
-          { name: "โครงการ ก", confirmation_document_number: "SYN-1" },
-          { name: "00123", confirmation_document_number: "SYN-2" },
-        ]);
+        return Response.json(
+          [
+            { name: "โครงการ ก", confirmation_document_number: "SYN-1" },
+            { name: "00123", confirmation_document_number: "SYN-2" },
+          ],
+          { status: providerStatus }
+        );
       },
     })
   : null;
@@ -319,5 +323,148 @@ nativeTest(
       projects: [{ project: "โครงการ ก", note: "physical second row" }],
     });
     expect(providerRequests).toBe(1);
+  }
+);
+
+nativeTest.each([200, 503])(
+  "the first project dropdown activates after a source-free Template save with provider status %s without refreshing its catalog or losing unsaved cells",
+  async (status) => {
+    providerStatus = status;
+    const id = crypto.randomUUID();
+    const password = `Create-popup-${id}`;
+    const admin = await createCredentialFixture({
+      email: `creator-${id}@example.test`,
+      name: "Project author",
+      role: "admin",
+      password,
+    });
+    const token = await bearerFor(app, admin.email, password);
+    const request = (
+      path: string,
+      capability?: string,
+      body?: unknown,
+      method?: string
+    ) =>
+      app.handle(
+        new Request(`http://test.local${path}`, {
+          method: method ?? (body ? "POST" : "GET"),
+          headers: {
+            "Content-Type": "application/json",
+            ...(capability
+              ? { "X-Editor-Capability": capability }
+              : { Authorization: `Bearer ${token}` }),
+          },
+          ...(body ? { body: JSON.stringify(body) } : {}),
+        })
+      );
+    const publicId = id.replaceAll("-", "");
+    const documentKey = `template-${id}`;
+    const key = `tests/${id}/source-free.xlsx`;
+    await putObject(
+      key,
+      fixtureWorkbook({ cells: [{ address: "D1", value: "baseline" }] }),
+      XLSX_CONTENT_TYPE
+    );
+    await prisma.form.create({
+      data: {
+        id,
+        publicId,
+        documentKind: "xlsx",
+        title: "One-click source creation",
+        templateDraft: {
+          create: { documentKey, objectKey: key, bindingRevision: 1 },
+        },
+      },
+    });
+    const opening = crypto.randomUUID();
+    const path = `/api/admin/forms/${publicId}/editor-config?pdmsOpeningId=${opening}`;
+    interface Config {
+      pdmsProjectCatalog?: { sessionId: string; names: string[] };
+      bridge: {
+        capabilities: Record<string, string>;
+        pdmsProjectPopup?: unknown;
+      };
+      config: { document: { key: string } };
+    }
+    const initial = (await (await request(path)).json()) as Config;
+    expect(initial.pdmsProjectCatalog).toBeUndefined();
+    expect(initial.bridge.pdmsProjectPopup).toBeUndefined();
+    const before = providerRequests;
+    const field = {
+      id: "folio_created",
+      anchor: "folio_created",
+      key: "field_1",
+      label: "ช่อง A1:B1",
+      type: "dropdown",
+      source: "pdms-project-name",
+      options: [],
+    };
+    const mapped = await request(
+      `/api/admin/forms/${publicId}/spreadsheet-bindings`,
+      initial.bridge.capabilities["configure-fields"],
+      {
+        documentKey,
+        revision: 1,
+        change: { action: "upsert", kind: "field", value: field },
+      },
+      "PATCH"
+    );
+    expect(mapped.status).toBe(200);
+    // The actual button's native flush supplies the new anchor and all ordinary unsaved edits.
+    const names = { folio_created: "'Form'!$A$1:$B$1" };
+    snapshot = fixtureWorkbook({
+      names,
+      merges: ["A1:B1"],
+      cells: [{ address: "D1", value: "unsaved template note" }],
+    });
+    const renewedResponse = await request(path);
+    expect(renewedResponse.status).toBe(200);
+    const renewed = (await renewedResponse.json()) as Config;
+    expect(renewed.pdmsProjectCatalog?.names).toEqual(
+      status === 200 ? ["โครงการ ก", "00123"] : []
+    );
+    const saved = await request(
+      `/api/admin/forms/${publicId}/save`,
+      renewed.bridge.capabilities["save-template"],
+      { documentKey, spreadsheetAnchors: Object.entries(names) }
+    );
+    expect(saved.status).toBe(202);
+    const job = (await saved.json()) as {
+      operationId: string;
+      operationCapability: string;
+    };
+    for (let attempt = 0; attempt < 300; attempt += 1) {
+      const result = (await (
+        await request(
+          `/api/operations/${job.operationId}`,
+          job.operationCapability
+        )
+      ).json()) as { operation: { status: string } };
+      if (["completed", "failed"].includes(result.operation.status)) {
+        expect(result.operation.status).toBe("completed");
+        break;
+      }
+      if (attempt === 299) {
+        throw new Error("Template creation save timed out");
+      }
+      await Bun.sleep(100);
+    }
+    const reopened = await request(path);
+    expect(reopened.status).toBe(200);
+    const current = (await reopened.json()) as Config;
+    expect(current.config.document.key).not.toBe(documentKey);
+    expect(current.pdmsProjectCatalog).toEqual(renewed.pdmsProjectCatalog);
+    expect(current.bridge.pdmsProjectPopup).toBeDefined();
+    expect(providerRequests - before).toBe(1);
+    const downloaded = await request(
+      `/api/admin/forms/${publicId}/template/xlsx`
+    );
+    expect(downloaded.status).toBe(200);
+    const book = readSpreadsheetWorkbook(
+      new Uint8Array(await downloaded.arrayBuffer())
+    );
+    expect(book.cells.get("D1")?.value).toBe("unsaved template note");
+    expect(book.names.has("folio_created")).toBe(true);
+    providerStatus = 200;
   }
 );

@@ -599,6 +599,9 @@ export function editorConfig(
     width: "100%",
   };
   return {
+    ...(options.pdmsProjectCatalog
+      ? { pdmsProjectCatalog: options.pdmsProjectCatalog }
+      : {}),
     apiUrl: trimOrigin(env.ONLYOFFICE_URL),
     bridge: {
       capabilities,

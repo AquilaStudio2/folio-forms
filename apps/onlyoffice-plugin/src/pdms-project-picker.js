@@ -24,7 +24,7 @@ export const createPdmsProjectPicker = (
   let catalog = options.pdmsProjectCatalog;
   const section = document.createElement("section");
   section.className = "pdms-project-picker";
-  section.hidden = Boolean(options.pdmsPopupChannelId);
+  section.hidden = true;
   section.setAttribute("aria-label", "เลือกชื่อโครงการ PDMS");
   const labelled = (caption, control) => {
     const label = document.createElement("label");
