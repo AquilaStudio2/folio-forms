@@ -7,15 +7,24 @@ import { operationMetadata } from "./model";
 
 export const objectCleanupIntentGraceMs = 15 * 60_000;
 
-/** Only server-created captures beside this operation's own staging object are recoverable. */
-export function nativeCaptureKey(
+/** The owned upload location is also known before a crashed capture can register its proof. */
+export function nativeCaptureCandidateKey(
   operation: Pick<Operation, "metadata" | "stagingObjectKey">
 ): string | null {
   const metadata = operationMetadata(operation.metadata);
   return operation.stagingObjectKey &&
-    typeof metadata.pdmsCatalogSessionId === "string" &&
-    metadata.nativeCaptureObjectKey === `${operation.stagingObjectKey}.native`
-    ? metadata.nativeCaptureObjectKey
+    typeof metadata.pdmsCatalogSessionId === "string"
+    ? `${operation.stagingObjectKey}.native`
+    : null;
+}
+
+/** Reuse requires persisted proof, even though cleanup can derive the owned upload location. */
+export function nativeCaptureKey(
+  operation: Pick<Operation, "metadata" | "stagingObjectKey">
+): string | null {
+  const key = nativeCaptureCandidateKey(operation);
+  return operationMetadata(operation.metadata).nativeCaptureObjectKey === key
+    ? key
     : null;
 }
 
@@ -38,7 +47,7 @@ export async function cleanupNativeCaptures(
       targetType: operation.targetType,
     },
   });
-  if (!attempts.some((attempt) => nativeCaptureKey(attempt))) {
+  if (!attempts.some((attempt) => nativeCaptureCandidateKey(attempt))) {
     return;
   }
   const current =
@@ -62,22 +71,27 @@ export async function cleanupNativeCaptures(
               },
             })
           : null;
-  const [latest] = attempts;
+  const [inFlight] = attempts;
   if (
     current &&
-    (latest?.status === OperationStatus.pending ||
-      latest?.status === OperationStatus.processing)
+    (inFlight?.status === OperationStatus.pending ||
+      inFlight?.status === OperationStatus.processing)
   ) {
     // An in-flight retry may still need the previous failed attempt's capture.
     return;
   }
+  const latest = attempts.find(
+    (attempt) =>
+      attempt.status !== OperationStatus.failed ||
+      attempt.errorCode !== "native_snapshot_read_failed"
+  );
   const retained =
     current && latest?.status === OperationStatus.failed
       ? nativeCaptureKey(latest)
       : null;
   await Promise.all(
     attempts
-      .map(nativeCaptureKey)
+      .map(nativeCaptureCandidateKey)
       .filter((key): key is string => Boolean(key) && key !== retained)
       .map((key) => deleteObjectUnlessCanonical(key))
   );

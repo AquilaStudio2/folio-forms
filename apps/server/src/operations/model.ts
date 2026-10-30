@@ -34,6 +34,7 @@ export type OperationErrorCode =
   | "fill_method_changed"
   | "force_save_failed"
   | "invalid_template"
+  | "native_snapshot_read_failed"
   | "onlyoffice_document_error"
   | "operation_timeout"
   | "pdf_conversion_failed";

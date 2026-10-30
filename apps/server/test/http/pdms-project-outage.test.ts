@@ -7,7 +7,7 @@ import { createApp } from "../../src/app";
 import { spreadsheetBindingSchema } from "../../src/documents/spreadsheets/contract";
 import { readSpreadsheetWorkbook } from "../../src/documents/spreadsheets/workbook";
 import { spreadsheetDraftFieldData } from "../../src/forms/spreadsheet-fields";
-import { putObject } from "../../src/storage";
+import { objectExists, putObject } from "../../src/storage";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
 import { fixtureWorkbook } from "../spreadsheet-unit/fixture";
 
@@ -19,6 +19,7 @@ let requests = 0;
 let snapshot: Uint8Array | null = null;
 let failSnapshot = false;
 let unchangedNative = false;
+let failNativeCommand = false;
 const upstream = enabled
   ? Bun.serve({
       hostname: "127.0.0.1",
@@ -54,9 +55,11 @@ const app = createApp({
     : null,
   onlyOffice: {
     forceSave: () =>
-      Promise.resolve(
-        native && !unchangedNative ? { url: native.url.href } : false
-      ),
+      failNativeCommand
+        ? Promise.reject(new Error("temporary native command outage"))
+        : Promise.resolve(
+            native && !unchangedNative ? { url: native.url.href } : false
+          ),
     convertDocxToPdf: () => Promise.resolve(new Uint8Array()),
   },
   onlyOfficeCallbackOrigins: native ? [native.url.origin] : [],
@@ -137,6 +140,7 @@ const fixture = async (required: boolean, sourceOnly = false) => {
   failing = false;
   failSnapshot = false;
   unchangedNative = false;
+  failNativeCommand = false;
   names = ["โครงการหลังคืนบริการ"];
   const id = crypto.randomUUID();
   const publicId = id.replaceAll("-", "");
@@ -296,7 +300,20 @@ const fixture = async (required: boolean, sourceOnly = false) => {
       },
       true
     );
-  return { token, publicId, responseId, config, read, bytes, act, retry };
+  return {
+    token,
+    adminToken,
+    adminId: admin.id,
+    formId: id,
+    publicId,
+    responseId,
+    userId: user.id,
+    config,
+    read,
+    bytes,
+    act,
+    retry,
+  };
 };
 
 runtimeTest(
@@ -527,6 +544,154 @@ runtimeTest(
       project_name: "โครงการหลังคืนบริการ",
       notes: "newer input whose first capture fails",
       more_notes: null,
+    });
+  }
+);
+
+runtimeTest(
+  "terminal polling and hard deletion retire uploaded native captures whose proof was never registered",
+  async () => {
+    const f = await fixture(true, true);
+    const editor = await f.config();
+    const capturedBytes = await f.bytes();
+    const crashedUpload = async (template?: {
+      id: string;
+      publicId: string;
+    }) => {
+      const id = crypto.randomUUID();
+      const stagedObjectKey = `operations/${id}/staged.xlsx`;
+      const key = `${stagedObjectKey}.native`;
+      await prisma.operation.create({
+        data: {
+          id,
+          actorId: template ? f.adminId : f.userId,
+          documentKey: template ? `crashed-${id}` : editor.config.document.key,
+          errorCode: "force_save_failed",
+          formId: template?.id ?? f.formId,
+          metadata: {
+            action: template ? "save-template" : "save-draft",
+            documentKind: "xlsx",
+            finalObjectKey: `operations/${id}/final.xlsx`,
+            formId: template?.id ?? f.formId,
+            pdmsCatalogSessionId: editor.pdmsProjectCatalog.sessionId,
+            ...(template ? {} : { responseId: f.responseId }),
+            stagedObjectKey,
+          },
+          ownerUserId: f.userId,
+          ...(template ? {} : { responseId: f.responseId }),
+          stagingObjectKey: stagedObjectKey,
+          status: "failed",
+          targetId: template ? crypto.randomUUID() : f.responseId,
+          targetType: template ? "template_draft" : "response",
+          type: template ? "save_template_draft" : "save_draft",
+        },
+      });
+      await putObject(
+        key,
+        capturedBytes,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      expect(await objectExists(key)).toBe(true);
+      return { id, key };
+    };
+    const polled = await crashedUpload();
+    const result = await request(`/api/operations/${polled.id}`, f.token);
+    expect(result.status).toBe(200);
+    expect(await result.json()).toMatchObject({
+      operation: { status: "failed" },
+    });
+    expect(await objectExists(polled.key)).toBe(false);
+    const discarded = await crashedUpload();
+    const removedResponse = await app.handle(
+      new Request(`http://test.local/api/responses/${f.responseId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${f.token}` },
+      })
+    );
+    expect(removedResponse.status).toBe(200);
+    expect(await objectExists(discarded.key)).toBe(false);
+    const draftId = crypto.randomUUID();
+    const draft = await prisma.form.create({
+      data: {
+        id: draftId,
+        publicId: draftId.replaceAll("-", ""),
+        title: "Crashed authoring upload",
+        documentKind: "xlsx",
+      },
+    });
+    const orphan = await crashedUpload(draft);
+    const removedForm = await app.handle(
+      new Request(`http://test.local/api/admin/forms/${draft.publicId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${f.adminToken}` },
+      })
+    );
+    expect(removedForm.status).toBe(200);
+    expect(await objectExists(orphan.key)).toBe(false);
+  }
+);
+
+runtimeTest(
+  "a retained snapshot read outage stays retryable without losing newly captured ordinary inputs",
+  async () => {
+    const f = await fixture(true);
+    const editor = await f.config();
+    snapshot = workbook("ordinary input retained across storage read failure");
+    expect((await complete(await f.act(editor, "submit"))).status).toBe(
+      "failed"
+    );
+    unchangedNative = true;
+    const nativeFile = Bun.S3Client.prototype.file;
+    const storageOutage = spyOn(
+      Bun.S3Client.prototype,
+      "file"
+    ).mockImplementation(function storageOutage(
+      this: Bun.S3Client,
+      ...args: Parameters<Bun.S3Client["file"]>
+    ) {
+      const file = nativeFile.apply(this, args);
+      if (String(args[0]).endsWith(".native")) {
+        file.bytes = () =>
+          Promise.reject(new Error("temporary retained snapshot read outage"));
+      }
+      return file;
+    });
+    try {
+      expect(
+        (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ")))
+          .status
+      ).toBe("failed");
+    } finally {
+      storageOutage.mockRestore();
+    }
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      notes: "ordinary input retained across storage read failure",
+      more_notes: null,
+    });
+  }
+);
+
+runtimeTest(
+  "a protected source-only workbook recovers from a native command failure without inventing an ordinary edit",
+  async () => {
+    const f = await fixture(true, true);
+    const editor = await f.config();
+    failNativeCommand = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("failed");
+    failNativeCommand = false;
+    unchangedNative = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      second_project: null,
     });
   }
 );

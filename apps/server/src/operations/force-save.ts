@@ -1,6 +1,8 @@
 import { prisma, OperationStatus } from "@onlyoffice/db";
 
 import { tokenDigest } from "../digests";
+import { readSpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
+import { spreadsheetContractForTemplate } from "../forms/spreadsheet-fields";
 import { fail, HttpError } from "../http/errors";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Operation } from "../model-types";
@@ -14,8 +16,67 @@ import {
   updateOperationFailed,
   operationDocumentKey,
 } from "./lifecycle";
+import { operationMetadata } from "./model";
 import { nativeCaptureKey } from "./object-cleanup";
 import { SpreadsheetValidationError } from "./spreadsheet-document";
+
+/** Protected scalar picker/computed-only Responses have no native edits to lose. */
+async function pickerOnlyCanonicalSnapshot(
+  operation: Operation
+): Promise<Uint8Array | null> {
+  const metadata = operationMetadata(operation.metadata);
+  if (
+    metadata.documentKind !== "xlsx" ||
+    !metadata.responseId ||
+    !operation.documentKey ||
+    !["response", "correction"].includes(operation.targetType)
+  ) {
+    return null;
+  }
+  const response = await prisma.response.findFirst({
+    select: { draftDocumentKey: true, publishedTemplateId: true },
+    where: { formId: operation.formId, id: metadata.responseId },
+  });
+  if (
+    !response ||
+    (operation.targetType === "response" &&
+      response.draftDocumentKey !== operation.documentKey)
+  ) {
+    return null;
+  }
+  if (
+    operation.targetType === "correction" &&
+    !(await prisma.editorLease.findFirst({
+      select: { id: true },
+      where: {
+        id: metadata.workspaceLeaseId,
+        targetId: metadata.responseId,
+        targetType: "correction",
+        workspaceDocumentKey: operation.documentKey,
+      },
+    }))
+  ) {
+    return null;
+  }
+  const key = await operationDocumentKey(operation.documentKey);
+  if (!key) {
+    return null;
+  }
+  const snapshot = await readObject(key);
+  const contract = await spreadsheetContractForTemplate(
+    response.publishedTemplateId,
+    readSpreadsheetWorkbook(snapshot)
+  );
+  return !contract.table &&
+    contract.fields.some((field) => field.source === "pdms-project-name") &&
+    contract.fields.every(
+      (field) =>
+        field.type !== "picture" &&
+        (field.source === "pdms-project-name" || field.computed)
+    )
+    ? snapshot
+    : null;
+}
 
 export function launchForceSave(
   operation: Operation,
@@ -78,6 +139,11 @@ export function launchForceSave(
               ? await prisma.operation.findFirst({
                   orderBy: [{ createdAt: "desc" }, { id: "desc" }],
                   where: {
+                    OR: [
+                      { status: OperationStatus.completed },
+                      { errorCode: null },
+                      { errorCode: { not: "native_snapshot_read_failed" } },
+                    ],
                     createdAt: { lt: operation.createdAt },
                     documentKey: operation.documentKey,
                     formId: operation.formId,
@@ -93,6 +159,10 @@ export function launchForceSave(
             previous?.status === OperationStatus.failed ? previous : null;
           const recoveredCaptureKey = failed ? nativeCaptureKey(failed) : null;
           if (failed && !recoveredCaptureKey) {
+            snapshot =
+              (await pickerOnlyCanonicalSnapshot(operation)) ?? undefined;
+          }
+          if (failed && !recoveredCaptureKey && !snapshot) {
             await updateOperationFailed(
               operation.id,
               "document_save_failed",
@@ -114,7 +184,19 @@ export function launchForceSave(
               "The current document snapshot is unavailable"
             );
           }
-          snapshot = await readObject(currentObjectKey);
+          if (!snapshot) {
+            try {
+              snapshot = await readObject(currentObjectKey);
+            } catch {
+              // Office explicitly reported unchanged. A storage read failure
+              // must not replace the preceding trusted capture with uncertainty.
+              await updateOperationFailed(
+                operation.id,
+                "native_snapshot_read_failed"
+              );
+              return;
+            }
+          }
         }
         await finalizeCallback(
           operation.id,
