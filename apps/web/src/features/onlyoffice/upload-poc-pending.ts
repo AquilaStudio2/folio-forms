@@ -95,7 +95,11 @@ export class UploadPocPendingFiles {
           "save-template",
           "publish",
           "save-correction",
-        ].includes(String(value.action))
+        ].includes(String(value.action)) &&
+        !(
+          value.action === "save-correction-workspace" &&
+          options.action === "correction"
+        )
       ) {
         throw new Error("คำสั่ง POC ไม่ถูกต้อง");
       }

@@ -51,6 +51,17 @@ it("Correction workspace completion reloads the document while preserving the re
             },
             id: "correction-bridge",
             pluginOrigin: window.location.origin,
+            uploadPoc: {
+              action: "correction",
+              bridgeId: "correction-bridge",
+              documentKey: `workspace-${documentRevision}`,
+              scopeIdentity: "admin/correction/response",
+              spreadsheetBindings: {
+                fields: [{ id: "folio_note", key: "notes", type: "text" }],
+                table: null,
+                version: 1,
+              },
+            },
           },
           config: {
             document: { key: `workspace-${documentRevision}` },
@@ -111,6 +122,56 @@ it("Correction workspace completion reloads the document while preserving the re
       )
     );
   send({ type: "bridge-ready" });
+  const parentReplies = vi.spyOn(source, "postMessage");
+  const check = {
+    action: "save-correction-workspace",
+    bridgeId: "correction-bridge",
+    documentKey: "workspace-0",
+    requestId: "preview-pending-file-check",
+    scopeIdentity: "admin/correction/response",
+    source: "folio-upload-poc",
+    type: "pending-file-check",
+  };
+  const pendingCheck = (changes: Record<string, unknown> = {}) =>
+    act(() =>
+      window.dispatchEvent(
+        new MessageEvent("message", {
+          data: { ...check, ...changes },
+          origin: window.location.origin,
+          source,
+        })
+      )
+    );
+  pendingCheck();
+  await waitFor(() =>
+    expect(parentReplies).toHaveBeenCalledWith(
+      expect.objectContaining({
+        allowed: true,
+        hasPending: false,
+        requestId: check.requestId,
+        type: "pending-file-result",
+      }),
+      window.location.origin
+    )
+  );
+  parentReplies.mockClear();
+  pendingCheck({ documentKey: "foreign-workspace" });
+  expect(parentReplies).not.toHaveBeenCalled();
+  pendingCheck({
+    bindingId: "folio_note",
+    file: new File(["pending"], "proof.txt"),
+    rowIndex: null,
+    tag: "notes",
+    type: "pending-file-set",
+  });
+  await waitFor(() =>
+    expect(parentReplies).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: expect.stringMatching(/POC ยังไม่รองรับ/u),
+      }),
+      window.location.origin
+    )
+  );
   send({
     action: "save-correction-workspace",
     operationId: "preview-1",

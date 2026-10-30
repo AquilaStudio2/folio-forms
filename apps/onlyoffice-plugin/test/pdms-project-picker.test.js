@@ -396,6 +396,7 @@ test("Correction picker saves only its workspace without inventing a reason, usi
     capabilityResponses: ["workspace-capability"],
     documentKind: "xlsx",
     holdEditorSave: true,
+    scopeIdentity: "actor/correction/response-id",
     pdmsProjectCatalog: {
       names: ["Current project"],
       sessionId: "catalog-session",
@@ -421,6 +422,38 @@ test("Correction picker saves only its workspace without inventing a reason, usi
   });
   await flushPlugin();
   expect(harness.requests).toHaveLength(0);
+  const pendingCheck = harness.messages.find(
+    ({ message }) => message.type === "pending-file-check"
+  )?.message;
+  expect(pendingCheck).toMatchObject({
+    action: "save-correction-workspace",
+    bridgeId: harness.bridgeId,
+    documentKey: "document-key",
+    scopeIdentity: "actor/correction/response-id",
+    source: "folio-upload-poc",
+  });
+  expect(
+    harness.methodInvocations.some(
+      ({ method }) => method === "SetEditingRestrictions"
+    )
+  ).toBe(false);
+  harness.dispatch({
+    data: {
+      ...pendingCheck,
+      source: "folio-upload-poc-host",
+      type: "pending-file-result",
+      allowed: true,
+      hasPending: false,
+    },
+    origin: harness.parentOrigin,
+    source: harness.parentWindow,
+  });
+  await flushPlugin();
+  expect(harness.requests).toHaveLength(0);
+  expect(harness.methodInvocations).toContainEqual({
+    method: "SetEditingRestrictions",
+    args: ["readOnly"],
+  });
   harness.finishEditorSave();
   await flushPlugin();
   await flushPlugin();
