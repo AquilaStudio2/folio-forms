@@ -195,6 +195,7 @@ export const requirePdmsCatalogSession = async (
   });
   if (
     !session ||
+    authorization.capability.pdmsCatalogSessionId !== session.id ||
     session.actorId !== authorization.actor.id ||
     session.leaseId !== authorization.capability.leaseId ||
     session.formId !== scope.formId ||

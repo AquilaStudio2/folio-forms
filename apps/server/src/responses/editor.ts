@@ -405,6 +405,13 @@ export async function userEditorConfig(
           scope: { ...capabilityScope, documentKey: response.draftDocumentKey },
         })
       : null;
+  const catalogScope = {
+    ...capabilityScope,
+    documentKey: response.draftDocumentKey,
+    ...(pdmsProjectCatalog
+      ? { pdmsCatalogSessionId: pdmsProjectCatalog.sessionId }
+      : {}),
+  };
   return {
     ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
     ...editorConfig(
@@ -419,13 +426,13 @@ export async function userEditorConfig(
         capabilities: {
           "save-draft": actionEditorCapability(
             identity,
-            capabilityScope,
+            catalogScope,
             "save-draft",
             lease
           ),
           submit: actionEditorCapability(
             identity,
-            capabilityScope,
+            catalogScope,
             "submit",
             lease
           ),
