@@ -259,6 +259,165 @@ export async function processNativeResponseOperation(
     );
   }
 }
+/** Accepted operations may finish after expiry, but never after actor or workspace replacement. */
+async function requireCorrectionWorkspace(
+  tx: Prisma.TransactionClient,
+  operation: Operation,
+  metadata: OperationMetadata
+) {
+  if (
+    !metadata.workspaceLeaseId ||
+    !metadata.workspaceDocumentKey ||
+    !metadata.workspaceObjectKey ||
+    operation.documentKey !== metadata.workspaceDocumentKey ||
+    !operation.actorId
+  ) {
+    fail(
+      409,
+      "stale_operation",
+      "The correction workspace is no longer current"
+    );
+  }
+  const [actor, workspace] = await Promise.all([
+    tx.user.findFirst({
+      where: { enabled: true, id: operation.actorId, role: "admin" },
+    }),
+    tx.editorLease.findFirst({
+      where: {
+        holderUserId: operation.actorId,
+        id: metadata.workspaceLeaseId,
+        targetId: metadata.responseId,
+        targetType: OperationTargetType.correction,
+        workspaceBaseDocumentKey: metadata.baseDocumentKey,
+        workspaceBaseRevision: metadata.baseRevision,
+        workspaceDocumentKey: metadata.workspaceDocumentKey,
+        workspaceObjectKey: metadata.workspaceObjectKey,
+      },
+    }),
+  ]);
+  if (!actor || !workspace) {
+    fail(
+      409,
+      "stale_operation",
+      "The correction workspace is no longer current"
+    );
+  }
+  if (metadata.pdmsCatalogSessionId) {
+    const catalog = await tx.pdmsProjectCatalogSession.findFirst({
+      where: {
+        actorId: actor.id,
+        documentKey: operation.documentKey,
+        formId: metadata.formId,
+        id: metadata.pdmsCatalogSessionId,
+        leaseId: workspace.id,
+        targetId: metadata.responseId,
+        targetType: "correction",
+        ...(metadata.action === "save-correction" || metadata.pdmsSelection
+          ? { status: "ready" }
+          : {}),
+      },
+    });
+    if (!catalog) {
+      fail(409, "pdms_session_stale", "รายการโครงการเปลี่ยนระหว่างบันทึก");
+    }
+  }
+  return workspace;
+}
+
+export async function completeCorrectionWorkspaceOperation(
+  operation: Operation,
+  metadata: OperationMetadata
+): Promise<OperationCompletion> {
+  if (
+    !metadata.responseId ||
+    !metadata.submissionId ||
+    !metadata.nextDocumentKey ||
+    !operation.documentKey
+  ) {
+    fail(500, "invalid_operation", "Correction preview metadata is incomplete");
+  }
+  const cleanupObjectKeys = [
+    metadata.stagedObjectKey,
+    metadata.workspaceObjectKey,
+  ].filter((key): key is string => Boolean(key));
+  await prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "responses" WHERE "id" = ${metadata.responseId}::uuid FOR UPDATE`
+      );
+      const workspace = await requireCorrectionWorkspace(
+        tx,
+        operation,
+        metadata
+      );
+      const current = await tx.response.findUnique({
+        include: {
+          submissions: {
+            include: {
+              corrections: { orderBy: { revision: "desc" }, take: 1 },
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: 1,
+          },
+        },
+        where: { id: metadata.responseId },
+      });
+      const submission = current?.submissions[0];
+      const latest = submission?.corrections[0];
+      if (
+        !current ||
+        current.status !== ResponseStatus.submitted ||
+        !submission ||
+        submission.id !== metadata.submissionId ||
+        (latest?.revision ?? 0) !== metadata.baseRevision ||
+        (latest?.documentKey ?? submission.documentKey) !==
+          metadata.baseDocumentKey
+      ) {
+        fail(409, "stale_operation", "The Submission is no longer correctable");
+      }
+      const updated = await tx.editorLease.updateMany({
+        data: {
+          workspaceDocumentKey: metadata.nextDocumentKey,
+          workspaceObjectKey: metadata.finalObjectKey,
+        },
+        where: {
+          holderUserId: operation.actorId as string,
+          id: workspace.id,
+          workspaceDocumentKey: operation.documentKey,
+          workspaceObjectKey: metadata.workspaceObjectKey,
+        },
+      });
+      if (updated.count !== 1) {
+        fail(
+          409,
+          "stale_operation",
+          "The correction workspace changed while saving"
+        );
+      }
+      await advancePdmsCatalogSession(
+        tx,
+        metadata.pdmsCatalogSessionId,
+        operation.documentKey as string,
+        metadata.nextDocumentKey as string
+      );
+      await markOperationCompleted(
+        tx,
+        operation.id,
+        {
+          documentKey: metadata.nextDocumentKey,
+          responseId: current.id,
+          submissionId: submission.id,
+          workspaceSaved: true,
+        },
+        metadata,
+        cleanupObjectKeys
+      );
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+  );
+  return { cleanupObjectKeys };
+}
+
 export async function completeCorrectionOperation(
   operation: Operation,
   metadata: OperationMetadata,
@@ -354,6 +513,11 @@ export async function completeCorrectionOperation(
       ) {
         fail(409, "stale_operation", "A newer Correction is already effective");
       }
+      const workspace = await requireCorrectionWorkspace(
+        tx,
+        operation,
+        metadata
+      );
       const previousData = jsonRecord(latest?.data ?? currentSubmission.data);
       const correction = await tx.correction.create({
         data: {
@@ -373,7 +537,7 @@ export async function completeCorrectionOperation(
         data: { updatedAt: new Date() },
         where: { id: current.id },
       });
-      await tx.editorLease.updateMany({
+      const clearedWorkspace = await tx.editorLease.updateMany({
         data: {
           workspaceBaseDocumentKey: null,
           workspaceBaseRevision: null,
@@ -381,11 +545,21 @@ export async function completeCorrectionOperation(
           workspaceObjectKey: null,
         },
         where: {
+          holderUserId: actorId,
+          id: workspace.id,
           targetId: current.id,
           targetType: OperationTargetType.correction,
           workspaceDocumentKey: metadata.workspaceDocumentKey,
+          workspaceObjectKey: metadata.workspaceObjectKey,
         },
       });
+      if (clearedWorkspace.count !== 1) {
+        fail(
+          409,
+          "stale_operation",
+          "The correction workspace changed while saving"
+        );
+      }
       const completedResult = {
         correctionId: correction.id,
         publicId: metadata.publicId,

@@ -133,6 +133,7 @@ describe("local POC pending files", () => {
       "publish",
       "save-template",
       "save-correction",
+      "save-correction-workspace",
       "delete-row",
     ]) {
       expect(() =>
@@ -183,5 +184,39 @@ describe("local POC pending files", () => {
         correction
       ).allowed
     ).toBe(true);
+    expect(
+      store.handle(
+        message({
+          action: "save-correction-workspace",
+          type: "pending-file-check",
+        }),
+        correction
+      ).allowed
+    ).toBe(true);
+    expect(() =>
+      store.handle(
+        message({
+          action: "save-correction-workspace",
+          type: "pending-file-check",
+        }),
+        options
+      )
+    ).toThrow(/คำสั่ง POC/u);
+    store.handle(
+      message({
+        file: new File(["pending"], "pending.txt"),
+        type: "pending-file-set",
+      }),
+      options
+    );
+    expect(() =>
+      store.handle(
+        message({
+          action: "save-correction-workspace",
+          type: "pending-file-check",
+        }),
+        correction
+      )
+    ).toThrow(/ยังอยู่เฉพาะหน้านี้/u);
   });
 });

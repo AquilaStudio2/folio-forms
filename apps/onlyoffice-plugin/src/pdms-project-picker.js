@@ -128,14 +128,21 @@ export const createPdmsProjectPicker = (
       };
     }
     setBusy(true);
-    const outcome = await operations.runAction(ACTIONS.SAVE_DRAFT, "", null, {
-      pdmsSelection: {
-        bindingId: capturedTarget?.bindingId || target.value,
-        name,
-        sessionId: catalog.sessionId,
-        ...(selectedRow ? { row: selectedRow } : {}),
-      },
-    });
+    const outcome = await operations.runAction(
+      options.action === ACTIONS.CORRECTION
+        ? ACTIONS.SAVE_CORRECTION_WORKSPACE
+        : ACTIONS.SAVE_DRAFT,
+      "",
+      null,
+      {
+        pdmsSelection: {
+          bindingId: capturedTarget?.bindingId || target.value,
+          name,
+          sessionId: catalog.sessionId,
+          ...(selectedRow ? { row: selectedRow } : {}),
+        },
+      }
+    );
     if (!outcome.ok) {
       setBusy(false);
     }

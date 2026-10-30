@@ -91,6 +91,9 @@ function actionLabel(action) {
     case ACTIONS.SAVE_DRAFT: {
       return "บันทึกฉบับร่าง";
     }
+    case ACTIONS.SAVE_CORRECTION_WORKSPACE: {
+      return "บันทึกตัวอย่างการเลือกโครงการ";
+    }
     case ACTIONS.SAVE_CORRECTION: {
       return "บันทึก Correction";
     }

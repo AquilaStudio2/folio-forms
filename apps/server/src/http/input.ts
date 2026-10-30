@@ -308,30 +308,45 @@ export async function readDocumentKeyInput(request: Request): Promise<string> {
 interface CorrectionInput {
   data: JsonRecord;
   documentKey: string;
-  reason: string;
+  reason?: string;
+  pdmsCatalogSessionId?: unknown;
+  pdmsSelection?: unknown;
 }
 
-export function correctionInput(body: unknown): CorrectionInput {
+export function correctionInput(
+  body: unknown,
+  workspaceOnly = false
+): CorrectionInput {
   const input = asRecord(body);
-  const keys = Object.keys(input);
+  const allowed = new Set([
+    "data",
+    "documentKey",
+    "pdmsCatalogSessionId",
+    ...(workspaceOnly ? ["pdmsSelection"] : ["reason"]),
+  ]);
   if (
-    keys.length !== 3 ||
-    !keys.includes("data") ||
-    !keys.includes("documentKey") ||
-    !keys.includes("reason")
+    Object.keys(input).some((key) => !allowed.has(key)) ||
+    !Object.hasOwn(input, "data")
   ) {
-    fail(400, "invalid_request", "documentKey, data, and reason are required");
+    fail(400, "invalid_request", "Correction request is invalid");
   }
-  const reason = requiredString(input, "reason");
-  if (reason.length > correctionReasonMaximumLength) {
+  const reason = workspaceOnly ? undefined : requiredString(input, "reason");
+  if (reason && reason.length > correctionReasonMaximumLength) {
     fail(400, "invalid_request", "reason is too long");
   }
   return {
     data: jsonRecord(input.data),
     documentKey: requiredString(input, "documentKey"),
-    reason,
+    ...(reason ? { reason } : {}),
+    ...(input.pdmsCatalogSessionId === undefined
+      ? {}
+      : { pdmsCatalogSessionId: input.pdmsCatalogSessionId }),
+    ...(input.pdmsSelection === undefined
+      ? {}
+      : { pdmsSelection: input.pdmsSelection }),
   };
 }
+
 interface FormMetadataInput {
   description?: string | null;
   fillMethod?: FillMethod;

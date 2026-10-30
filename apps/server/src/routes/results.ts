@@ -43,6 +43,7 @@ import { launchForceSave } from "../operations/force-save";
 import { activeOperationForResponse } from "../operations/lifecycle";
 import type { OperationMetadata } from "../operations/model";
 import { operationTypeForAction } from "../operations/model";
+import { pdmsOperationContext } from "../pdms/catalog";
 import { normalizeResponseData } from "../responses/data";
 import { correctionEditorConfig } from "../responses/editor";
 import {
@@ -60,9 +61,208 @@ import type { RouteDependencies } from "./dependencies";
 
 export function registerResultRoutes(
   app: Elysia,
-  dependencies: Pick<RouteDependencies, "onlyOffice" | "allowedCallbackOrigins">
+  dependencies: Pick<
+    RouteDependencies,
+    "onlyOffice" | "allowedCallbackOrigins" | "pdmsProjects"
+  >
 ): void {
   const { onlyOffice, allowedCallbackOrigins } = dependencies;
+  const saveCorrection =
+    (workspaceOnly: boolean) =>
+    async ({
+      request,
+      params,
+      body,
+      set,
+    }: {
+      request: Request;
+      params: { id: string };
+      body: unknown;
+      set: { status?: number | string };
+    }) => {
+      const action = workspaceOnly
+        ? "save-correction-workspace"
+        : "save-correction";
+      const authorization = await requireActionEditorAuthorization(request);
+      const { actor: identity } = authorization;
+      requireAdmin(identity);
+      validateId(params.id, "Response");
+      const input = correctionInput(body, workspaceOnly);
+      const response = await prisma.response.findUnique({
+        include: {
+          prefillSnapshot: true,
+          submissions: {
+            include: {
+              corrections: { orderBy: { revision: "desc" }, take: 1 },
+            },
+            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+            take: 1,
+          },
+        },
+        where: { id: params.id },
+      });
+      const submission = response?.submissions[0];
+      if (
+        !response ||
+        response.status !== ResponseStatus.submitted ||
+        !submission
+      ) {
+        fail(404, "not_found", "Submitted Response was not found");
+      }
+      const form = await prisma.form.findUnique({
+        include: { publishedTemplate: true, templateDraft: true },
+        where: { id: response.formId },
+      });
+      if (!form) {
+        fail(404, "not_found", "Form was not found");
+      }
+      if (workspaceOnly && form.documentKind !== "xlsx") {
+        fail(
+          400,
+          "invalid_request",
+          "Workspace previews require a spreadsheet"
+        );
+      }
+      const latest = submission.corrections[0];
+      const currentRevision = latest?.revision ?? 0;
+      const currentDocumentKey = latest?.documentKey ?? submission.documentKey;
+      const capabilityScope = {
+        documentKey: input.documentKey,
+        formId: form.id,
+        targetId: response.id,
+        targetType: "correction",
+      } as const;
+      requireEditorScope(authorization, {
+        ...capabilityScope,
+        action,
+      });
+      await requireActiveEditorLease(authorization, capabilityScope);
+      const workspaceLease = await prisma.editorLease.findFirst({
+        select: {
+          workspaceBaseDocumentKey: true,
+          workspaceBaseRevision: true,
+          workspaceDocumentKey: true,
+          workspaceObjectKey: true,
+        },
+        where: {
+          id: authorization.capability.leaseId,
+          targetId: response.id,
+          targetType: OperationTargetType.correction,
+          workspaceDocumentKey: input.documentKey,
+        },
+      });
+      if (
+        !workspaceLease?.workspaceBaseDocumentKey ||
+        workspaceLease.workspaceBaseRevision === null ||
+        workspaceLease.workspaceDocumentKey !== input.documentKey ||
+        !workspaceLease.workspaceObjectKey ||
+        workspaceLease.workspaceBaseRevision !== currentRevision ||
+        workspaceLease.workspaceBaseDocumentKey !== currentDocumentKey
+      ) {
+        fail(409, "stale_document", "The response document is stale");
+      }
+      const pdmsContext =
+        form.documentKind === "xlsx"
+          ? await pdmsOperationContext({
+              authorization,
+              bindings: await spreadsheetBindingsForTemplate(
+                response.publishedTemplateId
+              ),
+              requireReady: !workspaceOnly,
+              scope: capabilityScope,
+              selection: input.pdmsSelection,
+              sessionId:
+                input.pdmsCatalogSessionId ??
+                authorization.capability.pdmsCatalogSessionId,
+            })
+          : {};
+      const baseRevision = workspaceLease.workspaceBaseRevision;
+      const baseDocumentKey = workspaceLease.workspaceBaseDocumentKey;
+      const previousData = jsonRecord(latest?.data ?? submission.data);
+      const data =
+        form.documentKind === "xlsx"
+          ? {}
+          : await normalizeResponseData(
+              form,
+              response,
+              { ...previousData, ...input.data },
+              true,
+              true
+            );
+      if (await activeOperationForResponse(response.id)) {
+        fail(
+          409,
+          "operation_in_progress",
+          "Another response operation is already in progress"
+        );
+      }
+      const operationId = crypto.randomUUID();
+      const stagedObjectKey = objectKey(
+        "operations",
+        operationId,
+        "correction",
+        crypto.randomUUID(),
+        form.documentKind
+      );
+      const metadata: OperationMetadata = {
+        ...pdmsContext,
+        action,
+        baseDocumentKey,
+        baseRevision,
+        data,
+        documentKind: form.documentKind,
+        finalObjectKey: objectKey(
+          "responses",
+          response.id,
+          workspaceOnly ? "correction-workspaces" : "corrections",
+          crypto.randomUUID(),
+          form.documentKind
+        ),
+        formId: form.id,
+        nextDocumentKey: `${workspaceOnly ? "correction-workspace" : "correction"}-${response.id}-${crypto.randomUUID()}`,
+        publicId: form.publicId,
+        reason: input.reason,
+        ...(form.documentKind !== "xlsx" &&
+        form.fillMethod === FillMethod.onlyoffice
+          ? callbackFieldMetadata(data, input.data, response.prefillSnapshot)
+          : {}),
+        responseId: response.id,
+        stagedObjectKey,
+        submissionId: submission.id,
+        workspaceDocumentKey: workspaceLease.workspaceDocumentKey,
+        workspaceLeaseId: authorization.capability.leaseId,
+        workspaceObjectKey: workspaceLease.workspaceObjectKey,
+      };
+
+      const operation = await createOperation({
+        actorId: identity.id,
+        authorization,
+        capabilityScope,
+        documentKey: input.documentKey,
+        formId: form.id,
+        metadata,
+        ownerUserId: identity.id,
+        responseId: response.id,
+        stagingObjectKey: stagedObjectKey,
+        submissionId: submission.id,
+        targetId: response.id,
+        targetType: OperationTargetType.correction,
+        type: operationTypeForAction[action],
+      });
+      set.status = 202;
+      launchForceSave(operation, onlyOffice, allowedCallbackOrigins);
+      return {
+        correction: { baseRevision, status: operation.status },
+        operationCapability: operationEditorCapability(
+          identity,
+          capabilityScope,
+          operation.id
+        ),
+        operationId: operation.id,
+        responseId: response.id,
+        status: operation.status,
+      };
+    };
   app
     .get("/api/admin/results", async ({ request, query }) => {
       const identity = await requireIdentity(request);
@@ -381,171 +581,17 @@ export function registerResultRoutes(
     )
     .get(
       "/api/admin/results/:id/correction/editor-config",
-      async ({ request, params }) => {
+      async ({ request, params, query }) => {
         const identity = await requireIdentity(request);
         requireAdmin(identity);
-        return correctionEditorConfig(params.id, identity);
+        return correctionEditorConfig(
+          params.id,
+          identity,
+          query.pdmsOpeningId,
+          dependencies.pdmsProjects
+        );
       }
     )
-    .post(
-      "/api/admin/results/:id/correction",
-      async ({ request, params, body, set }) => {
-        const authorization = await requireActionEditorAuthorization(request);
-        const { actor: identity } = authorization;
-        requireAdmin(identity);
-        validateId(params.id, "Response");
-        const input = correctionInput(body);
-        const response = await prisma.response.findUnique({
-          include: {
-            prefillSnapshot: true,
-            submissions: {
-              include: {
-                corrections: { orderBy: { revision: "desc" }, take: 1 },
-              },
-              orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-              take: 1,
-            },
-          },
-          where: { id: params.id },
-        });
-        const submission = response?.submissions[0];
-        if (
-          !response ||
-          response.status !== ResponseStatus.submitted ||
-          !submission
-        ) {
-          fail(404, "not_found", "Submitted Response was not found");
-        }
-        const form = await prisma.form.findUnique({
-          include: { publishedTemplate: true, templateDraft: true },
-          where: { id: response.formId },
-        });
-        if (!form) {
-          fail(404, "not_found", "Form was not found");
-        }
-        const latest = submission.corrections[0];
-        const currentRevision = latest?.revision ?? 0;
-        const currentDocumentKey =
-          latest?.documentKey ?? submission.documentKey;
-        const capabilityScope = {
-          documentKey: input.documentKey,
-          formId: form.id,
-          targetId: response.id,
-          targetType: "correction",
-        } as const;
-        requireEditorScope(authorization, {
-          ...capabilityScope,
-          action: "save-correction",
-        });
-        await requireActiveEditorLease(authorization, capabilityScope);
-        const workspaceLease = await prisma.editorLease.findFirst({
-          select: {
-            workspaceBaseDocumentKey: true,
-            workspaceBaseRevision: true,
-            workspaceDocumentKey: true,
-            workspaceObjectKey: true,
-          },
-          where: {
-            id: authorization.capability.leaseId,
-            targetId: response.id,
-            targetType: OperationTargetType.correction,
-            workspaceDocumentKey: input.documentKey,
-          },
-        });
-        if (
-          !workspaceLease?.workspaceBaseDocumentKey ||
-          workspaceLease.workspaceBaseRevision === null ||
-          workspaceLease.workspaceDocumentKey !== input.documentKey ||
-          !workspaceLease.workspaceObjectKey ||
-          workspaceLease.workspaceBaseRevision !== currentRevision ||
-          workspaceLease.workspaceBaseDocumentKey !== currentDocumentKey
-        ) {
-          fail(409, "stale_document", "The response document is stale");
-        }
-        const baseRevision = workspaceLease.workspaceBaseRevision;
-        const baseDocumentKey = workspaceLease.workspaceBaseDocumentKey;
-        const previousData = jsonRecord(latest?.data ?? submission.data);
-        const data =
-          form.documentKind === "xlsx"
-            ? {}
-            : await normalizeResponseData(
-                form,
-                response,
-                { ...previousData, ...input.data },
-                true,
-                true
-              );
-        if (await activeOperationForResponse(response.id)) {
-          fail(
-            409,
-            "operation_in_progress",
-            "Another response operation is already in progress"
-          );
-        }
-        const operationId = crypto.randomUUID();
-        const stagedObjectKey = objectKey(
-          "operations",
-          operationId,
-          "correction",
-          crypto.randomUUID(),
-          form.documentKind
-        );
-        const metadata: OperationMetadata = {
-          action: "save-correction",
-          baseDocumentKey,
-          baseRevision,
-          data,
-          documentKind: form.documentKind,
-          finalObjectKey: objectKey(
-            "responses",
-            response.id,
-            "corrections",
-            crypto.randomUUID(),
-            form.documentKind
-          ),
-          formId: form.id,
-          nextDocumentKey: `correction-${response.id}-${crypto.randomUUID()}`,
-          publicId: form.publicId,
-          reason: input.reason,
-          ...(form.documentKind !== "xlsx" &&
-          form.fillMethod === FillMethod.onlyoffice
-            ? callbackFieldMetadata(data, input.data, response.prefillSnapshot)
-            : {}),
-          responseId: response.id,
-          stagedObjectKey,
-          submissionId: submission.id,
-          workspaceDocumentKey: workspaceLease.workspaceDocumentKey,
-          workspaceObjectKey: workspaceLease.workspaceObjectKey,
-        };
-
-        const operation = await createOperation({
-          actorId: identity.id,
-          authorization,
-          capabilityScope,
-          documentKey: input.documentKey,
-          formId: form.id,
-          metadata,
-          ownerUserId: identity.id,
-          responseId: response.id,
-          stagingObjectKey: stagedObjectKey,
-          submissionId: submission.id,
-          targetId: response.id,
-          targetType: OperationTargetType.correction,
-          type: operationTypeForAction["save-correction"],
-        });
-        set.status = 202;
-        launchForceSave(operation, onlyOffice, allowedCallbackOrigins);
-        return {
-          correction: { baseRevision, status: operation.status },
-          operationCapability: operationEditorCapability(
-            identity,
-            capabilityScope,
-            operation.id
-          ),
-          operationId: operation.id,
-          responseId: response.id,
-          status: operation.status,
-        };
-      }
-    );
+    .post("/api/admin/results/:id/correction", saveCorrection(false))
+    .post("/api/admin/results/:id/correction/workspace", saveCorrection(true));
 }

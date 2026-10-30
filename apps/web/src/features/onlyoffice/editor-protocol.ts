@@ -8,6 +8,7 @@ type EditorAction =
   | "publish"
   | "save-draft"
   | "save-correction"
+  | "save-correction-workspace"
   | "submit"
   | "configure-fields";
 type EditorOperationAction = Exclude<EditorAction, "configure-fields">;
@@ -109,6 +110,7 @@ const isEditorOperationAction = (
   value === "publish" ||
   value === "save-draft" ||
   value === "save-correction" ||
+  value === "save-correction-workspace" ||
   value === "submit";
 const isEditorAction = (value: unknown): value is EditorAction =>
   value === "configure-fields" || isEditorOperationAction(value);

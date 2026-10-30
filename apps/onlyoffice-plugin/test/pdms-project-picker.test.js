@@ -389,3 +389,93 @@ test("a choice started before lease replacement is rejected while the new catalo
     )
   ).toBe(false);
 });
+
+test("Correction picker saves only its workspace without inventing a reason, using the native save barrier", async () => {
+  const harness = createHarness({
+    action: "correction",
+    capabilityResponses: ["workspace-capability"],
+    documentKind: "xlsx",
+    holdEditorSave: true,
+    scopeIdentity: "actor/correction/response-id",
+    pdmsProjectCatalog: {
+      names: ["Current project"],
+      sessionId: "catalog-session",
+      status: "ready",
+    },
+    spreadsheetBindings: { fields: [project], table: null, version: 1 },
+    responses: [
+      {
+        operationId: "workspace-preview",
+        operationCapability: "poll-capability",
+      },
+      completedOperation({
+        documentKey: "next-workspace",
+        workspaceSaved: true,
+      }),
+    ],
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  labelled(harness, "ค้นหาชื่อโครงการ").dispatchEvent({
+    type: "keydown",
+    key: "Enter",
+  });
+  await flushPlugin();
+  expect(harness.requests).toHaveLength(0);
+  const pendingCheck = harness.messages.find(
+    ({ message }) => message.type === "pending-file-check"
+  )?.message;
+  expect(pendingCheck).toMatchObject({
+    action: "save-correction-workspace",
+    bridgeId: harness.bridgeId,
+    documentKey: "document-key",
+    scopeIdentity: "actor/correction/response-id",
+    source: "folio-upload-poc",
+  });
+  expect(
+    harness.methodInvocations.some(
+      ({ method }) => method === "SetEditingRestrictions"
+    )
+  ).toBe(false);
+  harness.dispatch({
+    data: {
+      ...pendingCheck,
+      source: "folio-upload-poc-host",
+      type: "pending-file-result",
+      allowed: true,
+      hasPending: false,
+    },
+    origin: harness.parentOrigin,
+    source: harness.parentWindow,
+  });
+  await flushPlugin();
+  expect(harness.requests).toHaveLength(0);
+  expect(harness.methodInvocations).toContainEqual({
+    method: "SetEditingRestrictions",
+    args: ["readOnly"],
+  });
+  harness.finishEditorSave();
+  await flushPlugin();
+  await flushPlugin();
+  expect(harness.requests[0]?.url).toEndWith("/correction/workspace");
+  expect(JSON.parse(harness.requests[0].body)).toEqual({
+    documentKey: "document-key",
+    data: {},
+    pdmsCatalogSessionId: "catalog-session",
+    pdmsSelection: {
+      bindingId: "folio_project",
+      name: "Current project",
+      sessionId: "catalog-session",
+    },
+  });
+  expect(
+    harness.messages.findLast(({ message }) => message.type === "operation")
+      .message
+  ).toMatchObject({ action: "save-correction-workspace", status: "completed" });
+  expect(
+    harness.methodInvocations.some(
+      ({ method, args }) =>
+        method === "SetEditingRestrictions" && args?.[0] === "none"
+    )
+  ).toBe(false);
+});
