@@ -64,6 +64,10 @@ The immutable document and field contract used to start new Responses. A publish
 
 A mapped input in a Form. For DOCX, it is a tagged content control: its Title/Alias is the user-facing label, its Tag is the stable identity in prefill and extracted data, and its Placeholder guides entry. If the Title/Alias is blank, use the Tag as the label. For XLSX, a Field maps a cell or complete merged cell to a key, label, type, and rules through a named range. Keys must be unique within their containing object and may be reused by different Forms.
 
+## PDMS Project Name Source
+
+An Admin-selected source of project-name choices for XLSX Fields. Users select a name from the available choices; identical names represent one choice, and the answer is the selected name rather than a reference to a distinct PDMS project. A previously saved name remains valid when that name is later renamed or removed from the source.
+
 ## Excel Binding
 
 The placement-only JSON attached to a shared Draft Field Rule or Manifest Field. One `ExcelBinding` TypeScript union and its validation schemas in `apps/server/src/forms/excel-binding.ts` define scalar `{id, anchor, computed}`, table `{id, anchor}`, and column `{id, offset, computed}` metadata. Both lifecycle stages use these definitions for reads and writes; common field configuration stays in the normal field columns. It is stored in the existing nullable `binding` column, not a new database model. DOCX bindings remain null.
