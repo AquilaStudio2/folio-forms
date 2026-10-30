@@ -6,6 +6,7 @@ const ACTIONS = Object.freeze({
   FILL: "fill",
   PUBLISH: "publish",
   SAVE_CORRECTION: "save-correction",
+  SAVE_CORRECTION_WORKSPACE: "save-correction-workspace",
   SAVE_DRAFT: "save-draft",
   SAVE_TEMPLATE: "save-template",
   SUBMIT: "submit",
@@ -30,6 +31,7 @@ const CAPABILITY_ACTIONS = Object.freeze([
   ACTIONS.PUBLISH,
   ACTIONS.SAVE_DRAFT,
   ACTIONS.SAVE_CORRECTION,
+  ACTIONS.SAVE_CORRECTION_WORKSPACE,
   ACTIONS.SUBMIT,
   ACTIONS.CONFIGURE_FIELDS,
 ]);

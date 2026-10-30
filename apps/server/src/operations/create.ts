@@ -62,6 +62,57 @@ export async function createOperation(input: {
         input.authorization,
         input.capabilityScope
       );
+      if (
+        input.metadata.action === "save-correction" ||
+        input.metadata.action === "save-correction-workspace"
+      ) {
+        const [actor, workspace, response] = await Promise.all([
+          tx.user.findFirst({
+            where: { enabled: true, id: input.actorId, role: "admin" },
+          }),
+          tx.editorLease.findFirst({
+            where: {
+              holderUserId: input.actorId,
+              id: input.metadata.workspaceLeaseId,
+              targetId: input.targetId,
+              targetType: "correction",
+              workspaceBaseDocumentKey: input.metadata.baseDocumentKey,
+              workspaceBaseRevision: input.metadata.baseRevision,
+              workspaceDocumentKey: input.documentKey,
+              workspaceObjectKey: input.metadata.workspaceObjectKey,
+            },
+          }),
+          tx.response.findUnique({
+            include: {
+              submissions: {
+                include: {
+                  corrections: { orderBy: { revision: "desc" }, take: 1 },
+                },
+                orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+                take: 1,
+              },
+            },
+            where: { id: input.responseId },
+          }),
+        ]);
+        const submission = response?.submissions[0];
+        const latest = submission?.corrections[0];
+        if (
+          !actor ||
+          !input.metadata.workspaceLeaseId ||
+          !workspace ||
+          !response ||
+          response.formId !== input.formId ||
+          response.status !== "submitted" ||
+          !submission ||
+          submission.id !== input.submissionId ||
+          (latest?.revision ?? 0) !== input.metadata.baseRevision ||
+          (latest?.documentKey ?? submission.documentKey) !==
+            input.metadata.baseDocumentKey
+        ) {
+          fail(409, "stale_document", "The correction workspace is stale");
+        }
+      }
       if (input.metadata.spreadsheetSaveCheckpoint) {
         const reused = await tx.operation.findFirst({
           select: { id: true },

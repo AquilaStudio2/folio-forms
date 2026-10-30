@@ -312,31 +312,39 @@ export const pdmsOperationContext = async (input: {
   }
   // Both target coordinates and row bounds come from the saved artifact. Native
   // structure edits cannot establish a new row mapping through callback values.
-  if (
-    request.row ||
-    !input.bindings.fields.some((candidate) => candidate.id === field.id)
-  ) {
-    const response =
-      input.scope.targetType === "response"
-        ? await prisma.response.findUnique({
-            where: { id: input.scope.targetId },
-          })
-        : null;
-    if (
-      !response?.draftObjectKey ||
-      response.draftDocumentKey !== input.scope.documentKey
-    ) {
-      fail(409, "pdms_selection_stale", "แถวไม่ตรงกับเอกสารปัจจุบัน");
-    }
-    resolvePdmsSelectionTarget(
-      resolveSpreadsheetContract(
-        input.bindings,
-        readSpreadsheetWorkbook(await readObject(response.draftObjectKey))
-      ),
-      request,
-      input.scope.documentKey
-    );
+  const response =
+    input.scope.targetType === "response"
+      ? await prisma.response.findUnique({
+          where: { id: input.scope.targetId },
+        })
+      : null;
+  const workspace =
+    input.scope.targetType === "correction"
+      ? await prisma.editorLease.findFirst({
+          where: {
+            id: input.authorization.capability.leaseId,
+            holderUserId: input.authorization.actor.id,
+            targetType: "correction",
+            targetId: input.scope.targetId,
+            workspaceDocumentKey: input.scope.documentKey,
+          },
+        })
+      : null;
+  const documentKey =
+    workspace?.workspaceDocumentKey ?? response?.draftDocumentKey;
+  const objectKey = workspace?.workspaceObjectKey ?? response?.draftObjectKey;
+  if (!objectKey || documentKey !== input.scope.documentKey) {
+    fail(409, "pdms_selection_stale", "แถวไม่ตรงกับเอกสารปัจจุบัน");
   }
+  resolvePdmsSelectionTarget(
+    resolveSpreadsheetContract(
+      input.bindings,
+      readSpreadsheetWorkbook(await readObject(objectKey))
+    ),
+    request,
+    input.scope.documentKey
+  );
+
   return {
     pdmsCatalogSessionId: session.id,
     pdmsSelection: {

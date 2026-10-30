@@ -73,7 +73,11 @@ export const resolvePdmsSelectionTarget = (
 export const pdmsSelectionValue = async (
   metadata: OperationMetadata,
   contract: SpreadsheetContract,
-  response: { id: string; draftDocumentKey: string | null }
+  target: {
+    targetType: "response" | "correction";
+    targetId: string;
+    documentKey: string | null;
+  }
 ) => {
   if (!metadata.pdmsSelection) {
     return null;
@@ -86,10 +90,10 @@ export const pdmsSelectionValue = async (
     !session ||
     session.status !== "ready" ||
     session.documentKey !== selection.documentKey ||
-    response.draftDocumentKey !== selection.documentKey ||
+    target.documentKey !== selection.documentKey ||
     session.formId !== metadata.formId ||
-    session.targetType !== "response" ||
-    session.targetId !== response.id ||
+    session.targetType !== target.targetType ||
+    session.targetId !== target.targetId ||
     session.actorId !== selection.actorId ||
     session.leaseId !== selection.leaseId ||
     metadata.pdmsCatalogSessionId !== selection.sessionId ||
@@ -97,13 +101,13 @@ export const pdmsSelectionValue = async (
   ) {
     fail(409, "pdms_selection_stale", "การเลือกโครงการไม่ตรงกับเอกสารที่บันทึก");
   }
-  const target = resolvePdmsSelectionTarget(
+  const cell = resolvePdmsSelectionTarget(
     contract,
     selection,
     selection.documentKey
   );
   return {
-    address: `${spreadsheetColumnName(target.column)}${target.row + 1}`,
+    address: `${spreadsheetColumnName(cell.column)}${cell.row + 1}`,
     text: true as const,
     value: selection.name,
   };

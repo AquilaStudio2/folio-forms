@@ -15,10 +15,12 @@ type OperationAction =
   | "publish"
   | "save-draft"
   | "submit"
-  | "save-correction";
+  | "save-correction"
+  | "save-correction-workspace";
 export const operationTypeForAction: Record<OperationAction, OperationType> = {
   publish: "publish_form",
   "save-correction": "save_correction",
+  "save-correction-workspace": "save_correction",
   "save-draft": "save_draft",
   "save-template": "save_template_draft",
   submit: "submit_response",
@@ -68,6 +70,7 @@ export interface OperationMetadata extends JsonRecord {
   stagedObjectKey: string;
   submissionDocumentKey?: string;
   submissionId?: string;
+  workspaceLeaseId?: string;
   workspaceDocumentKey?: string;
   workspaceObjectKey?: string;
 }
@@ -111,7 +114,8 @@ export function operationMetadata(value: unknown): OperationMetadata {
       action !== "publish" &&
       action !== "save-draft" &&
       action !== "submit" &&
-      action !== "save-correction") ||
+      action !== "save-correction" &&
+      action !== "save-correction-workspace") ||
     typeof formId !== "string" ||
     typeof stagedObjectKey !== "string" ||
     typeof finalObjectKey !== "string" ||
@@ -128,6 +132,9 @@ export function operationMetadata(value: unknown): OperationMetadata {
     (cleanupObjectKeys !== undefined &&
       (!Array.isArray(cleanupObjectKeys) ||
         cleanupObjectKeys.some((key) => typeof key !== "string"))) ||
+    (metadata.workspaceLeaseId !== undefined &&
+      !pdmsSelectionSchema.shape.leaseId.safeParse(metadata.workspaceLeaseId)
+        .success) ||
     (workspaceDocumentKey !== undefined &&
       typeof workspaceDocumentKey !== "string") ||
     (workspaceObjectKey !== undefined && typeof workspaceObjectKey !== "string")

@@ -56,8 +56,14 @@ mock.module("@onlyoffice/db", () => ({
   },
   Prisma: { DbNull: null },
   prisma: {
-    correction: { findFirst: () => Promise.resolve(null) },
     draftFieldRule: { findMany: () => Promise.resolve(draftRows) },
+    editorLease: {
+      findFirst: () =>
+        Promise.resolve({
+          workspaceDocumentKey: "correction-workspace",
+          workspaceObjectKey: "trusted.xlsx",
+        }),
+    },
     fieldManifest: {
       findUnique: () =>
         Promise.resolve({
@@ -75,10 +81,8 @@ mock.module("@onlyoffice/db", () => ({
           draftObjectKey: "trusted.xlsx",
           prefillSnapshot: { lockedFields: lockAgency ? { agency: true } : {} },
           publishedTemplateId: "published",
+          status: "submitted",
         }),
-    },
-    submission: {
-      findUnique: () => Promise.resolve({ objectKey: "trusted.xlsx" }),
     },
   },
 }));
@@ -130,6 +134,13 @@ const metadata = (action: OperationMetadata["action"]): OperationMetadata => ({
   formId: "form",
   responseId: "response",
   stagedObjectKey: "staged",
+  ...(action === "save-correction"
+    ? {
+        workspaceDocumentKey: "correction-workspace",
+        workspaceLeaseId: "fixture-lease",
+        workspaceObjectKey: "trusted.xlsx",
+      }
+    : {}),
 });
 const heartbeat = () => Promise.resolve();
 

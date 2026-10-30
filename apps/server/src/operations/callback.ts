@@ -36,6 +36,7 @@ import {
 import {
   completeDraftOperation,
   completeCorrectionOperation,
+  completeCorrectionWorkspaceOperation,
   completeSubmitOperation,
 } from "./response-completion";
 import { prepareSpreadsheetOperation } from "./spreadsheet-document";
@@ -327,6 +328,11 @@ export async function finalizeCallback(
       completion = await completePublishOperation(operation, metadata, bytes);
     } else if (metadata.action === "save-draft") {
       completion = await completeDraftOperation(operation, metadata, bytes);
+    } else if (metadata.action === "save-correction-workspace") {
+      completion = await completeCorrectionWorkspaceOperation(
+        operation,
+        metadata
+      );
     } else if (metadata.action === "save-correction") {
       completion = await completeCorrectionOperation(
         operation,
@@ -342,5 +348,12 @@ export async function finalizeCallback(
     throw error;
   }
 
-  await deleteObjects(completion?.cleanupObjectKeys ?? []);
+  await (metadata.action === "save-correction" ||
+  metadata.action === "save-correction-workspace"
+    ? Promise.all(
+        (completion?.cleanupObjectKeys ?? []).map((key) =>
+          deleteObjectUnlessCanonical(key)
+        )
+      )
+    : deleteObjects(completion?.cleanupObjectKeys ?? []));
 }
