@@ -8,7 +8,8 @@ export const createPdmsProjectPicker = (
   panel,
   operations,
   setStatus,
-  readSelection
+  readSelection,
+  isEditorBusy = () => false
 ) => {
   const columns = (bindings?.table?.columns || []).filter(
     (field) => field.source === "pdms-project-name"
@@ -91,8 +92,11 @@ export const createPdmsProjectPicker = (
   let retrying = false;
   let popupOwner = null;
   const setBusy = (value) => {
+    const changed = busy !== value;
     busy = value;
-    popupOwner?.busyChanged();
+    if (changed) {
+      popupOwner?.busyChanged();
+    }
     retry.disabled = value || retrying;
     for (const control of [
       target,
@@ -247,7 +251,7 @@ export const createPdmsProjectPicker = (
   popupOwner = createPdmsPopupOwner({
     bindings,
     choose,
-    getBusy: () => busy || retrying,
+    getBusy: () => busy || retrying || isEditorBusy(),
     getCatalog: () => catalog,
     options,
     preview,

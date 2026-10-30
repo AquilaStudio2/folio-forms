@@ -2645,7 +2645,8 @@ export function initializeSpreadsheet(options, setStatus) {
     panel,
     operations,
     setStatus,
-    selection
+    selection,
+    () => busy
   );
   return { operations, bridge };
 }
