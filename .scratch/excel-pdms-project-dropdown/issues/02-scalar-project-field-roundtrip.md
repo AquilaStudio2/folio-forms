@@ -11,7 +11,7 @@ Type: task
 Approval: Published after the user instructed implementation of the proposed spec and ticket graph.
 
 - [ ] Add the source through shared Field metadata with existing Title/Tag defaults, editing, uniqueness and stable binding identity; keep Excel Binding placement-only.
-- [ ] Provide an authenticated backend PDMS adapter using a server-held credential and validate the current upstream contract. Only authorized source-enabled editor openings trigger it.
+- [ ] Provide an authenticated backend PDMS adapter using ONGOING_API_URL and X_ONGOING_SECRET, calling api/pages/projects/names-and-doc-numbers with ongoing-secret-token. Validate the current upstream contract, keep credentials server-only, and wire the exact variable names into server configuration/example docs. Only authorized source-enabled editor openings trigger it.
 - [ ] Offer all nonblank names from that contract, collapse identical names and retain deterministic order; do not add project IDs, subsets or new upstream filters.
 - [ ] One successful session catalog serves all mapped scalar Fields. Initial choices load per opening independently of one-time Response initialization.
 - [ ] Use the proven picker/protected-write route; persist trusted selection operations bound to the current source, Field, document and revision. Membership alone cannot prove selection.

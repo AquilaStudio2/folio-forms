@@ -144,3 +144,7 @@ The user subsequently requested the to-spec and to-tickets workflows. A [review 
 The user invoked implement-spec and explicitly instructed implementation. This accepts the previously proposed test boundaries and ticket graph. The canonical spec and eight tickets are published as ready-for-agent. Integration branch: codex/excel-pdms-project-dropdown; baseline commit: ced39002574331a347b59cd868535fc4eb90ef05.
 
 Execution frontier: 01. Each implementation ticket has its own branch/worktree and fresh TDD implementer; merger agents integrate completed work. Completion uses the local wayfinding convention: Type prototype/task, Status claimed while active and resolved only with acceptance evidence in Comments. The ready-for-agent value records initial triage. No deployment is planned.
+
+### Active work
+
+Ticket 01 is claimed by the fresh implementer on codex/pdms-project-01 in its isolated worktree. Its runtime feasibility results gate ticket 02. Shared environment research is available outside the repository; integration uses private isolated test resources, not existing demo data.
