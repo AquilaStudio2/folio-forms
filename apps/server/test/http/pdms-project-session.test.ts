@@ -557,6 +557,10 @@ test("simultaneous config requests for one fresh opening all receive its one sha
     if (!first) {
       throw new Error("Opening fixture is empty");
     }
+    expect(first.pdmsProjectCatalog).toMatchObject({
+      status: "ready",
+      names: ["โครงการแรก"],
+    });
     expect(editors.map((editor) => editor.pdmsProjectCatalog)).toEqual(
       Array.from({ length: 8 }, () => first.pdmsProjectCatalog)
     );
