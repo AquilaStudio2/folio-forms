@@ -4,20 +4,20 @@
 
 **Blocked by:** 05 — Select and save project names in repeating-table rows.
 
-**Status:** claimed
+**Status:** resolved
 
 Type: task
 
 Approval: Published after the user instructed implementation of the proposed spec and ticket graph.
 
-- [ ] Reuse Admin's existing removal operation and save/recovery barrier; require current authoring capability, active lease and revision.
-- [ ] Remove the mapping, Title/Tag configuration, source, picker state, managed anchors and native dropdown/validation for that Field.
-- [ ] Reconcile only source-managed protection and selection state; preserve cell text, borders, formatting, unrelated protection, custom names and validation.
-- [ ] Removing a table-column mapping keeps its physical worksheet column; removing the table mapping cleans its project-column management without deleting worksheet rows.
-- [ ] Save and reopen the Template Draft to demonstrate removal remains effective and the removed Field is absent from extracted data after publication.
-- [ ] Preserve Published Template immutability: modifying published structure requires duplication and does not rewrite prior Responses or Submissions.
-- [ ] No User Clear-answer button or automatic conversion into a mapped text Field is introduced.
-- [ ] Exercise visible Admin removal plus HTTP persistence and failure recovery, and run relevant static-dropdown, shared-Field, helper-storage, Prefill and publication regressions.
+- [x] Reuse Admin's existing removal operation and save/recovery barrier; require current authoring capability, active lease and revision.
+- [x] Remove the mapping, Title/Tag configuration, source, picker state, managed anchors and native dropdown/validation for that Field.
+- [x] Reconcile only source-managed protection and selection state; preserve cell text, borders, formatting, unrelated protection, custom names and validation.
+- [x] Removing a table-column mapping keeps its physical worksheet column; removing the table mapping cleans its project-column management without deleting worksheet rows.
+- [x] Save and reopen the Template Draft to demonstrate removal remains effective and the removed Field is absent from extracted data after publication.
+- [x] Preserve Published Template immutability: modifying published structure requires duplication and does not rewrite prior Responses or Submissions.
+- [x] No User Clear-answer button or automatic conversion into a mapped text Field is introduced.
+- [x] Exercise visible Admin removal plus HTTP persistence and failure recovery, and run relevant static-dropdown, shared-Field, helper-storage, Prefill and publication regressions.
 
 ## Comments
 
@@ -27,4 +27,8 @@ Removal clears mapped table-column offsets without deleting worksheet columns or
 
 TDD evidence: the authoring harness first exposed source-insensitive recovery and a stale preview after removal; pinned 9.4 first exposed whole-table validation clearing; public HTTP first exposed unrelated validation/helper loss at publication and a Retry finishing after last-source removal. Each failing behavior was then implemented through its existing approved seam. The HTTP suite is registered in the explicit `test:http` command and covers failed checkpoint capture/retry, source/Tag removal after reopen/publication, physical layout retention, source-free opening/Retry rejection, ordinary dropdown submission, duplication and immutable original artifacts/results. The native command harness verifies preserved text, custom names, unmapped-column validation and date formatting.
 
-Current checks: spreadsheet unit 94 pass; plugin 250 pass; existing authoring/column/initialization/preserved-session/scalar/session HTTP 41 pass; web UI 170 pass; pinned workbook runtime 38 pass plus one unrelated HTTP-builder opt-in skip; web build, root formatting/lint and typecheck pass. The complete removal HTTP opt-in and final compatibility check are rerun after the last change. Actual Admin UI removal is pending root-only verification in a separate isolated fixture. The user accepted the cell-adjacent dropdown as a separate final interaction slice (09); that integration does not add native worksheet helper artifacts. The production source switch remains false.
+Executed checks: removal HTTP opt-in 4 pass, including native ordinary-dropdown readback after export/reopen with scoped custom names; spreadsheet unit 94 pass; plugin 250 pass; existing authoring/column/initialization/preserved-session/scalar/session HTTP 41 pass; web UI 170 pass; pinned workbook runtime 38 pass plus one unrelated HTTP-builder opt-in skip; web build, root formatting/lint and typecheck pass. The integration merge retained both the accepted table-history suite and this removal suite in `test:http`. Final merge from `0faa52d` changes only the accepted interaction specification; documentation completion uses scoped formatting/lint checks without repeating the passed broad suites. The user accepted the cell-adjacent dropdown as a separate final interaction slice (09), which adds no native worksheet helper artifacts. The production source switch remains false.
+
+Root accepted the actual pinned 9.4 Admin removal workflow in an isolated fixture: remove the merged scalar, remove one project-column mapping, then remove the remaining table mapping using the existing button and immediate save. Each stage displayed successful save; independent public downloads and public audit events confirm the corresponding managed anchors disappeared while A1/A4/B5 text, A1:B1 merge, fonts, borders, ordinary D-column notes, static F1 choices and unmapped C-column custom validation/name remained at their physical addresses. Column removal returned the parent table mapping; whole-table removal returned an unmapped default rather than creating a text Field, and its PDMS picker disappeared. The initial CUA app-change guard produced no server configuration/save event and was not counted as a completed action; the later verified clicks completed normally.
+
+A fresh browser reload of the same author page preserved the removed mappings and visible merged scalar text. Selecting F1 still displayed its original saved Title, `static_choice` Tag, ordinary dropdown type and both original static choices. Root screenshot: `08-removal-reopened.png`; independent saved artifact stages: `08-admin-scalar-confirmed`, `08-admin-column-confirmed`, and `08-admin-table-confirmed` XLSX/JSON files in the external implementation artifacts directory. No live provider-count measurement was claimed; deterministic HTTP verifies source-free opening without an upstream request and rejection of an old catalog Retry. No browser/UI was operated by the implementer. Root then moved its sole temporary tab to the Correction fixture, and the owned 08 API/web listeners can be stopped. Ticket 08 is resolved; 07/09 acceptance remains separate.
