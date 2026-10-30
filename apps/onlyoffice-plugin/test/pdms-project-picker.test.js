@@ -8,12 +8,41 @@ import {
   flushPlugin,
 } from "./harness.js";
 
-const descendants = (node) => [node, ...node.children.flatMap(descendants)];
-const labelled = (harness, caption) =>
-  descendants(harness.body).find(
-    (node) =>
-      node.tagName === "LABEL" && node.children[0]?.textContent === caption
-  )?.children[1];
+const pickerHarness = (options) =>
+  createHarness({
+    pdmsPopupChannelId: "popup-channel",
+    spreadsheetSelection: {
+      address: "A1",
+      names: { folio_project: "'Form'!$A$1" },
+      sheet: "Form",
+    },
+    ...options,
+  });
+const popup = (harness, type, extra = {}) =>
+  harness.dispatch({
+    data: {
+      bridgeId: harness.bridgeId,
+      channelId: "popup-channel",
+      documentKey: "document-key",
+      instanceId: "popup",
+      sequence: 1,
+      source: "folio-pdms-popup-host",
+      type,
+      ...extra,
+    },
+    origin: harness.parentOrigin,
+    source: harness.parentWindow,
+  });
+const state = (harness) =>
+  harness.messages.findLast(
+    ({ message }) => message.type === "pdms-popup-state"
+  )?.message.state;
+const locate = async (harness) => {
+  popup(harness, "locate");
+  await flushPlugin();
+};
+const choose = (harness, name) =>
+  popup(harness, "choose", { name, token: state(harness).target.token });
 const project = {
   anchor: "folio_project",
   id: "folio_project",
@@ -25,7 +54,7 @@ const project = {
 };
 
 test("a table project picker targets the selected physical row in its saved document revision", async () => {
-  const harness = createHarness({
+  const harness = pickerHarness({
     capabilityResponses: ["save-capability"],
     documentKind: "xlsx",
     holdEditorSave: true,
@@ -52,9 +81,14 @@ test("a table project picker targets the selected physical row in its saved docu
           firstRow: 3,
           lastRow: 5,
           firstColumn: 0,
-          lastColumn: 1,
+          lastColumn: 0,
         },
       },
+    },
+    spreadsheetSelection: {
+      address: "A5",
+      names: { folio_body: "'Form'!$A$4:$A$6" },
+      sheet: "Form",
     },
     responses: [
       { operationId: "picker-save", operationCapability: "poll-capability" },
@@ -63,19 +97,12 @@ test("a table project picker targets the selected physical row in its saved docu
   });
   acknowledgeBridge(harness);
   await flushPlugin();
-  const row = labelled(harness, "แถวโครงการ");
-  expect(row).toBeDefined();
-  expect(row.children.map((option) => option.textContent)).toEqual([
-    "รายการ 1 · แถว 4",
-    "รายการ 2 · แถว 5",
-    "รายการ 3 · แถว 6",
-  ]);
-  row.value = "1";
-  row.dispatchEvent({ type: "change" });
-  labelled(harness, "ค้นหาชื่อโครงการ").dispatchEvent({
-    key: "Enter",
-    type: "keydown",
+  await locate(harness);
+  expect(state(harness).target.row).toEqual({
+    index: 1,
+    documentKey: "document-key",
   });
+  choose(harness, "Project B");
   await flushPlugin();
   expect(harness.requests).toHaveLength(0);
   harness.finishEditorSave();
@@ -92,8 +119,8 @@ test("a table project picker targets the selected physical row in its saved docu
   });
 });
 
-test("search selects a name through native freeze and flush before saving and keeps editing frozen until reload", async () => {
-  const harness = createHarness({
+test("an adjacent choice uses native freeze and flush before saving and keeps editing frozen until reload", async () => {
+  const harness = pickerHarness({
     capabilityResponses: ["save-capability"],
     documentKind: "xlsx",
     holdEditorSave: true,
@@ -110,16 +137,9 @@ test("search selects a name through native freeze and flush before saving and ke
   });
   acknowledgeBridge(harness);
   await flushPlugin();
-  const search = labelled(harness, "ค้นหาชื่อโครงการ");
-  expect(search).toBeDefined();
-  search.value = "โครงการ";
-  search.dispatchEvent({ type: "input" });
+  await locate(harness);
   expect(harness.requests).toHaveLength(0);
-  const choice = descendants(harness.body).find(
-    (node) => node.tagName === "BUTTON" && node.textContent === "โครงการ ก"
-  );
-  expect(choice).toBeDefined();
-  choice.dispatchEvent({ type: "click" });
+  choose(harness, "โครงการ ก");
   await flushPlugin();
   expect(harness.requests).toHaveLength(0);
   expect(harness.methodInvocations).toContainEqual({
@@ -152,58 +172,8 @@ test("search selects a name through native freeze and flush before saving and ke
   ).toBe(false);
 });
 
-test("Thai composition, cancellation and paging leave answers untouched and keep the final result reachable", async () => {
-  const names = Array.from(
-    { length: 2500 },
-    (_, index) => `โครงการทดสอบ ${String(index).padStart(4, "0")}`
-  );
-  const harness = createHarness({
-    documentKind: "xlsx",
-    pdmsProjectCatalog: {
-      names,
-      sessionId: "catalog-session",
-      status: "ready",
-    },
-    spreadsheetBindings: { fields: [project], table: null, version: 1 },
-  });
-  acknowledgeBridge(harness);
-  await flushPlugin();
-  const query = labelled(harness, "ค้นหาชื่อโครงการ");
-  query.dispatchEvent({ type: "compositionstart" });
-  query.value = "โครงการทดสอบ 2499";
-  query.dispatchEvent({ type: "input" });
-  query.dispatchEvent({ isComposing: true, key: "Enter", type: "keydown" });
-  expect(
-    descendants(harness.body).filter((node) => node.role === "option")
-  ).toHaveLength(100);
-  query.dispatchEvent({ type: "compositionend" });
-  expect(
-    descendants(harness.body)
-      .filter((node) => node.role === "option")
-      .map((node) => node.textContent)
-  ).toEqual(["โครงการทดสอบ 2499"]);
-  query.dispatchEvent({ key: "Escape", type: "keydown" });
-  expect(query.value).toBe("");
-  for (let page = 0; page < 24; page += 1) {
-    descendants(harness.body)
-      .find(
-        (node) =>
-          node.tagName === "BUTTON" &&
-          node.textContent === "แสดงเพิ่ม 100 โครงการ"
-      )
-      .click();
-  }
-  const choices = descendants(harness.body).filter(
-    (node) => node.role === "option"
-  );
-  expect(choices.at(-1).textContent).toBe("โครงการทดสอบ 2499");
-  query.dispatchEvent({ key: "ArrowDown", type: "keydown" });
-  expect(query["aria-activedescendant"]).toBe("pdms-project-1");
-  expect(harness.requests).toHaveLength(0);
-});
-
 test("failed picker saving keeps the current editor and permits retry", async () => {
-  const harness = createHarness({
+  const harness = pickerHarness({
     capabilityResponses: ["save-capability"],
     documentKind: "xlsx",
     pdmsProjectCatalog: {
@@ -219,17 +189,18 @@ test("failed picker saving keeps the current editor and permits retry", async ()
   });
   acknowledgeBridge(harness);
   await flushPlugin();
-  const choice = descendants(harness.body).find(
-    (node) => node.tagName === "BUTTON" && node.textContent === "โครงการ ก"
-  );
-  choice.click();
+  await locate(harness);
+  choose(harness, "โครงการ ก");
   await flushPlugin();
   await flushPlugin();
   expect(harness.methodInvocations).toContainEqual({
     args: ["none"],
     method: "SetEditingRestrictions",
   });
-  expect(choice.disabled).toBe(false);
+  expect(state(harness)).toMatchObject({
+    busy: false,
+    target: { bindingId: "folio_project" },
+  });
   expect(
     harness.messages.some(
       ({ message }) =>
@@ -239,7 +210,7 @@ test("failed picker saving keeps the current editor and permits retry", async ()
 });
 
 test("Retry recovers a failed catalog without saving or replacing the current editor", async () => {
-  const harness = createHarness({
+  const harness = pickerHarness({
     capabilityResponses: ["retry-capability"],
     documentKind: "xlsx",
     pdmsProjectCatalog: {
@@ -260,14 +231,9 @@ test("Retry recovers a failed catalog without saving or replacing the current ed
   });
   acknowledgeBridge(harness);
   await flushPlugin();
-  const query = labelled(harness, "ค้นหาชื่อโครงการ");
-  expect(query.disabled).toBe(true);
-  const retry = descendants(harness.body).find(
-    (node) =>
-      node.tagName === "BUTTON" && node.textContent === "ลองโหลดรายการอีกครั้ง"
-  );
-  expect(retry).toBeDefined();
-  retry.click();
+  await locate(harness);
+  expect(state(harness).catalog.status).toBe("error");
+  popup(harness, "retry", { token: state(harness).target.token });
   await flushPlugin();
   expect(harness.requests).toHaveLength(1);
   expect(harness.requests[0].url).toEndWith(
@@ -277,13 +243,10 @@ test("Retry recovers a failed catalog without saving or replacing the current ed
     documentKey: "document-key",
     sessionId: "catalog-session",
   });
-  expect(query.disabled).toBe(false);
-  expect(
-    descendants(harness.body).some(
-      (node) =>
-        node.role === "option" && node.textContent === "โครงการหลังคืนบริการ"
-    )
-  ).toBe(true);
+  expect(state(harness).catalog).toMatchObject({
+    status: "ready",
+    names: ["โครงการหลังคืนบริการ"],
+  });
   expect(harness.saveCalls).toHaveLength(0);
   expect(
     harness.methodInvocations.some(
@@ -301,7 +264,7 @@ test("a replacement lease's ready catalog reaches the live picker during Retry w
     status: "ready",
     names: ["ชื่อจากตัวแก้ไขใหม่"],
   };
-  const harness = createHarness({
+  const harness = pickerHarness({
     documentKind: "xlsx",
     pdmsProjectCatalog: {
       sessionId: "expired-catalog",
@@ -315,18 +278,10 @@ test("a replacement lease's ready catalog reaches the live picker during Retry w
   });
   acknowledgeBridge(harness);
   await flushPlugin();
-  descendants(harness.body)
-    .find(
-      (node) =>
-        node.tagName === "BUTTON" && node.textContent === "ลองโหลดรายการอีกครั้ง"
-    )
-    .click();
+  await locate(harness);
+  popup(harness, "retry", { token: state(harness).target.token });
   await flushPlugin();
-  expect(
-    descendants(harness.body)
-      .filter((node) => node.role === "option")
-      .map((node) => node.textContent)
-  ).toEqual(["ชื่อจากตัวแก้ไขใหม่"]);
+  expect(state(harness).catalog.names).toEqual(["ชื่อจากตัวแก้ไขใหม่"]);
   expect(
     harness.window.FormBridge.getRuntimeOptions().pdmsProjectCatalog.sessionId
   ).toBe("replacement-catalog");
@@ -340,7 +295,7 @@ test("a replacement lease's ready catalog reaches the live picker during Retry w
 });
 
 test("a choice started before lease replacement is rejected while the new catalog becomes usable in the same editor", async () => {
-  const harness = createHarness({
+  const harness = pickerHarness({
     documentKind: "xlsx",
     responses: [
       {
@@ -367,17 +322,16 @@ test("a choice started before lease replacement is rejected while the new catalo
   });
   acknowledgeBridge(harness);
   await flushPlugin();
-  descendants(harness.body)
-    .find((node) => node.role === "option" && node.textContent === "ชื่อเดิม")
-    .click();
+  await locate(harness);
+  choose(harness, "ชื่อเดิม");
   await flushPlugin();
   await flushPlugin();
   expect(harness.requests).toHaveLength(0);
-  const current = descendants(harness.body).find(
-    (node) => node.role === "option" && node.textContent === "ชื่อปัจจุบัน"
-  );
-  expect(current).toBeDefined();
-  expect(current.disabled).toBe(false);
+  expect(state(harness)).toMatchObject({
+    busy: false,
+    catalog: { status: "ready", names: ["ชื่อปัจจุบัน"] },
+    target: { bindingId: "folio_project" },
+  });
   expect(harness.methodInvocations).toContainEqual({
     args: ["none"],
     method: "SetEditingRestrictions",
@@ -391,7 +345,7 @@ test("a choice started before lease replacement is rejected while the new catalo
 });
 
 test("Correction picker saves only its workspace without inventing a reason, using the native save barrier", async () => {
-  const harness = createHarness({
+  const harness = pickerHarness({
     action: "correction",
     capabilityResponses: ["workspace-capability"],
     documentKind: "xlsx",
@@ -416,10 +370,8 @@ test("Correction picker saves only its workspace without inventing a reason, usi
   });
   acknowledgeBridge(harness);
   await flushPlugin();
-  labelled(harness, "ค้นหาชื่อโครงการ").dispatchEvent({
-    type: "keydown",
-    key: "Enter",
-  });
+  await locate(harness);
+  choose(harness, "Current project");
   await flushPlugin();
   expect(harness.requests).toHaveLength(0);
   const pendingCheck = harness.messages.find(

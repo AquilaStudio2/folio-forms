@@ -1,15 +1,16 @@
 // oxlint-disable sort-keys unicorn/no-await-expression-member no-await-in-loop -- Exercise the public persisted workflow in order.
-import { afterAll, expect, test } from "bun:test";
+import { afterAll, expect, spyOn, test } from "bun:test";
 
 import { prisma } from "@onlyoffice/db";
 
 import { createApp } from "../../src/app";
 import { spreadsheetBindingSchema } from "../../src/documents/spreadsheets/contract";
+import { unprotectSpreadsheet } from "../../src/documents/spreadsheets/protection";
 import { readSpreadsheetWorkbook } from "../../src/documents/spreadsheets/workbook";
 import { spreadsheetDraftFieldData } from "../../src/forms/spreadsheet-fields";
-import { putObject } from "../../src/storage";
+import { objectExists, putObject } from "../../src/storage";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
-import { fixtureWorkbook } from "../spreadsheet-unit/fixture";
+import { fixtureWorkbook, mutatePart } from "../spreadsheet-unit/fixture";
 
 const enabled = process.env.RUN_PDMS_PROJECT_HTTP === "1";
 const runtimeTest = enabled ? test : test.skip;
@@ -19,6 +20,7 @@ let requests = 0;
 let snapshot: Uint8Array | null = null;
 let failSnapshot = false;
 let unchangedNative = false;
+let failNativeCommand = false;
 const upstream = enabled
   ? Bun.serve({
       hostname: "127.0.0.1",
@@ -54,9 +56,11 @@ const app = createApp({
     : null,
   onlyOffice: {
     forceSave: () =>
-      Promise.resolve(
-        native && !unchangedNative ? { url: native.url.href } : false
-      ),
+      failNativeCommand
+        ? Promise.reject(new Error("temporary native command outage"))
+        : Promise.resolve(
+            native && !unchangedNative ? { url: native.url.href } : false
+          ),
     convertDocxToPdf: () => Promise.resolve(new Uint8Array()),
   },
   onlyOfficeCallbackOrigins: native ? [native.url.origin] : [],
@@ -133,10 +137,16 @@ const workbook = (first: string, second = "") =>
       { address: "D3", value: second },
     ],
   });
-const fixture = async (required: boolean) => {
+const fixture = async (
+  required: boolean,
+  sourceOnly = false,
+  tableMode?: "source" | "mixed",
+  lockedPrefill = false
+) => {
   failing = false;
   failSnapshot = false;
   unchangedNative = false;
+  failNativeCommand = false;
   names = ["โครงการหลังคืนบริการ"];
   const id = crypto.randomUUID();
   const publicId = id.replaceAll("-", "");
@@ -155,35 +165,124 @@ const fixture = async (required: boolean) => {
   const adminToken = await bearerFor(app, admin.email, password);
   const token = await bearerFor(app, user.email, password);
   const bindings = spreadsheetBindingSchema.parse({
-    fields: [
-      {
-        anchor: "folio_project",
-        id: "folio_project",
-        key: "project_name",
-        label: "Project",
-        required,
-        type: "dropdown",
-        source: "pdms-project-name",
-      },
-      {
-        anchor: "folio_note",
-        id: "folio_note",
-        key: "notes",
-        label: "Notes",
-        type: "text",
-      },
-      {
-        anchor: "folio_more",
-        id: "folio_more",
-        key: "more_notes",
-        label: "More notes",
-        type: "text",
-      },
-    ],
-    table: null,
+    fields: tableMode
+      ? []
+      : [
+          {
+            anchor: "folio_project",
+            id: "folio_project",
+            key: "project_name",
+            label: "Project",
+            required,
+            type: "dropdown",
+            source: "pdms-project-name",
+          },
+          ...(sourceOnly
+            ? [
+                {
+                  anchor: "folio_second",
+                  id: "folio_second",
+                  key: "second_project",
+                  label: "Second project",
+                  required,
+                  type: "dropdown",
+                  source: "pdms-project-name",
+                },
+              ]
+            : [
+                {
+                  anchor: "folio_note",
+                  id: "folio_note",
+                  key: "notes",
+                  label: "Notes",
+                  type: "text",
+                  ...(lockedPrefill
+                    ? {
+                        prefillPointer: "/person/name",
+                        prefillPolicy: "lock_when_available",
+                      }
+                    : {}),
+                },
+                {
+                  anchor: "folio_more",
+                  id: "folio_more",
+                  key: "more_notes",
+                  label: "More notes",
+                  type: "text",
+                  ...(lockedPrefill
+                    ? {
+                        prefillPointer: "/account/contact/email",
+                        prefillPolicy: "lock_when_available",
+                      }
+                    : {}),
+                },
+              ]),
+        ],
+    table: tableMode
+      ? {
+          id: "folio_projects",
+          anchor: "folio_body",
+          key: "projects",
+          label: "Projects",
+          columns: [
+            {
+              id: "folio_project",
+              key: "project_name",
+              label: "Project",
+              offset: 0,
+              required,
+              source: "pdms-project-name",
+              type: "dropdown",
+            },
+            {
+              id: "folio_second",
+              key: "second_project",
+              label: "Second project",
+              offset: 1,
+              required,
+              source: "pdms-project-name",
+              type: "dropdown",
+            },
+            ...(tableMode === "mixed"
+              ? [
+                  {
+                    id: "folio_note",
+                    key: "note",
+                    label: "Ordinary note",
+                    offset: 2,
+                    type: "text",
+                  },
+                ]
+              : []),
+          ],
+        }
+      : null,
     version: 1,
   });
-  snapshot = workbook("");
+  let fixtureAnchors: Record<string, string> = anchors;
+  if (tableMode) {
+    fixtureAnchors = {
+      folio_body:
+        tableMode === "mixed" ? "'Form'!$A$4:$C$6" : "'Form'!$A$4:$B$6",
+    };
+    snapshot = fixtureWorkbook({
+      merges: [],
+      names: fixtureAnchors,
+      cells: [],
+    });
+  } else if (sourceOnly) {
+    fixtureAnchors = {
+      folio_project: anchors.folio_project,
+      folio_second: "'Form'!$A$3",
+    };
+    snapshot = fixtureWorkbook({
+      merges: ["A1:B1"],
+      names: fixtureAnchors,
+      cells: [],
+    });
+  } else {
+    snapshot = workbook("");
+  }
   const objectKey = `tests/outage/${id}/template.xlsx`;
   await putObject(
     objectKey,
@@ -214,18 +313,49 @@ const fixture = async (required: boolean) => {
       author.bridge.capabilities.publish as string,
       {
         documentKey: author.config.document.key,
-        spreadsheetAnchors: Object.entries(anchors),
+        spreadsheetAnchors: Object.entries(fixtureAnchors),
       },
       true
     )
   );
-  expect(publication.status).toBe("completed");
-  const start = await request(`/api/forms/${publicId}/start`, token, {});
-  expect(start.status).toBe(200);
-  const responseId = ((await start.json()) as { response: { id: string } })
-    .response.id;
-  const opening = crypto.randomUUID();
+  expect(publication).toMatchObject({ status: "completed" });
+  let responseId: string;
+  if (lockedPrefill) {
+    // Fixture represents completed authoritative Prefill redemption before public editor opening.
+    const published = await prisma.publishedTemplate.findUniqueOrThrow({
+      where: { formId: id },
+    });
+    const response = await prisma.response.create({
+      data: {
+        formId: id,
+        userId: user.id,
+        publishedTemplateId: published.id,
+        publishedVersion: published.version,
+        draftDocumentKey: `prefilled-${crypto.randomUUID()}`,
+        draftObjectKey: published.objectKey,
+        prefillSnapshot: {
+          create: {
+            formId: id,
+            userId: user.id,
+            values: {
+              notes: "prefilled read-only note",
+              more_notes: "second read-only note",
+            },
+            lockedFields: { notes: true, more_notes: true },
+          },
+        },
+      },
+    });
+    responseId = response.id;
+  } else {
+    const start = await request(`/api/forms/${publicId}/start`, token, {});
+    expect(start.status).toBe(200);
+    responseId = ((await start.json()) as { response: { id: string } }).response
+      .id;
+  }
+  let opening = crypto.randomUUID();
   const config = async (openingId = opening) => {
+    opening = openingId;
     const result = await request(
       `/api/forms/${publicId}/editor-config?responseId=${responseId}&pdmsOpeningId=${openingId}`,
       token
@@ -240,7 +370,8 @@ const fixture = async (required: boolean) => {
   const act = (
     editor: Editor,
     action: "draft" | "submit",
-    selection?: string
+    selection?: string,
+    bindingId = "folio_project"
   ) =>
     request(
       `/api/forms/${publicId}/${action}`,
@@ -258,8 +389,16 @@ const fixture = async (required: boolean) => {
           : {
               pdmsSelection: {
                 sessionId: editor.pdmsProjectCatalog.sessionId,
-                bindingId: "folio_project",
+                bindingId,
                 name: selection,
+                ...(tableMode
+                  ? {
+                      row: {
+                        index: 1,
+                        documentKey: editor.config.document.key,
+                      },
+                    }
+                  : {}),
               },
             }),
       },
@@ -275,7 +414,20 @@ const fixture = async (required: boolean) => {
       },
       true
     );
-  return { token, publicId, responseId, config, read, bytes, act, retry };
+  return {
+    token,
+    adminToken,
+    adminId: admin.id,
+    formId: id,
+    publicId,
+    responseId,
+    userId: user.id,
+    config,
+    read,
+    bytes,
+    act,
+    retry,
+  };
 };
 
 runtimeTest(
@@ -382,6 +534,476 @@ runtimeTest(
       notes: "native edits awaiting reliable capture",
       more_notes: "another unsaved input",
     });
+  }
+);
+
+runtimeTest(
+  "an incomplete source-only Submit can reopen, choose the missing required project, and submit without a native edit",
+  async () => {
+    const f = await fixture(true, true);
+    unchangedNative = true;
+    let editor = await f.config();
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    editor = await f.config();
+    const submittedKey = editor.config.document.key;
+    const incomplete = await complete(await f.act(editor, "submit"));
+    expect(incomplete.status).toBe("failed");
+    expect(incomplete.result?.validationErrors).toContainEqual({
+      address: "A3",
+      message: expect.any(String),
+    });
+    editor = await f.config(crypto.randomUUID());
+    expect(editor.config.document.key).toBe(submittedKey);
+    expect(
+      (
+        await complete(
+          await f.act(editor, "draft", "โครงการหลังคืนบริการ", "folio_second")
+        )
+      ).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      second_project: "โครงการหลังคืนบริการ",
+    });
+    const saved = readSpreadsheetWorkbook(await f.bytes());
+    expect(saved.cells.get("A1")?.value).toBe("โครงการหลังคืนบริการ");
+    expect(saved.cells.get("A3")?.value).toBe("โครงการหลังคืนบริการ");
+    editor = await f.config();
+    expect((await complete(await f.act(editor, "submit"))).status).toBe(
+      "completed"
+    );
+    expect(
+      await (
+        await request(`/api/forms/${f.publicId}/my-submissions/export`, f.token)
+      ).json()
+    ).toMatchObject([
+      {
+        data: {
+          project_name: "โครงการหลังคืนบริการ",
+          second_project: "โครงการหลังคืนบริการ",
+        },
+      },
+    ]);
+  }
+);
+
+runtimeTest(
+  "a picker retry after required validation preserves the failed Submit's newly captured ordinary values",
+  async () => {
+    const f = await fixture(true);
+    let editor = await f.config();
+    snapshot = workbook("ordinary canonical baseline");
+    expect((await complete(await f.act(editor, "draft"))).status).toBe(
+      "completed"
+    );
+    editor = await f.config();
+    snapshot = workbook(
+      "new ordinary value captured only by the failed Submit",
+      "new second value"
+    );
+    expect((await complete(await f.act(editor, "submit"))).status).toBe(
+      "failed"
+    );
+    expect(await (await f.read("json")).json()).toMatchObject({
+      notes: "ordinary canonical baseline",
+    });
+    unchangedNative = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      notes: "new ordinary value captured only by the failed Submit",
+      more_notes: "new second value",
+    });
+    const saved = readSpreadsheetWorkbook(await f.bytes());
+    expect(saved.cells.get("D1")?.value).toBe(
+      "new ordinary value captured only by the failed Submit"
+    );
+    expect(saved.cells.get("D3")?.value).toBe("new second value");
+    editor = await f.config();
+    expect((await complete(await f.act(editor, "submit"))).status).toBe(
+      "completed"
+    );
+  }
+);
+
+runtimeTest(
+  "a newer uncertain capture fences an older retained snapshot until a fresh native capture succeeds",
+  async () => {
+    const f = await fixture(true);
+    const editor = await f.config();
+    snapshot = workbook("retained but now older unsaved input");
+    expect((await complete(await f.act(editor, "submit"))).status).toBe(
+      "failed"
+    );
+    snapshot = workbook("newer input whose first capture fails");
+    failSnapshot = true;
+    expect((await complete(await f.act(editor, "draft"))).status).toBe(
+      "failed"
+    );
+    failSnapshot = false;
+    unchangedNative = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("failed");
+    expect(await (await f.read("json")).json()).toEqual({});
+    unchangedNative = false;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      notes: "newer input whose first capture fails",
+      more_notes: null,
+    });
+  }
+);
+
+runtimeTest(
+  "terminal polling and hard deletion retire uploaded native captures whose proof was never registered",
+  async () => {
+    const f = await fixture(true, true);
+    const editor = await f.config();
+    const capturedBytes = await f.bytes();
+    const crashedUpload = async (template?: {
+      id: string;
+      publicId: string;
+    }) => {
+      const id = crypto.randomUUID();
+      const stagedObjectKey = `operations/${id}/staged.xlsx`;
+      const key = `${stagedObjectKey}.native`;
+      await prisma.operation.create({
+        data: {
+          id,
+          actorId: template ? f.adminId : f.userId,
+          documentKey: template ? `crashed-${id}` : editor.config.document.key,
+          errorCode: "force_save_failed",
+          formId: template?.id ?? f.formId,
+          metadata: {
+            action: template ? "save-template" : "save-draft",
+            documentKind: "xlsx",
+            finalObjectKey: `operations/${id}/final.xlsx`,
+            formId: template?.id ?? f.formId,
+            pdmsCatalogSessionId: editor.pdmsProjectCatalog.sessionId,
+            ...(template ? {} : { responseId: f.responseId }),
+            stagedObjectKey,
+          },
+          ownerUserId: f.userId,
+          ...(template ? {} : { responseId: f.responseId }),
+          stagingObjectKey: stagedObjectKey,
+          status: "failed",
+          targetId: template ? crypto.randomUUID() : f.responseId,
+          targetType: template ? "template_draft" : "response",
+          type: template ? "save_template_draft" : "save_draft",
+        },
+      });
+      await putObject(
+        key,
+        capturedBytes,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      expect(await objectExists(key)).toBe(true);
+      return { id, key };
+    };
+    const polled = await crashedUpload();
+    const result = await request(`/api/operations/${polled.id}`, f.token);
+    expect(result.status).toBe(200);
+    expect(await result.json()).toMatchObject({
+      operation: { status: "failed" },
+    });
+    expect(await objectExists(polled.key)).toBe(false);
+    const discarded = await crashedUpload();
+    const removedResponse = await app.handle(
+      new Request(`http://test.local/api/responses/${f.responseId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${f.token}` },
+      })
+    );
+    expect(removedResponse.status).toBe(200);
+    expect(await objectExists(discarded.key)).toBe(false);
+    const draftId = crypto.randomUUID();
+    const draft = await prisma.form.create({
+      data: {
+        id: draftId,
+        publicId: draftId.replaceAll("-", ""),
+        title: "Crashed authoring upload",
+        documentKind: "xlsx",
+      },
+    });
+    const orphan = await crashedUpload(draft);
+    const removedForm = await app.handle(
+      new Request(`http://test.local/api/admin/forms/${draft.publicId}`, {
+        method: "DELETE",
+        headers: { Authorization: `Bearer ${f.adminToken}` },
+      })
+    );
+    expect(removedForm.status).toBe(200);
+    expect(await objectExists(orphan.key)).toBe(false);
+  }
+);
+
+runtimeTest(
+  "a retained snapshot read outage stays retryable without losing newly captured ordinary inputs",
+  async () => {
+    const f = await fixture(true);
+    const editor = await f.config();
+    snapshot = workbook("ordinary input retained across storage read failure");
+    expect((await complete(await f.act(editor, "submit"))).status).toBe(
+      "failed"
+    );
+    unchangedNative = true;
+    const nativeFile = Bun.S3Client.prototype.file;
+    const storageOutage = spyOn(
+      Bun.S3Client.prototype,
+      "file"
+    ).mockImplementation(function storageOutage(
+      this: Bun.S3Client,
+      ...args: Parameters<Bun.S3Client["file"]>
+    ) {
+      const file = nativeFile.apply(this, args);
+      if (String(args[0]).endsWith(".native")) {
+        file.bytes = () =>
+          Promise.reject(new Error("temporary retained snapshot read outage"));
+      }
+      return file;
+    });
+    try {
+      expect(
+        (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ")))
+          .status
+      ).toBe("failed");
+    } finally {
+      storageOutage.mockRestore();
+    }
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      notes: "ordinary input retained across storage read failure",
+      more_notes: null,
+    });
+  }
+);
+
+runtimeTest(
+  "locked workbook styles do not substitute for authoritative true Prefill locks",
+  async () => {
+    const f = await fixture(false, false, undefined, true);
+    const editor = await f.config();
+    const canonical = await f.bytes();
+    // Represent a saved artifact whose native styles remain locked but whose saved policy is editable.
+    await prisma.prefillSnapshot.update({
+      where: { responseId: f.responseId },
+      data: { lockedFields: { notes: false, more_notes: false } },
+    });
+    failNativeCommand = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("failed");
+    failNativeCommand = false;
+    unchangedNative = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("failed");
+    expect(await (await f.read("json")).json()).toEqual({});
+    expect(await f.bytes()).toEqual(canonical);
+  }
+);
+
+runtimeTest(
+  "a protected Response with authoritative locked Prefill recovers without an impossible native edit",
+  async () => {
+    const f = await fixture(false, false, undefined, true);
+    let editor = await f.config();
+    failNativeCommand = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("failed");
+    failNativeCommand = false;
+    unchangedNative = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      notes: "prefilled read-only note",
+      more_notes: "second read-only note",
+    });
+    const saved = readSpreadsheetWorkbook(await f.bytes());
+    expect(saved.cells.get("D1")?.value).toBe("prefilled read-only note");
+    expect(saved.cells.get("D3")?.value).toBe("second read-only note");
+    editor = await f.config();
+    expect((await complete(await f.act(editor, "submit"))).status).toBe(
+      "completed"
+    );
+  }
+);
+
+runtimeTest(
+  "unknown capture cannot fall back to a project-only table with weakened canonical protection or an unlocked style",
+  async () => {
+    for (const mutation of ["unprotected", "unlocked-style"]) {
+      const f = await fixture(false, true, "source");
+      const editor = await f.config();
+      const original = await f.bytes();
+      const weakened =
+        mutation === "unprotected"
+          ? unprotectSpreadsheet(original)
+          : mutatePart(original, "xl/styles.xml", (xml) =>
+              xml.replace('locked="1"', 'locked="0"')
+            );
+      // Represent a legacy/corrupt saved artifact before the public recovery request.
+      const seeded = await prisma.response.findUniqueOrThrow({
+        select: { draftObjectKey: true },
+        where: { id: f.responseId },
+      });
+      if (!seeded.draftObjectKey) {
+        throw new Error("Fixture canonical artifact is missing");
+      }
+      await putObject(
+        seeded.draftObjectKey,
+        weakened,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      failNativeCommand = true;
+      expect(
+        (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ")))
+          .status
+      ).toBe("failed");
+      failNativeCommand = false;
+      unchangedNative = true;
+      expect(
+        (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ")))
+          .status
+      ).toBe("failed");
+      expect(await (await f.read("json")).json()).toEqual({});
+      expect(await f.bytes()).toEqual(new Uint8Array(weakened));
+    }
+  }
+);
+
+runtimeTest(
+  "a protected project-only table recovers without a native edit while an ordinary-column table stays fenced",
+  async () => {
+    for (const mode of ["source", "mixed"] as const) {
+      const f = await fixture(false, true, mode);
+      let editor = await f.config();
+      failNativeCommand = true;
+      expect(
+        (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ")))
+          .status
+      ).toBe("failed");
+      failNativeCommand = false;
+      unchangedNative = true;
+      expect(
+        (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ")))
+          .status
+      ).toBe(mode === "source" ? "completed" : "failed");
+      if (mode === "source") {
+        expect(await (await f.read("json")).json()).toEqual({
+          projects: [
+            { project_name: "โครงการหลังคืนบริการ", second_project: null },
+          ],
+        });
+        expect(
+          readSpreadsheetWorkbook(await f.bytes()).cells.get("A5")?.value
+        ).toBe("โครงการหลังคืนบริการ");
+        editor = await f.config();
+        const appended = await request(
+          `/api/forms/${f.publicId}/draft`,
+          editor.bridge.capabilities["save-draft"] as string,
+          {
+            responseId: f.responseId,
+            documentKey: editor.config.document.key,
+            data: {},
+            fillMethod: "onlyoffice",
+            pdmsCatalogSessionId: editor.pdmsProjectCatalog.sessionId,
+            rowChange: { action: "insert", index: 3 },
+          },
+          true
+        );
+        expect((await complete(appended)).status).toBe("completed");
+        expect(
+          readSpreadsheetWorkbook(await f.bytes()).names.get("folio_body")
+            ?.lastRow
+        ).toBe(6);
+      } else {
+        expect(await (await f.read("json")).json()).toEqual({});
+      }
+    }
+  }
+);
+
+runtimeTest(
+  "a protected source-only workbook recovers from a native command failure without inventing an ordinary edit",
+  async () => {
+    const f = await fixture(true, true);
+    const editor = await f.config();
+    failNativeCommand = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("failed");
+    failNativeCommand = false;
+    unchangedNative = true;
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      second_project: null,
+    });
+  }
+);
+
+runtimeTest(
+  "a transient Builder failure does not block an unchanged source-only picker retry",
+  async () => {
+    const f = await fixture(true, true);
+    const editor = await f.config();
+    unchangedNative = true;
+    const nativeFetch = globalThis.fetch;
+    const failBuilder: typeof fetch = Object.assign(
+      (
+        input: Parameters<typeof fetch>[0],
+        init?: Parameters<typeof fetch>[1]
+      ) => {
+        const url = new URL(
+          input instanceof Request ? input.url : String(input)
+        );
+        return url.pathname === "/docbuilder"
+          ? Promise.resolve(
+              new Response("temporary Builder outage", { status: 503 })
+            )
+          : nativeFetch(input, init);
+      },
+      { preconnect: nativeFetch.preconnect }
+    );
+    const builderFailure = spyOn(globalThis, "fetch").mockImplementation(
+      failBuilder
+    );
+    try {
+      expect(
+        (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ")))
+          .status
+      ).toBe("failed");
+    } finally {
+      builderFailure.mockRestore();
+    }
+    expect(await (await f.read("json")).json()).toEqual({});
+    expect(
+      (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
+    ).toBe("completed");
+    expect(await (await f.read("json")).json()).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      second_project: null,
+    });
+    expect(
+      readSpreadsheetWorkbook(await f.bytes()).cells.get("A1")?.value
+    ).toBe("โครงการหลังคืนบริการ");
   }
 );
 

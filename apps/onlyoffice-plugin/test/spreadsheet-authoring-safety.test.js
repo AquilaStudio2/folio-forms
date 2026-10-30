@@ -1307,9 +1307,10 @@ test("Admin removing the last project Field clears its preview and source state 
   });
   acknowledgeBridge(harness);
   await flushPlugin();
-  expect(control(harness, "ช่องโครงการ")).toBeDefined();
+  expect(
+    harness.window.FormBridge.getRuntimeOptions().pdmsProjectCatalog.status
+  ).toBe("ready");
   await click(harness, "ลบช่องนี้");
-  expect(control(harness, "ช่องโครงการ")).toBeUndefined();
   expect(
     harness.window.FormBridge.getRuntimeOptions().pdmsProjectCatalog
   ).toBeNull();

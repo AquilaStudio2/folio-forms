@@ -23,13 +23,14 @@ import { supportsNativeTemplate } from "../forms/query";
 import { maxTemplateUploadBytes } from "../http/input";
 import { originOf } from "../http/origins";
 import { createOnlyOfficeAuthorization } from "../onlyoffice";
-import { manifestFieldValueMatches } from "../responses/data";
+import { jsonValue, manifestFieldValueMatches } from "../responses/data";
 import { readObject, putObject, DOCX_CONTENT_TYPE } from "../storage";
 import { updateOperationFailed } from "./lifecycle";
 import type { CallbackPayload, OperationCompletion } from "./model";
 import { operationMetadata } from "./model";
 import {
   cleanupTerminalOperationObjects,
+  cleanupNativeCaptures,
   deleteObjects,
   deleteObjectUnlessCanonical,
 } from "./object-cleanup";
@@ -217,6 +218,27 @@ export async function finalizeCallback(
     }
     metadata.documentKind = form.documentKind;
     if (form.documentKind === "xlsx") {
+      if (metadata.pdmsCatalogSessionId) {
+        // Retain the raw native values before picker overlays, Builder or required validation.
+        // A no-change retry can then recover these values without trusting an old canonical file.
+        readSpreadsheetWorkbook(bytes);
+        const captureKey = `${metadata.stagedObjectKey}.native`;
+        try {
+          await putObject(captureKey, bytes, XLSX_CONTENT_TYPE);
+          metadata.nativeCaptureObjectKey = captureKey;
+          const retained = await prisma.operation.updateMany({
+            data: { metadata: jsonValue(metadata) },
+            where: { id: operation.id, status: OperationStatus.processing },
+          });
+          if (retained.count !== 1) {
+            await deleteObjectUnlessCanonical(captureKey);
+            return;
+          }
+        } catch (error) {
+          await deleteObjectUnlessCanonical(captureKey);
+          throw error;
+        }
+      }
       bytes = await prepareSpreadsheetOperation(metadata, bytes, () =>
         prisma.operation.updateMany({
           data: { updatedAt: new Date() },
@@ -356,4 +378,5 @@ export async function finalizeCallback(
         )
       )
     : deleteObjects(completion?.cleanupObjectKeys ?? []));
+  await cleanupNativeCaptures(operation);
 }
