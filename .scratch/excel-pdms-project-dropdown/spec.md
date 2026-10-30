@@ -1,6 +1,8 @@
 # PDMS Project Name Source for XLSX Fields
 
-Status: ready-for-agent Approval: The user invoked implement-spec and instructed implementation, accepting the proposed testing boundaries and eight-ticket graph.
+Status: resolved Approval: The user invoked implement-spec and instructed implementation, accepting the proposed testing boundaries and eight-ticket graph.
+
+Implementation and acceptance completed on 2026-10-31. Tickets 01–09 and the final Standards/Spec findings are resolved, including actual pinned-editor dark/light contrast, failed-Submit recovery and the final one-button Admin workflow. See [ticket 09](issues/09-cell-adjacent-project-dropdown.md) and the [implementation map](map.md) for executed evidence and limits. Production exposure remains disabled; no deployment occurred.
 
 ## Problem Statement
 
@@ -113,7 +115,7 @@ Previously saved names remain valid unchanged after upstream removal or renaming
 
 ## Further Notes
 
-- Latest UI decision: after supplying an in-cell dropdown image, the user reviewed the working adjacent-popup prototype and explicitly selected “ใช้ dropdown ชิดเซลล์จากต้นแบบ (แนะนำ)”. Clicking the mapped cell opens the searchable list beside it; the original native arrow is no longer required. The prototype proves placement,2500-choice reachability and Thai search while retaining locked cells; production save integration and lifecycle acceptance are tracked in ticket09. The earlier side-panel proof still supports the protected-write mechanism, not final presentation acceptance.
+- Latest UI decision: after supplying an in-cell dropdown image, the user reviewed the working adjacent-popup prototype and explicitly selected “ใช้ dropdown ชิดเซลล์จากต้นแบบ (แนะนำ)”. Clicking the mapped cell opens the searchable list beside it; the original native arrow is no longer required. Production save integration and lifecycle acceptance, including the final dark/light proof, are resolved in ticket09. The earlier side-panel proof remains historical evidence for the protected-write mechanism.
 - The user further reiterated that after selecting a value they must be able to return and change it, and that the dropdown must remain. Retain the source and Title/Tag after save/reopen, with immediate reopening for the same selected cell after choice or cancellation.
 - The user then requested removing the old side-panel project selector/search/list and replacing it with one button that creates the dropdown immediately. The implementation response scopes creation to Admin Template Draft authoring, with generated Title/Tag and normal validation; runtime User/Correction selection stays in the adjacent-cell dropdown. Ticket09 includes this one-click authoring flow.
 
