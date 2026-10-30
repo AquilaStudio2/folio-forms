@@ -7,7 +7,12 @@ import {
   maxTemplateArchiveExpandedBytes,
   templateArchiveText,
 } from "../package";
-import { spreadsheetColumnName } from "./contract";
+import {
+  parseSpreadsheetRange,
+  spreadsheetCellPosition,
+  spreadsheetColumnName,
+  spreadsheetRangesOverlap,
+} from "./contract";
 import type { SpreadsheetBindings, SpreadsheetRange } from "./contract";
 import {
   readSpreadsheetWorkbook,
@@ -31,16 +36,117 @@ const local = (node: SpreadsheetXmlNode): string =>
   node.name.split(":").at(-1) ?? "";
 const rangeAddress = (range: SpreadsheetRange): string =>
   `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}:${spreadsheetColumnName(range.lastColumn)}${range.lastRow + 1}`;
+const nodeText = (node: SpreadsheetXmlNode): string =>
+  node.children
+    .map((child) => (typeof child === "string" ? child : nodeText(child)))
+    .join("");
+const validationOrigin = (ranges: SpreadsheetRange[]): string =>
+  `${Math.min(...ranges.map((range) => range.firstRow))}:${Math.min(...ranges.map((range) => range.firstColumn))}`;
 
-const removeValidationNodes = (node: SpreadsheetXmlNode): void => {
-  node.children = node.children.filter(
-    (child) => typeof child === "string" || local(child) !== "dataValidations"
+const subtractRange = (
+  range: SpreadsheetRange,
+  input: SpreadsheetRange
+): SpreadsheetRange[] => {
+  if (!spreadsheetRangesOverlap(range, input)) {
+    return [range];
+  }
+  const firstRow = Math.max(range.firstRow, input.firstRow);
+  const lastRow = Math.min(range.lastRow, input.lastRow);
+  const firstColumn = Math.max(range.firstColumn, input.firstColumn);
+  const lastColumn = Math.min(range.lastColumn, input.lastColumn);
+  return [
+    { ...range, lastRow: firstRow - 1 },
+    { ...range, firstRow: lastRow + 1 },
+    { ...range, firstRow, lastColumn: firstColumn - 1, lastRow },
+    { ...range, firstColumn: lastColumn + 1, firstRow, lastRow },
+  ].filter(
+    (item) =>
+      item.firstRow <= item.lastRow && item.firstColumn <= item.lastColumn
   );
+};
+
+const removeValidationNodes = (
+  node: SpreadsheetXmlNode,
+  managed: SpreadsheetRange[]
+): void => {
+  const [firstManaged] = managed;
+  if (!firstManaged) {
+    return;
+  }
+  node.children = node.children.filter((child) => {
+    if (typeof child === "string" || local(child) !== "dataValidation") {
+      return true;
+    }
+    const [referenceNode] = spreadsheetXmlChildren(child, "sqref");
+    const reference =
+      child.attributes.sqref ?? (referenceNode && nodeText(referenceNode));
+    if (!reference) {
+      return true;
+    }
+    const original = reference
+      .trim()
+      .split(/\s+/u)
+      .map((address) =>
+        parseSpreadsheetRange(
+          `'${firstManaged.sheet.replaceAll("'", "''")}'!${address}`
+        )
+      );
+    let remaining = original;
+    for (const input of managed) {
+      remaining = remaining.flatMap((range) => subtractRange(range, input));
+    }
+    if (!remaining.length) {
+      return false;
+    }
+    if (
+      !original.some((range) =>
+        managed.some((input) => spreadsheetRangesOverlap(range, input))
+      )
+    ) {
+      return true;
+    }
+    // Native authoring already splits intersecting rules. If an old custom
+    // relative formula still crosses a mapped cell, retain the saved artifact
+    // rather than silently shifting the formula's origin in XML.
+    if (
+      validationOrigin(original) !== validationOrigin(remaining) &&
+      child.children.some(
+        (item) =>
+          typeof item !== "string" &&
+          ["formula1", "formula2"].includes(local(item)) &&
+          /(?<![A-Za-z0-9_.$])(?:[A-Z]{1,3}\$?[1-9]\d*|\$[A-Z]{1,3}[1-9]\d*)(?![A-Za-z0-9_.])/iu.test(
+            nodeText(item)
+          )
+      )
+    ) {
+      throw new Error(
+        "Reapply the mapped field validation before publishing overlapping custom formulas"
+      );
+    }
+    const nextReference = remaining.map(rangeAddress).join(" ");
+    if (referenceNode) {
+      referenceNode.children = [nextReference];
+    } else {
+      child.attributes.sqref = nextReference;
+    }
+    return true;
+  });
   for (const child of node.children) {
     if (typeof child !== "string") {
-      removeValidationNodes(child);
+      removeValidationNodes(child, managed);
+      if (local(child) === "dataValidations") {
+        child.attributes.count = String(
+          spreadsheetXmlChildren(child, "dataValidation").length
+        );
+      }
     }
   }
+  node.children = node.children.filter(
+    (child) =>
+      typeof child === "string" ||
+      local(child) !== "dataValidations" ||
+      spreadsheetXmlChildren(child, "dataValidation").length > 0
+  );
 };
 
 /** Rebuild every editable field's validation from the versioned server contract. */
@@ -69,11 +175,6 @@ export const applySpreadsheetValidation = (
     names = spreadsheetXmlElement(book, "definedNames", {});
     book.children.push(names);
   }
-  names.children = names.children.filter(
-    (node) =>
-      typeof node === "string" ||
-      !node.attributes.name?.startsWith("_folio_options_")
-  );
   const previousHelper = spreadsheetXmlChildren(sheets, "sheet").find(
     (node) => node.attributes.name === helperName
   );
@@ -83,29 +184,89 @@ export const applySpreadsheetValidation = (
     "Relationship"
   ).find((node) => node.attributes.Id === oldRelationshipId);
   const oldPart = oldRelationship?.attributes.Target;
+  let currentHelperPath = helperPath;
   if (oldPart) {
-    const oldPath = oldPart.startsWith("/")
+    currentHelperPath = oldPart.startsWith("/")
       ? oldPart.slice(1)
       : `xl/${oldPart}`;
-    Reflect.deleteProperty(archive, oldPath);
-    types.children = types.children.filter(
-      (node) =>
-        typeof node === "string" || node.attributes.PartName !== `/${oldPath}`
-    );
   }
-  sheets.children = sheets.children.filter((node) => node !== previousHelper);
-  relationships.children = relationships.children.filter(
-    (node) => node !== oldRelationship
-  );
   const helper = spreadsheetXmlTree(
-    `<worksheet xmlns="${mainNamespace}"><sheetData/></worksheet>`
+    oldPart
+      ? templateArchiveText(archive, currentHelperPath)
+      : `<worksheet xmlns="${mainNamespace}"><sheetData/></worksheet>`
   );
   const helperData = spreadsheetXmlChildren(
     helper,
     "sheetData"
   )[0] as SpreadsheetXmlNode;
   const rules = spreadsheetXmlElement(helper, "dataValidations", {});
-  const helperRows = new Map<number, SpreadsheetXmlNode>();
+  const helperRows = new Map(
+    spreadsheetXmlChildren(helperData, "row").map((row) => [
+      Number(row.attributes.r) - 1,
+      row,
+    ])
+  );
+  const helperCells = new Map(
+    [...helperRows.values()]
+      .flatMap((row) => spreadsheetXmlChildren(row, "c"))
+      .map((cell) => [cell.attributes.r, cell])
+  );
+  const shared = archive["xl/sharedStrings.xml"]
+    ? spreadsheetXmlChildren(
+        spreadsheetXmlTree(
+          templateArchiveText(archive, "xl/sharedStrings.xml")
+        ),
+        "si"
+      )
+    : [];
+  const listValue = (cell: SpreadsheetXmlNode | undefined): string | null => {
+    if (!cell || spreadsheetXmlChildren(cell, "f").length) {
+      return null;
+    }
+    if (cell.attributes.t === "inlineStr") {
+      return spreadsheetXmlChildren(cell, "is").map(nodeText).join("");
+    }
+    if (cell.attributes.t === "s") {
+      const item =
+        shared[
+          Number(spreadsheetXmlChildren(cell, "v").map(nodeText).join(""))
+        ];
+      return item ? nodeText(item) : null;
+    }
+    return null;
+  };
+  const existingLists = new Map<string, string>();
+  const existingNames = new Set<string>();
+  for (const defined of spreadsheetXmlChildren(names, "definedName")) {
+    const name = defined.attributes.name ?? "";
+    existingNames.add(name.toLowerCase());
+    let range;
+    try {
+      range = parseSpreadsheetRange(nodeText(defined).replace(/^=/u, ""));
+    } catch {
+      continue;
+    }
+    if (
+      range.sheet !== helperName ||
+      range.firstColumn !== range.lastColumn ||
+      range.lastRow - range.firstRow + 1 > helperCells.size
+    ) {
+      continue;
+    }
+    const values = [];
+    for (let row = range.firstRow; row <= range.lastRow; row += 1) {
+      values.push(
+        listValue(
+          helperCells.get(
+            `${spreadsheetColumnName(range.firstColumn)}${row + 1}`
+          )
+        )
+      );
+    }
+    if (values.every((value) => value !== null)) {
+      existingLists.set(JSON.stringify(values), name);
+    }
+  }
   const styles = spreadsheetXmlTree(
     templateArchiveText(archive, "xl/styles.xml")
   );
@@ -136,14 +297,29 @@ export const applySpreadsheetValidation = (
     cellStyles.attributes.count = String(formats.length + 1);
   }
   let optionColumn = 0;
+  for (const address of helperCells.keys()) {
+    optionColumn = Math.max(
+      optionColumn,
+      spreadsheetCellPosition(address ?? "").column + 1
+    );
+  }
   let optionRow = 0;
   const listReference = (id: string, options: string[]): string => {
+    const existing = existingLists.get(JSON.stringify(options));
+    if (existing) {
+      return existing;
+    }
     if (options.length > 1_048_576) {
       throw new Error("Dropdown options exceed the XLSX worksheet row limit");
     }
     if (optionRow + options.length > 1_048_576) {
       optionColumn += 1;
       optionRow = 0;
+    }
+    if (optionColumn > 16_383) {
+      throw new Error(
+        "Dropdown options exceed the XLSX worksheet column limit"
+      );
     }
     const column = spreadsheetColumnName(optionColumn);
     const firstRow = optionRow + 1;
@@ -173,7 +349,11 @@ export const applySpreadsheetValidation = (
       row.children.push(cell);
       optionRow += 1;
     }
-    const name = `_folio_options_${createHash("sha256").update(id).digest("hex").slice(0, 20)}`;
+    const prefix = `_folio_options_${createHash("sha256").update(id).digest("hex").slice(0, 20)}`;
+    let name = prefix;
+    for (let suffix = 1; existingNames.has(name.toLowerCase()); suffix += 1) {
+      name = `${prefix}_${suffix}`;
+    }
     const defined = spreadsheetXmlElement(names, "definedName", {
       hidden: "1",
       name,
@@ -182,6 +362,8 @@ export const applySpreadsheetValidation = (
       `'${helperName}'!$${column}$${firstRow}:$${column}$${optionRow}`,
     ];
     names.children.push(defined);
+    existingNames.add(name.toLowerCase());
+    existingLists.set(JSON.stringify(options), name);
     return name;
   };
   const fields = contract.fields.map((field) => ({
@@ -255,7 +437,18 @@ export const applySpreadsheetValidation = (
   const sheet = spreadsheetXmlTree(
     templateArchiveText(archive, workbook.sheetPath)
   );
-  removeValidationNodes(sheet);
+  removeValidationNodes(
+    sheet,
+    fields.map(({ range }) => range)
+  );
+  for (const previous of spreadsheetXmlChildren(sheet, "dataValidations")) {
+    rules.children.unshift(
+      ...spreadsheetXmlChildren(previous, "dataValidation")
+    );
+  }
+  sheet.children = sheet.children.filter(
+    (child) => typeof child === "string" || local(child) !== "dataValidations"
+  );
   rules.name = sheet.name.includes(":")
     ? `${sheet.name.split(":")[0]}:dataValidations`
     : "dataValidations";
@@ -295,57 +488,59 @@ export const applySpreadsheetValidation = (
     }
     sheet.children.splice(insertion, 0, rules);
   }
-  if (optionRow || optionColumn) {
+  if (optionRow || previousHelper) {
     helperData.children = [...helperRows.entries()]
       .toSorted(([a], [b]) => a - b)
       .map(([, row]) => row);
-    helper.children.push(
-      spreadsheetXmlElement(helper, "sheetProtection", {
-        objects: "1",
-        password: "DAA7",
-        scenarios: "1",
-        sheet: "1",
-      })
-    );
-    const usedIds = new Set(
-      spreadsheetXmlChildren(relationships, "Relationship").map(
-        (node) => node.attributes.Id
-      )
-    );
-    let relationshipId = "rIdFolioOptions";
-    while (usedIds.has(relationshipId)) {
-      relationshipId += "_";
+    if (!previousHelper) {
+      helper.children.push(
+        spreadsheetXmlElement(helper, "sheetProtection", {
+          objects: "1",
+          password: "DAA7",
+          scenarios: "1",
+          sheet: "1",
+        })
+      );
+      const usedIds = new Set(
+        spreadsheetXmlChildren(relationships, "Relationship").map(
+          (node) => node.attributes.Id
+        )
+      );
+      let relationshipId = "rIdFolioOptions";
+      while (usedIds.has(relationshipId)) {
+        relationshipId += "_";
+      }
+      relationships.children.push(
+        spreadsheetXmlElement(relationships, "Relationship", {
+          Id: relationshipId,
+          Target: "worksheets/folio-options.xml",
+          Type: `${relationshipNamespace}/worksheet`,
+        })
+      );
+      book.attributes["xmlns:r"] = relationshipNamespace;
+      const maximumSheetId = Math.max(
+        0,
+        ...spreadsheetXmlChildren(sheets, "sheet").map((node) =>
+          Number(node.attributes.sheetId)
+        )
+      );
+      sheets.children.push(
+        spreadsheetXmlElement(sheets, "sheet", {
+          name: helperName,
+          "r:id": relationshipId,
+          sheetId: String(maximumSheetId + 1),
+          state: "veryHidden",
+        })
+      );
+      types.children.push(
+        spreadsheetXmlElement(types, "Override", {
+          ContentType:
+            "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml",
+          PartName: `/${helperPath}`,
+        })
+      );
     }
-    relationships.children.push(
-      spreadsheetXmlElement(relationships, "Relationship", {
-        Id: relationshipId,
-        Target: "worksheets/folio-options.xml",
-        Type: `${relationshipNamespace}/worksheet`,
-      })
-    );
-    book.attributes["xmlns:r"] = relationshipNamespace;
-    const maximumSheetId = Math.max(
-      0,
-      ...spreadsheetXmlChildren(sheets, "sheet").map((node) =>
-        Number(node.attributes.sheetId)
-      )
-    );
-    sheets.children.push(
-      spreadsheetXmlElement(sheets, "sheet", {
-        name: helperName,
-        "r:id": relationshipId,
-        sheetId: String(maximumSheetId + 1),
-        state: "veryHidden",
-      })
-    );
-    types.children.push(
-      spreadsheetXmlElement(types, "Override", {
-        ContentType:
-          "application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml",
-        PartName: `/${helperPath}`,
-      })
-    );
-    archive[helperPath] = strToU8(serializeSpreadsheetXml(helper));
+    archive[currentHelperPath] = strToU8(serializeSpreadsheetXml(helper));
   }
   archive[workbook.sheetPath] = strToU8(serializeSpreadsheetXml(sheet));
   archive["xl/workbook.xml"] = strToU8(serializeSpreadsheetXml(book));

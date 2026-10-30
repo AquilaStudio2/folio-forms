@@ -10,6 +10,7 @@ const fieldValue = (field, scalar) => ({
   options: field.options || [],
   placeholder: field.placeholder ?? null,
   required: field.required ?? false,
+  source: field.source ?? null,
   type: field.type,
   ...(scalar
     ? {
