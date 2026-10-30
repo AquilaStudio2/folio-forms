@@ -21,6 +21,7 @@ const upstream = enabled
         Response.json([
           { confirmation_document_number: "DOC-1", name: "โครงการ ก" },
           { confirmation_document_number: "DOC-2", name: "Project B" },
+          { confirmation_document_number: "DOC-3", name: "00123" },
         ]),
     })
   : null;
@@ -338,7 +339,7 @@ workflowTest(
         pdmsSelection: {
           sessionId: firstCatalog.sessionId,
           bindingId: "folio_second",
-          name: "Project B",
+          name: "00123",
         },
       },
       true
@@ -357,7 +358,7 @@ workflowTest(
     ).toEqual({
       project_name: "โครงการ ก",
       notes: "unsaved ordinary input",
-      second_project: "Project B",
+      second_project: "00123",
     });
     savedBytes = new Uint8Array(
       await (
@@ -395,7 +396,7 @@ workflowTest(
         data: {
           project_name: "โครงการ ก",
           notes: "unsaved ordinary input",
-          second_project: "Project B",
+          second_project: "00123",
         },
       },
     ]);

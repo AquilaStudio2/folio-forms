@@ -54,6 +54,7 @@ export const pdmsSelectionValue = async (
   }
   return {
     address: `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`,
+    text: true as const,
     value: selection.name,
   };
 };

@@ -111,7 +111,8 @@ test("a fresh authorized editor opening loads usable names once and preserves it
     await import("../../src/documents/spreadsheets/contract");
   let requests = 0;
   const upstream = Bun.serve({
-    fetch: (request) => {
+    fetch: async (request) => {
+      await Bun.sleep(50);
       expect(new URL(request.url).pathname).toBe(
         "/prefix/api/pages/projects/names-and-doc-numbers"
       );
@@ -224,7 +225,10 @@ test("a fresh authorized editor opening loads usable names once and preserves it
           { headers: { Authorization: `Bearer ${token}` } }
         )
       );
-    const first = await getConfig(opening);
+    const [first, concurrent] = await Promise.all([
+      getConfig(opening),
+      getConfig(opening),
+    ]);
     expect(first.status).toBe(200);
     const opened = (await first.json()) as {
       pdmsProjectCatalog: {
@@ -237,6 +241,9 @@ test("a fresh authorized editor opening loads usable names once and preserves it
       names: ["โครงการ ก", "Project B", " Project B", "Project B "],
       status: "ready",
     });
+    expect(
+      ((await concurrent.json()) as typeof opened).pdmsProjectCatalog
+    ).toEqual(opened.pdmsProjectCatalog);
     const reconnect = await getConfig(opening);
     expect(
       ((await reconnect.json()) as typeof opened).pdmsProjectCatalog

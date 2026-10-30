@@ -20,7 +20,11 @@ export interface SpreadsheetBuilderJob {
   outputName?: string;
   rowChange?: SpreadsheetRowChange;
   pdfName?: string;
-  values?: { address: string; value: string | number | boolean | null }[];
+  values?: {
+    address: string;
+    value: string | number | boolean | null;
+    text?: true;
+  }[];
   clearRanges?: string[];
   formulaBindings?: SpreadsheetFormulaBinding[];
   restorePrototypeValidation?: boolean;
@@ -55,7 +59,12 @@ export const spreadsheetBuilderScript = (
     throw new Error("Invalid internal formula binding");
   }
   if (
-    job.values?.some((cell) => !/^[A-Z]+[1-9]\d*$/u.test(cell.address)) ||
+    job.values?.some(
+      (cell) =>
+        !/^[A-Z]+[1-9]\d*$/u.test(cell.address) ||
+        (cell.text !== undefined &&
+          (cell.text !== true || typeof cell.value !== "string"))
+    ) ||
     job.clearRanges?.some(
       (range) => !/^[A-Z]+[1-9]\d*(?::[A-Z]+[1-9]\d*)?$/u.test(range)
     )
@@ -83,7 +92,11 @@ for (var c = 0; c < clearRanges.length; c++) sheet.GetRange(clearRanges[c]).SetV
 var inputValues = ${JSON.stringify(job.values ?? [])};
 for (var v = 0; v < inputValues.length; v++) {
   var input = inputValues[v];
-  if (input.value === null) sheet.GetRange(input.address).SetValue("");
+  if (input.text === true) {
+    if (sheet.GetRange(input.address).SetNumberFormat("@") !== true) throw new Error("Cannot preserve picker text");
+    sheet.GetRange(input.address).SetValue(input.value);
+  }
+  else if (input.value === null) sheet.GetRange(input.address).SetValue("");
   else sheet.GetRange(input.address).SetValue(typeof input.value === "string" && input.value.charAt(0) === "=" ? "'" + input.value : input.value);
 }
 var change = ${JSON.stringify(change ?? null)};

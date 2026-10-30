@@ -88,11 +88,39 @@ export const loadPdmsCatalogSession = async (
       });
     }
   }
-  return visibleCatalog(
-    await prisma.pdmsProjectCatalogSession.findUniqueOrThrow({
+  let current = await prisma.pdmsProjectCatalogSession.findUniqueOrThrow({
+    where: { id: sessionId },
+  });
+  // Concurrent config/renewal requests share the persisted loading claim. Wait
+  // for its bounded result so an abandoned first HTTP response cannot strand
+  // the surviving editor with a permanently loading picker.
+  const deadline = Date.now() + 31_000;
+  while (current.status === "loading" && Date.now() < deadline) {
+    // oxlint-disable-next-line no-await-in-loop -- Observe one shared external load without making another provider request.
+    await Bun.sleep(50);
+    // oxlint-disable-next-line no-await-in-loop -- Each read depends on the prior load state.
+    current = await prisma.pdmsProjectCatalogSession.findUniqueOrThrow({
       where: { id: sessionId },
-    })
-  );
+    });
+  }
+  if (
+    current.status === "loading" &&
+    current.loadExpiresAt &&
+    current.loadExpiresAt <= new Date()
+  ) {
+    await prisma.pdmsProjectCatalogSession.updateMany({
+      where: {
+        id: sessionId,
+        status: "loading",
+        loadExpiresAt: { lte: new Date() },
+      },
+      data: { status: "error", loadToken: null, loadExpiresAt: null },
+    });
+    current = await prisma.pdmsProjectCatalogSession.findUniqueOrThrow({
+      where: { id: sessionId },
+    });
+  }
+  return visibleCatalog(current);
 };
 
 export const openPdmsProjectCatalog = async (input: {
