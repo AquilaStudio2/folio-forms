@@ -1,7 +1,13 @@
 import { prisma, OperationStatus } from "@onlyoffice/db";
 
 import { tokenDigest } from "../digests";
+import { templateArchiveText } from "../documents/package";
 import { readSpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
+import type { SpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
+import {
+  spreadsheetXmlChildren,
+  spreadsheetXmlTree,
+} from "../documents/spreadsheets/xml";
 import { spreadsheetContractForTemplate } from "../forms/spreadsheet-fields";
 import { fail, HttpError } from "../http/errors";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
@@ -20,7 +26,49 @@ import { operationMetadata } from "./model";
 import { nativeCaptureKey } from "./object-cleanup";
 import { SpreadsheetValidationError } from "./spreadsheet-document";
 
-/** Protected scalar picker/computed-only Responses have no native edits to lose. */
+const hasLockedNativeSurface = (workbook: SpreadsheetWorkbook): boolean => {
+  const [sheet] = spreadsheetXmlChildren(
+    spreadsheetXmlTree(
+      templateArchiveText(workbook.archive, workbook.sheetPath)
+    ),
+    "sheetProtection"
+  );
+  const [book] = spreadsheetXmlChildren(
+    spreadsheetXmlTree(
+      templateArchiveText(workbook.archive, "xl/workbook.xml")
+    ),
+    "workbookProtection"
+  );
+  const [styles] = spreadsheetXmlChildren(
+    spreadsheetXmlTree(templateArchiveText(workbook.archive, "xl/styles.xml")),
+    "cellXfs"
+  );
+  const formats = styles ? spreadsheetXmlChildren(styles, "xf") : [];
+  return (
+    Boolean(sheet?.attributes.password && book?.attributes.workbookPassword) &&
+    book?.attributes.lockStructure === "1" &&
+    [
+      "sheet",
+      "objects",
+      "formatCells",
+      "formatColumns",
+      "formatRows",
+      "insertColumns",
+      "insertRows",
+      "deleteColumns",
+      "deleteRows",
+    ].every((attribute) => sheet?.attributes[attribute] === "1") &&
+    formats.length > 0 &&
+    formats.every(
+      (format) =>
+        format.attributes.applyProtection === "1" &&
+        spreadsheetXmlChildren(format, "protection")[0]?.attributes.locked ===
+          "1"
+    )
+  );
+};
+
+/** A fully locked picker/computed-only Response has no native values or row edits to lose. */
 async function pickerOnlyCanonicalSnapshot(
   operation: Operation
 ): Promise<Uint8Array | null> {
@@ -63,13 +111,15 @@ async function pickerOnlyCanonicalSnapshot(
     return null;
   }
   const snapshot = await readObject(key);
+  const workbook = readSpreadsheetWorkbook(snapshot);
   const contract = await spreadsheetContractForTemplate(
     response.publishedTemplateId,
-    readSpreadsheetWorkbook(snapshot)
+    workbook
   );
-  return !contract.table &&
-    contract.fields.some((field) => field.source === "pdms-project-name") &&
-    contract.fields.every(
+  const fields = [...contract.fields, ...(contract.table?.columns ?? [])];
+  return hasLockedNativeSurface(workbook) &&
+    fields.some((field) => field.source === "pdms-project-name") &&
+    fields.every(
       (field) =>
         field.type !== "picture" &&
         (field.source === "pdms-project-name" || field.computed)

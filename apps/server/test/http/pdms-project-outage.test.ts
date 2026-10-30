@@ -5,11 +5,12 @@ import { prisma } from "@onlyoffice/db";
 
 import { createApp } from "../../src/app";
 import { spreadsheetBindingSchema } from "../../src/documents/spreadsheets/contract";
+import { unprotectSpreadsheet } from "../../src/documents/spreadsheets/protection";
 import { readSpreadsheetWorkbook } from "../../src/documents/spreadsheets/workbook";
 import { spreadsheetDraftFieldData } from "../../src/forms/spreadsheet-fields";
 import { objectExists, putObject } from "../../src/storage";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
-import { fixtureWorkbook } from "../spreadsheet-unit/fixture";
+import { fixtureWorkbook, mutatePart } from "../spreadsheet-unit/fixture";
 
 const enabled = process.env.RUN_PDMS_PROJECT_HTTP === "1";
 const runtimeTest = enabled ? test : test.skip;
@@ -136,7 +137,11 @@ const workbook = (first: string, second = "") =>
       { address: "D3", value: second },
     ],
   });
-const fixture = async (required: boolean, sourceOnly = false) => {
+const fixture = async (
+  required: boolean,
+  sourceOnly = false,
+  tableMode?: "source" | "mixed"
+) => {
   failing = false;
   failSnapshot = false;
   unchangedNative = false;
@@ -159,54 +164,112 @@ const fixture = async (required: boolean, sourceOnly = false) => {
   const adminToken = await bearerFor(app, admin.email, password);
   const token = await bearerFor(app, user.email, password);
   const bindings = spreadsheetBindingSchema.parse({
-    fields: [
-      {
-        anchor: "folio_project",
-        id: "folio_project",
-        key: "project_name",
-        label: "Project",
-        required,
-        type: "dropdown",
-        source: "pdms-project-name",
-      },
-      ...(sourceOnly
-        ? [
+    fields: tableMode
+      ? []
+      : [
+          {
+            anchor: "folio_project",
+            id: "folio_project",
+            key: "project_name",
+            label: "Project",
+            required,
+            type: "dropdown",
+            source: "pdms-project-name",
+          },
+          ...(sourceOnly
+            ? [
+                {
+                  anchor: "folio_second",
+                  id: "folio_second",
+                  key: "second_project",
+                  label: "Second project",
+                  required,
+                  type: "dropdown",
+                  source: "pdms-project-name",
+                },
+              ]
+            : [
+                {
+                  anchor: "folio_note",
+                  id: "folio_note",
+                  key: "notes",
+                  label: "Notes",
+                  type: "text",
+                },
+                {
+                  anchor: "folio_more",
+                  id: "folio_more",
+                  key: "more_notes",
+                  label: "More notes",
+                  type: "text",
+                },
+              ]),
+        ],
+    table: tableMode
+      ? {
+          id: "folio_projects",
+          anchor: "folio_body",
+          key: "projects",
+          label: "Projects",
+          columns: [
             {
-              anchor: "folio_second",
+              id: "folio_project",
+              key: "project_name",
+              label: "Project",
+              offset: 0,
+              required,
+              source: "pdms-project-name",
+              type: "dropdown",
+            },
+            {
               id: "folio_second",
               key: "second_project",
               label: "Second project",
+              offset: 1,
               required,
-              type: "dropdown",
               source: "pdms-project-name",
+              type: "dropdown",
             },
-          ]
-        : [
-            {
-              anchor: "folio_note",
-              id: "folio_note",
-              key: "notes",
-              label: "Notes",
-              type: "text",
-            },
-            {
-              anchor: "folio_more",
-              id: "folio_more",
-              key: "more_notes",
-              label: "More notes",
-              type: "text",
-            },
-          ]),
-    ],
-    table: null,
+            ...(tableMode === "mixed"
+              ? [
+                  {
+                    id: "folio_note",
+                    key: "note",
+                    label: "Ordinary note",
+                    offset: 2,
+                    type: "text",
+                  },
+                ]
+              : []),
+          ],
+        }
+      : null,
     version: 1,
   });
-  const fixtureAnchors = sourceOnly
-    ? { folio_project: anchors.folio_project, folio_second: "'Form'!$A$3" }
-    : anchors;
-  snapshot = sourceOnly
-    ? fixtureWorkbook({ merges: ["A1:B1"], names: fixtureAnchors, cells: [] })
-    : workbook("");
+  let fixtureAnchors: Record<string, string> = anchors;
+  if (tableMode) {
+    fixtureAnchors = {
+      folio_body:
+        tableMode === "mixed" ? "'Form'!$A$4:$C$6" : "'Form'!$A$4:$B$6",
+    };
+    snapshot = fixtureWorkbook({
+      merges: [],
+      names: fixtureAnchors,
+      cells: [],
+    });
+  } else if (sourceOnly) {
+    fixtureAnchors = {
+      folio_project: anchors.folio_project,
+      folio_second: "'Form'!$A$3",
+    };
+    snapshot = fixtureWorkbook({
+      merges: ["A1:B1"],
+      names: fixtureAnchors,
+      cells: [],
+    });
+  } else {
+    snapshot = workbook("");
+  }
   const objectKey = `tests/outage/${id}/template.xlsx`;
   await putObject(
     objectKey,
@@ -285,6 +348,14 @@ const fixture = async (required: boolean, sourceOnly = false) => {
                 sessionId: editor.pdmsProjectCatalog.sessionId,
                 bindingId,
                 name: selection,
+                ...(tableMode
+                  ? {
+                      row: {
+                        index: 1,
+                        documentKey: editor.config.document.key,
+                      },
+                    }
+                  : {}),
               },
             }),
       },
@@ -672,6 +743,101 @@ runtimeTest(
       notes: "ordinary input retained across storage read failure",
       more_notes: null,
     });
+  }
+);
+
+runtimeTest(
+  "unknown capture cannot fall back to a project-only table with weakened canonical protection or an unlocked style",
+  async () => {
+    for (const mutation of ["unprotected", "unlocked-style"]) {
+      const f = await fixture(false, true, "source");
+      const editor = await f.config();
+      const original = await f.bytes();
+      const weakened =
+        mutation === "unprotected"
+          ? unprotectSpreadsheet(original)
+          : mutatePart(original, "xl/styles.xml", (xml) =>
+              xml.replace('locked="1"', 'locked="0"')
+            );
+      // Represent a legacy/corrupt saved artifact before the public recovery request.
+      const seeded = await prisma.response.findUniqueOrThrow({
+        select: { draftObjectKey: true },
+        where: { id: f.responseId },
+      });
+      if (!seeded.draftObjectKey) {
+        throw new Error("Fixture canonical artifact is missing");
+      }
+      await putObject(
+        seeded.draftObjectKey,
+        weakened,
+        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+      );
+      failNativeCommand = true;
+      expect(
+        (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ")))
+          .status
+      ).toBe("failed");
+      failNativeCommand = false;
+      unchangedNative = true;
+      expect(
+        (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ")))
+          .status
+      ).toBe("failed");
+      expect(await (await f.read("json")).json()).toEqual({});
+      expect(await f.bytes()).toEqual(weakened);
+    }
+  }
+);
+
+runtimeTest(
+  "a protected project-only table recovers without a native edit while an ordinary-column table stays fenced",
+  async () => {
+    for (const mode of ["source", "mixed"] as const) {
+      const f = await fixture(false, true, mode);
+      let editor = await f.config();
+      failNativeCommand = true;
+      expect(
+        (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ")))
+          .status
+      ).toBe("failed");
+      failNativeCommand = false;
+      unchangedNative = true;
+      expect(
+        (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ")))
+          .status
+      ).toBe(mode === "source" ? "completed" : "failed");
+      if (mode === "source") {
+        expect(await (await f.read("json")).json()).toEqual({
+          projects: [
+            { project_name: "โครงการหลังคืนบริการ", second_project: null },
+          ],
+        });
+        expect(
+          readSpreadsheetWorkbook(await f.bytes()).cells.get("A5")?.value
+        ).toBe("โครงการหลังคืนบริการ");
+        editor = await f.config();
+        const appended = await request(
+          `/api/forms/${f.publicId}/draft`,
+          editor.bridge.capabilities["save-draft"] as string,
+          {
+            responseId: f.responseId,
+            documentKey: editor.config.document.key,
+            data: {},
+            fillMethod: "onlyoffice",
+            pdmsCatalogSessionId: editor.pdmsProjectCatalog.sessionId,
+            rowChange: { action: "insert", index: 3 },
+          },
+          true
+        );
+        expect((await complete(appended)).status).toBe("completed");
+        expect(
+          readSpreadsheetWorkbook(await f.bytes()).names.get("folio_body")
+            ?.lastRow
+        ).toBe(6);
+      } else {
+        expect(await (await f.read("json")).json()).toEqual({});
+      }
+    }
   }
 );
 
