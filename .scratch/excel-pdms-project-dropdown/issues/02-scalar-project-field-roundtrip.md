@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Prove searchable selection into protected project cells.
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 Type: task
 
@@ -18,3 +18,7 @@ Approval: Published after the user instructed implementation of the proposed spe
 - [ ] Demonstrate Draft save/reopen and submission with only the selected name under the configured Tag, keeping workbook and extracted data consistent.
 - [ ] Preserve ordinary static dropdowns and existing publication rules; do not expose partial feature rollout beyond development/test usage.
 - [ ] Exercise the successful Admin-to-User HTTP workflow and real-editor path, register feature HTTP cases in the standard suite command, and run relevant existing authoring/protection regressions.
+
+## Comments
+
+- 2026-10-30: Claimed after ticket01 integration51d9f18 by a fresh TDD implementer in the dedicated ticket02 worktree. User resumed after changing model. Exact PDMS configuration remains ONGOING_API_URL/X_ONGOING_SECRET. Canonical scalar authoring, source sessions, authorized picker saves and atomic callback completion are the scope; no deployment or worker-owned browser surfaces are permitted. Test boundaries and graph were already approved.

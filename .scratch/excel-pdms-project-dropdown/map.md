@@ -135,6 +135,10 @@ No product questions remain open: Q1–Q12 were individually answered, including
 
 Use existing domain terms in root `CONTEXT.md`; do not create a competing glossary. The accepted name-string and historical-value trade-off is recorded in `docs/adr/0003-pdms-project-name-choices.md`. Agreed product behavior and proposed technical implementation are assembled in `spec.md`, with their statuses distinguished. Completion of this design interview does not itself implement the feature.
 
+### Resumed execution
+
+The user resumed implementation after changing model. Ticket01 is integrated at51d9f18 with a demonstrated protected server-save/reload path and merged-cell resave fix. Ticket02 is claimed on codex/pdms-project-02; its full scalar operation/UI roundtrip gates03/04/05. Shared UI control is exclusive to root. All prior prototype tabs are closed, the owned prototype listener is stopped, and further UI proof must use one necessary temporary tab with immediate cleanup. User's provider config was corrected and independently returned200 with3606 rows and2696 exact unique names; no private names/credentials are stored in the repo.
+
 ## to-spec / to-tickets publication review
 
 The user subsequently requested the to-spec and to-tickets workflows. A [review package](review/README.md) contains the skill-template spec and eight separate ticket drafts, including acceptance criteria and blocking edges. Product requirements are settled; only the two skills' requested review of testing boundaries and ticket granularity/dependencies is pending. These drafts are ready-for-human and are not published implementation issues. After approval, publish the canonical spec and individual local issues as ready-for-agent. No feature implementation or tests have been run as part of this documentation task.
