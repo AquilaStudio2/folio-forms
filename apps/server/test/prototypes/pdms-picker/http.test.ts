@@ -14,6 +14,7 @@ import { fixtureWorkbook } from "../../spreadsheet-unit/fixture";
 
 const enabled = process.env.RUN_PDMS_PICKER_PROTOTYPE_HTTP === "1";
 let directory = "";
+let snapshotPath = "";
 let child: ReturnType<typeof Bun.spawn>;
 let fixture: { origin: string; session: string };
 const request = async (route: string, body?: unknown) => {
@@ -26,7 +27,12 @@ const request = async (route: string, body?: unknown) => {
     method: body === undefined ? "GET" : "POST",
   });
   expect(response.ok).toBe(true);
-  return response.json();
+  return response.json() as Promise<{
+    operation: { status: string };
+    revision: number;
+    data: unknown;
+    cells: Record<string, unknown>;
+  }>;
 };
 const terminalOperation = async () => {
   for (let attempt = 0; attempt < 120; attempt += 1) {
@@ -43,7 +49,7 @@ beforeAll(async () => {
     return;
   }
   directory = await mkdtemp(path.join(tmpdir(), "folio-pdms-prototype-http-"));
-  const snapshotPath = path.join(directory, "native.xlsx");
+  snapshotPath = path.join(directory, "native.xlsx");
   await Bun.write(
     snapshotPath,
     fixtureWorkbook({
@@ -77,7 +83,9 @@ beforeAll(async () => {
       return;
     }
     if (child.exitCode !== null) {
-      throw new Error(await new Response(child.stderr).text());
+      throw new Error(
+        await new Response(child.stderr as ReadableStream<Uint8Array>).text()
+      );
     }
     await Bun.sleep(100);
   }
@@ -113,6 +121,35 @@ test.skipIf(!enabled)(
       B4: "unsaved row",
       C1: "unsaved scalar",
     });
+    const exported = await fetch(`${fixture.origin}/prototype/export`, {
+      headers: { "X-Prototype-Session": fixture.session },
+    });
+    await Bun.write(snapshotPath, await exported.arrayBuffer());
+    await fetch(fixture.origin);
+  },
+  120_000
+);
+
+test.skipIf(!enabled)(
+  "a later table selection retains the previously saved merged project",
+  async () => {
+    await request("select", {
+      expected: { note: "unsaved scalar", rowNote: "unsaved row" },
+      name: "โครงการทดสอบ 0001",
+      revision: 1,
+      target: "table",
+    });
+    expect((await terminalOperation()).status).toBe("completed");
+    const saved = await request("result");
+    expect(saved.data).toEqual({
+      project: "โครงการทดสอบ 2499",
+      note: "unsaved scalar",
+      items: [{ project: "โครงการทดสอบ 0001", note: "unsaved row" }],
+    });
+    const exported = await fetch(`${fixture.origin}/prototype/export`, {
+      headers: { "X-Prototype-Session": fixture.session },
+    });
+    await Bun.write(snapshotPath, await exported.arrayBuffer());
     await fetch(fixture.origin);
   },
   120_000
@@ -124,14 +161,14 @@ test.skipIf(!enabled)(
     await request("select", {
       expected: { note: "newer unsaved work", rowNote: "unsaved row" },
       name: "โครงการทดสอบ 0001",
-      revision: 1,
+      revision: 2,
       target: "table",
     });
     const operation = await terminalOperation();
     expect(operation.status).toBe("failed");
     const saved = await request("result");
     expect(saved.data).toEqual({
-      items: [{ project: null, note: "unsaved row" }],
+      items: [{ project: "โครงการทดสอบ 0001", note: "unsaved row" }],
       note: "unsaved scalar",
       project: "โครงการทดสอบ 2499",
     });
@@ -169,7 +206,7 @@ test.skipIf(!enabled)(
     expect(saved.data).toEqual({
       project: "โครงการทดสอบ 2499",
       note: "unsaved scalar",
-      items: [{ project: null, note: "unsaved row" }],
+      items: [{ project: "โครงการทดสอบ 0001", note: "unsaved row" }],
     });
   },
   120_000

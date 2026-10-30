@@ -330,12 +330,6 @@ const app = createApp({
     },
   },
   onlyOfficeCallbackOrigins: [origin],
-  putObject: (key, bytes, type) =>
-    putObject(
-      key,
-      type === XLSX_CONTENT_TYPE ? protectManaged(bytes) : bytes,
-      type
-    ),
 });
 const builder = new Elysia();
 registerSpreadsheetBuilderRoutes(builder);
@@ -381,7 +375,10 @@ const startSave = async (
       method: "POST",
     })
   );
-  const body = await response.json();
+  const body = (await response.json()) as {
+    operationId: string;
+    operationCapability: string;
+  };
   if (response.status !== 202) {
     throw new Error(JSON.stringify(body));
   }
@@ -505,7 +502,7 @@ const prototype = await startPickerPrototype({
         events,
         selections: context.selections,
         revision: context.revision,
-        operation,
+        operation: operation ? { operationId: operation.operationId } : null,
       });
     }
     if (url.pathname === "/prototype/callback") {
@@ -546,12 +543,20 @@ const prototype = await startPickerPrototype({
       return Response.json({ error: 0 });
     }
     if (url.pathname === "/prototype/save" && auth) {
-      return Response.json(await startSave(await request.json()), {
-        status: 202,
-      });
+      return Response.json(
+        await startSave(
+          (await request.json()) as { note: string; rowNote: string }
+        ),
+        {
+          status: 202,
+        }
+      );
     }
     if (url.pathname === "/prototype/row" && auth) {
-      const expected = await request.json();
+      const expected = (await request.json()) as {
+        note: string;
+        rowNote: string;
+      };
       return Response.json(
         await startSave(expected, { action: "insert", index: 1 }),
         { status: 202 }
@@ -563,7 +568,9 @@ const prototype = await startPickerPrototype({
           headers: { "X-Editor-Capability": operation.operationCapability },
         })
       );
-      const body = await response.json();
+      const body = (await response.json()) as {
+        operation?: { status: string };
+      };
       if (body.operation?.status === "completed") {
         if (protectedOperationId !== operation.operationId) {
           const saved = await prisma.response.findUniqueOrThrow({

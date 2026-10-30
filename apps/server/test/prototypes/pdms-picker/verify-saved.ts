@@ -24,7 +24,11 @@ const dataResponse = await app.handle(
   })
 );
 assert.equal(dataResponse.status, 200);
-const data = await dataResponse.json();
+const data = (await dataResponse.json()) as {
+  project: string;
+  note: string;
+  items: { note: string }[];
+};
 const workbookResponse = await app.handle(
   new Request(`http://test.local/api/responses/${response.id}/draft/xlsx`, {
     headers,
@@ -39,7 +43,7 @@ assert.equal(
 );
 assert.equal(workbook.cells.get("A1")?.value, data.project);
 assert.equal(workbook.cells.get("C1")?.value, data.note);
-assert.equal(workbook.cells.get("B4")?.value, data.items[0].note);
+assert.equal(workbook.cells.get("B4")?.value, data.items[0]?.note);
 await Bun.write("/tmp/folio-pdms-implementation/notes/01-saved.xlsx", bytes);
 console.log(
   JSON.stringify({

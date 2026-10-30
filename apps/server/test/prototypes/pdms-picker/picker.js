@@ -114,6 +114,7 @@ const choose = async (name) => {
       elapsedMs: performance.now() - started,
       kind: "selection",
       name,
+      target: document.querySelector("#target").value,
     });
     await completeSave();
   } catch (error) {
