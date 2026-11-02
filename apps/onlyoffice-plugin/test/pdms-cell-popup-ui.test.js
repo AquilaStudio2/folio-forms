@@ -55,7 +55,7 @@ test("the adjacent list reaches its last Thai name with bounded DOM, ignores IME
   reply(harness, state);
   const query = all(harness.body).find((node) => node.role === "combobox");
   expect(harness.methodInvocations).toContainEqual({
-    args: ["asc.test-plugin", 430, 360, true],
+    args: ["asc.test-plugin", 430, 400, true],
     method: "ShowInputHelper",
   });
   query.dispatchEvent({ type: "compositionstart" });
@@ -72,7 +72,7 @@ test("the adjacent list reaches its last Thai name with bounded DOM, ignores IME
   query.dispatchEvent({ key: "Escape", type: "keydown" });
   expect(query.parentNode.hidden).toBe(true);
   expect(latest(harness, "choose")).toBeUndefined();
-  byText(harness, "เปิดรายการโครงการ").click();
+  byText(harness, "เลือกชื่อโครงการ ▼").click();
   reply(harness, {
     ...state,
     target: { ...state.target, token: "target-two" },
@@ -86,5 +86,46 @@ test("the adjacent list reaches its last Thai name with bounded DOM, ignores IME
     name: "โครงการ 2499",
     token: "target-two",
   });
+  expect(harness.requests).toHaveLength(0);
+});
+
+test("the project dropdown exposes an arrow trigger while open and after cancellation, with a fresh target on reopening", async () => {
+  const harness = await setup();
+  const state = {
+    catalog: { names: ["โครงการ ก"], status: "ready" },
+    target: { key: "project", label: "ชื่อโครงการ", token: "first-target" },
+  };
+  reply(harness, state);
+  const trigger = byText(harness, "เลือกชื่อโครงการ ▼");
+  expect(trigger).toBeDefined();
+  expect(trigger.hidden).toBe(false);
+  expect(trigger["aria-label"]).toBe("เลือกชื่อโครงการ");
+  expect(trigger["aria-haspopup"]).toBe("listbox");
+  expect(trigger["aria-controls"]).toBe("pdms-popup-results");
+  expect(trigger["aria-expanded"]).toBe("true");
+  trigger.click();
+  expect(trigger.hidden).toBe(false);
+  expect(trigger["aria-expanded"]).toBe("false");
+  expect(latest(harness, "choose")).toBeUndefined();
+  expect(latest(harness, "cancel")).toBeDefined();
+  expect(harness.methodInvocations).toContainEqual({
+    args: ["asc.test-plugin", 240, 48, false],
+    method: "ShowInputHelper",
+  });
+  trigger.click();
+  reply(harness, {
+    ...state,
+    target: { ...state.target, token: "next-target" },
+  });
+  expect(trigger["aria-expanded"]).toBe("true");
+  byText(harness, "โครงการ ก").click();
+  expect(latest(harness, "choose")).toMatchObject({
+    name: "โครงการ ก",
+    token: "next-target",
+  });
+  expect(trigger.disabled).toBe(true);
+  const request = latest(harness, "locate");
+  trigger.click();
+  expect(latest(harness, "locate")).toBe(request);
   expect(harness.requests).toHaveLength(0);
 });

@@ -1,4 +1,8 @@
 import { spreadsheetPicturePlaceholder } from "../../server/src/documents/spreadsheets/picture-placeholder.ts";
+import {
+  projectDropdownIndicatorTargets,
+  spreadsheetProjectDropdownIndicatorCommand,
+} from "../../server/src/documents/spreadsheets/project-dropdown-indicators.ts";
 import { spreadsheetUploadPocCommand } from "../../server/src/documents/spreadsheets/upload-poc-command.js";
 import {
   uploadPocGuid,
@@ -510,6 +514,23 @@ export function initializeSpreadsheet(options, setStatus) {
     [...(bindings.fields || []), ...(bindings.table?.columns || [])].map(
       (field) => field.id
     );
+  const synchronizeProjectDropdownIndicators = async () => {
+    window.Asc.scope.folioProjectDropdownIndicators = {
+      targets: projectDropdownIndicatorTargets(bindings),
+    };
+    try {
+      const result = await office.callCommandResult(
+        spreadsheetProjectDropdownIndicatorCommand,
+        true
+      );
+      if (!Number.isSafeInteger(result) || result < 0) {
+        throw new Error("แสดงลูกศร dropdown ไม่สำเร็จ กรุณาลองบันทึกช่องเดิมอีกครั้ง");
+      }
+      bridge.setDirtyState(true);
+    } finally {
+      delete window.Asc.scope.folioProjectDropdownIndicators;
+    }
+  };
   async function captureUploadPocTargets(
     bindingIds,
     sourceBindings = bindings
@@ -1499,11 +1520,13 @@ export function initializeSpreadsheet(options, setStatus) {
       control.addEventListener("input", captureDraft);
       control.addEventListener("change", captureDraft);
     }
-    validatePanelDrafts = () => {
+    validatePanelDrafts = (savingDraftKey = null) => {
       captureDraft();
-      if (pendingDrafts.size) {
+      if ([...pendingDrafts].some((target) => target !== savingDraftKey)) {
         throw new Error(
-          "มีการตั้งค่าช่องที่ยังไม่ได้บันทึก กรุณากด บันทึกการแก้ไข หรือ เพิ่มช่องจากช่วงที่เลือก ในแผงตั้งค่าฟิลด์ก่อนบันทึกแบบร่างหรือเผยแพร่"
+          savingDraftKey
+            ? "มีการตั้งค่าช่องอื่นที่ยังไม่ได้บันทึก กรุณาเลือกช่องนั้นแล้วกด บันทึกการแก้ไข หรือ เพิ่มช่องจากช่วงที่เลือก ก่อนบันทึกช่องนี้"
+            : "มีการตั้งค่าช่องที่ยังไม่ได้บันทึก กรุณากด บันทึกการแก้ไข หรือ เพิ่มช่องจากช่วงที่เลือก ในแผงตั้งค่าฟิลด์ก่อนบันทึกแบบร่างหรือเผยแพร่"
         );
       }
     };
@@ -1538,6 +1561,14 @@ export function initializeSpreadsheet(options, setStatus) {
       optionsField.element.hidden = table || type.value !== "dropdown";
       show(headers, table && !editing);
       save.textContent = editing ? "บันทึกการแก้ไข" : "เพิ่มช่องจากช่วงที่เลือก";
+      projectHelp.hidden =
+        !options.pdmsProjectEnabled ||
+        table ||
+        type.value !== "pdms-project-name";
+      save.setAttribute(
+        "aria-describedby",
+        projectHelp.hidden ? "" : projectHelp.id
+      );
       remove.hidden = !editing;
       restorePicture.hidden =
         editingKind !== "field" ||
@@ -1776,10 +1807,7 @@ export function initializeSpreadsheet(options, setStatus) {
       }
     });
     placeUploadPoc.setAttribute("aria-describedby", uploadPocHelp.id);
-    const saveBinding = async (
-      requestedSelection = null,
-      bindingsAlreadyRead = false
-    ) => {
+    const saveBinding = async () => {
       if (editing && kind.value !== editingKind) {
         kind.value = editingKind;
         throw new Error("เปลี่ยนประเภทของช่องเดิมไม่ได้ กรุณาบันทึกการแก้ไขอีกครั้ง");
@@ -1792,7 +1820,7 @@ export function initializeSpreadsheet(options, setStatus) {
       if (kind.value === "column" && !editing) {
         throw new Error("เลือกคอลัมน์จากช่องที่บันทึกแล้ว หรือเลือกเซลล์ในตาราง");
       }
-      const current = requestedSelection || (await selection());
+      const current = await selection();
       const targetAnchor =
         kind.value === "column" ? bindings?.table?.anchor : editing?.anchor;
       if (
@@ -1805,9 +1833,7 @@ export function initializeSpreadsheet(options, setStatus) {
           "ไม่พบตำแหน่งช่องนี้ กรุณาเลือกช่องหรือตารางเดิมแล้วกดผูกตำแหน่งใหม่ก่อนบันทึกการแก้ไข"
         );
       }
-      if (!bindingsAlreadyRead) {
-        await readBindings();
-      }
+      await readBindings();
       if (editing) {
         editing = bindingValue(bindings, editingKind, editing.id);
         if (!editing) {
@@ -1935,6 +1961,13 @@ export function initializeSpreadsheet(options, setStatus) {
       }
       const savedKind = kind.value;
       const savedDraftKey = draftKey();
+      const updateProjectIndicators =
+        value.source === "pdms-project-name" ||
+        editing?.source === "pdms-project-name" ||
+        (savedKind === "table" &&
+          value.columns.some(
+            (column) => column.source === "pdms-project-name"
+          ));
       await mutateBinding(
         { kind: kind.value, action: "upsert", value },
         target,
@@ -1974,6 +2007,9 @@ export function initializeSpreadsheet(options, setStatus) {
           if (active) {
             loadEntry([savedKind, value]);
           }
+          if (updateProjectIndicators) {
+            await synchronizeProjectDropdownIndicators();
+          }
           if (savedKind === "field" && value.type === "picture") {
             await ensurePictureFrame(value);
             setStatus("บันทึกฟิลด์และกรอบรูปแล้ว กรุณาบันทึกต้นแบบ", "success");
@@ -1995,56 +2031,37 @@ export function initializeSpreadsheet(options, setStatus) {
         }
       );
     };
-    const save = button("เพิ่มช่องจากช่วงที่เลือก", () => saveBinding());
-    if (options.pdmsProjectEnabled) {
-      button("สร้าง dropdown ชื่อโครงการ", async () => {
-        validatePanelDrafts();
-        const clicked = await selection();
-        if (clicked.drawing || clicked.uploadPocBindingId) {
-          throw new Error("กรุณาเลือกเซลล์สำหรับชื่อโครงการ");
-        }
-        await readBindings();
-        const current = await selection();
-        if (
-          current.sheet !== clicked.sheet ||
-          current.address !== clicked.address
-        ) {
-          throw new Error("ตำแหน่งที่เลือกเปลี่ยนแล้ว กรุณาคลิกสร้าง dropdown อีกครั้ง");
-        }
-        const match = selectedBinding(current, bindings, true);
-        if (match?.[0] === "table") {
-          throw new Error("เลือกเซลล์ในคอลัมน์ตารางที่ต้องการก่อน");
-        }
-        selected = current;
-        loadEntry(match);
-        if (editing?.computed) {
-          throw new Error("ช่องสูตรไม่รองรับชื่อโครงการ");
-        }
-        if (editing?.source !== "pdms-project-name") {
-          type.value = "pdms-project-name";
-          await saveBinding(current, true);
-        }
-        pdmsSourceSaveInFlight = true;
-        let saved;
-        try {
-          // A normal native capture keeps every unsaved cell and reloads the
-          // signed source/catalog/background config for this same opening.
-          saved = await operations.runAction(
-            ACTIONS.SAVE_TEMPLATE,
-            "",
-            null,
-            {}
-          );
-        } finally {
-          pdmsSourceSaveInFlight = false;
-        }
-        if (!saved?.ok) {
-          throw new Error(
-            `สร้าง dropdown แล้ว แต่บันทึกต้นแบบไม่สำเร็จ: ${saved?.error || "กรุณาลองอีกครั้งที่เซลล์เดิม"}`
-          );
-        }
-      });
-    }
+    const projectHelp = document.createElement("p");
+    projectHelp.id = "spreadsheet-project-save-help";
+    projectHelp.textContent =
+      "ปุ่มหลักจะสร้างหรือแก้ไข dropdown ชื่อโครงการ พร้อม Title/Tag และบันทึกต้นแบบให้";
+    projectHelp.hidden = true;
+    panel.append(projectHelp);
+    const save = button("เพิ่มช่องจากช่วงที่เลือก", async () => {
+      const projectSource =
+        kind.value !== "table" && type.value === "pdms-project-name";
+      if (projectSource) {
+        validatePanelDrafts(draftKey());
+      }
+      await saveBinding();
+      if (!projectSource) {
+        return;
+      }
+      pdmsSourceSaveInFlight = true;
+      let saved;
+      try {
+        // The common Field save also activates the opening's source/catalog.
+        // Capture native changes before reloading the signed editor config.
+        saved = await operations.runAction(ACTIONS.SAVE_TEMPLATE, "", null, {});
+      } finally {
+        pdmsSourceSaveInFlight = false;
+      }
+      if (!saved?.ok) {
+        throw new Error(
+          `บันทึกการตั้งค่าชื่อโครงการแล้ว แต่บันทึกต้นแบบไม่สำเร็จ: ${saved?.error || "กรุณาลองบันทึกช่องเดิมอีกครั้ง"}`
+        );
+      }
+    });
 
     const remove = button("ลบช่องนี้", async () => {
       if (!editing) {
@@ -2152,6 +2169,15 @@ export function initializeSpreadsheet(options, setStatus) {
           }
           if (editing?.id === current.id) {
             loadEntry(null);
+          }
+          if (
+            current.source === "pdms-project-name" ||
+            (deletedKind === "table" &&
+              current.columns.some(
+                (column) => column.source === "pdms-project-name"
+              ))
+          ) {
+            await synchronizeProjectDropdownIndicators();
           }
         }
       );

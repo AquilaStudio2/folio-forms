@@ -70,18 +70,34 @@
         opacity: 0.55;
         cursor: not-allowed;
       }
+      #pdms-popup-trigger {
+        flex-shrink: 0;
+        height: 30px;
+        width: 100%;
+        font-weight: 600;
+        text-align: left;
+        border-color: #0f766e;
+        background: #f0fdfa;
+      }
       #pdms-popup-results {
         flex: 1;
         min-height: 0;
         overflow: auto;
         display: grid;
         align-content: start;
+        grid-auto-rows: max-content;
         gap: 3px;
       }
       #pdms-popup-results button {
+        height: auto;
+        line-height: 1.45;
         text-align: left;
         overflow-wrap: anywhere;
         white-space: normal;
+      }
+      main[data-preview="true"] #pdms-popup-results button:disabled {
+        opacity: 1;
+        cursor: default;
       }
       [aria-selected="true"] {
         background: #ccfbf1;

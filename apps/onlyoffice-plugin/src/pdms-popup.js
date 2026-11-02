@@ -21,6 +21,7 @@ export const initializePdmsPopup = (host, document, plugin, options) => {
   const query = document.createElement("input");
   query.type = "search";
   query.autocomplete = "off";
+  query.placeholder = "พิมพ์เพื่อค้นหาชื่อโครงการ";
   query.setAttribute("role", "combobox");
   query.setAttribute("aria-autocomplete", "list");
   query.setAttribute("aria-controls", "pdms-popup-results");
@@ -42,8 +43,13 @@ export const initializePdmsPopup = (host, document, plugin, options) => {
   const next = button("แสดงถัดไป 100 โครงการ");
   const retry = button("ลองโหลดรายการอีกครั้ง");
   const cancel = button("ยกเลิกการค้นหา");
-  const reopen = button("เปิดรายการโครงการ");
+  const reopen = button("เลือกชื่อโครงการ ▼");
+  reopen.id = "pdms-popup-trigger";
+  reopen.setAttribute("aria-label", "เลือกชื่อโครงการ");
+  reopen.setAttribute("aria-haspopup", "listbox");
+  reopen.setAttribute("aria-controls", results.id);
   container.append(
+    reopen,
     title,
     searchLabel,
     count,
@@ -51,8 +57,7 @@ export const initializePdmsPopup = (host, document, plugin, options) => {
     previous,
     next,
     retry,
-    cancel,
-    reopen
+    cancel
   );
   document.body.append(container);
   const post = (type, extra = {}) =>
@@ -72,7 +77,7 @@ export const initializePdmsPopup = (host, document, plugin, options) => {
   const show = (compact = false) => {
     plugin.executeMethod(
       "ShowInputHelper",
-      [plugin.info.guid, compact ? 240 : 430, compact ? 44 : 360, !compact],
+      [plugin.info.guid, compact ? 240 : 430, compact ? 48 : 400, !compact],
       () => {
         if (!compact && !destroyed && !collapsed && state?.target) {
           query.focus();
@@ -88,6 +93,7 @@ export const initializePdmsPopup = (host, document, plugin, options) => {
     searchLabel.hidden = true;
     results.replaceChildren();
     query.setAttribute("aria-expanded", "false");
+    reopen.setAttribute("aria-expanded", "false");
     plugin.executeMethod("UnShowInputHelper", [plugin.info.guid, false]);
   };
   const choose = (name) => {
@@ -124,7 +130,9 @@ export const initializePdmsPopup = (host, document, plugin, options) => {
     ]) {
       element.hidden = collapsed;
     }
-    reopen.hidden = !collapsed;
+    container.dataset.preview = String(Boolean(state.preview));
+    reopen.disabled = Boolean(state.busy);
+    reopen.setAttribute("aria-expanded", String(!collapsed));
     query.setAttribute("aria-expanded", String(!collapsed));
     if (collapsed) {
       results.replaceChildren();
@@ -256,7 +264,16 @@ export const initializePdmsPopup = (host, document, plugin, options) => {
     render();
   });
   cancel.addEventListener("click", cancelSearch);
-  reopen.addEventListener("click", locate);
+  reopen.addEventListener("click", () => {
+    if (state?.busy) {
+      return;
+    }
+    if (collapsed) {
+      locate();
+    } else {
+      cancelSearch();
+    }
+  });
   container.addEventListener("keydown", (event) => {
     if (
       event.key === "Escape" &&

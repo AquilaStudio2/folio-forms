@@ -437,11 +437,54 @@ export const createHarness = ({
     }
     return validation;
   };
+  const spreadsheetShapes = [];
   // oxlint-disable no-use-before-define -- Native sheet and range objects refer to one another lazily.
   const spreadsheetSheet = () => ({
     AddDefName: (name, reference) => {
       spreadsheetNames.set(name, reference);
       return true;
+    },
+    AddShape(
+      type,
+      width,
+      height,
+      fill,
+      stroke,
+      column,
+      columnOffset,
+      row,
+      rowOffset
+    ) {
+      const locks = new Map();
+      let name = "";
+      const shape = {
+        Drawing: {
+          deleteDrawingBase() {
+            this.removed = true;
+          },
+          removed: false,
+        },
+        GetLockValue: (key) => locks.get(key),
+        GetName: () => name,
+        SetLockValue: (key, value) => locks.set(key, value),
+        SetName(value) {
+          name = value;
+        },
+        SetRotation(value) {
+          shape.rotation = value;
+        },
+        column,
+        columnOffset,
+        fill,
+        height,
+        row,
+        rowOffset,
+        stroke,
+        type,
+        width,
+      };
+      spreadsheetShapes.push(shape);
+      return shape;
     },
     GetAllOleObjects: () =>
       (
@@ -449,6 +492,8 @@ export const createHarness = ({
         spreadsheetSelection?.drawings ||
         []
       ).filter((object) => !object.Drawing?.removed),
+    GetAllShapes: () =>
+      spreadsheetShapes.filter((shape) => !shape.Drawing.removed),
     GetDefNames: () =>
       [...spreadsheetNames.keys()].map((name) => Api.GetDefName(name)),
     GetName: () => spreadsheetSelection?.sheet || "Sheet1",
@@ -485,6 +530,7 @@ export const createHarness = ({
     GetNumberFormat: () =>
       spreadsheetNumberFormats.get(normalizedAddress(address)) ?? "General",
     GetRow: () => position(normalizedAddress(address)).row,
+    GetRowHeight: () => 14.25,
     GetRowsCount: () => {
       const [first, last = first] = normalizedAddress(address).split(":");
       return position(last).row - position(first).row + 1;
@@ -495,6 +541,7 @@ export const createHarness = ({
       spreadsheetSelection?.headers ??
       "",
     GetWorksheet: spreadsheetSheet,
+    Height: 14.25,
     Select() {
       spreadsheetSelection.address = normalizedAddress(address);
     },
@@ -506,6 +553,7 @@ export const createHarness = ({
       spreadsheetNumberFormats.set(normalizedAddress(address), format);
       return true;
     },
+    Width: 48,
     range: nativeValidationModel.range(normalizedAddress(address)),
   });
   const Api = {
@@ -514,6 +562,10 @@ export const createHarness = ({
       return true;
     },
     CreateColorFromRGB: (red, green, blue) => ({ blue, green, red }),
+    CreateNoFill: () => null,
+    CreateRGBColor: (red, green, blue) => ({ blue, green, red }),
+    CreateSolidFill: (color) => color,
+    CreateStroke: (width, fill) => ({ fill, width }),
     DeleteDefName(name) {
       return spreadsheetNames.delete(name);
     },
@@ -551,6 +603,7 @@ export const createHarness = ({
       };
     },
     GetSheet: spreadsheetSheet,
+    GetSheets: () => [spreadsheetSheet()],
     Save() {
       saveCalls.push("save");
       return true;
@@ -724,6 +777,7 @@ export const createHarness = ({
     spreadsheetBorders,
     spreadsheetNames,
     spreadsheetNumberFormats,
+    spreadsheetShapes,
     spreadsheetValidations,
     statusElement,
     visibleSpreadsheetBorders,

@@ -664,7 +664,20 @@ The XLSX PDMS project-name source and its acceptance graph are implemented, incl
 
 The backend bounds request time and response size, validates every returned row, omits blank/missing names and collapses exact duplicates in provider order. Names are answer strings; document numbers and upstream identifiers are never sent to the workbook or picker. Credentials remain server-only and must not be logged. Each authorized editor opening receives a durable catalog snapshot shared by its mapped Fields; reconnect and controlled save/reload retain that successful snapshot. A separate opening fetches again.
 
-Admin Template authoring uses one **สร้าง dropdown ชื่อโครงการ** button at the selected cell or table column, preserving an existing Field's Title/Tag and identity. Users and editable Corrections search and choose through the dropdown beside the mapped cell; Cancel leaves an immediate same-cell reopen control. Read-only results display saved values without loading a catalog.
+Admin selects **PDMS · ชื่อโครงการ** under **ชนิดข้อมูล** and uses the normal **เพิ่มช่องจากช่วงที่เลือก** or **บันทึกการแก้ไข** button. The same action saves the Field settings and Template, activates the catalog, and preserves an existing Field's Title/Tag and identity. There is no separate project-dropdown creator. Users and editable Corrections search and choose through the dropdown beside the mapped cell; **เลือกชื่อโครงการ ▼** remains available after Cancel. Read-only results display saved values without loading a catalog.
+
+Saved project cells also display a small teal dropdown arrow at their right edge, including empty cells and cells with a selected answer. The decorative arrow does not change the cell value or replace the existing search picker. The normal native save rebuilds arrows from stable Field and table-column bindings, including newly added rows. Field conversion or removal clears the corresponding arrows. Existing saved workbooks receive these indicators through the next normal save; their answers are preserved.
+
+For host development with `bun run dev`, configure PDMS credentials in `apps/server/.env`; Compose uses the root `.env`.
+
+The local comparison fixture places a native dropdown at **B7** and the live source picker at **H7**. The native dropdown uses a frozen name list and permits direct entry of a listed name. It is a comparison fixture, not a replacement for the live source or its input restrictions. Run these commands from `apps/server` with the local environment loaded:
+
+```sh
+PDMS_COMPARE_CREATE_LOCAL=1 bun test/prototypes/pdms-picker/compare.ts
+PDMS_COMPARE_CREATE_LOCAL=1 bun test/prototypes/pdms-picker/verify-comparison.ts
+```
+
+The first command creates one local comparison Form with the project-cell indicator and reuses it on subsequent runs. The second uses a dedicated local User through the real HTTP and native initialization workflow, exports the saved XLSX, and checks dropdown validation, input protection, and the saved indicator. It also checks the native list type, dropdown-arrow setting, and option count with the pinned `onlyoffice/documentserver:9.4.0.1` runtime in a disposable container without network access. Both commands require Docker and that local image; neither pulls an image. These checks do not exercise browser clicks. Files and private test credentials are stored under `/tmp/folio-pdms-native-comparison`, or `PDMS_COMPARISON_OUTPUT`. Set `PDMS_COMPARISON_TITLE` to name a separate comparison. Both scripts reject production and nonlocal database targets. They do not register application routes.
 
 A failed load keeps the current workbook usable for ordinary inputs and Draft saving, while submission remains blocked. The plugin offers **ลองโหลดรายการอีกครั้ง** (Retry); it loads only the catalog and preserves unsaved workbook input. Successful empty lists are ready catalogs, so normal required/optional and trusted historical rules apply. Signed action capabilities bind their catalog session as well as the actor, lease and document. Lease replacement delivers the new snapshot to the existing plugin and rejects a choice started under the prior session.
 

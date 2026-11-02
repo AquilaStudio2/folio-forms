@@ -59,7 +59,7 @@ it.each([
     const style = document.createElement("style");
     style.dataset.popupTest = "";
     // The Office SDK applies the editor theme to the plugin body after our stylesheet.
-    style.textContent = `${popupHtml.match(/<style>(?<css>[\s\S]*?)<\/style>/u)?.groups?.css}\nbody { background: ${background}; color: ${foreground}; }`;
+    style.textContent = `${popupHtml.match(/<style>(?<css>[\s\S]*?)<\/style>/u)?.groups?.css}\nbody { background: ${background}; color: ${foreground}; } button { height: 30px; }`;
     document.head.append(style);
     const post = vi.spyOn(window, "postMessage").mockImplementation(() => {});
     const options = {
@@ -93,7 +93,11 @@ it.each([
       );
     const readyState = {
       catalog: {
-        names: Array.from({ length: 250 }, (_, index) => `โครงการ ${index}`),
+        names: Array.from(
+          { length: 250 },
+          (_, index) =>
+            `โครงการทดสอบการแสดงชื่อโครงการที่ยาวหลายบรรทัดและยังอ่านได้ครบถ้วนโดยไม่ซ้อนกับรายการถัดไป ${index}`
+        ),
         status: "ready",
       },
       target: { key: "project", label: "ชื่อโครงการ", token: "contrast-target" },
@@ -109,6 +113,21 @@ it.each([
     readable(surface);
     const query = screen.getByRole<HTMLInputElement>("combobox");
     readable(query);
+    const trigger = screen.getByRole("button", { name: "เลือกชื่อโครงการ" });
+    expect(trigger).toBeVisible();
+    expect(trigger).toHaveTextContent("เลือกชื่อโครงการ ▼");
+    expect(trigger).toHaveAttribute("aria-haspopup", "listbox");
+    expect(trigger).toHaveAttribute("aria-expanded", "true");
+    const [firstName] = screen.getAllByRole("option");
+    expect(getComputedStyle(firstName).height).toBe("auto");
+    expect(getComputedStyle(firstName).whiteSpace).toBe("normal");
+    sendState({ ...readyState, preview: true });
+    expect(firstName).not.toBeInTheDocument();
+    const [previewName] = screen.getAllByRole("option");
+    expect(previewName).toBeDisabled();
+    expect(getComputedStyle(previewName).opacity).toBe("1");
+    readable(previewName);
+    sendState(readyState);
     for (const control of document.querySelectorAll("button")) {
       if (!control.hidden) {
         readable(control);
@@ -136,6 +155,7 @@ it.each([
     readable(screen.getByRole("button", { name: "ลองโหลดรายการอีกครั้ง" }));
     sendState(readyState);
     screen.getByRole("button", { name: "ยกเลิกการค้นหา" }).click();
-    readable(screen.getByRole("button", { name: "เปิดรายการโครงการ" }));
+    readable(screen.getByRole("button", { name: "เลือกชื่อโครงการ" }));
+    expect(trigger).toHaveAttribute("aria-expanded", "false");
   }
 );

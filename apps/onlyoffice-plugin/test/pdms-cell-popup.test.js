@@ -271,10 +271,20 @@ test("Admin creates a merged-cell project dropdown with one button and saves all
   await flushPlugin();
   const create = descendants(harness.body).find(
     (node) =>
-      node.tagName === "BUTTON" &&
-      node.textContent === "สร้าง dropdown ชื่อโครงการ"
+      node.tagName === "BUTTON" && node.textContent === "เพิ่มช่องจากช่วงที่เลือก"
   );
   expect(create).toBeDefined();
+  expect(
+    descendants(harness.body).some(
+      (node) => node.textContent === "สร้าง dropdown ชื่อโครงการ"
+    )
+  ).toBe(false);
+  const [, type] = descendants(harness.body).find(
+    (node) =>
+      node.tagName === "LABEL" && node.children[0]?.textContent === "ชนิดข้อมูล"
+  ).children;
+  type.value = "pdms-project-name";
+  type.dispatchEvent({ type: "change" });
   create.click();
   await flushPlugin();
   await flushPlugin();
@@ -285,6 +295,17 @@ test("Admin creates a merged-cell project dropdown with one button and saves all
     source: "pdms-project-name",
     type: "dropdown",
   });
+  const arrows = harness.spreadsheetShapes.filter(
+    (shape) => !shape.Drawing.removed
+  );
+  expect(arrows).toHaveLength(1);
+  expect(arrows[0]).toMatchObject({
+    column: 1,
+    rotation: 180,
+    row: 1,
+    type: "triangle",
+  });
+  expect(arrows[0].GetLockValue("noSelect")).toBe(true);
   expect(
     harness.requests.some((request) => request.url.endsWith("/save"))
   ).toBe(false);
@@ -303,7 +324,7 @@ test("Admin creates a merged-cell project dropdown with one button and saves all
 });
 
 test.each([false, true])(
-  "the create button preserves an existing column's Title/Tag/id and is idempotent when source=%s",
+  "the main save button preserves an existing column's Title/Tag/id and is idempotent when source=%s",
   async (alreadySource) => {
     const column = {
       id: "folio_column",
@@ -326,28 +347,22 @@ test.each([false, true])(
     let persisted;
     const harness = createHarness({
       action: "template-edit",
-      capabilityResponses: alreadySource
-        ? ["read", "save"]
-        : ["read", "write", "save"],
+      capabilityResponses: ["read", "write", "save"],
       documentKind: "xlsx",
       pdmsProjectEnabled: true,
       responses: [
         { bindings: initial, documentKey: "document-key", revision: 0 },
-        ...(alreadySource
-          ? []
-          : [
-              (_url, request) => {
-                persisted = JSON.parse(request.body).change;
-                return {
-                  bindings: {
-                    ...initial,
-                    table: { ...table, columns: [persisted.value] },
-                  },
-                  documentKey: "document-key",
-                  revision: 1,
-                };
-              },
-            ]),
+        (_url, request) => {
+          persisted = JSON.parse(request.body).change;
+          return {
+            bindings: {
+              ...initial,
+              table: { ...table, columns: [persisted.value] },
+            },
+            documentKey: "document-key",
+            revision: 1,
+          };
+        },
         { operationCapability: "poll", operationId: "source-created" },
         completedOperation({ documentKey: "next-template" }),
       ],
@@ -364,29 +379,40 @@ test.each([false, true])(
     });
     acknowledgeBridge(harness);
     await flushPlugin();
+    const [, existing] = descendants(harness.body).find(
+      (node) =>
+        node.tagName === "LABEL" &&
+        node.children[0]?.textContent === "ช่องที่บันทึกแล้ว"
+    ).children;
+    existing.value = column.id;
+    existing.dispatchEvent({ type: "change" });
+    const [, type] = descendants(harness.body).find(
+      (node) =>
+        node.tagName === "LABEL" && node.children[0]?.textContent === "ชนิดข้อมูล"
+    ).children;
+    type.value = "pdms-project-name";
+    type.dispatchEvent({ type: "change" });
     descendants(harness.body)
-      .find((node) => node.textContent === "สร้าง dropdown ชื่อโครงการ")
+      .find((node) => node.textContent === "บันทึกการแก้ไข")
       .click();
     await flushPlugin();
     await flushPlugin();
     const patches = harness.requests.filter(
       (request) => request.method === "PATCH"
     );
-    expect(patches).toHaveLength(alreadySource ? 0 : 1);
-    if (!alreadySource) {
-      expect(persisted).toMatchObject({
-        kind: "column",
-        value: {
-          id: "folio_column",
-          key: "stable_project",
-          label: "Stable project title",
-          offset: 0,
-          required: true,
-          source: "pdms-project-name",
-          type: "dropdown",
-        },
-      });
-    }
+    expect(patches).toHaveLength(1);
+    expect(persisted).toMatchObject({
+      kind: "column",
+      value: {
+        id: "folio_column",
+        key: "stable_project",
+        label: "Stable project title",
+        offset: 0,
+        required: true,
+        source: "pdms-project-name",
+        type: "dropdown",
+      },
+    });
     expect(
       harness.requests.some((request) => request.url.endsWith("/save"))
     ).toBe(true);

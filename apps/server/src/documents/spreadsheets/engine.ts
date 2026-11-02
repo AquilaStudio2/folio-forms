@@ -17,13 +17,18 @@ import {
   applySpreadsheetPrintAreas,
   prepareSpreadsheetRowFormulas,
 } from "./formula-bindings";
+import { projectDropdownIndicatorTargets } from "./project-dropdown-indicators";
 import {
   normalizeSpreadsheetUploadPocAnchors,
   spreadsheetUploadPocTargets,
   stripSpreadsheetUploadPoc,
 } from "./upload-poc";
 import { applySpreadsheetValidation } from "./validation";
-import { XLSX_CONTENT_TYPE } from "./workbook";
+import {
+  readSpreadsheetWorkbook,
+  resolveSpreadsheetContract,
+  XLSX_CONTENT_TYPE,
+} from "./workbook";
 
 interface BuilderJob {
   input: Uint8Array;
@@ -176,6 +181,14 @@ export const processSpreadsheet = async (
     clearRanges: options.clearRanges,
     formulaBindings: prepared.formulaBindings,
     inputUrl,
+    projectDropdownTargets: options.bindings
+      ? projectDropdownIndicatorTargets(
+          resolveSpreadsheetContract(
+            options.bindings,
+            readSpreadsheetWorkbook(validatedInput)
+          )
+        )
+      : undefined,
     restorePrototypeValidation: options.bindings === undefined,
     rowChange: options.rowChange,
     uploadPocTargets,

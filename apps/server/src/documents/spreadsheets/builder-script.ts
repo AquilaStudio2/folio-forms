@@ -1,5 +1,7 @@
 // oxlint-disable complexity -- Validate every executable builder boundary before generating the script.
 import type { SpreadsheetFormulaBinding } from "./formula-bindings";
+import { spreadsheetProjectDropdownIndicatorCommand } from "./project-dropdown-indicators";
+import type { ProjectDropdownIndicatorTarget } from "./project-dropdown-indicators";
 import {
   spreadsheetUploadPocCommand,
   uploadPocGuid,
@@ -29,6 +31,7 @@ export interface SpreadsheetBuilderJob {
   formulaBindings?: SpreadsheetFormulaBinding[];
   restorePrototypeValidation?: boolean;
   uploadPocTargets?: UploadPocTarget[];
+  projectDropdownTargets?: ProjectDropdownIndicatorTarget[];
 }
 
 /** Only server-created jobs are accepted; user text is never executable code. */
@@ -82,6 +85,17 @@ export const spreadsheetBuilderScript = (
       ))
   ) {
     throw new Error("Invalid spreadsheet row operation");
+  }
+  if (
+    job.projectDropdownTargets?.some(
+      (target) =>
+        !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(target.anchor) ||
+        !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(target.id) ||
+        (target.kind === "column" &&
+          (!Number.isSafeInteger(target.offset) || target.offset < 0))
+    )
+  ) {
+    throw new Error("Invalid project dropdown indicator target");
   }
   // ONLYOFFICE 9.4 ClearContents drops the style of emptied input cells.
   // Assigning an empty value preserves borders, formats, and the blank value.
@@ -175,6 +189,11 @@ if (!uploadProjection.ok) throw new Error(uploadProjection.error);`
     : ""
 }
 Api.RecalculateAllFormulas();
+${
+  job.projectDropdownTargets
+    ? `(${spreadsheetProjectDropdownIndicatorCommand.toString()})(${JSON.stringify({ targets: job.projectDropdownTargets })});`
+    : ""
+}
 builder.SaveFile("xlsx", ${JSON.stringify(outputName)});
 ${job.pdfName ? `builder.SaveFile("pdf", ${JSON.stringify(job.pdfName)});` : ""}
 builder.CloseFile();
