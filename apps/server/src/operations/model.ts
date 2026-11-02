@@ -7,16 +7,20 @@ import type { SavedUploadPocButton } from "../documents/spreadsheets/upload-poc"
 import { fail } from "../http/errors";
 import { asRecord } from "../http/input";
 import type { JsonRecord } from "../model-types";
+import type { PdmsSelection } from "../pdms/catalog";
+import { pdmsSelectionSchema } from "../pdms/selection";
 
 type OperationAction =
   | "save-template"
   | "publish"
   | "save-draft"
   | "submit"
-  | "save-correction";
+  | "save-correction"
+  | "save-correction-workspace";
 export const operationTypeForAction: Record<OperationAction, OperationType> = {
   publish: "publish_form",
   "save-correction": "save_correction",
+  "save-correction-workspace": "save_correction",
   "save-draft": "save_draft",
   "save-template": "save_template_draft",
   submit: "submit_response",
@@ -30,10 +34,13 @@ export type OperationErrorCode =
   | "fill_method_changed"
   | "force_save_failed"
   | "invalid_template"
+  | "native_snapshot_read_failed"
   | "onlyoffice_document_error"
   | "operation_timeout"
   | "pdf_conversion_failed";
 export interface OperationMetadata extends JsonRecord {
+  pdmsSelection?: PdmsSelection;
+  pdmsCatalogSessionId?: string;
   spreadsheetAnchors?: SpreadsheetAnchorSnapshot;
   documentKind?: "docx" | "xlsx";
   bindingRevision?: number;
@@ -47,6 +54,7 @@ export interface OperationMetadata extends JsonRecord {
   finalObjectKey: string;
   formId: string;
   nativeDocumentStaged?: boolean;
+  nativeCaptureObjectKey?: string;
   nextDocumentKey?: string;
   preserveEditorSession?: true;
   uploadPocBindingId?: string;
@@ -64,6 +72,7 @@ export interface OperationMetadata extends JsonRecord {
   stagedObjectKey: string;
   submissionDocumentKey?: string;
   submissionId?: string;
+  workspaceLeaseId?: string;
   workspaceDocumentKey?: string;
   workspaceObjectKey?: string;
 }
@@ -107,7 +116,8 @@ export function operationMetadata(value: unknown): OperationMetadata {
       action !== "publish" &&
       action !== "save-draft" &&
       action !== "submit" &&
-      action !== "save-correction") ||
+      action !== "save-correction" &&
+      action !== "save-correction-workspace") ||
     typeof formId !== "string" ||
     typeof stagedObjectKey !== "string" ||
     typeof finalObjectKey !== "string" ||
@@ -124,11 +134,22 @@ export function operationMetadata(value: unknown): OperationMetadata {
     (cleanupObjectKeys !== undefined &&
       (!Array.isArray(cleanupObjectKeys) ||
         cleanupObjectKeys.some((key) => typeof key !== "string"))) ||
+    (metadata.workspaceLeaseId !== undefined &&
+      !pdmsSelectionSchema.shape.leaseId.safeParse(metadata.workspaceLeaseId)
+        .success) ||
     (workspaceDocumentKey !== undefined &&
       typeof workspaceDocumentKey !== "string") ||
     (workspaceObjectKey !== undefined && typeof workspaceObjectKey !== "string")
   ) {
     fail(500, "invalid_operation", "Operation metadata is invalid");
+  }
+  if (
+    (metadata.pdmsSelection !== undefined &&
+      !pdmsSelectionSchema.safeParse(metadata.pdmsSelection).success) ||
+    (metadata.pdmsCatalogSessionId !== undefined &&
+      typeof metadata.pdmsCatalogSessionId !== "string")
+  ) {
+    fail(500, "invalid_operation", "Operation picker metadata is invalid");
   }
   return metadata as unknown as OperationMetadata;
 }

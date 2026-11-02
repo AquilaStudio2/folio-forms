@@ -76,7 +76,16 @@ export function createOperations(
         data: data.data,
         documentKey,
         ...(options.documentKind === "xlsx"
-          ? { fillMethod: "onlyoffice", ...(rowChange ? { rowChange } : {}) }
+          ? {
+              fillMethod: "onlyoffice",
+              ...(rowChange ? { rowChange } : {}),
+              ...(options.pdmsProjectCatalog?.sessionId
+                ? { pdmsCatalogSessionId: options.pdmsProjectCatalog.sessionId }
+                : {}),
+              ...(requestContext?.pdmsSelection
+                ? { pdmsSelection: requestContext.pdmsSelection }
+                : {}),
+            }
           : {}),
       };
 
@@ -92,7 +101,10 @@ export function createOperations(
       };
     }
 
-    if (action === ACTIONS.SAVE_CORRECTION) {
+    if (
+      action === ACTIONS.SAVE_CORRECTION ||
+      action === ACTIONS.SAVE_CORRECTION_WORKSPACE
+    ) {
       const responseId = encodeURIComponent(
         requireOption(options.responseId, "responseId")
       );
@@ -100,9 +112,24 @@ export function createOperations(
         body: {
           data: data.data,
           documentKey,
-          reason: requireOption(reason, "correction reason"),
+          ...(action === ACTIONS.SAVE_CORRECTION
+            ? { reason: requireOption(reason, "correction reason") }
+            : {}),
+          ...(options.documentKind === "xlsx"
+            ? {
+                ...(options.pdmsProjectCatalog?.sessionId
+                  ? {
+                      pdmsCatalogSessionId:
+                        options.pdmsProjectCatalog.sessionId,
+                    }
+                  : {}),
+                ...(requestContext?.pdmsSelection
+                  ? { pdmsSelection: requestContext.pdmsSelection }
+                  : {}),
+              }
+            : {}),
         },
-        path: `${API_ROUTES.ADMIN_RESULTS}/${responseId}/correction`,
+        path: `${API_ROUTES.ADMIN_RESULTS}/${responseId}/correction${action === ACTIONS.SAVE_CORRECTION_WORKSPACE ? "/workspace" : ""}`,
       };
     }
 
@@ -293,6 +320,7 @@ export function createOperations(
     let operationId;
     let completedPayload;
     let editorFrozen = false;
+    let waitForReload = false;
     const correctionReason = typeof reason === "string" ? reason.trim() : "";
 
     try {
@@ -329,6 +357,7 @@ export function createOperations(
       const needsData =
         action === ACTIONS.SAVE_DRAFT ||
         action === ACTIONS.SAVE_CORRECTION ||
+        action === ACTIONS.SAVE_CORRECTION_WORKSPACE ||
         action === ACTIONS.SUBMIT;
       let data;
 
@@ -365,6 +394,15 @@ export function createOperations(
 
       setStatus(`${actionLabel(action)} กำลังรอดำเนินการ…`, "pending");
       const capability = await bridge.requestActionCapability(action);
+      if (
+        saveContext?.pdmsSelection &&
+        saveContext.pdmsSelection.sessionId !==
+          options.pdmsProjectCatalog?.sessionId
+      ) {
+        throw new Error(
+          "สิทธิ์ตัวแก้ไขเปลี่ยนแล้ว กรุณาเลือกชื่อโครงการจากรายการปัจจุบันอีกครั้ง"
+        );
+      }
       const response = await postAction(
         action,
         data,
@@ -396,6 +434,12 @@ export function createOperations(
           "ยังยืนยันการบันทึกต้นแบบในตัวแก้ไขเดิมไม่ได้ กรุณาลองบันทึกซ้ำ หรือกดบันทึกแบบร่างเพื่อลองบันทึกต้นแบบอีกครั้ง"
         );
       }
+      waitForReload =
+        options.documentKind === "xlsx" &&
+        Boolean(options.pdmsProjectCatalog) &&
+        (action === ACTIONS.SUBMIT ||
+          (typeof result?.documentKey === "string" &&
+            result.documentKey !== options.documentKey));
       setStatus(`${actionLabel(action)} สำเร็จ`, "success");
       bridge.notifyParent(action, "completed", operationId, completion);
 
@@ -428,7 +472,7 @@ export function createOperations(
         operationId: operationId || null,
       };
     } finally {
-      if (editorFrozen) {
+      if (editorFrozen && !waitForReload) {
         try {
           await office.executeMethodResult("SetEditingRestrictions", [
             options.documentKind === "xlsx" ||
@@ -440,16 +484,62 @@ export function createOperations(
           setStatus("ไม่สามารถคืนค่าการแก้ไขเฉพาะช่องกรอกได้", "error");
         }
       }
-      actionInFlight = false;
-      if (options.documentKind === "xlsx") {
+      actionInFlight = waitForReload;
+      if (options.documentKind === "xlsx" && !waitForReload) {
         callbacks.setActionBusy?.(false);
       }
     }
+  }
+
+  async function retryPdmsCatalog() {
+    const current = options.pdmsProjectCatalog;
+    if (!current || actionInFlight) {
+      throw new Error("กรุณารอการบันทึกก่อนลองโหลดรายการอีกครั้ง");
+    }
+    if (current.status === "ready") {
+      return current;
+    }
+    let action = ACTIONS.SAVE_DRAFT;
+    if (options.action === ACTIONS.TEMPLATE_EDIT) {
+      action = ACTIONS.CONFIGURE_FIELDS;
+    } else if (options.action === ACTIONS.CORRECTION) {
+      action = ACTIONS.SAVE_CORRECTION;
+    } else if (options.action === ACTIONS.SUBMIT) {
+      action = ACTIONS.SUBMIT;
+    }
+    const capability = await bridge.requestActionCapability(action);
+    const active = options.pdmsProjectCatalog;
+    if (active?.status === "ready") {
+      return active;
+    }
+    const payload = await api.requestJson(
+      "/api/editor/pdms-project-catalog/retry",
+      {
+        method: "POST",
+        body: JSON.stringify({
+          documentKey: requireOption(options.documentKey, "documentKey"),
+          sessionId: active.sessionId,
+        }),
+      },
+      capability
+    );
+    const loaded = payload?.pdmsProjectCatalog;
+    if (
+      !isRecord(loaded) ||
+      loaded.sessionId !== active.sessionId ||
+      !["ready", "error", "loading"].includes(loaded.status) ||
+      !Array.isArray(loaded.names) ||
+      loaded.names.some((name) => typeof name !== "string")
+    ) {
+      throw new Error("โหลดรายการโครงการไม่สำเร็จ กรุณาลองอีกครั้ง");
+    }
+    options.pdmsProjectCatalog = loaded;
+    return loaded;
   }
 
   function submitForm() {
     return runAction(ACTIONS.SUBMIT);
   }
 
-  return { pollOperation, runAction, submitForm };
+  return { pollOperation, retryPdmsCatalog, runAction, submitForm };
 }

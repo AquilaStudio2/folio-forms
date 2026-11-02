@@ -66,6 +66,20 @@ export const env = createEnv({
 
     OMNIROUTE_MODEL: z.string().trim().min(1).optional(),
 
+    ONGOING_API_URL: z
+      .url()
+      .refine((value) => {
+        const url = new URL(value);
+        return (
+          ["http:", "https:"].includes(url.protocol) &&
+          !url.username &&
+          !url.password &&
+          !url.search &&
+          !url.hash
+        );
+      }, "ONGOING_API_URL must be an HTTP service base without credentials, query or fragment")
+      .optional(),
+
     ONLYOFFICE_API_BASE: z.url().default(localOnlyOfficeUrl),
 
     ONLYOFFICE_DOCUMENT_BASE_URL: z
@@ -77,6 +91,11 @@ export const env = createEnv({
     ONLYOFFICE_JWT_SECRET: z.string().min(32),
 
     ONLYOFFICE_URL: z.url().default(localOnlyOfficeUrl),
+
+    PDMS_PROJECT_NAME_SOURCE_ENABLED: z
+      .enum(["true", "false"])
+      .default("false")
+      .transform((value) => value === "true"),
 
     PREFILL_HANDOFF_SECRET: z.string().min(32),
 
@@ -97,6 +116,8 @@ export const env = createEnv({
     TEMPLATE_PATH: z
       .string()
       .default("../../onlyoffice-templates/template.docx"),
+
+    X_ONGOING_SECRET: z.string().trim().min(1).optional(),
   },
   skipValidation: !!process.env.SKIP_ENV_VALIDATION,
 });

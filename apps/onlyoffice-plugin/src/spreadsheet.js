@@ -1,4 +1,8 @@
 import { spreadsheetPicturePlaceholder } from "../../server/src/documents/spreadsheets/picture-placeholder.ts";
+import {
+  projectDropdownIndicatorTargets,
+  spreadsheetProjectDropdownIndicatorCommand,
+} from "../../server/src/documents/spreadsheets/project-dropdown-indicators.ts";
 import { spreadsheetUploadPocCommand } from "../../server/src/documents/spreadsheets/upload-poc-command.js";
 import {
   uploadPocGuid,
@@ -9,6 +13,7 @@ import { createBridge } from "./bridge.js";
 import { ACTIONS } from "./constants.js";
 import { createOffice } from "./office.js";
 import { createOperations } from "./operations.js";
+import { createPdmsProjectPicker } from "./pdms-project-picker.js";
 import {
   spreadsheetBindingAttempt,
   spreadsheetBindingOutcome,
@@ -274,6 +279,7 @@ export function initializeSpreadsheet(options, setStatus) {
   let ensureAuthoringReady = async () => {};
   let validatePanelDrafts = () => {};
   let uploadPocSaveInFlight = false;
+  let pdmsSourceSaveInFlight = false;
   let uploadPocDeleteNeedsSave = false;
   let pendingTemplateDeletePurpose = "manual";
   const deletedUploadPocBindingIds = new Set();
@@ -299,18 +305,22 @@ export function initializeSpreadsheet(options, setStatus) {
     }
   };
 
+  let pdmsPicker = null;
+  let refreshPdmsPicker = () => {};
   let renderList = () => {};
   let refreshAfterAction = () => {};
   const bridge = createBridge(options, office, {
     getFieldSelection: () => null,
     loadFieldRules: () => Promise.resolve(),
     runAction: (...args) => operations.runAction(...args),
+    onPdmsCatalogChanged: (catalog) => pdmsPicker?.updateCatalog(catalog),
     setPanelStatus: setStatus,
     setStatus,
   });
   const prefill = { shouldApplyRuntimePrefill: () => false };
   const operations = createOperations(options, office, prefill, bridge, api, {
-    isInitializationPending: () => busy && !uploadPocSaveInFlight,
+    isInitializationPending: () =>
+      busy && !uploadPocSaveInFlight && !pdmsSourceSaveInFlight,
     getTemplateSaveContext: () =>
       uploadPocDeleteNeedsSave && pendingTemplateDeletePurpose === "delete"
         ? {
@@ -343,6 +353,7 @@ export function initializeSpreadsheet(options, setStatus) {
         item.disabled = value;
       }
       disableAuthoringControls(value);
+      pdmsPicker?.setBusy(value);
       if (!value) {
         void refreshAfterAction();
       }
@@ -466,7 +477,8 @@ export function initializeSpreadsheet(options, setStatus) {
   const message = document.createElement("p");
   message.setAttribute("role", "status");
   panel.append(message);
-  async function selection() {
+  let selectionRead;
+  async function readSelection() {
     window.Asc.scope = window.Asc.scope || {};
     window.Asc.scope.folioSpreadsheetAnchors =
       spreadsheetBindingAnchors(bindings);
@@ -488,10 +500,37 @@ export function initializeSpreadsheet(options, setStatus) {
     selectionPosition(selected.address);
     return selected;
   }
+  function selection() {
+    // The native plugin has one command-callback slot. The popup and authoring
+    // panel share an in-flight read rather than overwriting each other's callback.
+    if (!selectionRead) {
+      selectionRead = readSelection().finally(() => {
+        selectionRead = null;
+      });
+    }
+    return selectionRead;
+  }
   const activeUploadPocBindingIds = () =>
     [...(bindings.fields || []), ...(bindings.table?.columns || [])].map(
       (field) => field.id
     );
+  const synchronizeProjectDropdownIndicators = async () => {
+    window.Asc.scope.folioProjectDropdownIndicators = {
+      targets: projectDropdownIndicatorTargets(bindings),
+    };
+    try {
+      const result = await office.callCommandResult(
+        spreadsheetProjectDropdownIndicatorCommand,
+        true
+      );
+      if (!Number.isSafeInteger(result) || result < 0) {
+        throw new Error("แสดงลูกศร dropdown ไม่สำเร็จ กรุณาลองบันทึกช่องเดิมอีกครั้ง");
+      }
+      bridge.setDirtyState(true);
+    } finally {
+      delete window.Asc.scope.folioProjectDropdownIndicators;
+    }
+  };
   async function captureUploadPocTargets(
     bindingIds,
     sourceBindings = bindings
@@ -756,6 +795,15 @@ export function initializeSpreadsheet(options, setStatus) {
   function applyBindings(result) {
     bindings = result.bindings;
     metadataBindings = result.bindings;
+    options.spreadsheetBindings = result.bindings;
+    if (
+      ![...bindings.fields, ...(bindings.table?.columns || [])].some(
+        (field) => field.source === "pdms-project-name"
+      )
+    ) {
+      options.pdmsProjectCatalog = null;
+    }
+    refreshPdmsPicker();
     revision = result.revision;
   }
   async function readBindings(reconcile = true) {
@@ -1399,6 +1447,9 @@ export function initializeSpreadsheet(options, setStatus) {
       ["number", "ตัวเลข"],
       ["dropdown", "รายการเลือก"],
       ["boolean", "ใช่ / ไม่ใช่"],
+      ...(options.pdmsProjectEnabled
+        ? [["pdms-project-name", "PDMS · ชื่อโครงการ"]]
+        : []),
       ["picture", "รูปภาพ (JPEG / PNG)"],
     ]);
     const required = input("บังคับกรอก", "checkbox");
@@ -1469,11 +1520,13 @@ export function initializeSpreadsheet(options, setStatus) {
       control.addEventListener("input", captureDraft);
       control.addEventListener("change", captureDraft);
     }
-    validatePanelDrafts = () => {
+    validatePanelDrafts = (savingDraftKey = null) => {
       captureDraft();
-      if (pendingDrafts.size) {
+      if ([...pendingDrafts].some((target) => target !== savingDraftKey)) {
         throw new Error(
-          "มีการตั้งค่าช่องที่ยังไม่ได้บันทึก กรุณากด บันทึกการแก้ไข หรือ เพิ่มช่องจากช่วงที่เลือก ในแผงตั้งค่าฟิลด์ก่อนบันทึกแบบร่างหรือเผยแพร่"
+          savingDraftKey
+            ? "มีการตั้งค่าช่องอื่นที่ยังไม่ได้บันทึก กรุณาเลือกช่องนั้นแล้วกด บันทึกการแก้ไข หรือ เพิ่มช่องจากช่วงที่เลือก ก่อนบันทึกช่องนี้"
+            : "มีการตั้งค่าช่องที่ยังไม่ได้บันทึก กรุณากด บันทึกการแก้ไข หรือ เพิ่มช่องจากช่วงที่เลือก ในแผงตั้งค่าฟิลด์ก่อนบันทึกแบบร่างหรือเผยแพร่"
         );
       }
     };
@@ -1508,6 +1561,14 @@ export function initializeSpreadsheet(options, setStatus) {
       optionsField.element.hidden = table || type.value !== "dropdown";
       show(headers, table && !editing);
       save.textContent = editing ? "บันทึกการแก้ไข" : "เพิ่มช่องจากช่วงที่เลือก";
+      projectHelp.hidden =
+        !options.pdmsProjectEnabled ||
+        table ||
+        type.value !== "pdms-project-name";
+      save.setAttribute(
+        "aria-describedby",
+        projectHelp.hidden ? "" : projectHelp.id
+      );
       remove.hidden = !editing;
       restorePicture.hidden =
         editingKind !== "field" ||
@@ -1540,7 +1601,10 @@ export function initializeSpreadsheet(options, setStatus) {
       caption.value =
         editing?.label || (selected ? `ช่อง ${selected.address}` : "ช่องใหม่");
       key.value = editing?.key || defaultKey();
-      type.value = editing?.type || "text";
+      type.value =
+        editing?.source === "pdms-project-name"
+          ? "pdms-project-name"
+          : editing?.type || "text";
       required.checked = Boolean(editing?.required);
       placeholder.value = editing?.placeholder || "";
       optionsField.setOptions(editing?.options || []);
@@ -1743,7 +1807,7 @@ export function initializeSpreadsheet(options, setStatus) {
       }
     });
     placeUploadPoc.setAttribute("aria-describedby", uploadPocHelp.id);
-    const save = button("เพิ่มช่องจากช่วงที่เลือก", async () => {
+    const saveBinding = async () => {
       if (editing && kind.value !== editingKind) {
         kind.value = editingKind;
         throw new Error("เปลี่ยนประเภทของช่องเดิมไม่ได้ กรุณาบันทึกการแก้ไขอีกครั้ง");
@@ -1791,15 +1855,21 @@ export function initializeSpreadsheet(options, setStatus) {
         id: bindingId,
         key: bindingKey,
         label: labelText,
-        type: type.value,
+        type: type.value === "pdms-project-name" ? "dropdown" : type.value,
         required: required.checked,
         placeholder: placeholder.value.trim() || null,
         computed: false,
         options: type.value === "dropdown" ? optionsField.getOptions() : [],
       };
+      if (type.value === "pdms-project-name") {
+        value.source = "pdms-project-name";
+      } else {
+        delete value.source;
+      }
       if (
         kind.value !== "table" &&
         value.type === "dropdown" &&
+        !value.source &&
         !value.options.length
       ) {
         throw new Error(
@@ -1862,9 +1932,11 @@ export function initializeSpreadsheet(options, setStatus) {
       } else if (kind.value !== "column") {
         value.anchor = editing?.anchor || bindingId;
         value.prefillPointer =
-          value.type === "picture" ? null : (editing?.prefillPointer ?? null);
+          value.type === "picture" || value.source
+            ? null
+            : (editing?.prefillPointer ?? null);
         value.prefillPolicy =
-          value.type === "picture"
+          value.type === "picture" || value.source
             ? "editable"
             : editing?.prefillPolicy || "editable";
       }
@@ -1889,6 +1961,13 @@ export function initializeSpreadsheet(options, setStatus) {
       }
       const savedKind = kind.value;
       const savedDraftKey = draftKey();
+      const updateProjectIndicators =
+        value.source === "pdms-project-name" ||
+        editing?.source === "pdms-project-name" ||
+        (savedKind === "table" &&
+          value.columns.some(
+            (column) => column.source === "pdms-project-name"
+          ));
       await mutateBinding(
         { kind: kind.value, action: "upsert", value },
         target,
@@ -1928,6 +2007,9 @@ export function initializeSpreadsheet(options, setStatus) {
           if (active) {
             loadEntry([savedKind, value]);
           }
+          if (updateProjectIndicators) {
+            await synchronizeProjectDropdownIndicators();
+          }
           if (savedKind === "field" && value.type === "picture") {
             await ensurePictureFrame(value);
             setStatus("บันทึกฟิลด์และกรอบรูปแล้ว กรุณาบันทึกต้นแบบ", "success");
@@ -1948,7 +2030,39 @@ export function initializeSpreadsheet(options, setStatus) {
           }
         }
       );
+    };
+    const projectHelp = document.createElement("p");
+    projectHelp.id = "spreadsheet-project-save-help";
+    projectHelp.textContent =
+      "ปุ่มหลักจะสร้างหรือแก้ไข dropdown ชื่อโครงการ พร้อม Title/Tag และบันทึกต้นแบบให้";
+    projectHelp.hidden = true;
+    panel.append(projectHelp);
+    const save = button("เพิ่มช่องจากช่วงที่เลือก", async () => {
+      const projectSource =
+        kind.value !== "table" && type.value === "pdms-project-name";
+      if (projectSource) {
+        validatePanelDrafts(draftKey());
+      }
+      await saveBinding();
+      if (!projectSource) {
+        return;
+      }
+      pdmsSourceSaveInFlight = true;
+      let saved;
+      try {
+        // The common Field save also activates the opening's source/catalog.
+        // Capture native changes before reloading the signed editor config.
+        saved = await operations.runAction(ACTIONS.SAVE_TEMPLATE, "", null, {});
+      } finally {
+        pdmsSourceSaveInFlight = false;
+      }
+      if (!saved?.ok) {
+        throw new Error(
+          `บันทึกการตั้งค่าชื่อโครงการแล้ว แต่บันทึกต้นแบบไม่สำเร็จ: ${saved?.error || "กรุณาลองบันทึกช่องเดิมอีกครั้ง"}`
+        );
+      }
     });
+
     const remove = button("ลบช่องนี้", async () => {
       if (!editing) {
         return;
@@ -1984,8 +2098,13 @@ export function initializeSpreadsheet(options, setStatus) {
             ? spreadsheetColumnAnchor(current.id)
             : current.anchor,
         removeAnchor: true,
+        clearDateFormat: current.type === "date",
         ...(editingKind === "table"
           ? {
+              clearOffsets: current.columns.map((column) => column.offset),
+              dateOffsets: current.columns
+                .filter((column) => column.type === "date")
+                .map((column) => column.offset),
               extraAnchorNames: spreadsheetBindingAnchors({
                 fields: [],
                 table: current,
@@ -2050,6 +2169,15 @@ export function initializeSpreadsheet(options, setStatus) {
           }
           if (editing?.id === current.id) {
             loadEntry(null);
+          }
+          if (
+            current.source === "pdms-project-name" ||
+            (deletedKind === "table" &&
+              current.columns.some(
+                (column) => column.source === "pdms-project-name"
+              ))
+          ) {
+            await synchronizeProjectDropdownIndicators();
           }
         }
       );
@@ -2610,5 +2738,17 @@ export function initializeSpreadsheet(options, setStatus) {
       extractFormData: (callback) => callback(null, { data: {} }),
     };
   }
+  refreshPdmsPicker = () => {
+    pdmsPicker?.destroy?.();
+    pdmsPicker = createPdmsProjectPicker(
+      options,
+      bindings,
+      operations,
+      setStatus,
+      selection,
+      () => busy
+    );
+  };
+  refreshPdmsPicker();
   return { operations, bridge };
 }

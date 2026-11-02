@@ -37,7 +37,7 @@ import type { RouteDependencies } from "./dependencies";
 
 export function registerPublicFormRoutes(
   app: Elysia,
-  dependencies: Pick<RouteDependencies, "handoffClock">
+  dependencies: Pick<RouteDependencies, "handoffClock" | "pdmsProjects">
 ): void {
   const { handoffClock } = dependencies;
   app
@@ -87,7 +87,16 @@ export function registerPublicFormRoutes(
           typeof query.responseId === "string" ? query.responseId : undefined;
         const requestedAction =
           typeof query.action === "string" ? query.action : undefined;
-        return userEditorConfig(form, identity, responseId, requestedAction);
+        return userEditorConfig(
+          form,
+          identity,
+          responseId,
+          requestedAction,
+          typeof query.pdmsOpeningId === "string"
+            ? query.pdmsOpeningId
+            : undefined,
+          dependencies.pdmsProjects
+        );
       }
     )
     .get("/api/forms/:publicId/my-submissions", async ({ request, params }) => {

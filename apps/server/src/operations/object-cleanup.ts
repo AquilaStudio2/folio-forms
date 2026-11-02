@@ -7,6 +7,96 @@ import { operationMetadata } from "./model";
 
 export const objectCleanupIntentGraceMs = 15 * 60_000;
 
+/** The owned upload location is also known before a crashed capture can register its proof. */
+export function nativeCaptureCandidateKey(
+  operation: Pick<Operation, "metadata" | "stagingObjectKey">
+): string | null {
+  const metadata = operationMetadata(operation.metadata);
+  return operation.stagingObjectKey &&
+    typeof metadata.pdmsCatalogSessionId === "string"
+    ? `${operation.stagingObjectKey}.native`
+    : null;
+}
+
+/** Reuse requires persisted proof, even though cleanup can derive the owned upload location. */
+export function nativeCaptureKey(
+  operation: Pick<Operation, "metadata" | "stagingObjectKey">
+): string | null {
+  const key = nativeCaptureCandidateKey(operation);
+  return operationMetadata(operation.metadata).nativeCaptureObjectKey === key
+    ? key
+    : null;
+}
+
+/** Keep the latest failed capture only while its exact target revision remains current. */
+export async function cleanupNativeCaptures(
+  operation: Pick<
+    Operation,
+    "documentKey" | "formId" | "targetId" | "targetType"
+  >
+): Promise<void> {
+  if (!operation.documentKey) {
+    return;
+  }
+  const attempts = await prisma.operation.findMany({
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    where: {
+      documentKey: operation.documentKey,
+      formId: operation.formId,
+      targetId: operation.targetId,
+      targetType: operation.targetType,
+    },
+  });
+  if (!attempts.some((attempt) => nativeCaptureCandidateKey(attempt))) {
+    return;
+  }
+  const current =
+    operation.targetType === "template_draft"
+      ? await prisma.templateDraft.findFirst({
+          where: { documentKey: operation.documentKey, id: operation.targetId },
+        })
+      : operation.targetType === "response"
+        ? await prisma.response.findFirst({
+            where: {
+              draftDocumentKey: operation.documentKey,
+              id: operation.targetId,
+            },
+          })
+        : operation.targetType === "correction"
+          ? await prisma.editorLease.findFirst({
+              where: {
+                targetId: operation.targetId,
+                targetType: "correction",
+                workspaceDocumentKey: operation.documentKey,
+              },
+            })
+          : null;
+  const [inFlight] = attempts;
+  if (
+    current &&
+    (inFlight?.status === OperationStatus.pending ||
+      inFlight?.status === OperationStatus.processing)
+  ) {
+    // An in-flight retry may still need the previous failed attempt's capture.
+    return;
+  }
+  const latest = attempts.find(
+    (attempt) =>
+      attempt.status !== OperationStatus.failed ||
+      attempt.errorCode !== "native_snapshot_read_failed"
+  );
+  const retained =
+    current && latest?.status === OperationStatus.failed
+      ? nativeCaptureKey(latest)
+      : null;
+  await Promise.all(
+    attempts
+      .map(nativeCaptureCandidateKey)
+      .filter((key): key is string => Boolean(key) && key !== retained)
+      .map((key) => deleteObjectUnlessCanonical(key))
+  );
+}
+
 export function uniqueObjectKeys(
   keys: readonly (string | null | undefined)[]
 ): string[] {
@@ -110,15 +200,22 @@ export async function cleanupTerminalOperationObjects(
     return;
   }
   const metadata = operationMetadata(operation.metadata);
+  await cleanupNativeCaptures(operation);
   if (operation.status === OperationStatus.completed) {
-    await deleteObjects(
-      metadata.cleanupObjectKeys ?? [metadata.stagedObjectKey]
-    );
+    const keys = metadata.cleanupObjectKeys ?? [metadata.stagedObjectKey];
+    await (metadata.action === "save-correction" ||
+    metadata.action === "save-correction-workspace"
+      ? Promise.all(keys.map((key) => deleteObjectUnlessCanonical(key)))
+      : deleteObjects(keys));
     return;
   }
   await deleteObjects([metadata.stagedObjectKey]);
   await deleteObjectUnlessCanonical(metadata.finalObjectKey);
-  if (metadata.action === "save-correction" && metadata.workspaceDocumentKey) {
+  if (
+    (metadata.action === "save-correction" ||
+      metadata.action === "save-correction-workspace") &&
+    metadata.workspaceDocumentKey
+  ) {
     const workspaceLease = await prisma.editorLease.findUnique({
       select: { workspaceObjectKey: true },
       where: { workspaceDocumentKey: metadata.workspaceDocumentKey },

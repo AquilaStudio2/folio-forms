@@ -38,6 +38,7 @@ import {
 } from "../forms/spreadsheet-fields";
 import { spreadsheetPictureFramesForTemplate } from "../forms/spreadsheet-picture-frames";
 import { fail } from "../http/errors";
+import { pdmsSelectionValue } from "../pdms/selection";
 import { readObject } from "../storage";
 import type { OperationMetadata } from "./model";
 
@@ -166,23 +167,38 @@ export const prepareSpreadsheetOperation = async (
   if (!response) {
     throw new Error("Spreadsheet response is unavailable");
   }
+  const correction =
+    metadata.action === "save-correction" ||
+    metadata.action === "save-correction-workspace";
   let baseObjectKey = response.draftObjectKey;
-  if (metadata.action === "save-correction") {
-    const latest = await prisma.correction.findFirst({
-      orderBy: { revision: "desc" },
-      where: { submissionId: metadata.submissionId },
+  let currentDocumentKey = response.draftDocumentKey;
+  if (correction) {
+    const workspace = await prisma.editorLease.findFirst({
+      where: {
+        id: metadata.workspaceLeaseId,
+        targetId: response.id,
+        targetType: "correction",
+        workspaceBaseDocumentKey: metadata.baseDocumentKey,
+        workspaceBaseRevision: metadata.baseRevision,
+        workspaceDocumentKey: metadata.workspaceDocumentKey,
+        workspaceObjectKey: metadata.workspaceObjectKey,
+      },
     });
-    const submission = metadata.submissionId
-      ? await prisma.submission.findUnique({
-          where: { id: metadata.submissionId },
-        })
-      : null;
-    baseObjectKey =
-      metadata.workspaceObjectKey ??
-      latest?.objectKey ??
-      submission?.objectKey ??
-      null;
+    if (
+      !metadata.workspaceLeaseId ||
+      !workspace ||
+      response.status !== "submitted"
+    ) {
+      fail(
+        409,
+        "stale_operation",
+        "The correction workspace is no longer current"
+      );
+    }
+    baseObjectKey = workspace.workspaceObjectKey;
+    currentDocumentKey = workspace.workspaceDocumentKey;
   }
+
   if (!baseObjectKey) {
     throw new Error("Spreadsheet base artifact is unavailable");
   }
@@ -198,7 +214,7 @@ export const prepareSpreadsheetOperation = async (
     unknown
   >;
   const locked = new Set(
-    metadata.action === "save-correction"
+    correction
       ? []
       : Object.keys(lockedRecord).filter((key) => lockedRecord[key] === true)
   );
@@ -211,16 +227,35 @@ export const prepareSpreadsheetOperation = async (
     : [];
   const inputs = spreadsheetInputRanges(contract, locked);
   const values = [...current.cells.values()]
-    .filter((cell) =>
-      inputs.some(
-        (range) =>
-          cell.row >= range.firstRow &&
-          cell.row <= range.lastRow &&
-          cell.column >= range.firstColumn &&
-          cell.column <= range.lastColumn
-      )
+    .filter(
+      (cell) =>
+        inputs.some(
+          (range) =>
+            cell.row >= range.firstRow &&
+            cell.row <= range.lastRow &&
+            cell.column >= range.firstColumn &&
+            cell.column <= range.lastColumn
+        ) &&
+        // Native/canonical XLSX may include empty cells inside a merged input.
+        // Writing a subordinate cell after its anchor clears the whole merge.
+        !current.merges.some(
+          (range) =>
+            cell.row >= range.firstRow &&
+            cell.row <= range.lastRow &&
+            cell.column >= range.firstColumn &&
+            cell.column <= range.lastColumn &&
+            (cell.row !== range.firstRow || cell.column !== range.firstColumn)
+        )
     )
     .map((cell) => ({ address: cell.address, value: cell.value }));
+  const selectedProject = await pdmsSelectionValue(metadata, contract, {
+    documentKey: currentDocumentKey,
+    targetId: response.id,
+    targetType: correction ? "correction" : "response",
+  });
+  if (selectedProject) {
+    values.push(selectedProject);
+  }
   const rowChange = metadata.spreadsheetRowChange as
     | { action: "insert" | "delete"; index: number }
     | undefined;
@@ -281,7 +316,11 @@ export const prepareSpreadsheetOperation = async (
     nextContract,
     metadata.action === "submit" || metadata.action === "save-correction"
   );
-  if (extracted.errors.length && metadata.action !== "save-draft") {
+  if (
+    extracted.errors.length &&
+    metadata.action !== "save-draft" &&
+    metadata.action !== "save-correction-workspace"
+  ) {
     throw new SpreadsheetValidationError(extracted.errors);
   }
   metadata.data = extracted.data;

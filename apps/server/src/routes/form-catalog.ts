@@ -44,6 +44,7 @@ import { operationTimeoutMs } from "../operations/lifecycle";
 import {
   objectCleanupIntentGraceMs,
   drainObjectCleanupIntents,
+  nativeCaptureCandidateKey,
   uniqueObjectKeys,
 } from "../operations/object-cleanup";
 import {
@@ -546,6 +547,7 @@ export function registerFormCatalogRoutes(
                   typeof metadata.finalObjectKey === "string"
                     ? metadata.finalObjectKey
                     : undefined,
+                  nativeCaptureCandidateKey(operation),
                   ...(Array.isArray(metadata.cleanupObjectKeys)
                     ? metadata.cleanupObjectKeys.filter(
                         (key): key is string => typeof key === "string"

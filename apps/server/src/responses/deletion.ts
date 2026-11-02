@@ -18,6 +18,7 @@ import { fail } from "../http/errors";
 import { operationMetadata } from "../operations/model";
 import {
   drainObjectCleanupIntents,
+  nativeCaptureCandidateKey,
   uniqueObjectKeys,
 } from "../operations/object-cleanup";
 
@@ -212,6 +213,7 @@ export async function deleteResponseData({
             operation.stagingObjectKey,
             metadata.finalObjectKey,
             metadata.stagedObjectKey,
+            nativeCaptureCandidateKey(operation),
             ...(metadata.cleanupObjectKeys ?? []),
             metadata.workspaceObjectKey,
           ];

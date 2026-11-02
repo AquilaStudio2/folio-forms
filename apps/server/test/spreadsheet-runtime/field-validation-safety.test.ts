@@ -303,6 +303,40 @@ builder.SaveFile("xlsx", "/work/rejected-validation.xlsx"); builder.CloseFile();
       );
     }, 120_000);
 
+    test("removing project table mappings preserves unmapped column validation, contents and formats", async () => {
+      await runtime.run(`builder.CreateFile("xlsx");
+var sheet = Api.GetActiveSheet(); sheet.SetName("Form"); Asc.scope = {};
+Api.AddDefName("folio_body", "'Form'!$B$3:$D$4", false);
+Api.AddDefName("custom_name", "'Form'!$C$3:$C$4", false);
+sheet.GetRange("B3").SetValue("Retained project");
+sheet.GetRange("C3").SetValue("Retained custom column");
+sheet.GetRange("D4").SetValue("Retained second project");
+sheet.GetRange("B3:D4").SetNumberFormat("dd/mm/yyyy");
+sheet.GetRange("B3:D4").GetValidation().Add("xlValidateList", "xlValidAlertStop", "xlBetween", '"one,two"');
+Asc.scope.folioSpreadsheetValidation = {anchor:"folio_body",removeAnchor:true,clearOffsets:[0,2],dateOffsets:[]};
+${scoped(spreadsheetClearValidationCommand)};
+builder.SaveFile("xlsx", "/work/removed-project-table.xlsx"); builder.CloseFile();`);
+      const workbook = workbookXml(
+        await runtime.read("removed-project-table.xlsx")
+      );
+      const rules = descendants(workbook.sheet, "dataValidation");
+      expect(rules).toHaveLength(1);
+      const address =
+        rules[0]?.attributes.sqref ??
+        (rules[0] && descendants(rules[0], "sqref")[0]?.text);
+      expect(address?.replaceAll("$", "")).toBe("C3:C4");
+      expect(workbook.names.folio_body).toBeUndefined();
+      expect(workbook.names.custom_name).toContain("$C$3:$C$4");
+      expect(cellText(workbook, "xl/worksheets/sheet1.xml", "B3")).toBe(
+        "Retained project"
+      );
+      expect(cellText(workbook, "xl/worksheets/sheet1.xml", "D4")).toBe(
+        "Retained second project"
+      );
+      expect(workbook.cell("B3").style).toBe(workbook.cell("C3").style);
+      expect(workbook.cell("D4").style).toBe(workbook.cell("C3").style);
+    }, 120_000);
+
     test("restores only a partial rule intersection and safely removes and restores broken names", async () => {
       await runtime.run(`builder.CreateFile("xlsx");
 var sheet = Api.GetActiveSheet(); sheet.SetName("Form"); Asc.scope = {};

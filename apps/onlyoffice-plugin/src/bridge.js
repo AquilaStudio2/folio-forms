@@ -119,7 +119,11 @@ export function createBridge(options, office, callbacks) {
         return action === ACTIONS.SAVE_DRAFT || action === ACTIONS.SUBMIT;
       }
       case ACTIONS.CORRECTION: {
-        return action === ACTIONS.SAVE_CORRECTION;
+        return (
+          action === ACTIONS.SAVE_CORRECTION ||
+          (options.documentKind === "xlsx" &&
+            action === ACTIONS.SAVE_CORRECTION_WORKSPACE)
+        );
       }
       case ACTIONS.SUBMIT: {
         return action === ACTIONS.SUBMIT;
@@ -241,6 +245,31 @@ export function createBridge(options, office, callbacks) {
         return;
       }
 
+      if (Object.hasOwn(message, "pdmsProjectCatalog")) {
+        const catalog = message.pdmsProjectCatalog;
+        if (
+          !isRecord(catalog) ||
+          typeof catalog.sessionId !== "string" ||
+          !catalog.sessionId ||
+          !["ready", "error", "loading"].includes(catalog.status) ||
+          !Array.isArray(catalog.names) ||
+          catalog.names.some((name) => typeof name !== "string")
+        ) {
+          settleCapabilityRequest(
+            message.requestId,
+            pending.reject,
+            new Error("ยืนยันรายการโครงการของตัวแก้ไขใหม่ไม่ได้ กรุณาลองอีกครั้ง")
+          );
+          return;
+        }
+        if (
+          catalog.sessionId !== options.pdmsProjectCatalog?.sessionId ||
+          options.pdmsProjectCatalog?.status !== "ready"
+        ) {
+          options.pdmsProjectCatalog = catalog;
+          callbacks.onPdmsCatalogChanged?.(catalog);
+        }
+      }
       settleCapabilityRequest(
         message.requestId,
         pending.resolve,
@@ -357,6 +386,11 @@ export function createBridge(options, office, callbacks) {
       if (
         message.action !== ACTIONS.SAVE_DRAFT &&
         message.action !== ACTIONS.SAVE_CORRECTION &&
+        !(
+          options.documentKind === "xlsx" &&
+          options.action === ACTIONS.CORRECTION &&
+          message.action === ACTIONS.SAVE_CORRECTION_WORKSPACE
+        ) &&
         !(
           options.documentKind === "xlsx" &&
           options.action === ACTIONS.TEMPLATE_EDIT &&

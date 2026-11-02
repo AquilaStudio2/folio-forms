@@ -19,6 +19,8 @@ import {
   callbackOrigins,
   maxCallbackDocumentBytes,
 } from "./operations/callback";
+import { pdmsProjectsConfigurationFromEnv } from "./pdms/projects";
+import type { PdmsProjectsConfiguration } from "./pdms/projects";
 import { configuredPrefillReturnUrl } from "./prefill/input";
 import { readinessStatus } from "./readiness";
 import { registerAccountRoutes } from "./routes/accounts";
@@ -36,6 +38,7 @@ import { registerFormCatalogRoutes } from "./routes/form-catalog";
 import { registerLegacySsoRoutes } from "./routes/legacy-sso";
 import { registerOnlyOfficeRoutes } from "./routes/onlyoffice";
 import { registerOperationRoutes } from "./routes/operations";
+import { registerPdmsProjectCatalogRoutes } from "./routes/pdms-project-catalog";
 import {
   registerPrefillEntryRoutes,
   registerPrefillMethodRoute,
@@ -49,6 +52,7 @@ import { registerSubmissionRoutes } from "./routes/submissions";
 import { putObject, deleteObject } from "./storage";
 
 export interface AppOptions {
+  pdmsProjects?: PdmsProjectsConfiguration | null;
   clock?: () => Date;
   deleteObject?: (key: string) => Promise<void>;
   putObject?: typeof putObject;
@@ -98,6 +102,10 @@ export function createApp(options: AppOptions = {}) {
     handoffClock,
     legacySso,
     onlyOffice,
+    pdmsProjects:
+      options.pdmsProjects === undefined
+        ? pdmsProjectsConfigurationFromEnv()
+        : options.pdmsProjects,
     prefillHandoffSecret,
     prefillReturnUrl,
     removeObject,
@@ -180,6 +188,7 @@ export function createApp(options: AppOptions = {}) {
   registerAuditRoutes(app, dependencies);
   registerResultRoutes(app, dependencies);
   registerPublicFormRoutes(app, dependencies);
+  registerPdmsProjectCatalogRoutes(app, dependencies);
   registerResponseRoutes(app, dependencies);
   registerResponseActionRoutes(app, dependencies);
   registerOperationRoutes(app, dependencies);

@@ -24,6 +24,7 @@ import {
 import { fail } from "../http/errors";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Operation, DraftFieldRule } from "../model-types";
+import { advancePdmsCatalogSession } from "../pdms/catalog";
 import { jsonValue } from "../responses/data";
 import { markOperationCompleted } from "./lifecycle";
 import type { OperationMetadata, OperationCompletion } from "./model";
@@ -107,6 +108,12 @@ export async function completeTemplateOperation(
           "The template changed while this operation was running"
         );
       }
+      await advancePdmsCatalogSession(
+        tx,
+        metadata.pdmsCatalogSessionId,
+        documentKey,
+        nextDocumentKey
+      );
       if (form.documentKind === "xlsx") {
         const previous = await spreadsheetDraftBindings(templateDraft.id, tx);
         const reconciled = reconcileSpreadsheetColumns(

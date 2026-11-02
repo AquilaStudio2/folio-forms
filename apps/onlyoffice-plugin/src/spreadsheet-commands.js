@@ -161,7 +161,11 @@ export function spreadsheetValidationCommand() {
     return result + row;
   };
   let listFormula;
-  if (!input.computed && ["boolean", "dropdown"].includes(input.type)) {
+  if (
+    !input.computed &&
+    !input.source &&
+    ["boolean", "dropdown"].includes(input.type)
+  ) {
     const options =
       input.type === "boolean" ? ["TRUE", "FALSE"] : input.options;
     if (
@@ -404,6 +408,7 @@ export function spreadsheetValidationCommand() {
     }
   } else if (
     !input.computed &&
+    !input.source &&
     !["text", "number", "date", "picture"].includes(input.type)
   ) {
     throw new Error("ชนิดช่องกรอกไม่ถูกต้อง");
@@ -458,6 +463,7 @@ export function spreadsheetValidationCommand() {
     }
     if (
       !input.computed &&
+      !input.source &&
       !["text", "picture"].includes(input.type) &&
       !added
     ) {

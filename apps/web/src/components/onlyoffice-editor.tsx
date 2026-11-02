@@ -22,6 +22,7 @@ import type {
 } from "@/features/onlyoffice/editor-protocol";
 import { EditorSurface } from "@/features/onlyoffice/editor-surface";
 import { isEditorWindowSource } from "@/features/onlyoffice/editor-window-source";
+import { createPdmsPopupRelay } from "@/features/onlyoffice/pdms-popup-relay";
 import type { UploadPocHostOptions } from "@/features/onlyoffice/upload-poc-pending";
 import { UploadPocPendingFiles } from "@/features/onlyoffice/upload-poc-pending";
 import { ApiError, apiDelete, apiGet, apiPost } from "@/lib/api";
@@ -39,6 +40,16 @@ declare global {
   }
 }
 
+const changedPdmsDocument = (
+  current: EditorConfig,
+  fresh: EditorConfig
+): boolean =>
+  Boolean(
+    fresh.pdmsProjectCatalog &&
+    recordOrEmpty(fresh.config?.document).key !==
+      recordOrEmpty(current.config?.document).key
+  );
+
 export const OnlyOfficeEditor = ({
   clearDirtyRequest = 0,
   configUrl,
@@ -46,6 +57,7 @@ export const OnlyOfficeEditor = ({
   onDirtyChange,
   onCommandReadyChange,
   onStateChange,
+  openingRevision = 0,
   readOnly = false,
   revision = 0,
   saveAction = "save-draft",
@@ -60,6 +72,7 @@ export const OnlyOfficeEditor = ({
   onDirtyChange?: (dirty: boolean) => void;
   onCommandReadyChange?: (ready: boolean) => void;
   onStateChange?: (state: OnlyOfficeEditorState) => void;
+  openingRevision?: number;
   readOnly?: boolean;
   revision?: number;
   saveAction?:
@@ -73,6 +86,23 @@ export const OnlyOfficeEditor = ({
   trackNativeDirty?: boolean;
   title: string;
 }) => {
+  const editorOpeningRef = useRef<{
+    url: string | undefined;
+    id: string;
+    revision: number;
+  } | null>(null);
+  if (
+    !editorOpeningRef.current ||
+    editorOpeningRef.current.url !== configUrl ||
+    editorOpeningRef.current.revision !== openingRevision
+  ) {
+    editorOpeningRef.current = {
+      id: crypto.randomUUID(),
+      revision: openingRevision,
+      url: configUrl,
+    };
+  }
+  const pdmsOpeningId = readOnly ? undefined : editorOpeningRef.current.id;
   const uploadPocFilesRef = useRef<UploadPocPendingFiles | null>(null);
   if (!uploadPocFilesRef.current) {
     uploadPocFilesRef.current = new UploadPocPendingFiles();
@@ -290,7 +320,7 @@ export const OnlyOfficeEditor = ({
       };
     }
 
-    const path = editorConfigPath(configUrl);
+    const path = editorConfigPath(configUrl, pdmsOpeningId);
     onCommandReadyChangeRef.current?.(false);
     loadedConfigUrlRef.current = null;
     setConfig(null);
@@ -329,7 +359,7 @@ export const OnlyOfficeEditor = ({
     return () => {
       cancelled = true;
     };
-  }, [configUrl, reportState, retryToken, revision]);
+  }, [configUrl, pdmsOpeningId, reportState, retryToken, revision]);
 
   useEffect(() => {
     if (editorState === "blocked" || editorState === "error") {
@@ -337,8 +367,9 @@ export const OnlyOfficeEditor = ({
     }
   }, [editorState]);
 
+  // oxlint-disable-next-line complexity -- Guard and coordinate one native editor generation, its bridge and save acknowledgements.
   useEffect(() => {
-    if (!config) {
+    if (!config || loadedConfigUrlRef.current !== configUrl) {
       return;
     }
 
@@ -371,6 +402,14 @@ export const OnlyOfficeEditor = ({
     let nativeDocumentDirty: boolean | null = null;
     let nativeSaveError: string | null = null;
     let pendingEditorSaveId: string | null = null;
+    const pdmsPopupRelay = createPdmsPopupRelay({
+      bridgeId,
+      getPrimary: () => pinnedSourceRef.current,
+      isLive: (source): source is Window =>
+        !cancelled && isEditorWindowSource(source, surfaceRef.current),
+      pluginOrigin,
+      scope: readOnly ? undefined : config.bridge?.pdmsProjectPopup,
+    });
     const respondToEditorSave = (saveFailure?: string) => {
       const requestId = pendingEditorSaveId;
       const source = pinnedSourceRef.current;
@@ -395,7 +434,12 @@ export const OnlyOfficeEditor = ({
     };
     const respondToCapabilityRequest = (
       request: CapabilityRequestMessage,
-      response: { capability: string } | { error: string },
+      response:
+        | {
+            capability: string;
+            pdmsProjectCatalog?: EditorConfig["pdmsProjectCatalog"];
+          }
+        | { error: string },
       requestedSource: MessageEventSource
     ) => {
       if (cancelled) {
@@ -443,9 +487,17 @@ export const OnlyOfficeEditor = ({
 
       const requestedLeaseId = leaseRef.current?.id;
       try {
-        const path = editorConfigPath(configUrl);
+        const path = editorConfigPath(configUrl, pdmsOpeningId);
         const fresh = await apiGet<EditorConfig>(path);
         if (cancelled || pinnedSourceRef.current !== requestedSource) {
+          return;
+        }
+        if (changedPdmsDocument(config, fresh)) {
+          respondToCapabilityRequest(
+            request,
+            { error: "เอกสารเปลี่ยนแล้ว กรุณาเก็บข้อมูลในตัวแก้ไขก่อนเปิดใหม่" },
+            requestedSource
+          );
           return;
         }
         const freshLease = fresh.bridge?.lease;
@@ -468,7 +520,16 @@ export const OnlyOfficeEditor = ({
           );
           return;
         }
-        respondToCapabilityRequest(request, { capability }, requestedSource);
+        respondToCapabilityRequest(
+          request,
+          {
+            capability,
+            ...(fresh.pdmsProjectCatalog
+              ? { pdmsProjectCatalog: fresh.pdmsProjectCatalog }
+              : {}),
+          },
+          requestedSource
+        );
       } catch {
         if (!cancelled) {
           respondToCapabilityRequest(
@@ -489,7 +550,9 @@ export const OnlyOfficeEditor = ({
       if (!configUrl || !requestedLeaseId) {
         throw new Error("ยืนยันการตั้งค่าปุ่มล่าสุดไม่ได้ กรุณาเปิดตัวแก้ไขใหม่");
       }
-      const fresh = await apiGet<EditorConfig>(editorConfigPath(configUrl));
+      const fresh = await apiGet<EditorConfig>(
+        editorConfigPath(configUrl, pdmsOpeningId)
+      );
       const refreshed = fresh.bridge?.uploadPoc;
       if (
         !refreshed ||
@@ -565,6 +628,10 @@ export const OnlyOfficeEditor = ({
       }
 
       const { data } = event;
+      pdmsPopupRelay.handle(event);
+      if (pdmsPopupRelay.isPopupSource(event.source)) {
+        return;
+      }
       if (isRecord(data) && data.source === "folio-upload-poc") {
         const options = config.bridge?.uploadPoc;
         if (
@@ -601,6 +668,7 @@ export const OnlyOfficeEditor = ({
           bridgeId,
           !config.editorUrl && !readOnly
         );
+        pdmsPopupRelay.primaryReady();
         setBridgeReadyVersion((value) => value + 1);
         return;
       }
@@ -710,6 +778,7 @@ export const OnlyOfficeEditor = ({
     const detachBridge = () => {
       respondToEditorSave("The native editor closed before changes were saved");
       cancelled = true;
+      pdmsPopupRelay.close();
       window.removeEventListener("message", handleBridgeMessage);
       pinnedSourceRef.current = null;
       onCommandReadyChangeRef.current?.(false);
@@ -827,6 +896,7 @@ export const OnlyOfficeEditor = ({
   }, [
     config,
     configUrl,
+    pdmsOpeningId,
     editorId,
     readOnly,
     reportState,

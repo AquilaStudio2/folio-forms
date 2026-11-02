@@ -1,5 +1,7 @@
 // oxlint-disable complexity -- Validate every executable builder boundary before generating the script.
 import type { SpreadsheetFormulaBinding } from "./formula-bindings";
+import { spreadsheetProjectDropdownIndicatorCommand } from "./project-dropdown-indicators";
+import type { ProjectDropdownIndicatorTarget } from "./project-dropdown-indicators";
 import {
   spreadsheetUploadPocCommand,
   uploadPocGuid,
@@ -20,11 +22,16 @@ export interface SpreadsheetBuilderJob {
   outputName?: string;
   rowChange?: SpreadsheetRowChange;
   pdfName?: string;
-  values?: { address: string; value: string | number | boolean | null }[];
+  values?: {
+    address: string;
+    value: string | number | boolean | null;
+    text?: true;
+  }[];
   clearRanges?: string[];
   formulaBindings?: SpreadsheetFormulaBinding[];
   restorePrototypeValidation?: boolean;
   uploadPocTargets?: UploadPocTarget[];
+  projectDropdownTargets?: ProjectDropdownIndicatorTarget[];
 }
 
 /** Only server-created jobs are accepted; user text is never executable code. */
@@ -55,7 +62,12 @@ export const spreadsheetBuilderScript = (
     throw new Error("Invalid internal formula binding");
   }
   if (
-    job.values?.some((cell) => !/^[A-Z]+[1-9]\d*$/u.test(cell.address)) ||
+    job.values?.some(
+      (cell) =>
+        !/^[A-Z]+[1-9]\d*$/u.test(cell.address) ||
+        (cell.text !== undefined &&
+          (cell.text !== true || typeof cell.value !== "string"))
+    ) ||
     job.clearRanges?.some(
       (range) => !/^[A-Z]+[1-9]\d*(?::[A-Z]+[1-9]\d*)?$/u.test(range)
     )
@@ -74,6 +86,17 @@ export const spreadsheetBuilderScript = (
   ) {
     throw new Error("Invalid spreadsheet row operation");
   }
+  if (
+    job.projectDropdownTargets?.some(
+      (target) =>
+        !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(target.anchor) ||
+        !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(target.id) ||
+        (target.kind === "column" &&
+          (!Number.isSafeInteger(target.offset) || target.offset < 0))
+    )
+  ) {
+    throw new Error("Invalid project dropdown indicator target");
+  }
   // ONLYOFFICE 9.4 ClearContents drops the style of emptied input cells.
   // Assigning an empty value preserves borders, formats, and the blank value.
   return `builder.OpenFile(${JSON.stringify(job.inputUrl)});
@@ -83,7 +106,11 @@ for (var c = 0; c < clearRanges.length; c++) sheet.GetRange(clearRanges[c]).SetV
 var inputValues = ${JSON.stringify(job.values ?? [])};
 for (var v = 0; v < inputValues.length; v++) {
   var input = inputValues[v];
-  if (input.value === null) sheet.GetRange(input.address).SetValue("");
+  if (input.text === true) {
+    if (sheet.GetRange(input.address).SetNumberFormat("@") !== true) throw new Error("Cannot preserve picker text");
+    sheet.GetRange(input.address).SetValue(input.value);
+  }
+  else if (input.value === null) sheet.GetRange(input.address).SetValue("");
   else sheet.GetRange(input.address).SetValue(typeof input.value === "string" && input.value.charAt(0) === "=" ? "'" + input.value : input.value);
 }
 var change = ${JSON.stringify(change ?? null)};
@@ -162,6 +189,11 @@ if (!uploadProjection.ok) throw new Error(uploadProjection.error);`
     : ""
 }
 Api.RecalculateAllFormulas();
+${
+  job.projectDropdownTargets
+    ? `(${spreadsheetProjectDropdownIndicatorCommand.toString()})(${JSON.stringify({ targets: job.projectDropdownTargets })});`
+    : ""
+}
 builder.SaveFile("xlsx", ${JSON.stringify(outputName)});
 ${job.pdfName ? `builder.SaveFile("pdf", ${JSON.stringify(job.pdfName)});` : ""}
 builder.CloseFile();

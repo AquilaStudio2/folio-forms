@@ -1,5 +1,6 @@
 import { API_ORIGIN } from "@/lib/api";
 
+import type { PdmsProjectPopupScope } from "./pdms-popup-relay";
 import type { UploadPocHostOptions } from "./upload-poc-pending";
 
 type EditorAction =
@@ -7,6 +8,7 @@ type EditorAction =
   | "publish"
   | "save-draft"
   | "save-correction"
+  | "save-correction-workspace"
   | "submit"
   | "configure-fields";
 type EditorOperationAction = Exclude<EditorAction, "configure-fields">;
@@ -30,10 +32,26 @@ export interface EditorLease {
 
 export const leaseRenewalIntervalMs = 30_000;
 
-export const editorConfigPath = (configUrl: string): string =>
-  configUrl.startsWith("http") ? configUrl.replace(API_ORIGIN, "") : configUrl;
+export const editorConfigPath = (
+  configUrl: string,
+  openingId?: string
+): string => {
+  const path = configUrl.startsWith("http")
+    ? configUrl.replace(API_ORIGIN, "")
+    : configUrl;
+  return openingId
+    ? `${path}${path.includes("?") ? "&" : "?"}pdmsOpeningId=${encodeURIComponent(openingId)}`
+    : path;
+};
+
+export interface PdmsProjectCatalog {
+  names: string[];
+  sessionId: string;
+  status: "ready" | "error" | "loading";
+}
 
 export interface EditorConfig {
+  pdmsProjectCatalog?: PdmsProjectCatalog;
   apiScriptUrl?: string;
   apiUrl?: string;
   bridge?: {
@@ -41,6 +59,7 @@ export interface EditorConfig {
     id?: string;
     lease?: EditorLease;
     pluginOrigin?: string;
+    pdmsProjectPopup?: PdmsProjectPopupScope;
     uploadPoc?: UploadPocHostOptions;
   };
   config?: Record<string, unknown>;
@@ -91,6 +110,7 @@ const isEditorOperationAction = (
   value === "publish" ||
   value === "save-draft" ||
   value === "save-correction" ||
+  value === "save-correction-workspace" ||
   value === "submit";
 const isEditorAction = (value: unknown): value is EditorAction =>
   value === "configure-fields" || isEditorOperationAction(value);

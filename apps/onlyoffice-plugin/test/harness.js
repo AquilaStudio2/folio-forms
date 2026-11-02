@@ -11,13 +11,20 @@ const pluginArtifact = await buildPlugin(pluginDirectory);
 const pluginSource = await pluginArtifact.text();
 const recordEntries = (value) => Object.entries(value ?? {});
 
+// oxlint-disable-next-line complexity -- Shared browser fixture supports the prototype bundle without changing default callers.
 export const createHarness = ({
   action = "fill",
   documentKind = "docx",
   spreadsheetBindings = { fields: [], table: null, version: 1 },
   spreadsheetPictureFrames = [],
+  pdmsProjectEnabled = false,
+  pdmsProjectCatalog,
+  pdmsPopupChannelId,
   spreadsheetSelection = {},
   browserGlobals = {},
+  bodyDataset = {},
+  entrySource = pluginSource,
+  extraElementIds = [],
   capabilityResponses = [],
   clipboard,
   controls = [],
@@ -25,6 +32,7 @@ export const createHarness = ({
   holdEditorSave = false,
   prefill,
   responses = [],
+  scopeIdentity,
   selection,
   serializeCommands = false,
   tagAliases,
@@ -76,6 +84,11 @@ export const createHarness = ({
       },
       checked: false,
       children: [],
+      click() {
+        if (!this.disabled) {
+          this.dispatchEvent({ type: "click" });
+        }
+      },
       dataset: {},
       disabled: false,
       dispatchEvent(event = {}) {
@@ -94,6 +107,9 @@ export const createHarness = ({
           callback(dispatched);
         }
         return true;
+      },
+      focus() {
+        // Focus is observed through accessible state in real-browser verification.
       },
       hidden: false,
       id,
@@ -114,6 +130,9 @@ export const createHarness = ({
       replaceChildren(...children) {
         this.children = [];
         this.append(...children);
+      },
+      scrollIntoView() {
+        // Scrolling is verified in the real editor, not this DOM shim.
       },
       select() {
         // Text selection is not modeled by this DOM shim.
@@ -149,7 +168,7 @@ export const createHarness = ({
     "field-panel-status",
     "form-bridge-status",
   ];
-  for (const id of panelIds) {
+  for (const id of [...panelIds, ...extraElementIds]) {
     createElement("div", id);
   }
   elements.get("field-panel").hidden = true;
@@ -242,9 +261,13 @@ export const createHarness = ({
         documentKey: "document-key",
         documentKind,
         parentOrigin,
+        pdmsPopupChannelId,
+        pdmsProjectCatalog,
+        pdmsProjectEnabled,
         prefill,
         publicId: "public-id",
         responseId: "response-id",
+        scopeIdentity,
         spreadsheetBindings,
         spreadsheetPictureFrames,
         tagAliases,
@@ -414,11 +437,54 @@ export const createHarness = ({
     }
     return validation;
   };
+  const spreadsheetShapes = [];
   // oxlint-disable no-use-before-define -- Native sheet and range objects refer to one another lazily.
   const spreadsheetSheet = () => ({
     AddDefName: (name, reference) => {
       spreadsheetNames.set(name, reference);
       return true;
+    },
+    AddShape(
+      type,
+      width,
+      height,
+      fill,
+      stroke,
+      column,
+      columnOffset,
+      row,
+      rowOffset
+    ) {
+      const locks = new Map();
+      let name = "";
+      const shape = {
+        Drawing: {
+          deleteDrawingBase() {
+            this.removed = true;
+          },
+          removed: false,
+        },
+        GetLockValue: (key) => locks.get(key),
+        GetName: () => name,
+        SetLockValue: (key, value) => locks.set(key, value),
+        SetName(value) {
+          name = value;
+        },
+        SetRotation(value) {
+          shape.rotation = value;
+        },
+        column,
+        columnOffset,
+        fill,
+        height,
+        row,
+        rowOffset,
+        stroke,
+        type,
+        width,
+      };
+      spreadsheetShapes.push(shape);
+      return shape;
     },
     GetAllOleObjects: () =>
       (
@@ -426,6 +492,8 @@ export const createHarness = ({
         spreadsheetSelection?.drawings ||
         []
       ).filter((object) => !object.Drawing?.removed),
+    GetAllShapes: () =>
+      spreadsheetShapes.filter((shape) => !shape.Drawing.removed),
     GetDefNames: () =>
       [...spreadsheetNames.keys()].map((name) => Api.GetDefName(name)),
     GetName: () => spreadsheetSelection?.sheet || "Sheet1",
@@ -462,6 +530,7 @@ export const createHarness = ({
     GetNumberFormat: () =>
       spreadsheetNumberFormats.get(normalizedAddress(address)) ?? "General",
     GetRow: () => position(normalizedAddress(address)).row,
+    GetRowHeight: () => 14.25,
     GetRowsCount: () => {
       const [first, last = first] = normalizedAddress(address).split(":");
       return position(last).row - position(first).row + 1;
@@ -472,6 +541,7 @@ export const createHarness = ({
       spreadsheetSelection?.headers ??
       "",
     GetWorksheet: spreadsheetSheet,
+    Height: 14.25,
     Select() {
       spreadsheetSelection.address = normalizedAddress(address);
     },
@@ -483,6 +553,7 @@ export const createHarness = ({
       spreadsheetNumberFormats.set(normalizedAddress(address), format);
       return true;
     },
+    Width: 48,
     range: nativeValidationModel.range(normalizedAddress(address)),
   });
   const Api = {
@@ -491,6 +562,10 @@ export const createHarness = ({
       return true;
     },
     CreateColorFromRGB: (red, green, blue) => ({ blue, green, red }),
+    CreateNoFill: () => null,
+    CreateRGBColor: (red, green, blue) => ({ blue, green, red }),
+    CreateSolidFill: (color) => color,
+    CreateStroke: (width, fill) => ({ fill, width }),
     DeleteDefName(name) {
       return spreadsheetNames.delete(name);
     },
@@ -528,6 +603,7 @@ export const createHarness = ({
       };
     },
     GetSheet: spreadsheetSheet,
+    GetSheets: () => [spreadsheetSheet()],
     Save() {
       saveCalls.push("save");
       return true;
@@ -596,6 +672,7 @@ export const createHarness = ({
       return statusElement;
     },
   };
+  Object.assign(document.body.dataset, bodyDataset);
   const context = {
     ...browserGlobals,
     AbortController,
@@ -611,7 +688,7 @@ export const createHarness = ({
     window,
   };
 
-  runInNewContext(pluginSource, context, {
+  runInNewContext(entrySource, context, {
     filename: "apps/onlyoffice-plugin/dist/plugin.js",
   });
   window.Asc.plugin.init();
@@ -700,6 +777,7 @@ export const createHarness = ({
     spreadsheetBorders,
     spreadsheetNames,
     spreadsheetNumberFormats,
+    spreadsheetShapes,
     spreadsheetValidations,
     statusElement,
     visibleSpreadsheetBorders,

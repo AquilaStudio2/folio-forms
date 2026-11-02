@@ -24,6 +24,7 @@ export interface EditorCapabilityScope {
   documentKey: string;
   formId: string;
   operationId?: string;
+  pdmsCatalogSessionId?: string;
   targetId: string;
   targetType: EditorCapabilityTarget;
 }
