@@ -2,7 +2,7 @@ import { unzipSync } from "fflate";
 import { SaxesParser } from "saxes";
 
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
-import { fail } from "../http/errors";
+import { fail, HttpError } from "../http/errors";
 
 export const maxTemplateArchiveExpandedBytes = 64 * 1024 * 1024;
 
@@ -128,8 +128,11 @@ export function parseTemplateXml(
   });
   try {
     parser.write(xml).close();
-  } catch {
-    fail(422, "invalid_template", "The DOCX package contains invalid XML");
+  } catch (error) {
+    if (error instanceof HttpError) {
+      throw error;
+    }
+    fail(422, "invalid_template", "The document package contains invalid XML");
   }
 }
 
@@ -224,7 +227,7 @@ export function templateArchiveText(
     }
     return new TextDecoder(encoding, { fatal: true }).decode(decodedBytes);
   } catch {
-    fail(422, "invalid_template", "The DOCX package contains invalid XML");
+    fail(422, "invalid_template", "The document package contains invalid XML");
   }
 }
 
@@ -240,12 +243,19 @@ function isExternalRelationshipTarget(target: string | undefined): boolean {
 }
 
 export function validateOfficeRelationships(
-  archive: Record<string, Uint8Array>
+  archive: Record<string, Uint8Array>,
+  options: {
+    allowExternalRelationship?: (input: {
+      archivePath: string;
+      element: TemplateXmlElement;
+    }) => boolean;
+  } = {}
 ): void {
   for (const archivePath of Object.keys(archive)) {
     if (!archivePath.toLowerCase().endsWith(".rels")) {
       continue;
     }
+    const relationshipIds = new Set<string>();
     parseTemplateXml(templateArchiveText(archive, archivePath), {
       open: (element) => {
         if (
@@ -254,16 +264,26 @@ export function validateOfficeRelationships(
         ) {
           return;
         }
+        const id = templateAttribute(element, "Id");
+        if (id && relationshipIds.has(id)) {
+          fail(422, "invalid_template", "Duplicate document relationship ID");
+        }
+        if (id) {
+          relationshipIds.add(id);
+        }
         const targetMode = templateAttribute(element, "TargetMode");
         const target = templateAttribute(element, "Target");
         if (
           targetMode?.trim().toLowerCase() === "external" ||
           isExternalRelationshipTarget(target)
         ) {
+          if (options.allowExternalRelationship?.({ archivePath, element })) {
+            return;
+          }
           fail(
             422,
             "invalid_template",
-            "External DOCX relationships are not allowed"
+            "External document resources are not allowed"
           );
         }
       },

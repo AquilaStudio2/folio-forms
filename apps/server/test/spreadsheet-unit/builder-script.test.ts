@@ -61,6 +61,7 @@ describe("spreadsheet builder job boundary", () => {
       Api: {
         GetActiveSheet: () => ({
           GetRange: (address: string) => ({
+            ClearHyperlinks() {},
             SetValue: (value: unknown) => written.set(address, value),
           }),
         }),

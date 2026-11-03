@@ -1,5 +1,6 @@
 // oxlint-disable complexity -- Validate every executable builder boundary before generating the script.
 import type { SpreadsheetFormulaBinding } from "./formula-bindings";
+import { isSpreadsheetWebUrl } from "./hyperlinks";
 import { spreadsheetProjectDropdownIndicatorCommand } from "./project-dropdown-indicators";
 import type { ProjectDropdownIndicatorTarget } from "./project-dropdown-indicators";
 import {
@@ -26,6 +27,7 @@ export interface SpreadsheetBuilderJob {
     address: string;
     value: string | number | boolean | null;
     text?: true;
+    hyperlink?: { target: string; tooltip?: string };
   }[];
   clearRanges?: string[];
   formulaBindings?: SpreadsheetFormulaBinding[];
@@ -75,6 +77,13 @@ export const spreadsheetBuilderScript = (
     throw new Error("Invalid spreadsheet input address");
   }
   if (
+    job.values?.some(
+      (cell) => cell.hyperlink && !isSpreadsheetWebUrl(cell.hyperlink.target)
+    )
+  ) {
+    throw new Error("Excel hyperlinks must use an absolute HTTP or HTTPS URL");
+  }
+  if (
     change &&
     (!/^[a-zA-Z_][a-zA-Z0-9_]*$/u.test(change.bodyName) ||
       !Number.isSafeInteger(change.index) ||
@@ -102,16 +111,25 @@ export const spreadsheetBuilderScript = (
   return `builder.OpenFile(${JSON.stringify(job.inputUrl)});
 var sheet = Api.GetActiveSheet();
 var clearRanges = ${JSON.stringify(job.clearRanges ?? [])};
-for (var c = 0; c < clearRanges.length; c++) sheet.GetRange(clearRanges[c]).SetValue("");
+for (var c = 0; c < clearRanges.length; c++) {
+  sheet.GetRange(clearRanges[c]).SetValue("");
+  sheet.GetRange(clearRanges[c]).ClearHyperlinks();
+}
 var inputValues = ${JSON.stringify(job.values ?? [])};
 for (var v = 0; v < inputValues.length; v++) {
   var input = inputValues[v];
+  sheet.GetRange(input.address).ClearHyperlinks();
   if (input.text === true) {
     if (sheet.GetRange(input.address).SetNumberFormat("@") !== true) throw new Error("Cannot preserve picker text");
     sheet.GetRange(input.address).SetValue(input.value);
   }
   else if (input.value === null) sheet.GetRange(input.address).SetValue("");
   else sheet.GetRange(input.address).SetValue(typeof input.value === "string" && input.value.charAt(0) === "=" ? "'" + input.value : input.value);
+  if (input.hyperlink && input.value !== null && input.value !== "") {
+    var literal = typeof input.value === "string" && input.value.charAt(0) === "=" ? "'" + input.value : input.value;
+    if (sheet.SetHyperlink(input.address, input.hyperlink.target, null, input.hyperlink.tooltip || "", String(literal)) !== true) throw new Error("Cannot preserve Excel hyperlink");
+    sheet.GetRange(input.address).SetValue(literal);
+  }
 }
 var change = ${JSON.stringify(change ?? null)};
 if (change) {
@@ -151,12 +169,14 @@ if (change) {
     for (var i = 0; i < change.inputColumns.length; i++) {
       if (change.inputColumns[i] >= width) throw new Error("Invalid input column");
       sheet.GetRange(address(firstColumn + change.inputColumns[i], row)).SetValue("");
+      sheet.GetRange(address(firstColumn + change.inputColumns[i], row)).ClearHyperlinks();
     }
     name.SetRefersTo("'" + sheet.GetName().replace(/'/g, "''") + "'!$" + address(firstColumn, firstRow).replace(/(\\d+)$/, "$$$1") + ":$" + address(firstColumn + width - 1, firstRow + count).replace(/(\\d+)$/, "$$$1"));
   } else if (count === 1) {
     for (var j = 0; j < change.inputColumns.length; j++) {
       if (change.inputColumns[j] >= width) throw new Error("Invalid input column");
       sheet.GetRange(address(firstColumn + change.inputColumns[j], row)).SetValue("");
+      sheet.GetRange(address(firstColumn + change.inputColumns[j], row)).ClearHyperlinks();
     }
   } else {
     sheet.GetRange((row + 1) + ":" + (row + 1)).Delete("up");
