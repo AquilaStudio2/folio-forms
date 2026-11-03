@@ -6,7 +6,7 @@ import {
   FillMethod,
   OperationTargetType,
 } from "@onlyoffice/db";
-import { provinceChoices } from "@onlyoffice/results-filters";
+import { monthChoices, provinceChoices } from "@onlyoffice/results-filters";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Elysia } from "elysia";
 
@@ -274,8 +274,12 @@ export function registerResultRoutes(
       const userQuery = queryString(queryRecord, "user");
       const state = queryString(queryRecord, "state");
       const province = queryString(queryRecord, "province");
+      const month = queryString(queryRecord, "month");
       if (province !== undefined && !provinceChoices.includes(province)) {
         fail(400, "invalid_request", "province is invalid");
+      }
+      if (month !== undefined && !monthChoices.includes(month)) {
+        fail(400, "invalid_request", "month is invalid");
       }
       const from = adminResultDate(queryString(queryRecord, "from"), "from");
       const to = adminResultDate(queryString(queryRecord, "to"), "to");
@@ -329,6 +333,7 @@ export function registerResultRoutes(
       }
       const responses = await findAdminResults({
         correction,
+        month,
         province,
         where: and.length > 0 ? { AND: and } : {},
       });

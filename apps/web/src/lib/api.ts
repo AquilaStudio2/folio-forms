@@ -197,6 +197,7 @@ export interface AdminResultListQuery {
   cursor?: string;
   form?: string;
   from?: string;
+  month?: string;
   province?: string;
   state?: AdminResultState;
   to?: string;
