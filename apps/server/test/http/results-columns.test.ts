@@ -49,8 +49,13 @@ const {
   getAdmin: () => ({ bearer: adminBearer, id: adminId }),
 });
 
+type ReportingValues = Pick<
+  Awaited<ReturnType<typeof results>>["results"][number],
+  "fiscalYear" | "month" | "province"
+>;
+
 test.each(["docx", "xlsx"] satisfies DocumentKind[])(
-  "%s: unfiltered results expose normalized reporting columns from configured scalar Tags",
+  "%s: unfiltered results preserve reporting values from configured scalar Tags",
   async (kind) => {
     const form = await resultForm(kind);
     const saved = await savedResult(form, {
@@ -68,37 +73,62 @@ test.each(["docx", "xlsx"] satisfies DocumentKind[])(
     expect(page.results.map(({ id }) => id).toSorted()).toEqual(
       [saved.id, numeric.id].toSorted()
     );
-    for (const row of page.results) {
-      expect(row).toMatchObject({
+    expect(page.results).toContainEqual(
+      expect.objectContaining({
+        fiscalYear: "2570",
+        id: saved.id,
+        month: "ตุลาคม",
+        province: "  เชียงใหม่  ",
+      })
+    );
+    expect(page.results).toContainEqual(
+      expect.objectContaining({
         fiscalYear: 2570,
+        id: numeric.id,
         month: "ตุลาคม",
         province: "เชียงใหม่",
-      });
-    }
+      })
+    );
     const detail = await detailRequest(saved.id);
     expect(detail.status).toBe(200);
     expect(await detail.json()).toMatchObject({
-      result: { fiscalYear: 2570, month: "ตุลาคม", province: "เชียงใหม่" },
+      result: {
+        fiscalYear: "2570",
+        month: "ตุลาคม",
+        province: "  เชียงใหม่  ",
+      },
     });
   }
 );
 
 test.each(["docx", "xlsx"] satisfies DocumentKind[])(
-  "%s: unavailable and malformed values are null independently without removing the row",
+  "%s: displays nonstandard scalar values while leaving missing and structured values unavailable",
   async (kind) => {
     const form = await resultForm(kind);
     const examples = [
       {
         data: { fiscal_year: "2570.0", month: 10, province: "เชียงใหม่" },
-        values: { fiscalYear: null, month: null, province: "เชียงใหม่" },
+        values: { fiscalYear: "2570.0", month: 10, province: "เชียงใหม่" },
       },
       {
         data: { fiscal_year: 2570.5, month: "ต.ค.", province: "จ.เชียงใหม่" },
-        values: { fiscalYear: null, month: null, province: null },
+        values: { fiscalYear: 2570.5, month: "ต.ค.", province: "จ.เชียงใหม่" },
       },
       {
         data: { fiscal_year: " 2570 ", month: " ตุลาคม ", province: "เชียงใหม่" },
-        values: { fiscalYear: null, month: null, province: "เชียงใหม่" },
+        values: {
+          fiscalYear: " 2570 ",
+          month: " ตุลาคม ",
+          province: "เชียงใหม่",
+        },
+      },
+      {
+        data: { fiscal_year: 0, month: false, province: "อุบล" },
+        values: { fiscalYear: 0, month: false, province: "อุบล" },
+      },
+      {
+        data: { fiscal_year: "", month: "  ", province: null },
+        values: { fiscalYear: null, month: null, province: null },
       },
       {
         data: { fiscal_year: [2570], month: { name: "ตุลาคม" }, province: null },
@@ -122,14 +152,7 @@ test.each(["docx", "xlsx"] satisfies DocumentKind[])(
         values: { fiscalYear: 2559, month: null, province: null },
       },
     ];
-    const expected = new Map<
-      string,
-      {
-        fiscalYear: number | null;
-        month: string | null;
-        province: string | null;
-      }
-    >();
+    const expected = new Map<string, ReportingValues>();
     for (const example of examples) {
       const response = await savedResult(form, example.data);
       expected.set(response.id, example.values);
@@ -141,6 +164,63 @@ test.each(["docx", "xlsx"] satisfies DocumentKind[])(
         expect.objectContaining({ id, ...values })
       );
     }
+  }
+);
+
+test.each(["docx", "xlsx"] satisfies DocumentKind[])(
+  "%s: displaying nonstandard answers does not make them match canonical filters",
+  async (kind) => {
+    const form = await resultForm(kind);
+    const canonical = {
+      fiscal_year: 2570,
+      month: "ตุลาคม",
+      province: "อุบลราชธานี",
+    };
+    const valid = await savedResult(form, canonical);
+    const examples: {
+      data: Parameters<typeof savedResult>[1];
+      filter: Parameters<typeof results>[0];
+      values: ReportingValues;
+    }[] = [
+      {
+        data: { ...canonical, province: "อุบล" },
+        filter: { province: "อุบลราชธานี" },
+        values: { fiscalYear: 2570, month: "ตุลาคม", province: "อุบล" },
+      },
+      {
+        data: { ...canonical, month: "ต.ค." },
+        filter: { month: "ตุลาคม" },
+        values: { fiscalYear: 2570, month: "ต.ค.", province: "อุบลราชธานี" },
+      },
+      {
+        data: { ...canonical, fiscal_year: "พ.ศ. 2570" },
+        filter: { fiscal_year: "2570" },
+        values: {
+          fiscalYear: "พ.ศ. 2570",
+          month: "ตุลาคม",
+          province: "อุบลราชธานี",
+        },
+      },
+    ];
+    for (const example of examples) {
+      const response = await savedResult(form, example.data);
+      const unfiltered = await results({ form: form.publicId });
+      expect(unfiltered.results).toContainEqual(
+        expect.objectContaining({ id: response.id, ...example.values })
+      );
+      const filtered = await results({
+        form: form.publicId,
+        ...example.filter,
+      });
+      expect(filtered.results.map(({ id }) => id)).not.toContain(response.id);
+    }
+    const combined = await results({
+      fiscal_year: "2570",
+      form: form.publicId,
+      month: "ตุลาคม",
+      province: "อุบลราชธานี",
+    });
+    expect(combined.results.map(({ id }) => id)).toEqual([valid.id]);
   }
 );
 
@@ -252,7 +332,7 @@ test.each(["docx", "xlsx"] satisfies DocumentKind[])(
       );
       for (const row of page.results) {
         expect(row).toMatchObject({
-          fiscalYear: 2570,
+          fiscalYear: "2570",
           month: "ตุลาคม",
           province: "เชียงใหม่",
         });

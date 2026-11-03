@@ -1,5 +1,6 @@
 import type { DocumentKind, ManifestField, Prisma } from "@onlyoffice/db";
 import { monthChoices, provinceChoices } from "@onlyoffice/results-filters";
+import type { ResultAnswerDisplayValue } from "@onlyoffice/results-filters";
 
 import { excelBindingSchemas } from "../forms/excel-binding";
 
@@ -10,10 +11,19 @@ export interface ResultAnswerFilters {
 }
 
 export interface ResultAnswerValues {
-  fiscalYear: number | null;
-  month: string | null;
-  province: string | null;
+  fiscalYear: ResultAnswerDisplayValue;
+  month: ResultAnswerDisplayValue;
+  province: ResultAnswerDisplayValue;
 }
+
+const displayValue = (
+  value: Prisma.JsonValue | undefined
+): ResultAnswerDisplayValue => {
+  if (typeof value === "string") {
+    return value.trim() ? value : null;
+  }
+  return typeof value === "number" || typeof value === "boolean" ? value : null;
+};
 
 const savedFiscalYear = (
   value: Prisma.JsonValue | undefined
@@ -54,16 +64,10 @@ export const resultAnswerValues = ({
     }
     return data[tag];
   };
-  const province = valueFor("province");
-  const month = valueFor("month");
   return {
-    fiscalYear: savedFiscalYear(valueFor("fiscal_year")),
-    month:
-      typeof month === "string" && monthChoices.includes(month) ? month : null,
-    province:
-      typeof province === "string" && provinceChoices.includes(province.trim())
-        ? province.trim()
-        : null,
+    fiscalYear: displayValue(valueFor("fiscal_year")),
+    month: displayValue(valueFor("month")),
+    province: displayValue(valueFor("province")),
   };
 };
 
@@ -73,8 +77,21 @@ export const matchesResultAnswers = ({
 }: {
   filters: ResultAnswerFilters;
   values: ResultAnswerValues;
-}): boolean =>
-  (filters.province === undefined || values.province === filters.province) &&
-  (filters.month === undefined || values.month === filters.month) &&
-  (filters.fiscal_year === undefined ||
-    String(values.fiscalYear) === filters.fiscal_year);
+}): boolean => {
+  const province =
+    typeof values.province === "string" &&
+    provinceChoices.includes(values.province.trim())
+      ? values.province.trim()
+      : null;
+  const month =
+    typeof values.month === "string" && monthChoices.includes(values.month)
+      ? values.month
+      : null;
+  const fiscalYear = savedFiscalYear(values.fiscalYear);
+  return (
+    (filters.province === undefined || province === filters.province) &&
+    (filters.month === undefined || month === filters.month) &&
+    (filters.fiscal_year === undefined ||
+      String(fiscalYear) === filters.fiscal_year)
+  );
+};

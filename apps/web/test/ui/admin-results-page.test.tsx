@@ -157,6 +157,54 @@ it("shows reporting columns for DOCX and Excel with a dash for each unavailable 
   ).toHaveLength(2);
 });
 
+it("shows nonstandard Tag values, including zero and false, without changing filter choices", async () => {
+  listResponse = () =>
+    Response.json({
+      nextCursor: null,
+      results: [
+        {
+          ...result(),
+          fiscalYear: "พ.ศ. 2570",
+          month: "ต.ค.",
+          province: "อุบล",
+        },
+        {
+          ...result("22222222-2222-4222-8222-222222222222"),
+          documentKind: "xlsx",
+          fiscalYear: 0,
+          month: 10,
+          province: false,
+        },
+      ],
+    });
+  await mount();
+  const rows = within(
+    screen.getByRole("table", { name: "รายการฉบับร่างและคำตอบที่ส่งแล้ว" })
+  ).getAllByRole("row");
+  for (const value of ["อุบล", "ต.ค.", "พ.ศ. 2570"]) {
+    expect(
+      within(rows[1]).getByRole("cell", { exact: true, name: value })
+    ).toBeVisible();
+  }
+  for (const value of ["false", "10", "0"]) {
+    expect(
+      within(rows[2]).getByRole("cell", { exact: true, name: value })
+    ).toBeVisible();
+  }
+  expect(
+    within(screen.getByRole("combobox", { name: "จังหวัด" })).queryByRole(
+      "option",
+      { exact: true, name: "อุบล" }
+    )
+  ).not.toBeInTheDocument();
+  expect(
+    within(screen.getByRole("combobox", { name: "เดือน" })).queryByRole(
+      "option",
+      { exact: true, name: "ต.ค." }
+    )
+  ).not.toBeInTheDocument();
+});
+
 describe("Province results search", () => {
   it("applies a labelled single Province choice through Search and omits the all-values default", async () => {
     const user = userEvent.setup();

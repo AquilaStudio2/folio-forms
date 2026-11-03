@@ -424,14 +424,14 @@ const AdminResultsRoute = () => {
                     <td className="max-w-64 break-all px-4 py-4 text-[var(--ink-soft)]">
                       {result.userEmail}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-4 text-[var(--ink-soft)]">
-                      {result.province ?? "-"}
+                    <td className="max-w-48 break-all px-4 py-4 text-[var(--ink-soft)]">
+                      {String(result.province ?? "-")}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-4 text-[var(--ink-soft)]">
-                      {result.month ?? "-"}
+                    <td className="max-w-48 break-all px-4 py-4 text-[var(--ink-soft)]">
+                      {String(result.month ?? "-")}
                     </td>
-                    <td className="whitespace-nowrap px-4 py-4 text-[var(--ink-soft)]">
-                      {result.fiscalYear ?? "-"}
+                    <td className="max-w-48 break-all px-4 py-4 text-[var(--ink-soft)]">
+                      {String(result.fiscalYear ?? "-")}
                     </td>
                     <td className="whitespace-nowrap px-4 py-4">
                       <Badge

@@ -1,3 +1,5 @@
+export type ResultAnswerDisplayValue = string | number | boolean | null;
+
 // The 76 province names follow NSO's provincial statistics directory.
 // Bangkok is included as required by the results-search contract.
 // https://www.nso.go.th/nsoweb/officialStatistics

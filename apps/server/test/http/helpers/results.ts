@@ -6,15 +6,18 @@ import { z } from "zod";
 
 import type { createApp } from "../../../src/app";
 
+const resultValueSchema = z
+  .union([z.string(), z.number(), z.boolean()])
+  .nullable();
 const resultListSchema = z.object({
   nextCursor: z.string().nullable(),
   results: z.array(
     z.object({
-      fiscalYear: z.number().nullable(),
+      fiscalYear: resultValueSchema,
       id: z.string(),
       latestCorrectionNumber: z.number().nullable(),
-      month: z.string().nullable(),
-      province: z.string().nullable(),
+      month: resultValueSchema,
+      province: resultValueSchema,
       state: z.enum(["draft", "submitted"]),
     })
   ),

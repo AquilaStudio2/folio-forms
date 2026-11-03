@@ -1,4 +1,6 @@
 // oxlint-disable no-await-in-loop avoid-new -- Polling and delay are intentionally sequential.
+import type { ResultAnswerDisplayValue } from "@onlyoffice/results-filters";
+
 export const API_ORIGIN =
   import.meta.env.VITE_API_ORIGIN ?? "http://localhost:8080";
 export const SESSION_KEY = "onlyoffice.sessionToken";
@@ -207,13 +209,13 @@ export interface AdminResultListQuery {
 export interface AdminResult {
   documentKind?: DocumentKind;
   createdAt: string;
-  fiscalYear: number | null;
+  fiscalYear: ResultAnswerDisplayValue;
   formPublicId: string;
   formTitle: string;
   id: string;
   latestCorrectionNumber: number | null;
-  month: string | null;
-  province: string | null;
+  month: ResultAnswerDisplayValue;
+  province: ResultAnswerDisplayValue;
   state: AdminResultState;
   submissionId: string | null;
   submittedAt: string | null;
