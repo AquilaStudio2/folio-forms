@@ -1,12 +1,12 @@
-// oxlint-disable func-style no-await-in-loop -- HTTP scenarios create isolated saved revision fixtures in sequence.
+// oxlint-disable no-await-in-loop -- HTTP scenarios create isolated saved revision fixtures in sequence.
 import { beforeAll, expect, test } from "bun:test";
 
 import { Prisma, prisma } from "@onlyoffice/db";
-import type { DocumentKind, ResponseStatus } from "@onlyoffice/db";
-import { z } from "zod";
+import type { DocumentKind } from "@onlyoffice/db";
 
 import { createApp } from "../../src/app";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
+import { createResultsHttpFixtures } from "./helpers/results";
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -17,17 +17,6 @@ if (!process.env.DATABASE_URL) {
 const app = createApp({ legacySso: null, omniRoute: null });
 let adminBearer = "";
 let adminId = "";
-
-const resultListSchema = z.object({
-  nextCursor: z.string().nullable(),
-  results: z.array(
-    z.object({
-      id: z.string(),
-      latestCorrectionNumber: z.number().nullable(),
-      state: z.enum(["draft", "submitted"]),
-    })
-  ),
-});
 
 beforeAll(async () => {
   const password = "Results-filter-fixture-password!";
@@ -41,151 +30,25 @@ beforeAll(async () => {
   adminBearer = await bearerFor(app, admin.email, password);
 });
 
-async function resultForm(
-  kind: DocumentKind = "docx",
-  fields?: Prisma.ManifestFieldCreateWithoutManifestInput[]
-) {
-  const form = await prisma.form.create({
-    data: {
-      documentKind: kind,
-      publicId: crypto.randomUUID().replaceAll("-", ""),
-      publishedTemplate: {
-        create: {
-          contentHash: "fixture",
-          documentKey: crypto.randomUUID(),
-          manifest: {
-            create: {
-              configurationHash: "fixture",
-              fields: {
-                create:
-                  fields ??
-                  ["province", "month"].map((tag, position) => ({
-                    label: `Saved ${tag}`,
-                    position,
-                    tag,
-                    type: "text",
-                    ...(kind === "xlsx"
-                      ? {
-                          binding: {
-                            anchor: `folio_${tag}`,
-                            computed: false,
-                            id: `folio_${tag}`,
-                          },
-                        }
-                      : {}),
-                  })),
-              },
-            },
-          },
-          objectKey: `tests/results/${crypto.randomUUID()}.${kind}`,
-          version: 1,
-        },
-      },
-      status: "published",
-      title: `Month ${kind}`,
-      version: 1,
-    },
-    include: { publishedTemplate: true },
-  });
-  if (!form.publishedTemplate) {
-    throw new Error("A published results fixture is required");
-  }
-  return { ...form, publishedTemplate: form.publishedTemplate };
-}
-
-async function savedResult(
-  form: Awaited<ReturnType<typeof resultForm>>,
-  data: Prisma.InputJsonValue | typeof Prisma.JsonNull,
-  status: ResponseStatus = "draft"
-) {
-  const owner = await prisma.user.create({
-    data: {
-      email: `${crypto.randomUUID()}@example.test`,
-      id: crypto.randomUUID(),
-      name: "Response owner",
-    },
-  });
-  return prisma.response.create({
-    data: {
-      ...(status === "submitted"
-        ? {}
-        : {
-            draftData: data,
-            draftDocumentKey: crypto.randomUUID(),
-            draftObjectKey: `tests/results/${crypto.randomUUID()}.${form.documentKind}`,
-          }),
-      formId: form.id,
-      publishedTemplateId: form.publishedTemplate.id,
-      publishedVersion: 1,
-      status,
-      userId: owner.id,
-    },
-  });
-}
-
-function savedSubmission(
-  response: { id: string; formId: string; userId: string },
-  data: Prisma.InputJsonValue,
-  createdAt = new Date("2026-10-01T00:00:00Z")
-) {
-  return prisma.submission.create({
-    data: {
-      createdAt,
-      data,
-      documentKey: crypto.randomUUID(),
-      formId: response.formId,
-      objectKey: `tests/results/${crypto.randomUUID()}`,
-      responseId: response.id,
-      userId: response.userId,
-    },
-  });
-}
-
-function savedCorrection(
-  submission: { id: string; responseId: string },
-  data: Prisma.InputJsonObject,
-  revision: number
-) {
-  return prisma.correction.create({
-    data: {
-      actorId: adminId,
-      changedData: { month: "ตุลาคม" },
-      data,
-      documentKey: crypto.randomUUID(),
-      objectKey: `tests/results/${crypto.randomUUID()}`,
-      reason: "Verified saved answer",
-      responseId: submission.responseId,
-      revision,
-      submissionId: submission.id,
-    },
-  });
-}
-
-const request = (query: Record<string, string>, token = adminBearer) =>
-  app.handle(
-    new Request(
-      `http://test.local/api/admin/results?${new URLSearchParams(query)}`,
-      { headers: token ? { Authorization: `Bearer ${token}` } : {} }
-    )
-  );
-
-const detailRequest = (id: string) =>
-  app.handle(
-    new Request(`http://test.local/api/admin/results/${id}`, {
-      headers: { Authorization: `Bearer ${adminBearer}` },
-    })
-  );
-
-async function results(query: Record<string, string>) {
-  const response = await request(query);
-  expect(response.status).toBe(200);
-  return resultListSchema.parse(await response.json());
-}
-
-async function resultIds(query: Record<string, string>) {
-  const page = await results(query);
-  return page.results.map(({ id }) => id);
-}
+const {
+  detailRequest,
+  request,
+  resultForm,
+  resultIds,
+  results,
+  savedCorrection,
+  savedResult,
+  savedSubmission,
+} = createResultsHttpFixtures({
+  app,
+  correctionChangedData: { month: "ตุลาคม" },
+  defaultFields: [
+    { label: "Saved province", tag: "province" },
+    { label: "Saved month", tag: "month" },
+  ],
+  formTitle: "Month",
+  getAdmin: () => ({ bearer: adminBearer, id: adminId }),
+});
 
 test.each(["docx", "xlsx"] satisfies DocumentKind[])(
   "%s: month searches the declared current saved full Thai root answer",
