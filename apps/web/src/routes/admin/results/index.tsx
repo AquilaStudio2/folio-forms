@@ -1,4 +1,4 @@
-import { provinceChoices } from "@onlyoffice/results-filters";
+import { monthChoices, provinceChoices } from "@onlyoffice/results-filters";
 // oxlint-disable no-nested-ternary -- Keeps the three explicit loading, empty, and populated table states local to the route.
 import { Link, createFileRoute, useSearch } from "@tanstack/react-router";
 import { Search } from "lucide-react";
@@ -41,6 +41,7 @@ const AdminResultsRoute = () => {
   const [formFilter, setFormFilter] = useState(initialForm);
   const [userFilter, setUserFilter] = useState("");
   const [provinceFilter, setProvinceFilter] = useState("");
+  const [monthFilter, setMonthFilter] = useState("");
   const [stateFilter, setStateFilter] = useState<AdminResultState | "all">(
     "all"
   );
@@ -51,6 +52,7 @@ const AdminResultsRoute = () => {
     correction: "",
     form: initialForm,
     from: "",
+    month: "",
     province: "",
     state: "all" as AdminResultState | "all",
     to: "",
@@ -70,6 +72,7 @@ const AdminResultsRoute = () => {
         ...(formFilter.trim() ? { form: formFilter.trim() } : {}),
         ...(userFilter.trim() ? { user: userFilter.trim() } : {}),
         ...(provinceFilter ? { province: provinceFilter } : {}),
+        ...(monthFilter ? { month: monthFilter } : {}),
         ...(stateFilter === "all" ? {} : { state: stateFilter }),
         ...(correctionFilter.trim()
           ? { correction: correctionFilter.trim() }
@@ -107,6 +110,7 @@ const AdminResultsRoute = () => {
     currentCursor,
     formFilter,
     fromFilter,
+    monthFilter,
     provinceFilter,
     reloadVersion,
     stateFilter,
@@ -118,6 +122,7 @@ const AdminResultsRoute = () => {
     setFormFilter(draftFilters.form);
     setUserFilter(draftFilters.user);
     setProvinceFilter(draftFilters.province);
+    setMonthFilter(draftFilters.month);
     setStateFilter(draftFilters.state);
     setCorrectionFilter(draftFilters.correction);
     setFromFilter(draftFilters.from);
@@ -232,6 +237,26 @@ const AdminResultsRoute = () => {
               {provinceChoices.map((province) => (
                 <option key={province} value={province}>
                   {province}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-semibold text-[var(--ink-soft)]">
+            เดือน
+            <select
+              className={selectClass}
+              onChange={(event) =>
+                setDraftFilters((filters) => ({
+                  ...filters,
+                  month: event.target.value,
+                }))
+              }
+              value={draftFilters.month}
+            >
+              <option value="">ทั้งหมด</option>
+              {monthChoices.map((month) => (
+                <option key={month} value={month}>
+                  {month}
                 </option>
               ))}
             </select>

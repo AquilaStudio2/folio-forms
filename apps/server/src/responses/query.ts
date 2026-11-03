@@ -21,15 +21,17 @@ export const adminResultPageSize = 25;
 
 export async function findAdminResults({
   correction,
+  month,
   province,
   where,
 }: {
   correction?: number;
+  month?: string;
   province?: string;
   where: Prisma.ResponseWhereInput;
 }) {
   const limit = adminResultPageSize + 1;
-  const includeAnswers = province !== undefined;
+  const includeAnswers = province !== undefined || month !== undefined;
   const matches = [];
   let after: AdminResultCursor | undefined;
   // Apply every current-revision condition together before filling a page.
@@ -50,7 +52,14 @@ export async function findAdminResults({
               select: {
                 fields: {
                   select: { binding: true, tag: true, type: true },
-                  where: { tag: "province" },
+                  where: {
+                    tag: {
+                      in: [
+                        ...(province === undefined ? [] : ["province"]),
+                        ...(month === undefined ? [] : ["month"]),
+                      ],
+                    },
+                  },
                 },
               },
             },
@@ -103,7 +112,7 @@ export async function findAdminResults({
       ) {
         continue;
       }
-      if (province !== undefined) {
+      if (includeAnswers) {
         const data =
           response.status === ResponseStatus.submitted
             ? (submission?.corrections[0]?.data ?? submission?.data)
@@ -113,7 +122,7 @@ export async function findAdminResults({
             data,
             documentKind: response.form.documentKind,
             fields: response.publishedTemplate.manifest?.fields ?? [],
-            filters: { province },
+            filters: { month, province },
           })
         ) {
           continue;

@@ -224,6 +224,7 @@ describe("Province results search", () => {
     expect(screen.getByLabelText("กำลังโหลดผลลัพธ์")).toBeVisible();
     expect(screen.queryByText("ไม่พบผลลัพธ์ตามตัวกรอง")).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "จังหวัด" })).toBeEnabled();
+    expect(screen.getByRole("combobox", { name: "เดือน" })).toBeEnabled();
     pending.resolve(Response.json({ nextCursor: null, results: [] }));
     expect(await screen.findByText("ไม่พบผลลัพธ์ตามตัวกรอง")).toBeVisible();
     expect(screen.queryByLabelText("กำลังโหลดผลลัพธ์")).not.toBeInTheDocument();
@@ -243,6 +244,7 @@ describe("Province results search", () => {
       expect(screen.queryByText("ไม่พบผลลัพธ์ตามตัวกรอง")).not.toBeInTheDocument();
       expect(screen.queryByText("พบ 0 รายการในหน้านี้")).not.toBeInTheDocument();
       expect(screen.getByRole("combobox", { name: "จังหวัด" })).toBeEnabled();
+      expect(screen.getByRole("combobox", { name: "เดือน" })).toBeEnabled();
       expect(
         screen.getByRole("button", { exact: true, name: "ถัดไป" })
       ).toBeDisabled();
@@ -282,5 +284,170 @@ describe("Province results search", () => {
     expect(
       screen.queryByText("ไม่สามารถโหลดผลลัพธ์ได้ กรุณาลองใหม่อีกครั้ง")
     ).not.toBeInTheDocument();
+  });
+});
+
+describe("Month results search", () => {
+  it.each(["admin", "viewer"] satisfies Role[])(
+    "offers all twelve full Thai months in order to a %s and applies one choice through Search after an empty search",
+    async (role) => {
+      sessionRole = role;
+      listResponse = () => Response.json({ nextCursor: null, results: [] });
+      const user = userEvent.setup();
+      await mount();
+      const month = screen.getByRole("combobox", { name: "เดือน" });
+      expect(month).toHaveValue("");
+      expect(month).not.toHaveAttribute("multiple");
+      expect(
+        within(month)
+          .getAllByRole("option")
+          .map((option) => option.textContent)
+      ).toEqual([
+        "ทั้งหมด",
+        "มกราคม",
+        "กุมภาพันธ์",
+        "มีนาคม",
+        "เมษายน",
+        "พฤษภาคม",
+        "มิถุนายน",
+        "กรกฎาคม",
+        "สิงหาคม",
+        "กันยายน",
+        "ตุลาคม",
+        "พฤศจิกายน",
+        "ธันวาคม",
+      ]);
+      expect(
+        within(month).getByRole("option", { name: "ทั้งหมด" })
+      ).toHaveProperty("selected", true);
+      expectQuery({});
+      const initialRequests = resultRequests().length;
+      await user.selectOptions(month, "ตุลาคม");
+      expect(resultRequests()).toHaveLength(initialRequests);
+      screen.getByRole("button", { exact: true, name: "ค้นหา" }).focus();
+      await user.keyboard("{Enter}");
+      await waitFor(() => expectQuery({ month: "ตุลาคม" }));
+      expect(await screen.findByText("ไม่พบผลลัพธ์ตามตัวกรอง")).toBeVisible();
+      expect(within(month).getAllByRole("option")).toHaveLength(13);
+    }
+  );
+
+  it("retains every applied criterion on Reload and navigation, applies pending Month at page one and clears Month or Province independently", async () => {
+    const user = userEvent.setup();
+    listResponse = () =>
+      Response.json({ nextCursor: "month-next-page", results: [result()] });
+    await mount();
+    await user.type(
+      screen.getByRole("textbox", { name: "Form Public ID" }),
+      "0123456789abcdef0123456789abcdef"
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "อีเมลผู้ใช้" }),
+      "owner@example.test"
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "สถานะ" }),
+      "submitted"
+    );
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "Correction ล่าสุด" }),
+      { target: { value: "2" } }
+    );
+    fireEvent.change(screen.getByLabelText("ตั้งแต่"), {
+      target: { value: "2026-11-01" },
+    });
+    fireEvent.change(screen.getByLabelText("ถึง"), {
+      target: { value: "2026-11-30" },
+    });
+    const province = screen.getByRole("combobox", { name: "จังหวัด" });
+    const month = screen.getByRole("combobox", { name: "เดือน" });
+    await user.selectOptions(province, "เชียงใหม่");
+    await user.selectOptions(month, "ตุลาคม");
+    expectQuery({});
+    const search = screen.getByRole("button", { exact: true, name: "ค้นหา" });
+    await user.click(search);
+    const applied = {
+      correction: "2",
+      form: "0123456789abcdef0123456789abcdef",
+      from: "2026-11-01",
+      month: "ตุลาคม",
+      province: "เชียงใหม่",
+      state: "submitted",
+      to: "2026-11-30T23:59:59.999Z",
+      user: "owner@example.test",
+    };
+    await waitFor(() => expectQuery(applied));
+    await user.selectOptions(month, "กันยายน");
+    await user.selectOptions(province, "เชียงราย");
+    await user.click(
+      screen.getByRole("button", { exact: true, name: "โหลดใหม่" })
+    );
+    await waitFor(() => expectQuery(applied));
+    await user.click(screen.getByRole("button", { exact: true, name: "ถัดไป" }));
+    await waitFor(() => expectQuery({ ...applied, cursor: "month-next-page" }));
+    await user.click(
+      screen.getByRole("button", { exact: true, name: "ก่อนหน้า" })
+    );
+    await waitFor(() => expectQuery(applied));
+    await user.click(screen.getByRole("button", { exact: true, name: "ถัดไป" }));
+    await waitFor(() => expectQuery({ ...applied, cursor: "month-next-page" }));
+    await user.click(search);
+    const changed = { ...applied, month: "กันยายน", province: "เชียงราย" };
+    await waitFor(() => expectQuery(changed));
+    expect(
+      screen.getByRole("button", { exact: true, name: "ก่อนหน้า" })
+    ).toBeDisabled();
+    await user.click(screen.getByRole("button", { exact: true, name: "ถัดไป" }));
+    await user.selectOptions(month, "");
+    await user.click(search);
+    const { month: _month, ...withoutMonth } = changed;
+    await waitFor(() => expectQuery(withoutMonth));
+    expect(
+      screen.getByRole("button", { exact: true, name: "ก่อนหน้า" })
+    ).toBeDisabled();
+    await user.selectOptions(month, "พฤศจิกายน");
+    await user.click(search);
+    await waitFor(() => expectQuery({ ...withoutMonth, month: "พฤศจิกายน" }));
+    await user.click(screen.getByRole("button", { exact: true, name: "ถัดไป" }));
+    await user.selectOptions(province, "");
+    await user.click(search);
+    const { province: _province, ...withoutProvince } = withoutMonth;
+    await waitFor(() => expectQuery({ ...withoutProvince, month: "พฤศจิกายน" }));
+    expect(
+      screen.getByRole("button", { exact: true, name: "ก่อนหน้า" })
+    ).toBeDisabled();
+    await user.selectOptions(month, "");
+    await user.click(search);
+    await waitFor(() => expectQuery(withoutProvince));
+  });
+
+  it("retries applied Month and Province after an error while keeping pending edits separate", async () => {
+    const user = userEvent.setup();
+    await mount();
+    const month = screen.getByRole("combobox", { name: "เดือน" });
+    await user.selectOptions(month, "ตุลาคม");
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "จังหวัด" }),
+      "เชียงใหม่"
+    );
+    listResponse = () =>
+      Response.json({ error: "internal_error" }, { status: 500 });
+    await user.click(screen.getByRole("button", { exact: true, name: "ค้นหา" }));
+    expect(
+      await screen.findByText("ไม่สามารถโหลดผลลัพธ์ได้ กรุณาลองใหม่อีกครั้ง")
+    ).toBeVisible();
+    expect(screen.queryByText("ไม่พบผลลัพธ์ตามตัวกรอง")).not.toBeInTheDocument();
+    expect(within(month).getAllByRole("option")).toHaveLength(13);
+    await user.selectOptions(month, "พฤศจิกายน");
+    listResponse = () =>
+      Response.json({ nextCursor: null, results: [result()] });
+    await user.click(
+      screen.getByRole("button", { exact: true, name: "ลองใหม่" })
+    );
+    expect(
+      await screen.findByText("Synthetic provincial report")
+    ).toBeVisible();
+    expectQuery({ month: "ตุลาคม", province: "เชียงใหม่" });
+    expect(month).toHaveValue("พฤศจิกายน");
   });
 });
