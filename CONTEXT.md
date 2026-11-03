@@ -64,6 +64,10 @@ The immutable document and field contract used to start new Responses. A publish
 
 A mapped input in a Form. For DOCX, it is a tagged content control: its Title/Alias is the user-facing label, its Tag is the stable identity in prefill and extracted data, and its Placeholder guides entry. If the Title/Alias is blank, use the Tag as the label. For XLSX, a Field maps a cell or complete merged cell to a key, label, type, and rules through a named range. Keys must be unique within their containing object and may be reused by different Forms.
 
+## Result Filter Field
+
+A scalar Field containing a Response's stated province, calendar month, or Buddhist Era fiscal year for results searching. The value belongs to its current saved Draft or latest Submission with its latest Correction.
+
 ## PDMS Project Name Source
 
 An Admin-selected source of project-name choices for XLSX Fields. Users select a name from the available choices; identical names represent one choice, and the answer is the selected name rather than a reference to a distinct PDMS project. A previously saved name remains valid when that name is later renamed or removed from the source.
