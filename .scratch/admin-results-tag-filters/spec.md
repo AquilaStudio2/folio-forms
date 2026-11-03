@@ -1,6 +1,6 @@
 # Province, Month, and Fiscal year filters for admin results
 
-Status: ready-for-agent
+Status: resolved
 
 ## Problem Statement
 
@@ -67,6 +67,8 @@ Each filter defaults to all values. Central choices remain available even when n
 45. As an Admin, I want filters restricted to scalar root Fields, so that table rows do not accidentally qualify an entire Response through unrelated nested values.
 46. As an Admin, I want an invalid or unsupported saved value to be treated as a nonmatch for its active criterion, so that one inconsistent answer does not prevent the rest of the results from loading.
 
+47. As an Admin, I want space around the filter controls and actions, so that the filter panel is comfortable to read and use.
+
 ## Implementation Decisions
 
 - Extend the existing results-page controls, typed API client, results-list HTTP handler, and Response query/revision-selection logic. Reuse the current results and detail flows.
@@ -92,6 +94,7 @@ Each filter defaults to all values. Central choices remain available even when n
 - Use bounded ordered candidate batches and select the data needed for matching and summaries. Preserve complete search results without loading all answer JSON into application memory at once.
 - Keep the existing distinction between pending control edits and applied criteria. Search applies the complete set and resets pagination. Reload, next page, and previous page retain the complete applied set.
 - Keep controls labelled and keyboard accessible. Preserve current loading, authentication, permission, request-error, and empty-result behavior, with the central choices still available for an empty result set.
+- Provide responsive internal padding around the filter panel's labels, controls, and actions, as requested during browser review. Preserve the existing design and filter interactions.
 - Preserve existing Admin and Viewer read permissions. Filtering does not grant authoring, correction, or account-management capabilities.
 - Use the existing published Field records and saved answer JSON. This feature requires no new persistence model or database schema migration. Search does not mutate Forms, Responses, Submissions, Corrections, or saved documents.
 
@@ -147,8 +150,8 @@ Unless stated otherwise, select province `เชียงใหม่`, month `�
 
 ## Further Notes
 
-- The user confirmed the design after the grilling session, including composition with every existing filter, and authorized publishing this specification with `to-spec`. The specification is ready for agent work without another interview or triage round.
+- The user confirmed the design, composition with every existing filter, the three-ticket breakdown, and implementation. All three tickets are implemented and resolved after verification and independent review.
 - Use the domain terms Admin, Viewer, Form, Field, Response, Draft, Submission, Correction, and Result Filter Field consistently. ADR 0004 records the canonical scalar Tag and current-revision decisions.
 - Canonical Tags are part of immutable published Form contracts. A future rename needs an explicit compatibility or migration decision.
 - The fiscal-year clock determines available choices only. A saved answer keeps its own independently stated Month and Fiscal year.
-- Published through the repository's Local Markdown issue tracker. Application implementation and its verification remain separate from this specification artifact.
+- Published through the repository's Local Markdown issue tracker. The implementation report records the delivered branch, verification results, and review outcomes. The user's browser review additionally requested internal padding and reaffirmed Excel and DOCX support; both are verified.

@@ -1,6 +1,6 @@
 # Filter current Responses through designated scalar Field Tags
 
-**Status:** Accepted design. Implementation pending.
+**Status:** Accepted and implemented.
 
 Province, Month, and Fiscal year filters identify scalar root Fields by the canonical Tags `province`, `month`, and `fiscal_year`, then compare their values in the current saved Response data. Drafts use their saved data. Submitted Responses use the latest Submission with its latest Correction, so searching agrees with opening the current result.
 
