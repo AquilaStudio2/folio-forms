@@ -192,6 +192,16 @@ export interface ResponseRevisionsResponse {
   revisions: ResponseRevision[];
 }
 export type AdminResultState = "draft" | "submitted";
+export interface AdminResultListQuery {
+  correction?: string;
+  cursor?: string;
+  form?: string;
+  from?: string;
+  province?: string;
+  state?: AdminResultState;
+  to?: string;
+  user?: string;
+}
 export interface AdminResult {
   documentKind?: DocumentKind;
   createdAt: string;
