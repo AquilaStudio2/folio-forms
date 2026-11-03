@@ -2446,7 +2446,9 @@ export function initializeSpreadsheet(options, setStatus) {
     for (const item of buttons) {
       item.disabled = true;
     }
-    const columnsReady = synchronizeColumns(true)
+    const columnsReady = office
+      .executeMethodResult("SetEditingRestrictions", ["none"])
+      .then(() => synchronizeColumns(true))
       .catch((error) => {
         initializationError = error;
         setStatus(error.message, "error");
@@ -2484,6 +2486,23 @@ export function initializeSpreadsheet(options, setStatus) {
     renderList();
   } else {
     message.hidden = true;
+    busy = true;
+    let initializationError = null;
+    const responseReady = office
+      .executeMethodResult("SetEditingRestrictions", ["none"])
+      .catch((error) => {
+        initializationError = error;
+        setStatus(error.message, "error");
+      })
+      .finally(() => {
+        busy = false;
+      });
+    ensureAuthoringReady = async () => {
+      await responseReady;
+      if (initializationError) {
+        throw initializationError;
+      }
+    };
     if (options.scopeIdentity && options.action !== ACTIONS.CORRECTION) {
       const activateUploadPoc = () => {
         window.Asc.scope.folioUploadPocActivation = {

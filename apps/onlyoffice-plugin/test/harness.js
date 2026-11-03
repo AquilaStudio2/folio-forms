@@ -30,6 +30,7 @@ export const createHarness = ({
   controls = [],
   editorSaveSupported = true,
   holdEditorSave = false,
+  initialEditorRestriction = "none",
   prefill,
   responses = [],
   scopeIdentity,
@@ -56,6 +57,7 @@ export const createHarness = ({
     properties: selection?.properties,
   };
   let pendingEditorSaveRequest;
+  let editorRestriction = initialEditorRestriction;
 
   const createElement = (tagName = "div", id = "") => {
     const listeners = new Map();
@@ -236,6 +238,9 @@ export const createHarness = ({
     executeMethod(method, ...args) {
       methodCalls.push(method);
       methodInvocations.push({ args: args[0], method });
+      if (method === "SetEditingRestrictions") {
+        editorRestriction = args[0][0];
+      }
       const done = args.at(-1);
       if (typeof done !== "function") {
         return;
@@ -698,6 +703,9 @@ export const createHarness = ({
     bridgeId,
     dispatch,
     editorEvents,
+    get editorRestriction() {
+      return editorRestriction;
+    },
     editorSaveSupported,
     element(id) {
       return elements.get(id);

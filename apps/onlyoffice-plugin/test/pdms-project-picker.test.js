@@ -138,6 +138,7 @@ test("an adjacent choice uses native freeze and flush before saving and keeps ed
   acknowledgeBridge(harness);
   await flushPlugin();
   await locate(harness);
+  const methodCount = harness.methodInvocations.length;
   expect(harness.requests).toHaveLength(0);
   choose(harness, "โครงการ ก");
   await flushPlugin();
@@ -165,10 +166,12 @@ test("an adjacent choice uses native freeze and flush before saving and keeps ed
     )
   ).toBe(true);
   expect(
-    harness.methodInvocations.some(
-      ({ method, args }) =>
-        method === "SetEditingRestrictions" && args?.[0] === "none"
-    )
+    harness.methodInvocations
+      .slice(methodCount)
+      .some(
+        ({ method, args }) =>
+          method === "SetEditingRestrictions" && args?.[0] === "none"
+      )
   ).toBe(false);
 });
 
@@ -233,6 +236,7 @@ test("Retry recovers a failed catalog without saving or replacing the current ed
   await flushPlugin();
   await locate(harness);
   expect(state(harness).catalog.status).toBe("error");
+  const methodCount = harness.methodInvocations.length;
   popup(harness, "retry", { token: state(harness).target.token });
   await flushPlugin();
   expect(harness.requests).toHaveLength(1);
@@ -249,9 +253,9 @@ test("Retry recovers a failed catalog without saving or replacing the current ed
   });
   expect(harness.saveCalls).toHaveLength(0);
   expect(
-    harness.methodInvocations.some(
-      ({ method }) => method === "SetEditingRestrictions"
-    )
+    harness.methodInvocations
+      .slice(methodCount)
+      .some(({ method }) => method === "SetEditingRestrictions")
   ).toBe(false);
   expect(
     harness.messages.some(({ message }) => message.type === "operation")
@@ -279,6 +283,7 @@ test("a replacement lease's ready catalog reaches the live picker during Retry w
   acknowledgeBridge(harness);
   await flushPlugin();
   await locate(harness);
+  const methodCount = harness.methodInvocations.length;
   popup(harness, "retry", { token: state(harness).target.token });
   await flushPlugin();
   expect(state(harness).catalog.names).toEqual(["ชื่อจากตัวแก้ไขใหม่"]);
@@ -288,9 +293,9 @@ test("a replacement lease's ready catalog reaches the live picker during Retry w
   expect(harness.requests).toHaveLength(0);
   expect(harness.saveCalls).toHaveLength(0);
   expect(
-    harness.methodInvocations.some(
-      ({ method }) => method === "SetEditingRestrictions"
-    )
+    harness.methodInvocations
+      .slice(methodCount)
+      .some(({ method }) => method === "SetEditingRestrictions")
   ).toBe(false);
 });
 
@@ -371,6 +376,7 @@ test("Correction picker saves only its workspace without inventing a reason, usi
   acknowledgeBridge(harness);
   await flushPlugin();
   await locate(harness);
+  const methodCount = harness.methodInvocations.length;
   choose(harness, "Current project");
   await flushPlugin();
   expect(harness.requests).toHaveLength(0);
@@ -385,9 +391,9 @@ test("Correction picker saves only its workspace without inventing a reason, usi
     source: "folio-upload-poc",
   });
   expect(
-    harness.methodInvocations.some(
-      ({ method }) => method === "SetEditingRestrictions"
-    )
+    harness.methodInvocations
+      .slice(methodCount)
+      .some(({ method }) => method === "SetEditingRestrictions")
   ).toBe(false);
   harness.dispatch({
     data: {
@@ -425,9 +431,11 @@ test("Correction picker saves only its workspace without inventing a reason, usi
       .message
   ).toMatchObject({ action: "save-correction-workspace", status: "completed" });
   expect(
-    harness.methodInvocations.some(
-      ({ method, args }) =>
-        method === "SetEditingRestrictions" && args?.[0] === "none"
-    )
+    harness.methodInvocations
+      .slice(methodCount)
+      .some(
+        ({ method, args }) =>
+          method === "SetEditingRestrictions" && args?.[0] === "none"
+      )
   ).toBe(false);
 });

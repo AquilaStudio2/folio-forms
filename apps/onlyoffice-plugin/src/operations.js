@@ -440,6 +440,16 @@ export function createOperations(
         (action === ACTIONS.SUBMIT ||
           (typeof result?.documentKey === "string" &&
             result.documentKey !== options.documentKey));
+      // Completion can remount the editor or leave the page, so restore editing first.
+      if (editorFrozen && !waitForReload) {
+        await office.executeMethodResult("SetEditingRestrictions", [
+          options.documentKind === "xlsx" ||
+          options.action === ACTIONS.TEMPLATE_EDIT
+            ? "none"
+            : "forms",
+        ]);
+        editorFrozen = false;
+      }
       setStatus(`${actionLabel(action)} สำเร็จ`, "success");
       bridge.notifyParent(action, "completed", operationId, completion);
 
