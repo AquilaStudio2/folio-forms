@@ -18,6 +18,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 
 import { LegacySsoSwitchButton } from "@/components/legacy-sso-switch-button";
+import { ListPagination } from "@/components/list-pagination";
 import { NativeForm } from "@/components/native-form";
 import { OnlyOfficeEditor } from "@/components/onlyoffice-editor";
 import { Button, Notice, Spinner } from "@/components/ui";
@@ -50,6 +51,7 @@ import {
   saveThenDownload,
   shouldBlockDirtyNavigation,
 } from "@/lib/form-lifecycle";
+import { paginateItems } from "@/lib/pagination";
 
 const formRequestError = (error: unknown, fallback: string) => {
   if (error instanceof ApiError) {
@@ -161,6 +163,12 @@ const FillRoute = () => {
   const [submissionHistory, setSubmissionHistory] = useState<
     SubmissionHistoryEntry[]
   >([]);
+  const [historyPage, setHistoryPage] = useState(1);
+  const { items: visibleHistory, pagination: historyPagination } =
+    paginateItems({
+      items: submissionHistory,
+      page: historyPage,
+    });
   const [submissionHistoryRequest, setSubmissionHistoryRequest] = useState(0);
   const [exportingSubmissions, setExportingSubmissions] = useState(false);
   const startErrorRef = useRef<HTMLDivElement>(null);
@@ -367,6 +375,7 @@ const FillRoute = () => {
         );
         if (!cancelled) {
           setSubmissionHistory(payload.submissions);
+          setHistoryPage(1);
         }
       } catch {
         if (!cancelled) {
@@ -1078,7 +1087,7 @@ const FillRoute = () => {
             />
             {showSubmissionHistory ? (
               <div className="mt-6 overflow-hidden rounded-[10px] border border-[var(--line)] bg-[var(--paper)]">
-                <div className="flex items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3 text-sm font-semibold">
+                <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-4 py-3 text-sm font-semibold">
                   ประวัติการส่งแบบฟอร์มของคุณ
                   <Button
                     disabled={
@@ -1118,13 +1127,16 @@ const FillRoute = () => {
                         </tr>
                       </thead>
                       <tbody>
-                        {submissionHistory.map((entry, index) => (
+                        {visibleHistory.map((entry, index) => (
                           <tr
                             className="border-b border-[var(--line)] last:border-0"
                             key={entry.id}
                           >
                             <td className="px-4 py-3 text-[var(--ink-soft)]">
-                              {submissionHistory.length - index}
+                              {submissionHistory.length -
+                                (historyPagination.page - 1) *
+                                  historyPagination.pageSize -
+                                index}
                             </td>
                             <td className="px-4 py-3">
                               {formatDateTime(entry.createdAt)}
@@ -1144,6 +1156,12 @@ const FillRoute = () => {
                     </table>
                   </div>
                 )}
+                <ListPagination
+                  className="border-t border-[var(--line)] px-4 py-3"
+                  label="แบ่งหน้าประวัติการส่งแบบฟอร์ม"
+                  pagination={historyPagination}
+                  onPageChange={setHistoryPage}
+                />
               </div>
             ) : null}
           </>

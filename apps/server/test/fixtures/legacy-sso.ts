@@ -141,12 +141,11 @@ export const legacyAccountLinkSnapshot = async (
   bearer: string,
   requestId: string
 ): Promise<LegacyAccountLinkReviewSnapshot> => {
-  let cursor: string | null = null;
+  let page = 1;
+  let totalPages = 1;
   do {
     const url = new URL("/api/admin/account-links", legacySsoCallbackUrl);
-    if (cursor) {
-      url.searchParams.set("cursor", cursor);
-    }
+    url.searchParams.set("page", String(page));
     const response = await handle(
       new Request(url.href, {
         headers: { Authorization: `Bearer ${bearer}` },
@@ -154,15 +153,16 @@ export const legacyAccountLinkSnapshot = async (
     );
     expect(response.status).toBe(200);
     const body = (await response.json()) as {
-      nextCursor: string | null;
+      pagination: { page: number; totalPages: number };
       requests: LegacyAccountLinkReviewSnapshot[];
     };
     const snapshot = body.requests.find((request) => request.id === requestId);
     if (snapshot) {
       return snapshot;
     }
-    cursor = body.nextCursor;
-  } while (cursor);
+    ({ totalPages } = body.pagination);
+    page += 1;
+  } while (page <= totalPages);
   throw new Error("The pending account link is missing from Admin review");
 };
 // oxlint-enable no-await-in-loop

@@ -1,0 +1,242 @@
+[
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "forms",
+    "numbered": true,
+    "totalPages": 6,
+    "width": 1365
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "results",
+    "numbered": true,
+    "totalPages": 3,
+    "width": 1365
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "audit",
+    "numbered": true,
+    "totalPages": 3,
+    "width": 1365
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "users",
+    "numbered": true,
+    "totalPages": 3,
+    "width": 1365
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 2,
+    "framed": true,
+    "name": "users",
+    "numbered": true,
+    "totalPages": 3,
+    "width": 1365
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "submissions",
+    "numbered": true,
+    "totalPages": 2,
+    "width": 1365
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "dashboard",
+    "numbered": true,
+    "totalPages": 2,
+    "width": 1365
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "history",
+    "numbered": true,
+    "totalPages": 2,
+    "width": 1365
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "forms",
+    "numbered": true,
+    "totalPages": 6,
+    "width": 640
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "results",
+    "numbered": true,
+    "totalPages": 3,
+    "width": 640
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "audit",
+    "numbered": true,
+    "totalPages": 3,
+    "width": 640
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "users",
+    "numbered": true,
+    "totalPages": 3,
+    "width": 640
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 2,
+    "framed": true,
+    "name": "users",
+    "numbered": true,
+    "totalPages": 3,
+    "width": 640
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "submissions",
+    "numbered": true,
+    "totalPages": 2,
+    "width": 640
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "dashboard",
+    "numbered": true,
+    "totalPages": 2,
+    "width": 640
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "history",
+    "numbered": true,
+    "totalPages": 2,
+    "width": 640
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "forms",
+    "numbered": true,
+    "totalPages": 6,
+    "width": 320
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "results",
+    "numbered": true,
+    "totalPages": 3,
+    "width": 320
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "audit",
+    "numbered": true,
+    "totalPages": 3,
+    "width": 320
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "users",
+    "numbered": true,
+    "totalPages": 3,
+    "width": 320
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 2,
+    "framed": true,
+    "name": "users",
+    "numbered": true,
+    "totalPages": 3,
+    "width": 320
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "submissions",
+    "numbered": true,
+    "totalPages": 2,
+    "width": 320
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "dashboard",
+    "numbered": true,
+    "totalPages": 2,
+    "width": 320
+  },
+  {
+    "aligned": true,
+    "directNavigation": true,
+    "footer": 1,
+    "framed": true,
+    "name": "history",
+    "numbered": true,
+    "totalPages": 2,
+    "width": 320
+  }
+]

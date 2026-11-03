@@ -447,19 +447,34 @@ for (const kind of ["docx", "xlsx"] as const) {
     });
     const filter = `/api/admin/results?form=${publicId}&user=PAGE-${formId}&state=submitted&from=2026-02-01&to=2026-04-01&correction=0`;
     const pageOne = (await (await get(filter)).json()) as {
-      nextCursor: string;
+      pagination: {
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+      };
       results: { id: string; latestCorrectionNumber: number | null }[];
     };
     expect(pageOne.results).toHaveLength(25);
     expect(
       pageOne.results.every((row) => row.latestCorrectionNumber === null)
     ).toBe(true);
-    expect(pageOne.nextCursor).toBeString();
-    const pageTwo = (await (
-      await get(`${filter}&cursor=${encodeURIComponent(pageOne.nextCursor)}`)
-    ).json()) as { nextCursor: string | null; results: { id: string }[] };
+    expect(pageOne.pagination).toEqual({
+      page: 1,
+      pageSize: 25,
+      total: 26,
+      totalPages: 2,
+    });
+    const pageTwo = (await (await get(`${filter}&page=2`)).json()) as {
+      pagination: { page: number; total: number; totalPages: number };
+      results: { id: string }[];
+    };
     expect(pageTwo.results).toHaveLength(1);
-    expect(pageTwo.nextCursor).toBeNull();
+    expect(pageTwo.pagination).toMatchObject({
+      page: 2,
+      total: 26,
+      totalPages: 2,
+    });
     expect(
       new Set([...pageOne.results, ...pageTwo.results].map((row) => row.id))
         .size
@@ -467,27 +482,42 @@ for (const kind of ["docx", "xlsx"] as const) {
     // Revision 1 exists on every response, but only on older submissions.
     expect(
       await (await get(filter.replace("correction=0", "correction=1"))).json()
-    ).toMatchObject({ nextCursor: null, results: [] });
+    ).toMatchObject({
+      pagination: { page: 1, total: 0, totalPages: 1 },
+      results: [],
+    });
     const correctedFilter = filter.replace("correction=0", "correction=2");
     const correctedPageOne = (await (await get(correctedFilter)).json()) as {
-      nextCursor: string;
+      pagination: {
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+      };
       results: { id: string; latestCorrectionNumber: number | null }[];
     };
     expect(correctedPageOne.results).toHaveLength(25);
     expect(
       correctedPageOne.results.every((row) => row.latestCorrectionNumber === 2)
     ).toBe(true);
-    expect(correctedPageOne.nextCursor).toBeString();
+    expect(correctedPageOne.pagination).toEqual({
+      page: 1,
+      pageSize: 25,
+      total: 30,
+      totalPages: 2,
+    });
     const correctedPageTwo = (await (
-      await get(
-        `${correctedFilter}&cursor=${encodeURIComponent(correctedPageOne.nextCursor)}`
-      )
+      await get(`${correctedFilter}&page=2`)
     ).json()) as {
-      nextCursor: string | null;
+      pagination: { page: number; total: number; totalPages: number };
       results: { id: string; latestCorrectionNumber: number | null }[];
     };
     expect(correctedPageTwo.results).toHaveLength(5);
-    expect(correctedPageTwo.nextCursor).toBeNull();
+    expect(correctedPageTwo.pagination).toMatchObject({
+      page: 2,
+      total: 30,
+      totalPages: 2,
+    });
     expect(
       correctedPageTwo.results.every((row) => row.latestCorrectionNumber === 2)
     ).toBe(true);

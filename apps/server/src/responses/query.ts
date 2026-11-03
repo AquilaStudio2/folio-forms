@@ -5,7 +5,8 @@ import type { Identity, Actor } from "../auth/identity";
 import { manifestFieldsWithDocumentMetadata } from "../forms/query";
 import { fail } from "../http/errors";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
-import { idPattern, validateId, jsonRecord } from "../http/input";
+import { validateId, jsonRecord } from "../http/input";
+import { paginationInfo } from "../http/pagination";
 import type {
   Response,
   JsonRecord,
@@ -20,168 +21,185 @@ import type { ResultAnswerValues } from "./result-filters";
 
 export const adminResultPageSize = 25;
 
-export async function findAdminResults({
+const adminResultSelect = {
+  createdAt: true,
+  draftData: true,
+  form: { select: { documentKind: true, publicId: true, title: true } },
+  id: true,
+  owner: { select: { email: true } },
+  publishedTemplate: {
+    select: {
+      manifest: {
+        select: {
+          fields: {
+            select: { binding: true, tag: true, type: true },
+            where: {
+              tag: {
+                in: ["province", "month", "fiscal_year"],
+              },
+            },
+          },
+        },
+      },
+    },
+  },
+  status: true,
+  submissions: {
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    select: {
+      corrections: {
+        orderBy: { revision: "desc" },
+        select: { data: true, revision: true },
+        take: 1,
+      },
+      createdAt: true,
+      data: true,
+      id: true,
+    },
+    take: 1,
+  },
+  updatedAt: true,
+} satisfies Prisma.ResponseSelect;
+
+type AdminResultCandidate = Prisma.ResponseGetPayload<{
+  select: typeof adminResultSelect;
+}>;
+
+const withResultAnswers = (response: AdminResultCandidate) => {
+  const submission = response.submissions[0];
+  const latestCorrection = submission?.corrections[0];
+  return {
+    ...response,
+    ...resultAnswerValues({
+      data:
+        response.status === ResponseStatus.submitted
+          ? latestCorrection
+            ? latestCorrection.data
+            : submission?.data
+          : response.draftData,
+      documentKind: response.form.documentKind,
+      fields: response.publishedTemplate.manifest?.fields ?? [],
+    }),
+  };
+};
+
+export function findAdminResults({
   correction,
   fiscal_year,
   month,
   province,
+  page,
   where,
 }: {
   correction?: number;
   fiscal_year?: string;
   month?: string;
   province?: string;
+  page: number;
   where: Prisma.ResponseWhereInput;
 }) {
-  const limit = adminResultPageSize + 1;
-  const matches = [];
-  let after: AdminResultCursor | undefined;
-  // Apply every current-revision condition together before filling a page.
-  // Bounded ordered batches keep sparse matches reachable without retaining
-  // every candidate's saved answer data in memory.
-  while (matches.length < limit) {
-    const batch = await prisma.response.findMany({
-      orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-      select: {
-        createdAt: true,
-        draftData: true,
-        form: { select: { documentKind: true, publicId: true, title: true } },
-        id: true,
-        owner: { select: { email: true } },
-        publishedTemplate: {
-          select: {
-            manifest: {
-              select: {
-                fields: {
-                  select: { binding: true, tag: true, type: true },
-                  where: {
-                    tag: {
-                      in: ["province", "month", "fiscal_year"],
-                    },
-                  },
-                },
-              },
-            },
-          },
-        },
-        status: true,
-        submissions: {
-          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-          select: {
-            corrections: {
-              orderBy: { revision: "desc" },
-              select: { data: true, revision: true },
-              take: 1,
-            },
-            createdAt: true,
-            data: true,
-            id: true,
-          },
-          take: 1,
-        },
-        updatedAt: true,
-      },
-      take: limit,
-      where: {
-        AND: [
+  return prisma.$transaction(
+    async (tx) => {
+      const orderBy = [
+        { updatedAt: "desc" },
+        { id: "desc" },
+      ] satisfies Prisma.ResponseOrderByWithRelationInput[];
+      if (
+        correction === undefined &&
+        fiscal_year === undefined &&
+        month === undefined &&
+        province === undefined
+      ) {
+        const total = await tx.response.count({ where });
+        const pagination = paginationInfo({
+          page,
+          pageSize: adminResultPageSize,
+          total,
+        });
+        const rows = await tx.response.findMany({
+          orderBy,
+          select: adminResultSelect,
+          skip: (pagination.page - 1) * pagination.pageSize,
+          take: pagination.pageSize,
           where,
-          // A positive revision must exist somewhere on this response, but it
-          // still needs to belong to the latest submission below.
-          ...(correction !== undefined && correction > 0
-            ? [{ corrections: { some: { revision: correction } } }]
-            : []),
-          ...(after
-            ? [
-                {
-                  OR: [
-                    { updatedAt: { lt: after.updatedAt } },
-                    { id: { lt: after.id }, updatedAt: after.updatedAt },
-                  ],
-                },
-              ]
-            : []),
-        ],
-      },
-    });
-    for (const response of batch) {
-      const submission = response.submissions[0];
-      const latestCorrection = submission?.corrections[0];
-      if (
-        correction !== undefined &&
-        (latestCorrection?.revision ?? 0) !== correction
-      ) {
-        continue;
+        });
+        return { pagination, results: rows.map(withResultAnswers) };
       }
-      const values = resultAnswerValues({
-        data:
-          response.status === ResponseStatus.submitted
-            ? latestCorrection
-              ? latestCorrection.data
-              : submission?.data
-            : response.draftData,
-        documentKind: response.form.documentKind,
-        fields: response.publishedTemplate.manifest?.fields ?? [],
+      // Saved-answer and latest-Correction conditions are evaluated together.
+      // Scan bounded batches to count all matches without retaining every answer.
+      type Result = ReturnType<typeof withResultAnswers>;
+      const results: Result[] = [];
+      let lastPage: Result[] = [];
+      let total = 0;
+      let after: Pick<AdminResultCandidate, "id" | "updatedAt"> | undefined;
+      const start = (page - 1) * adminResultPageSize;
+      while (true) {
+        const batch = await tx.response.findMany({
+          orderBy,
+          select: adminResultSelect,
+          take: adminResultPageSize,
+          where: {
+            AND: [
+              where,
+              ...(correction !== undefined && correction > 0
+                ? [{ corrections: { some: { revision: correction } } }]
+                : []),
+              ...(after
+                ? [
+                    {
+                      OR: [
+                        { updatedAt: { lt: after.updatedAt } },
+                        { id: { lt: after.id }, updatedAt: after.updatedAt },
+                      ],
+                    },
+                  ]
+                : []),
+            ],
+          },
+        });
+        for (const response of batch) {
+          if (
+            correction !== undefined &&
+            (response.submissions[0]?.corrections[0]?.revision ?? 0) !==
+              correction
+          ) {
+            continue;
+          }
+          const result = withResultAnswers(response);
+          if (
+            !matchesResultAnswers({
+              filters: { fiscal_year, month, province },
+              values: result,
+            })
+          ) {
+            continue;
+          }
+          if (total % adminResultPageSize === 0) {
+            lastPage = [];
+          }
+          lastPage.push(result);
+          if (total >= start && results.length < adminResultPageSize) {
+            results.push(result);
+          }
+          total += 1;
+        }
+        if (batch.length < adminResultPageSize) {
+          break;
+        }
+        after = batch.at(-1);
+      }
+      const pagination = paginationInfo({
+        page,
+        pageSize: adminResultPageSize,
+        total,
       });
-      if (
-        !matchesResultAnswers({
-          filters: { fiscal_year, month, province },
-          values,
-        })
-      ) {
-        continue;
-      }
-      matches.push({ ...response, ...values });
-      if (matches.length === limit) {
-        return matches;
-      }
-    }
-    if (batch.length < limit) {
-      break;
-    }
-    after = batch.at(-1);
-  }
-  return matches;
-}
-
-interface AdminResultCursor {
-  id: string;
-  updatedAt: Date;
-}
-
-export function adminResultCursor(
-  value: string | undefined
-): AdminResultCursor | null {
-  if (value === undefined) {
-    return null;
-  }
-  try {
-    const decoded = JSON.parse(
-      Buffer.from(value, "base64url").toString("utf-8")
-    ) as { id?: unknown; updatedAt?: unknown };
-    if (
-      typeof decoded.id !== "string" ||
-      !idPattern.test(decoded.id) ||
-      typeof decoded.updatedAt !== "string"
-    ) {
-      fail(400, "invalid_request", "cursor is invalid");
-    }
-    const updatedAt = new Date(decoded.updatedAt);
-    if (!Number.isFinite(updatedAt.getTime())) {
-      fail(400, "invalid_request", "cursor is invalid");
-    }
-    return { id: decoded.id, updatedAt };
-  } catch {
-    fail(400, "invalid_request", "cursor is invalid");
-  }
-}
-
-export function adminResultCursorValue(result: {
-  id: string;
-  updatedAt: Date;
-}): string {
-  return Buffer.from(
-    JSON.stringify({ id: result.id, updatedAt: result.updatedAt.toISOString() })
-  ).toString("base64url");
+      return {
+        pagination,
+        results: page > pagination.page ? lastPage : results,
+      };
+    },
+    { isolationLevel: "RepeatableRead" }
+  );
 }
 
 export function adminResultDate(

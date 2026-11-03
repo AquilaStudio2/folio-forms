@@ -4,6 +4,7 @@ import { RefreshCw, Search } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
+import { ListPagination } from "@/components/list-pagination";
 import { Badge, Button, Card, Input, Notice, Spinner } from "@/components/ui";
 import { ApiError, apiGet, formatDateTime } from "@/lib/api";
 import type {
@@ -11,6 +12,7 @@ import type {
   AdminAuditListResponse,
   AuditOutcome,
 } from "@/lib/api";
+import { emptyPagination } from "@/lib/pagination";
 
 const selectClass =
   "min-h-11 w-full rounded-[10px] border border-[var(--line-strong)] bg-[var(--paper)] px-3 text-[var(--ink)] shadow-sm focus:border-[var(--ink)] focus:outline-none";
@@ -42,9 +44,8 @@ const targetText = (event: AdminAuditEvent): string =>
 
 const AdminAuditRoute = () => {
   const [events, setEvents] = useState<AdminAuditEvent[]>([]);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [currentCursor, setCurrentCursor] = useState<string | null>(null);
-  const [cursorHistory, setCursorHistory] = useState<(string | null)[]>([]);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState(() => emptyPagination(50));
   const [filters, setFilters] = useState({
     action: "",
     actor: "",
@@ -64,9 +65,7 @@ const AdminAuditRoute = () => {
       setLoading(true);
       setError(null);
       const query = new URLSearchParams();
-      if (currentCursor) {
-        query.set("cursor", currentCursor);
-      }
+      query.set("page", String(page));
       for (const [key, value] of Object.entries(filters)) {
         if (value && value !== "all") {
           query.set(key, key === "to" ? `${value}T23:59:59.999Z` : value);
@@ -78,12 +77,14 @@ const AdminAuditRoute = () => {
         );
         if (!cancelled) {
           setEvents(payload.events);
-          setNextCursor(payload.nextCursor);
+          setPagination(payload.pagination);
+          if (payload.pagination.page !== page) {
+            setPage(payload.pagination.page);
+          }
         }
       } catch (caughtError) {
         if (!cancelled) {
           setEvents([]);
-          setNextCursor(null);
           setError(errorMessage(caughtError));
         }
       } finally {
@@ -96,26 +97,11 @@ const AdminAuditRoute = () => {
     return () => {
       cancelled = true;
     };
-  }, [currentCursor, filters, reloadVersion]);
+  }, [page, filters, reloadVersion]);
 
   const applyFilters = () => {
     setFilters(draftFilters);
-    setCursorHistory([]);
-    setCurrentCursor(null);
-  };
-  const nextPage = () => {
-    if (!nextCursor) {
-      return;
-    }
-    setCursorHistory((history) => [...history, currentCursor]);
-    setCurrentCursor(nextCursor);
-  };
-  const previousPage = () => {
-    setCursorHistory((history) => {
-      const previous = history.at(-1) ?? null;
-      setCurrentCursor(previous);
-      return history.slice(0, -1);
-    });
+    setPage(1);
   };
 
   return (
@@ -126,7 +112,7 @@ const AdminAuditRoute = () => {
       />
       <Card>
         <form
-          className="grid gap-4 md:grid-cols-2 xl:grid-cols-6"
+          className="grid gap-4 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-6"
           onSubmit={(event) => {
             event.preventDefault();
             applyFilters();
@@ -329,29 +315,13 @@ const AdminAuditRoute = () => {
             </table>
           </div>
         )}
-        <div className="flex items-center justify-between border-t border-[var(--line)] px-5 py-4">
-          <span className="text-sm text-[var(--ink-soft)]" aria-live="polite">
-            {loading ? "กำลังโหลด…" : `พบ ${events.length} รายการในหน้านี้`}
-          </span>
-          <div className="flex gap-2">
-            <Button
-              disabled={loading || cursorHistory.length === 0}
-              onClick={previousPage}
-              size="sm"
-              variant="secondary"
-            >
-              ก่อนหน้า
-            </Button>
-            <Button
-              disabled={loading || !nextCursor}
-              onClick={nextPage}
-              size="sm"
-              variant="secondary"
-            >
-              ถัดไป
-            </Button>
-          </div>
-        </div>
+        <ListPagination
+          className="border-t border-[var(--line)] px-5 py-4"
+          label="แบ่งหน้า Audit Trail"
+          pagination={pagination}
+          disabled={loading || Boolean(error)}
+          onPageChange={setPage}
+        />
       </Card>
     </div>
   );

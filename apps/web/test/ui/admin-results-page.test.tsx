@@ -40,6 +40,17 @@ const fetchMock = vi.fn<typeof fetch>();
 let sessionRole: Role;
 let listResponse: () => Response | Promise<Response>;
 
+let requestedPage = 1;
+const resultsPayload = (results: AdminResult[], total = results.length) => ({
+  pagination: {
+    page: Math.min(requestedPage, Math.max(1, Math.ceil(total / 25))),
+    pageSize: 25,
+    total,
+    totalPages: Math.max(1, Math.ceil(total / 25)),
+  },
+  results,
+});
+
 const resultRequests = () =>
   fetchMock.mock.calls.filter(
     ([input]) => new URL(String(input)).pathname === "/api/admin/results"
@@ -49,7 +60,10 @@ const expectQuery = (expected: Record<string, string>) => {
   expect(request).toBeDefined();
   const url = new URL(String(request?.[0]));
   expect(url.origin).toBe(API_ORIGIN);
-  expect(Object.fromEntries(url.searchParams)).toEqual(expected);
+  expect(Object.fromEntries(url.searchParams)).toEqual({
+    page: "1",
+    ...expected,
+  });
 };
 
 const flush = async () => {
@@ -72,7 +86,7 @@ const mount = async () => {
 
 beforeEach(() => {
   sessionRole = "admin";
-  listResponse = () => Response.json({ nextCursor: null, results: [result()] });
+  listResponse = () => Response.json(resultsPayload([result()]));
   localStorage.setItem(SESSION_KEY, "results-reader-test-token");
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (input) => {
@@ -89,6 +103,9 @@ beforeEach(() => {
       });
     }
     if (pathname === "/api/admin/results") {
+      requestedPage = Number(
+        new URL(String(input)).searchParams.get("page") ?? 1
+      );
       return listResponse();
     }
     return Response.json({ enabled: false });
@@ -100,9 +117,8 @@ afterEach(() => window.history.replaceState(null, "", "/"));
 
 it("shows reporting columns for DOCX and Excel with a dash for each unavailable value", async () => {
   listResponse = () =>
-    Response.json({
-      nextCursor: null,
-      results: [
+    Response.json(
+      resultsPayload([
         {
           ...result(),
           fiscalYear: 2570,
@@ -128,8 +144,8 @@ it("shows reporting columns for DOCX and Excel with a dash for each unavailable 
           formTitle: "Partially available reporting values",
           province: "เชียงใหม่",
         },
-      ],
-    });
+      ])
+    );
   await mount();
   const table = screen.getByRole("table", {
     name: "รายการฉบับร่างและคำตอบที่ส่งแล้ว",
@@ -159,9 +175,8 @@ it("shows reporting columns for DOCX and Excel with a dash for each unavailable 
 
 it("shows nonstandard Tag values, including zero and false, without changing filter choices", async () => {
   listResponse = () =>
-    Response.json({
-      nextCursor: null,
-      results: [
+    Response.json(
+      resultsPayload([
         {
           ...result(),
           fiscalYear: "พ.ศ. 2570",
@@ -175,8 +190,8 @@ it("shows nonstandard Tag values, including zero and false, without changing fil
           month: 10,
           province: false,
         },
-      ],
-    });
+      ])
+    );
   await mount();
   const rows = within(
     screen.getByRole("table", { name: "รายการฉบับร่างและคำตอบที่ส่งแล้ว" })
@@ -231,8 +246,7 @@ describe("Province results search", () => {
 
   it("retains the complete applied search on Reload and both page directions, then clears Province independently at page one", async () => {
     const user = userEvent.setup();
-    listResponse = () =>
-      Response.json({ nextCursor: "next-page", results: [result()] });
+    listResponse = () => Response.json(resultsPayload([result()], 50));
     await mount();
     await user.type(
       screen.getByRole("textbox", { name: "Form Public ID" }),
@@ -276,26 +290,32 @@ describe("Province results search", () => {
       screen.getByRole("button", { exact: true, name: "โหลดใหม่" })
     );
     await waitFor(() => expectQuery(applied));
-    await user.click(screen.getByRole("button", { exact: true, name: "ถัดไป" }));
-    await waitFor(() => expectQuery({ ...applied, cursor: "next-page" }));
     await user.click(
-      screen.getByRole("button", { exact: true, name: "ก่อนหน้า" })
+      screen.getByRole("button", { exact: true, name: "หน้าถัดไป" })
+    );
+    await waitFor(() => expectQuery({ ...applied, page: "2" }));
+    await user.click(
+      screen.getByRole("button", { exact: true, name: "หน้าก่อนหน้า" })
     );
     await waitFor(() => expectQuery(applied));
-    await user.click(screen.getByRole("button", { exact: true, name: "ถัดไป" }));
-    await waitFor(() => expectQuery({ ...applied, cursor: "next-page" }));
+    await user.click(
+      screen.getByRole("button", { exact: true, name: "หน้าถัดไป" })
+    );
+    await waitFor(() => expectQuery({ ...applied, page: "2" }));
     await user.click(search);
     await waitFor(() => expectQuery({ ...applied, province: "เชียงราย" }));
     expect(
-      screen.getByRole("button", { exact: true, name: "ก่อนหน้า" })
+      screen.getByRole("button", { exact: true, name: "หน้าก่อนหน้า" })
     ).toBeDisabled();
-    await user.click(screen.getByRole("button", { exact: true, name: "ถัดไป" }));
+    await user.click(
+      screen.getByRole("button", { exact: true, name: "หน้าถัดไป" })
+    );
     await user.selectOptions(province, "");
     await user.click(search);
     const { province: _province, ...withoutProvince } = applied;
     await waitFor(() => expectQuery(withoutProvince));
     expect(
-      screen.getByRole("button", { exact: true, name: "ก่อนหน้า" })
+      screen.getByRole("button", { exact: true, name: "หน้าก่อนหน้า" })
     ).toBeDisabled();
   });
 
@@ -303,7 +323,7 @@ describe("Province results search", () => {
     "keeps the complete central province catalog available to a %s after an empty search",
     async (role) => {
       sessionRole = role;
-      listResponse = () => Response.json({ nextCursor: null, results: [] });
+      listResponse = () => Response.json(resultsPayload([]));
       await mount();
       expect(screen.getByText("ไม่พบผลลัพธ์ตามตัวกรอง")).toBeVisible();
       const province = screen.getByRole("combobox", { name: "จังหวัด" });
@@ -322,7 +342,7 @@ describe("Province results search", () => {
           .toSorted()
       ).toEqual(expected.toSorted());
       expect(
-        screen.getByRole("button", { exact: true, name: "ถัดไป" })
+        screen.getByRole("button", { exact: true, name: "หน้าถัดไป" })
       ).toBeDisabled();
     }
   );
@@ -336,7 +356,7 @@ describe("Province results search", () => {
     expect(screen.getByRole("combobox", { name: "จังหวัด" })).toBeEnabled();
     expect(screen.getByRole("combobox", { name: "เดือน" })).toBeEnabled();
     expect(screen.getByRole("combobox", { name: "ปีงบประมาณ" })).toBeEnabled();
-    pending.resolve(Response.json({ nextCursor: null, results: [] }));
+    pending.resolve(Response.json(resultsPayload([])));
     expect(await screen.findByText("ไม่พบผลลัพธ์ตามตัวกรอง")).toBeVisible();
     expect(screen.queryByLabelText("กำลังโหลดผลลัพธ์")).not.toBeInTheDocument();
   });
@@ -358,18 +378,14 @@ describe("Province results search", () => {
       expect(screen.getByRole("combobox", { name: "เดือน" })).toBeEnabled();
       expect(screen.getByRole("combobox", { name: "ปีงบประมาณ" })).toBeEnabled();
       expect(
-        screen.getByRole("button", { exact: true, name: "ถัดไป" })
+        screen.getByRole("button", { exact: true, name: "หน้าถัดไป" })
       ).toBeDisabled();
     }
   );
 
   it("retries the applied Province after a failed request and clears the previous continuation", async () => {
     const user = userEvent.setup();
-    listResponse = () =>
-      Response.json({
-        nextCursor: "previous-search-page",
-        results: [result()],
-      });
+    listResponse = () => Response.json(resultsPayload([result()], 50));
     await mount();
     listResponse = () =>
       Response.json({ error: "internal_error" }, { status: 500 });
@@ -382,10 +398,9 @@ describe("Province results search", () => {
       await screen.findByText("ไม่สามารถโหลดผลลัพธ์ได้ กรุณาลองใหม่อีกครั้ง")
     ).toBeVisible();
     expect(
-      screen.getByRole("button", { exact: true, name: "ถัดไป" })
+      screen.getByRole("button", { exact: true, name: "หน้าถัดไป" })
     ).toBeDisabled();
-    listResponse = () =>
-      Response.json({ nextCursor: null, results: [result()] });
+    listResponse = () => Response.json(resultsPayload([result()]));
     await user.click(
       screen.getByRole("button", { exact: true, name: "ลองใหม่" })
     );
@@ -404,7 +419,7 @@ describe("Month results search", () => {
     "offers all twelve full Thai months in order to a %s and applies one choice through Search after an empty search",
     async (role) => {
       sessionRole = role;
-      listResponse = () => Response.json({ nextCursor: null, results: [] });
+      listResponse = () => Response.json(resultsPayload([]));
       const user = userEvent.setup();
       await mount();
       const month = screen.getByRole("combobox", { name: "เดือน" });
@@ -446,8 +461,7 @@ describe("Month results search", () => {
 
   it("retains every applied criterion on Reload and navigation, applies pending Month at page one and clears Month or Province independently", async () => {
     const user = userEvent.setup();
-    listResponse = () =>
-      Response.json({ nextCursor: "month-next-page", results: [result()] });
+    listResponse = () => Response.json(resultsPayload([result()], 50));
     await mount();
     await user.type(
       screen.getByRole("textbox", { name: "Form Public ID" }),
@@ -495,38 +509,46 @@ describe("Month results search", () => {
       screen.getByRole("button", { exact: true, name: "โหลดใหม่" })
     );
     await waitFor(() => expectQuery(applied));
-    await user.click(screen.getByRole("button", { exact: true, name: "ถัดไป" }));
-    await waitFor(() => expectQuery({ ...applied, cursor: "month-next-page" }));
     await user.click(
-      screen.getByRole("button", { exact: true, name: "ก่อนหน้า" })
+      screen.getByRole("button", { exact: true, name: "หน้าถัดไป" })
+    );
+    await waitFor(() => expectQuery({ ...applied, page: "2" }));
+    await user.click(
+      screen.getByRole("button", { exact: true, name: "หน้าก่อนหน้า" })
     );
     await waitFor(() => expectQuery(applied));
-    await user.click(screen.getByRole("button", { exact: true, name: "ถัดไป" }));
-    await waitFor(() => expectQuery({ ...applied, cursor: "month-next-page" }));
+    await user.click(
+      screen.getByRole("button", { exact: true, name: "หน้าถัดไป" })
+    );
+    await waitFor(() => expectQuery({ ...applied, page: "2" }));
     await user.click(search);
     const changed = { ...applied, month: "กันยายน", province: "เชียงราย" };
     await waitFor(() => expectQuery(changed));
     expect(
-      screen.getByRole("button", { exact: true, name: "ก่อนหน้า" })
+      screen.getByRole("button", { exact: true, name: "หน้าก่อนหน้า" })
     ).toBeDisabled();
-    await user.click(screen.getByRole("button", { exact: true, name: "ถัดไป" }));
+    await user.click(
+      screen.getByRole("button", { exact: true, name: "หน้าถัดไป" })
+    );
     await user.selectOptions(month, "");
     await user.click(search);
     const { month: _month, ...withoutMonth } = changed;
     await waitFor(() => expectQuery(withoutMonth));
     expect(
-      screen.getByRole("button", { exact: true, name: "ก่อนหน้า" })
+      screen.getByRole("button", { exact: true, name: "หน้าก่อนหน้า" })
     ).toBeDisabled();
     await user.selectOptions(month, "พฤศจิกายน");
     await user.click(search);
     await waitFor(() => expectQuery({ ...withoutMonth, month: "พฤศจิกายน" }));
-    await user.click(screen.getByRole("button", { exact: true, name: "ถัดไป" }));
+    await user.click(
+      screen.getByRole("button", { exact: true, name: "หน้าถัดไป" })
+    );
     await user.selectOptions(province, "");
     await user.click(search);
     const { province: _province, ...withoutProvince } = withoutMonth;
     await waitFor(() => expectQuery({ ...withoutProvince, month: "พฤศจิกายน" }));
     expect(
-      screen.getByRole("button", { exact: true, name: "ก่อนหน้า" })
+      screen.getByRole("button", { exact: true, name: "หน้าก่อนหน้า" })
     ).toBeDisabled();
     await user.selectOptions(month, "");
     await user.click(search);
@@ -551,8 +573,7 @@ describe("Month results search", () => {
     expect(screen.queryByText("ไม่พบผลลัพธ์ตามตัวกรอง")).not.toBeInTheDocument();
     expect(within(month).getAllByRole("option")).toHaveLength(13);
     await user.selectOptions(month, "พฤศจิกายน");
-    listResponse = () =>
-      Response.json({ nextCursor: null, results: [result()] });
+    listResponse = () => Response.json(resultsPayload([result()]));
     await user.click(
       screen.getByRole("button", { exact: true, name: "ลองใหม่" })
     );
@@ -571,7 +592,7 @@ describe("Fiscal year results search", () => {
       vi.useFakeTimers({ toFake: ["Date"] });
       vi.setSystemTime(new Date("2026-11-03T00:00:00.000Z"));
       sessionRole = role;
-      listResponse = () => Response.json({ nextCursor: null, results: [] });
+      listResponse = () => Response.json(resultsPayload([]));
       const user = userEvent.setup();
       await mount();
       expect(screen.getByText("ไม่พบผลลัพธ์ตามตัวกรอง")).toBeVisible();
@@ -665,7 +686,7 @@ describe("Fiscal year results search", () => {
     async ({ now, expected }) => {
       vi.useFakeTimers({ toFake: ["Date"] });
       vi.setSystemTime(new Date(now));
-      listResponse = () => Response.json({ nextCursor: null, results: [] });
+      listResponse = () => Response.json(resultsPayload([]));
       await mount();
       const year = screen.getByRole("combobox", { name: "ปีงบประมาณ" });
       expect(
@@ -680,8 +701,7 @@ describe("Fiscal year results search", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(new Date("2026-11-03T00:00:00.000Z"));
     const user = userEvent.setup();
-    listResponse = () =>
-      Response.json({ nextCursor: "year-next-page", results: [result()] });
+    listResponse = () => Response.json(resultsPayload([result()], 50));
     await mount();
     await user.type(
       screen.getByRole("textbox", { name: "Form Public ID" }),
@@ -713,10 +733,10 @@ describe("Fiscal year results search", () => {
     await user.selectOptions(year, "2570");
     expectQuery({});
     const search = screen.getByRole("button", { exact: true, name: "ค้นหา" });
-    const next = screen.getByRole("button", { exact: true, name: "ถัดไป" });
+    const next = screen.getByRole("button", { exact: true, name: "หน้าถัดไป" });
     const previous = screen.getByRole("button", {
       exact: true,
-      name: "ก่อนหน้า",
+      name: "หน้าก่อนหน้า",
     });
     await user.click(search);
     const applied = {
@@ -739,11 +759,11 @@ describe("Fiscal year results search", () => {
     );
     await waitFor(() => expectQuery(applied));
     await user.click(next);
-    await waitFor(() => expectQuery({ ...applied, cursor: "year-next-page" }));
+    await waitFor(() => expectQuery({ ...applied, page: "2" }));
     await user.click(previous);
     await waitFor(() => expectQuery(applied));
     await user.click(next);
-    await waitFor(() => expectQuery({ ...applied, cursor: "year-next-page" }));
+    await waitFor(() => expectQuery({ ...applied, page: "2" }));
     await user.click(search);
     const changed = {
       ...applied,
@@ -803,11 +823,10 @@ describe("Fiscal year results search", () => {
     expect(screen.queryByText("ไม่พบผลลัพธ์ตามตัวกรอง")).not.toBeInTheDocument();
     expect(within(year).getAllByRole("option")).toHaveLength(13);
     expect(
-      screen.getByRole("button", { exact: true, name: "ถัดไป" })
+      screen.getByRole("button", { exact: true, name: "หน้าถัดไป" })
     ).toBeDisabled();
     await user.selectOptions(year, "2569");
-    listResponse = () =>
-      Response.json({ nextCursor: null, results: [result()] });
+    listResponse = () => Response.json(resultsPayload([result()]));
     await user.click(
       screen.getByRole("button", { exact: true, name: "ลองใหม่" })
     );

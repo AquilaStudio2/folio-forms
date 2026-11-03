@@ -7,6 +7,7 @@ import {
 } from "@onlyoffice/db";
 
 import { fail } from "../http/errors";
+import { paginationInfo, paginationPage } from "../http/pagination";
 import { formDto } from "./query";
 
 const pageSize = 10;
@@ -34,17 +35,9 @@ const documentKindFilter = (params: URLSearchParams): Prisma.FormWhereInput => {
 const catalogQuery = (params: URLSearchParams) => {
   const search = (queryValue(params, "search") ?? "").trim();
   const status = queryValue(params, "status");
-  const pageValue = queryValue(params, "page") ?? "1";
-  const page = Number(pageValue);
+  const page = paginationPage(params);
   if (search.length > 200) {
     fail(400, "invalid_request", "search must not exceed 200 characters");
-  }
-  if (
-    !/^[1-9]\d*$/u.test(pageValue) ||
-    !Number.isSafeInteger(page) ||
-    page > 2_147_483_647
-  ) {
-    fail(400, "invalid_request", "page must be a positive integer");
   }
   if (
     status !== null &&
@@ -77,8 +70,7 @@ export const listAdminForms = (params: URLSearchParams) => {
   return prisma.$transaction(
     async (tx) => {
       const total = await tx.form.count({ where: query.where });
-      const totalPages = Math.max(1, Math.ceil(total / pageSize));
-      const page = Math.min(query.page, totalPages);
+      const pagination = paginationInfo({ page: query.page, pageSize, total });
       const items = await tx.form.findMany({
         include: {
           _count: {
@@ -91,7 +83,7 @@ export const listAdminForms = (params: URLSearchParams) => {
           templateDraft: true,
         },
         orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-        skip: (page - 1) * pageSize,
+        skip: (pagination.page - 1) * pageSize,
         take: pageSize,
         where: query.where,
       });
@@ -102,7 +94,7 @@ export const listAdminForms = (params: URLSearchParams) => {
             submissionCount: item._count.submissions,
           })
         ),
-        pagination: { page, pageSize, total, totalPages },
+        pagination,
       };
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.RepeatableRead }

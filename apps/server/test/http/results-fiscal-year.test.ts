@@ -62,7 +62,7 @@ test.each(["docx", "xlsx"] satisfies DocumentKind[])(
     expect(page.results.map(({ id }) => id).toSorted()).toEqual(
       [numeric.id, textual.id].toSorted()
     );
-    expect(page.nextCursor).toBeNull();
+    expect(page.pagination.totalPages).toBe(1);
   }
 );
 
@@ -429,7 +429,7 @@ test.each(["docx", "xlsx"] satisfies DocumentKind[])(
   }
 );
 
-test("sparse three-answer and latest-Correction intersections retain every match and stable cursor across pages", async () => {
+test("sparse three-answer and latest-Correction intersections retain every match and stable numbered pages", async () => {
   const form = await resultForm("xlsx");
   const prefix = crypto.randomUUID().slice(0, 24);
   const older = new Date("2026-11-20T12:00:00.000Z");
@@ -542,39 +542,18 @@ test("sparse three-answer and latest-Correction intersections retain every match
   for (const [selection, expected] of selections) {
     const query = { correction: "2", form: form.publicId, ...selection };
     const seen: string[] = [];
-    let cursor: string | undefined;
     for (let offset = 0; offset < expected.length; offset += 25) {
-      const page = await results({ ...query, ...(cursor ? { cursor } : {}) });
+      const page = await results({ ...query, page: String(offset / 25 + 1) });
       expect(page.results.map(({ id }) => id)).toEqual(
         expected.slice(offset, offset + 25)
       );
       seen.push(...page.results.map(({ id }) => id));
-      if (offset + 25 < expected.length) {
-        expect(page.nextCursor).not.toBeNull();
-        if (!page.nextCursor) {
-          throw new Error(
-            "A complete matching page must retain its continuation"
-          );
-        }
-        expect(
-          JSON.parse(
-            Buffer.from(page.nextCursor, "base64url").toString("utf-8")
-          )
-        ).toMatchObject({ id: expected[offset + 24] });
-        cursor = page.nextCursor;
-      } else {
-        expect(page.nextCursor).toBeNull();
-        const afterFinalPage = await results({
-          ...query,
-          cursor: Buffer.from(
-            JSON.stringify({
-              id: expected.at(-1),
-              updatedAt: older.toISOString(),
-            })
-          ).toString("base64url"),
-        });
-        expect(afterFinalPage.results).toEqual([]);
-      }
+      expect(page.pagination).toEqual({
+        page: offset / 25 + 1,
+        pageSize: 25,
+        total: expected.length,
+        totalPages: Math.max(1, Math.ceil(expected.length / 25)),
+      });
     }
     expect(new Set(seen).size).toBe(expected.length);
   }

@@ -5,19 +5,29 @@ import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
 import { DocumentKindBadge } from "@/components/document-kind-badge";
+import { ListPagination } from "@/components/list-pagination";
 import { Badge, Card, Notice, Spinner } from "@/components/ui";
 import { apiGet, formatDate } from "@/lib/api";
 import type { Submission } from "@/lib/api";
+import { paginateItems } from "@/lib/pagination";
 
 const SubmissionsRoute = () => {
   const { formId } = useParams({
     from: "/admin/forms/$formId/submissions",
   });
   const [rows, setRows] = useState<Submission[]>([]);
+  const [page, setPage] = useState(1);
+  const { items: visibleRows, pagination } = paginateItems({
+    items: rows,
+    page,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setPage(1);
+    setLoading(true);
+    setError(null);
     let cancelled = false;
     const loadSubmissions = async () => {
       try {
@@ -59,7 +69,7 @@ const SubmissionsRoute = () => {
     );
   } else if (rows.length === 0) {
     submissionsContent = (
-      <Card className="grid min-h-56 place-items-center p-8 text-center">
+      <div className="grid min-h-56 place-items-center p-8 text-center">
         <div>
           <FileCheck2
             className="mx-auto mb-3 text-[var(--ink-soft)]"
@@ -70,37 +80,35 @@ const SubmissionsRoute = () => {
             Published responses will appear here.
           </p>
         </div>
-      </Card>
+      </div>
     );
   } else {
     submissionsContent = (
-      <div className="overflow-hidden rounded-[var(--radius)] border border-[var(--line)] bg-[var(--paper)]">
-        <div className="divide-y divide-[var(--line)]">
-          {rows.map((row) => (
-            <div
-              key={row.id}
-              className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"
-            >
-              <div>
-                <p className="font-semibold">{row.userEmail ?? "Respondent"}</p>
-                <p className="mt-1 text-sm text-[var(--ink-soft)]">
-                  Submitted {formatDate(row.submittedAt ?? row.createdAt)}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <DocumentKindBadge documentKind={row.documentKind} />
-                <Badge tone="success">{row.status ?? "Submitted"}</Badge>
-                <Link
-                  to="/admin/forms/$formId/submissions/$submissionId"
-                  params={{ formId, submissionId: row.id }}
-                  className="inline-flex items-center gap-1 text-sm font-semibold"
-                >
-                  Inspect <ArrowUpRight size={15} />
-                </Link>
-              </div>
+      <div className="divide-y divide-[var(--line)]">
+        {visibleRows.map((row) => (
+          <div
+            key={row.id}
+            className="flex flex-col gap-3 p-5 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div>
+              <p className="font-semibold">{row.userEmail ?? "Respondent"}</p>
+              <p className="mt-1 text-sm text-[var(--ink-soft)]">
+                Submitted {formatDate(row.submittedAt ?? row.createdAt)}
+              </p>
             </div>
-          ))}
-        </div>
+            <div className="flex items-center gap-3">
+              <DocumentKindBadge documentKind={row.documentKind} />
+              <Badge tone="success">{row.status ?? "Submitted"}</Badge>
+              <Link
+                to="/admin/forms/$formId/submissions/$submissionId"
+                params={{ formId, submissionId: row.id }}
+                className="inline-flex items-center gap-1 text-sm font-semibold"
+              >
+                Inspect <ArrowUpRight size={15} />
+              </Link>
+            </div>
+          </div>
+        ))}
       </div>
     );
   }
@@ -119,7 +127,21 @@ const SubmissionsRoute = () => {
         title="Submissions"
         description="Every completed response for this form, with owner-protected downloads."
       />
-      {submissionsContent}
+      {error ? (
+        submissionsContent
+      ) : (
+        <Card className="overflow-hidden">
+          {submissionsContent}
+          {loading ? null : (
+            <ListPagination
+              className="border-t border-[var(--line)] px-5 py-4"
+              label="แบ่งหน้าคำตอบรายแบบฟอร์ม"
+              pagination={pagination}
+              onPageChange={setPage}
+            />
+          )}
+        </Card>
+      )}
     </>
   );
 };

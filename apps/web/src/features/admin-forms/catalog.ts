@@ -1,4 +1,5 @@
 import type { DocumentKind, FormStatus, FormSummary } from "@/lib/api";
+import type { PaginationInfo } from "@/lib/pagination";
 
 export interface FormCatalogQuery {
   documentKind: DocumentKind | "all";
@@ -9,12 +10,7 @@ export interface FormCatalogQuery {
 
 export interface FormCatalogResponse {
   forms: FormSummary[];
-  pagination: {
-    page: number;
-    pageSize: number;
-    total: number;
-    totalPages: number;
-  };
+  pagination: PaginationInfo;
 }
 
 export const formCatalogPath = ({
@@ -34,12 +30,4 @@ export const formCatalogPath = ({
     params.set("documentKind", documentKind);
   }
   return `/api/admin/forms?${params}`;
-};
-
-export const catalogPageNumbers = (page: number, totalPages: number) => {
-  if (totalPages <= 5) {
-    return Array.from({ length: totalPages }, (_, index) => index + 1);
-  }
-  const start = Math.max(1, Math.min(page - 1, totalPages - 2));
-  return [start, start + 1, start + 2];
 };

@@ -73,21 +73,30 @@ export const runDraftResultsAndExports = async (
   expect(paginatedResultsFirstResponse.status).toBe(200);
   const paginatedResultsFirstBody =
     (await paginatedResultsFirstResponse.json()) as {
-      nextCursor: string | null;
+      pagination: {
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+      };
       results: { id: string }[];
     };
   expect(paginatedResultsFirstBody.results).toHaveLength(25);
-  expect(paginatedResultsFirstBody.nextCursor).toEqual(expect.any(String));
+  expect(paginatedResultsFirstBody.pagination.totalPages).toBeGreaterThan(1);
   const paginatedResultsSecondResponse = await app.handle(
-    new Request(
-      `http://test.local/api/admin/results?cursor=${encodeURIComponent(paginatedResultsFirstBody.nextCursor as string)}`,
-      { headers: { Authorization: `Bearer ${adminBearer}` } }
-    )
+    new Request("http://test.local/api/admin/results?page=2", {
+      headers: { Authorization: `Bearer ${adminBearer}` },
+    })
   );
   expect(paginatedResultsSecondResponse.status).toBe(200);
   const paginatedResultsSecondBody =
     (await paginatedResultsSecondResponse.json()) as {
-      nextCursor: string | null;
+      pagination: {
+        page: number;
+        pageSize: number;
+        total: number;
+        totalPages: number;
+      };
       results: { id: string }[];
     };
   expect(paginatedResultsSecondBody.results.length).toBeGreaterThan(0);
@@ -108,7 +117,7 @@ export const runDraftResultsAndExports = async (
   );
   expect(filteredPaginationResponse.status).toBe(200);
   expect(await filteredPaginationResponse.json()).toMatchObject({
-    nextCursor: null,
+    pagination: { page: 1, pageSize: 25, total: 1, totalPages: 1 },
     results: [
       {
         formPublicId: formRecord.publicId,
@@ -125,7 +134,7 @@ export const runDraftResultsAndExports = async (
   );
   expect(excludedPaginationResponse.status).toBe(200);
   expect(await excludedPaginationResponse.json()).toEqual({
-    nextCursor: null,
+    pagination: { page: 1, pageSize: 25, total: 0, totalPages: 1 },
     results: [],
   });
   const adminDraftResultsResponse = await app.handle(
@@ -136,7 +145,12 @@ export const runDraftResultsAndExports = async (
   );
   expect(adminDraftResultsResponse.status).toBe(200);
   const adminDraftResultsBody = (await adminDraftResultsResponse.json()) as {
-    nextCursor: string | null;
+    pagination: {
+      page: number;
+      pageSize: number;
+      total: number;
+      totalPages: number;
+    };
     results: Record<string, unknown>[];
   };
   const unsavedDraftResponse = await prisma.response.findFirstOrThrow({
@@ -192,7 +206,7 @@ export const runDraftResultsAndExports = async (
     },
   });
   expect(adminDraftResultsBody).toMatchObject({
-    nextCursor: null,
+    pagination: { page: 1, pageSize: 25, total: 1, totalPages: 1 },
     results: [
       {
         formPublicId: formRecord.publicId,

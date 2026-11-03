@@ -4,10 +4,12 @@ import { useEffect, useRef, useState } from "react";
 
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { DocumentKindBadge } from "@/components/document-kind-badge";
+import { ListPagination } from "@/components/list-pagination";
 import { Badge, Button, Card, Notice, Spinner } from "@/components/ui";
 import { ApiError, apiDelete, apiGet, formatDate } from "@/lib/api";
 import type { Submission } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { paginateItems } from "@/lib/pagination";
 
 const Stat = ({
   label,
@@ -39,6 +41,11 @@ const Centered = ({ message }: { message: string }) => (
 const DashboardRoute = () => {
   const { user, loading: authLoading, signedOut } = useAuth();
   const [rows, setRows] = useState<Submission[]>([]);
+  const [page, setPage] = useState(1);
+  const { items: visibleRows, pagination } = paginateItems({
+    items: rows,
+    page,
+  });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [discardCandidateId, setDiscardCandidateId] = useState<string | null>(
@@ -155,7 +162,7 @@ const DashboardRoute = () => {
     responseContent = <Centered message="กำลังโหลดคำตอบ…" />;
   } else if (rows.length === 0) {
     responseContent = (
-      <Card className="grid min-h-56 place-items-center p-8 text-center">
+      <div className="grid min-h-56 place-items-center p-8 text-center">
         <div>
           <Inbox className="mx-auto mb-3 text-[var(--ink-soft)]" size={30} />
           <h2 className="font-semibold">ยังไม่มีคำตอบ</h2>
@@ -163,79 +170,77 @@ const DashboardRoute = () => {
             เปิดลิงก์แบบฟอร์มที่แชร์เพื่อเริ่มกรอกคำตอบ
           </p>
         </div>
-      </Card>
+      </div>
     );
   } else {
     responseContent = (
-      <div className="overflow-hidden rounded-[var(--radius)] border border-[var(--line)] bg-[var(--paper)]">
-        <div className="divide-y divide-[var(--line)]">
-          {rows.map((row) => {
-            const submitted =
-              row.status === "submitted" || row.status === "completed";
-            return (
-              <div
-                className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"
-                key={row.id}
-              >
-                <div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="font-semibold">
-                      {row.formTitle ?? "แบบฟอร์มไม่มีชื่อ"}
-                    </h2>
-                    <DocumentKindBadge documentKind={row.documentKind} />
-                  </div>
-                  <p className="mt-1 text-sm text-[var(--ink-soft)]">
-                    {submitted
-                      ? `ส่งเมื่อ ${formatDate(row.submittedAt ?? row.createdAt)}`
-                      : `บันทึกล่าสุด ${formatDate(row.updatedAt ?? row.createdAt)}`}
-                    {submitted && row.latestCorrectionNumber
-                      ? ` · แก้ไขครั้งที่ ${row.latestCorrectionNumber}`
-                      : ""}
-                  </p>
+      <div className="divide-y divide-[var(--line)]">
+        {visibleRows.map((row) => {
+          const submitted =
+            row.status === "submitted" || row.status === "completed";
+          return (
+            <div
+              className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"
+              key={row.id}
+            >
+              <div>
+                <div className="flex flex-wrap items-center gap-2">
+                  <h2 className="font-semibold">
+                    {row.formTitle ?? "แบบฟอร์มไม่มีชื่อ"}
+                  </h2>
+                  <DocumentKindBadge documentKind={row.documentKind} />
                 </div>
-                <div className="flex items-center gap-3">
-                  <Badge tone={submitted ? "success" : "warning"}>
-                    {submitted ? "ส่งแล้ว" : "ฉบับร่าง"}
-                  </Badge>
-                  {submitted ? (
-                    <Link
-                      to="/receipt/$submissionId"
-                      params={{ submissionId: row.submissionId ?? row.id }}
-                      className="inline-flex items-center gap-1 text-sm font-semibold underline decoration-[var(--line-strong)] underline-offset-4 hover:decoration-[var(--ink)]"
-                    >
-                      ดูใบรับคำตอบ <ArrowUpRight size={15} />
-                    </Link>
-                  ) : (
-                    <Link
-                      to="/forms/$publicId/fill"
-                      params={{
-                        publicId: row.formPublicId ?? "",
-                      }}
-                      search={{ responseId: row.id }}
-                      className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--success)]"
-                    >
-                      กลับไปกรอกต่อ <ArrowUpRight size={15} />
-                    </Link>
-                  )}
-                  {submitted ? null : (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      onClick={(event) =>
-                        requestDiscard(row.id, event.currentTarget)
-                      }
-                      disabled={discardingId === row.id}
-                    >
-                      {discardingId === row.id ? <Spinner /> : null}
-                      ทิ้งฉบับร่าง
-                    </Button>
-                  )}
-                </div>
+                <p className="mt-1 text-sm text-[var(--ink-soft)]">
+                  {submitted
+                    ? `ส่งเมื่อ ${formatDate(row.submittedAt ?? row.createdAt)}`
+                    : `บันทึกล่าสุด ${formatDate(row.updatedAt ?? row.createdAt)}`}
+                  {submitted && row.latestCorrectionNumber
+                    ? ` · แก้ไขครั้งที่ ${row.latestCorrectionNumber}`
+                    : ""}
+                </p>
               </div>
-            );
-          })}
-        </div>
+              <div className="flex items-center gap-3">
+                <Badge tone={submitted ? "success" : "warning"}>
+                  {submitted ? "ส่งแล้ว" : "ฉบับร่าง"}
+                </Badge>
+                {submitted ? (
+                  <Link
+                    to="/receipt/$submissionId"
+                    params={{ submissionId: row.submissionId ?? row.id }}
+                    className="inline-flex items-center gap-1 text-sm font-semibold underline decoration-[var(--line-strong)] underline-offset-4 hover:decoration-[var(--ink)]"
+                  >
+                    ดูใบรับคำตอบ <ArrowUpRight size={15} />
+                  </Link>
+                ) : (
+                  <Link
+                    to="/forms/$publicId/fill"
+                    params={{
+                      publicId: row.formPublicId ?? "",
+                    }}
+                    search={{ responseId: row.id }}
+                    className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--success)]"
+                  >
+                    กลับไปกรอกต่อ <ArrowUpRight size={15} />
+                  </Link>
+                )}
+                {submitted ? null : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={(event) =>
+                      requestDiscard(row.id, event.currentTarget)
+                    }
+                    disabled={discardingId === row.id}
+                  >
+                    {discardingId === row.id ? <Spinner /> : null}
+                    ทิ้งฉบับร่าง
+                  </Button>
+                )}
+              </div>
+            </div>
+          );
+        })}
       </div>
     );
   }
@@ -329,7 +334,22 @@ const DashboardRoute = () => {
           icon={<Inbox size={18} />}
         />
       </div>
-      {responseContent}
+      {error ? (
+        responseContent
+      ) : (
+        <Card className="overflow-hidden">
+          {responseContent}
+          {loading ? null : (
+            <ListPagination
+              className="border-t border-[var(--line)] px-5 py-4"
+              label="แบ่งหน้าคำตอบของฉัน"
+              pagination={pagination}
+              disabled={discardingId !== null || discardCandidateId !== null}
+              onPageChange={setPage}
+            />
+          )}
+        </Card>
+      )}
     </AppShell>
   );
 };

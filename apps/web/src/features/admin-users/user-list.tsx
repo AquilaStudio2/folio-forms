@@ -1,6 +1,4 @@
 import {
-  ChevronLeft,
-  ChevronRight,
   KeyRound,
   Mail,
   Pencil,
@@ -13,9 +11,11 @@ import {
 import type { FormEvent, RefObject } from "react";
 import { useState } from "react";
 
+import { ListPagination } from "@/components/list-pagination";
 import { Badge, Button, Card, Input, Notice, Spinner } from "@/components/ui";
 import { formatDate } from "@/lib/api";
 import type { AdminUser, Role } from "@/lib/api";
+import type { PaginationInfo } from "@/lib/pagination";
 
 import {
   actionKey,
@@ -82,8 +82,7 @@ export const UserList = ({
   users,
   listLoading,
   listError,
-  nextCursor,
-  cursorHistory,
+  pagination,
   usersHeadingRef,
   rowActionsDisabled,
   legacyAccountLinkLoading,
@@ -104,14 +103,12 @@ export const UserList = ({
   requestConfirmation,
   beginEmailEdit,
   enableUser,
-  goToPreviousPage,
-  goToNextPage,
+  onPageChange,
 }: {
   users: AdminUser[];
   listLoading: boolean;
   listError: string | null;
-  nextCursor: string | null;
-  cursorHistory: (string | null)[];
+  pagination: PaginationInfo;
   usersHeadingRef: RefObject<HTMLHeadingElement | null>;
   rowActionsDisabled: boolean;
   legacyAccountLinkLoading: boolean;
@@ -141,8 +138,7 @@ export const UserList = ({
   ) => void;
   beginEmailEdit: (user: AdminUser) => void;
   enableUser: (user: AdminUser) => void;
-  goToPreviousPage: () => void;
-  goToNextPage: () => void;
+  onPageChange: (page: number) => void;
 }) => (
   <Card className="mt-6 overflow-hidden" aria-busy={listLoading}>
     <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] px-5 py-4 sm:px-6">
@@ -515,35 +511,12 @@ export const UserList = ({
       </div>
     ) : null}
 
-    <nav
-      className="flex flex-wrap items-center justify-between gap-3 border-t border-[var(--line)] px-5 py-4 sm:px-6"
-      aria-label="การแบ่งหน้ารายการผู้ใช้"
-    >
-      <span className="text-sm text-[var(--ink-soft)]">
-        หน้า {cursorHistory.length + 1}
-      </span>
-      <div className="flex items-center gap-2">
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={goToPreviousPage}
-          disabled={cursorHistory.length === 0 || rowActionsDisabled}
-        >
-          <ChevronLeft size={16} />
-          ก่อนหน้า
-        </Button>
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={goToNextPage}
-          disabled={!nextCursor || rowActionsDisabled}
-        >
-          ถัดไป
-          <ChevronRight size={16} />
-        </Button>
-      </div>
-    </nav>
+    <ListPagination
+      className="border-t border-[var(--line)] px-5 py-4 sm:px-6"
+      label="การแบ่งหน้ารายการผู้ใช้"
+      pagination={pagination}
+      disabled={rowActionsDisabled}
+      onPageChange={onPageChange}
+    />
   </Card>
 );

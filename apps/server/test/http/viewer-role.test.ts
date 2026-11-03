@@ -946,23 +946,26 @@ test("VIEWER filtering combines email and status and paginates without losing ro
   const path = `/api/admin/users?role=viewer&enabled=true&email=${prefix}`;
   const first = (await (
     await f.request(path, "GET", undefined, token)
-  ).json()) as { users: { id: string; role: string }[]; nextCursor: string };
+  ).json()) as {
+    users: { id: string; role: string }[];
+    pagination: { page: number; total: number; totalPages: number };
+  };
   expect(first.users).toHaveLength(20);
   expect(first.users.every(({ role }) => role === "viewer")).toBe(true);
   const second = (await (
-    await f.request(
-      `${path}&cursor=${first.nextCursor}`,
-      "GET",
-      undefined,
-      token
-    )
+    await f.request(`${path}&page=2`, "GET", undefined, token)
   ).json()) as {
     users: { id: string; role: string }[];
-    nextCursor: string | null;
+    pagination: { page: number; total: number; totalPages: number };
   };
   expect(second.users).toHaveLength(1);
   expect(second.users[0]?.role).toBe("viewer");
-  expect(second.nextCursor).toBeNull();
+  expect(first.pagination).toMatchObject({ page: 1, total: 21, totalPages: 2 });
+  expect(second.pagination).toMatchObject({
+    page: 2,
+    total: 21,
+    totalPages: 2,
+  });
   expect(
     new Set([...first.users, ...second.users].map(({ id }) => id)).size
   ).toBe(21);

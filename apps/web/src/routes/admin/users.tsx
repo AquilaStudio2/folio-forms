@@ -44,6 +44,7 @@ import type {
   Role,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
+import { emptyPagination } from "@/lib/pagination";
 import { useReauthenticationGuard } from "@/lib/use-reauthentication-guard";
 
 const AdminUsersRoute = () => {
@@ -52,15 +53,16 @@ const AdminUsersRoute = () => {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [listLoading, setListLoading] = useState(true);
   const [listError, setListError] = useState<string | null>(null);
-  const [nextCursor, setNextCursor] = useState<string | null>(null);
-  const [currentCursor, setCurrentCursor] = useState<string | null>(null);
-  const [cursorHistory, setCursorHistory] = useState<(string | null)[]>([]);
+  const [page, setPage] = useState(1);
+  const [pagination, setPagination] = useState(() => emptyPagination(20));
   const [reloadVersion, setReloadVersion] = useState(0);
   const [legacyAccountLinkRequests, setLegacyAccountLinkRequests] = useState<
     AdminLegacyAccountLinkRequest[]
   >([]);
-  const [legacyAccountLinkNextCursor, setLegacyAccountLinkNextCursor] =
-    useState<string | null>(null);
+  const [legacyAccountLinkPage, setLegacyAccountLinkPage] = useState(1);
+  const [legacyAccountLinkPagination, setLegacyAccountLinkPagination] =
+    useState(() => emptyPagination(10));
+  const [legacyAccountLinkReload, setLegacyAccountLinkReload] = useState(0);
   const [legacyAccountLinkLoading, setLegacyAccountLinkLoading] =
     useState(true);
   const [legacyAccountLinkError, setLegacyAccountLinkError] = useState<
@@ -186,9 +188,7 @@ const AdminUsersRoute = () => {
       setListLoading(true);
       setListError(null);
       const query = new URLSearchParams();
-      if (currentCursor) {
-        query.set("cursor", currentCursor);
-      }
+      query.set("page", String(page));
       if (emailFilter) {
         query.set("email", emailFilter);
       }
@@ -207,13 +207,15 @@ const AdminUsersRoute = () => {
           return;
         }
         setUsers(payload.users);
-        setNextCursor(payload.nextCursor);
+        setPagination(payload.pagination);
+        if (payload.pagination.page !== page) {
+          setPage(payload.pagination.page);
+        }
       } catch (caughtError) {
         if (cancelled) {
           return;
         }
         setUsers([]);
-        setNextCursor(null);
         setListError(
           errorMessageFor(
             caughtError,
@@ -237,27 +239,31 @@ const AdminUsersRoute = () => {
     return () => {
       cancelled = true;
     };
-  }, [currentCursor, emailFilter, enabledFilter, reloadVersion, roleFilter]);
+  }, [page, emailFilter, enabledFilter, reloadVersion, roleFilter]);
   useEffect(() => {
     let cancelled = false;
     const loadLegacyAccountLinks = async () => {
       setLegacyAccountLinkLoading(true);
       setLegacyAccountLinkError(null);
       try {
+        const query = new URLSearchParams();
+        query.set("page", String(legacyAccountLinkPage));
         const payload = await apiGet<AdminLegacyAccountLinkListResponse>(
-          "/api/admin/account-links"
+          `/api/admin/account-links${query.size ? `?${query}` : ""}`
         );
         if (cancelled) {
           return;
         }
         setLegacyAccountLinkRequests(payload.requests);
-        setLegacyAccountLinkNextCursor(payload.nextCursor);
+        setLegacyAccountLinkPagination(payload.pagination);
+        if (payload.pagination.page !== legacyAccountLinkPage) {
+          setLegacyAccountLinkPage(payload.pagination.page);
+        }
       } catch (caughtError) {
         if (cancelled) {
           return;
         }
         setLegacyAccountLinkRequests([]);
-        setLegacyAccountLinkNextCursor(null);
         setLegacyAccountLinkError(
           errorMessageFor(
             caughtError,
@@ -275,7 +281,7 @@ const AdminUsersRoute = () => {
     return () => {
       cancelled = true;
     };
-  }, [reloadVersion]);
+  }, [legacyAccountLinkPage, legacyAccountLinkReload, reloadVersion]);
 
   useEffect(() => {
     if (confirmingAction) {
@@ -335,8 +341,7 @@ const AdminUsersRoute = () => {
     setEmailFilter(normalizeEmail(draftEmailFilter));
     setRoleFilter(draftRoleFilter);
     setEnabledFilter(draftEnabledFilter);
-    setCurrentCursor(null);
-    setCursorHistory([]);
+    setPage(1);
     setReloadVersion((value) => value + 1);
   };
 
@@ -349,30 +354,17 @@ const AdminUsersRoute = () => {
     setEmailFilter("");
     setRoleFilter("all");
     setEnabledFilter("all");
-    setCurrentCursor(null);
-    setCursorHistory([]);
+    setPage(1);
     setReloadVersion((value) => value + 1);
   };
 
-  const goToNextPage = () => {
-    if (!nextCursor || rowActionsDisabled) {
+  const changePage = (nextPage: number) => {
+    if (rowActionsDisabled || nextPage === pagination.page) {
       return;
     }
     clearTransientState();
     focusListAfterLoadRef.current = true;
-    setCursorHistory((history) => [...history, currentCursor]);
-    setCurrentCursor(nextCursor);
-  };
-
-  const goToPreviousPage = () => {
-    if (cursorHistory.length === 0 || rowActionsDisabled) {
-      return;
-    }
-    clearTransientState();
-    focusListAfterLoadRef.current = true;
-    const previousCursor = cursorHistory.at(-1) ?? null;
-    setCursorHistory((history) => history.slice(0, -1));
-    setCurrentCursor(previousCursor);
+    setPage(nextPage);
   };
 
   const createUser = async (event: FormEvent<HTMLFormElement>) => {
@@ -398,8 +390,7 @@ const AdminUsersRoute = () => {
       setCreateName("");
       setCreateEmail("");
       setCreateRole("user");
-      setCurrentCursor(null);
-      setCursorHistory([]);
+      setPage(1);
       setReloadVersion((value) => value + 1);
       setFeedback({
         message: `สร้างบัญชี ${payload.user.email} แล้ว กรุณาส่งรหัสผ่านชั่วคราวให้เจ้าของบัญชีอย่างปลอดภัย`,
@@ -574,29 +565,17 @@ const AdminUsersRoute = () => {
     requestConfirmation(user, "email");
   };
 
-  const loadMoreLegacyAccountLinks = async () => {
-    const cursor = legacyAccountLinkNextCursor;
-    if (!cursor || legacyAccountLinkLoading || legacyAccountLinkAction) {
+  const changeLegacyAccountLinkPage = (nextPage: number) => {
+    if (
+      legacyAccountLinkLoading ||
+      legacyAccountLinkAction ||
+      nextPage === legacyAccountLinkPagination.page
+    ) {
       return;
     }
     setLegacyAccountLinkLoading(true);
-    setLegacyAccountLinkError(null);
-    try {
-      const payload = await apiGet<AdminLegacyAccountLinkListResponse>(
-        `/api/admin/account-links?cursor=${encodeURIComponent(cursor)}`
-      );
-      setLegacyAccountLinkRequests((current) => [
-        ...current,
-        ...payload.requests,
-      ]);
-      setLegacyAccountLinkNextCursor(payload.nextCursor);
-    } catch (caughtError) {
-      setLegacyAccountLinkError(
-        errorMessageFor(caughtError, "ไม่สามารถโหลดคำขอเพิ่มเติมได้ กรุณาลองใหม่อีกครั้ง")
-      );
-    } finally {
-      setLegacyAccountLinkLoading(false);
-    }
+    setLegacyAccountLinkFeedback(null);
+    setLegacyAccountLinkPage(nextPage);
   };
 
   const reviewLegacyAccountLink = async (
@@ -615,6 +594,7 @@ const AdminUsersRoute = () => {
       setLegacyAccountLinkRequests((current) =>
         current.filter((currentRequest) => currentRequest.id !== request.id)
       );
+      setLegacyAccountLinkReload((value) => value + 1);
       setLegacyAccountLinkFeedback(
         decision === "approve"
           ? "อนุมัติคำขอแล้ว ผู้ใช้ต้องเริ่มเข้าสู่ระบบผ่านระบบเดิมอีกครั้ง"
@@ -724,7 +704,6 @@ const AdminUsersRoute = () => {
 
       <LegacyAccountLinks
         requests={legacyAccountLinkRequests}
-        nextCursor={legacyAccountLinkNextCursor}
         loading={legacyAccountLinkLoading}
         error={legacyAccountLinkError}
         feedback={legacyAccountLinkFeedback}
@@ -732,15 +711,15 @@ const AdminUsersRoute = () => {
         headingRef={legacyAccountLinksHeadingRef}
         reload={retryUsers}
         review={reviewLegacyAccountLink}
-        loadMore={loadMoreLegacyAccountLinks}
+        pagination={legacyAccountLinkPagination}
+        onPageChange={changeLegacyAccountLinkPage}
       />
 
       <UserList
         users={users}
         listLoading={listLoading}
         listError={listError}
-        nextCursor={nextCursor}
-        cursorHistory={cursorHistory}
+        pagination={pagination}
         usersHeadingRef={usersHeadingRef}
         rowActionsDisabled={rowActionsDisabled}
         legacyAccountLinkLoading={legacyAccountLinkLoading}
@@ -761,8 +740,7 @@ const AdminUsersRoute = () => {
         requestConfirmation={requestConfirmation}
         beginEmailEdit={beginEmailEdit}
         enableUser={enableUser}
-        goToPreviousPage={goToPreviousPage}
-        goToNextPage={goToNextPage}
+        onPageChange={changePage}
       />
     </>
   );

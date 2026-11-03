@@ -8,6 +8,6 @@ Table columns and older revisions do not participate. This keeps each search res
 
 Reporting columns display the saved scalar values independently of filter matching. Nonempty strings, numbers and booleans remain visible even when they do not match a supported Province, Month or Fiscal year filter. Missing Fields, empty answers and structured values display `-`. Province matching still trims surrounding whitespace and compares full Thai names, Month matching still requires full Thai names, and Fiscal year matching still treats numeric and text Buddhist Era years as equivalent.
 
-Combine these criteria with all existing Form, email, state, latest-Correction, and update-date criteria using AND before pagination. The update-date controls retain their existing meaning while Month and Fiscal year compare saved Field values.
+Combine these criteria with all existing Form, email, state, latest-Correction, and update-date criteria using AND before counting matching records and selecting a page. The update-date controls retain their existing meaning while Month and Fiscal year compare saved Field values.
 
 The canonical Tags become part of the published Form contract. Renaming one later requires an explicit compatibility or migration decision because published Fields are immutable.

@@ -1,0 +1,67 @@
+{
+  "suites": {
+    "form-catalog": {
+      "passed": 49,
+      "assertions": 176,
+      "command": "bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/form-catalog.test.ts"
+    },
+    "list-pagination": {
+      "passed": 1,
+      "assertions": 71,
+      "command": "bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/list-pagination.test.ts"
+    },
+    "results-province": {
+      "passed": 15,
+      "assertions": 169,
+      "command": "bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/results-province.test.ts"
+    },
+    "results-month": {
+      "passed": 14,
+      "assertions": 287,
+      "command": "bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/results-month.test.ts"
+    },
+    "results-fiscal-year": {
+      "passed": 13,
+      "assertions": 507,
+      "command": "bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/results-fiscal-year.test.ts"
+    },
+    "results-columns": {
+      "passed": 15,
+      "assertions": 118,
+      "command": "bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/results-columns.test.ts"
+    },
+    "legacy-review": {
+      "passed": 7,
+      "assertions": 326,
+      "command": "bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/legacy-review.test.ts"
+    },
+    "admin-user-workflow": {
+      "passed": 1,
+      "assertions": 1808,
+      "command": "bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/admin-user-workflow.test.ts"
+    },
+    "legacy-provisioning": {
+      "passed": 56,
+      "assertions": 901,
+      "command": "bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/legacy-provisioning.test.ts"
+    },
+    "legacy-roles": {
+      "passed": 33,
+      "assertions": 376,
+      "command": "bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/legacy-roles.test.ts"
+    },
+    "viewer-role": {
+      "passed": 13,
+      "assertions": 227,
+      "command": "bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/viewer-role.test.ts"
+    },
+    "submission-history": {
+      "passed": 2,
+      "assertions": 92,
+      "command": "bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/submission-history.test.ts"
+    }
+  },
+  "totalPassed": 219,
+  "failures": 0,
+  "environment": "Each suite used a separate migrated disposable PostgreSQL database."
+}

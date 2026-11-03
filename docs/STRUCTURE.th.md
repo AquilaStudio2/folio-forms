@@ -127,6 +127,24 @@ folio-forms/
 
 `components/onlyoffice-editor.tsx` รับ `onDocumentStateChange` จาก ONLYOFFICE เพื่อแจ้งว่าผู้ใช้แก้ XLSX แล้ว หน้า fill ใช้สถานะนี้เตือนก่อนออกจากหน้า ส่วน `spreadsheet.js` ดูแลคำสั่งและผล Operation ไม่ใช้ event ของ DOCX ที่ Spreadsheet API ไม่รองรับ การทดสอบสถานะนี้อยู่ใน `web/test/ui/editor-reconnect.test.tsx`
 
+## Pagination ของรายการ
+
+ส่วนนี้เพิ่มวันที่ 3 พฤศจิกายน 2026 โดยใช้ชุดปุ่มเลขหน้าเดียวกันในรายการฝั่ง Admin และ User
+
+| ตำแหน่ง | ความรับผิดชอบ |
+| --- | --- |
+| `web/src/components/list-pagination.tsx` | รายละเอียดด้านซ้าย ชุดปุ่มหน้าแรก/ก่อนหน้า/เลขหน้า/ถัดไป/หน้าสุดท้ายด้านขวา และการจัดวางบนมือถือ |
+| `web/src/lib/pagination.ts` | ชนิดข้อมูล metadata, เลขหน้าที่แสดง และการแบ่งอาร์เรย์สำหรับ API ที่ยังส่งรายการทั้งหมด |
+| `server/src/http/pagination.ts` | ตรวจ query `page` และคำนวณหน้าจริงหลังจำกัดขอบเขต |
+| `server/src/forms/catalog.ts` และ list routes | กรอง นับ และอ่านหน้าที่ขอภายใต้ transaction เดียวกัน |
+| `server/src/responses/query.ts` | นับผลลัพธ์หลังกรองคำตอบและ Correction ล่าสุด โดยอ่านเป็นชุดที่จำกัดขนาด |
+| `server/test/http/list-pagination.test.ts` | ตรวจจำนวนจริง การกระโดดหน้า ลำดับที่เวลาเท่ากัน ขอบเขตหน้า และสิทธิ์ผ่าน HTTP |
+| `web/test/ui/list-pagination-pages.test.tsx` | ตรวจชุดปุ่มเลขหน้า การเปลี่ยนหน้า ยอดสรุป และการลบรายการสุดท้าย |
+
+แต่ละ route ถือสถานะหน้าและตัวกรอง แล้วส่ง metadata กับ `onPageChange` ให้ component กลาง กรอบรายการครอบ footer ไว้ด้วยเส้นคั่นและมุมล่างโค้ง ตัวกรอง Audit Trail มี padding 16px บนจอเล็กและ 20px ตั้งแต่ความกว้าง 640px
+
+API รายการ Admin ห้าตัวส่ง `pagination: { page, pageSize, total, totalPages }` ส่วน My responses, ประวัติการส่ง และรายการคำตอบรายแบบฟอร์มยังแบ่งหน้าจากรายการทั้งหมดในเบราว์เซอร์ ดู [สเปก](../.scratch/pagination-layout/spec.md), [แผน API ที่เหลือ](../.scratch/pagination-layout/api-plan.md) และ [ผลตรวจ](../.scratch/pagination-layout/report.md)
+
 ## ตำแหน่งชุดทดสอบและเอกสาร
 
 | สิ่งที่จะตรวจหรือบันทึก | ตำแหน่ง |
