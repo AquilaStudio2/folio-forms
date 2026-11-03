@@ -164,7 +164,7 @@ const AdminResultsRoute = () => {
       />
       <Card>
         <form
-          className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
+          className="grid gap-4 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-3"
           onSubmit={(event) => {
             event.preventDefault();
             applyFilters();
