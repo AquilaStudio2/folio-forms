@@ -96,3 +96,19 @@ export const monthChoices: readonly string[] = [
   "พฤศจิกายน",
   "ธันวาคม",
 ];
+
+const bangkokYearMonth = new Intl.DateTimeFormat("en-US", {
+  calendar: "gregory",
+  month: "numeric",
+  numberingSystem: "latn",
+  timeZone: "Asia/Bangkok",
+  year: "numeric",
+});
+
+export const fiscalYearChoices = (now = new Date()): readonly string[] => {
+  const parts = bangkokYearMonth.formatToParts(now);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const current = year + (month < 10 ? 543 : 544);
+  return Array.from({ length: 12 }, (_, index) => String(current - 10 + index));
+};

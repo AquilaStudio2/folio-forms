@@ -1,4 +1,8 @@
-import { monthChoices, provinceChoices } from "@onlyoffice/results-filters";
+import {
+  fiscalYearChoices,
+  monthChoices,
+  provinceChoices,
+} from "@onlyoffice/results-filters";
 // oxlint-disable no-nested-ternary -- Keeps the three explicit loading, empty, and populated table states local to the route.
 import { Link, createFileRoute, useSearch } from "@tanstack/react-router";
 import { Search } from "lucide-react";
@@ -42,6 +46,7 @@ const AdminResultsRoute = () => {
   const [userFilter, setUserFilter] = useState("");
   const [provinceFilter, setProvinceFilter] = useState("");
   const [monthFilter, setMonthFilter] = useState("");
+  const [fiscalYearFilter, setFiscalYearFilter] = useState("");
   const [stateFilter, setStateFilter] = useState<AdminResultState | "all">(
     "all"
   );
@@ -50,6 +55,7 @@ const AdminResultsRoute = () => {
   const [toFilter, setToFilter] = useState("");
   const [draftFilters, setDraftFilters] = useState({
     correction: "",
+    fiscal_year: "",
     form: initialForm,
     from: "",
     month: "",
@@ -73,6 +79,7 @@ const AdminResultsRoute = () => {
         ...(userFilter.trim() ? { user: userFilter.trim() } : {}),
         ...(provinceFilter ? { province: provinceFilter } : {}),
         ...(monthFilter ? { month: monthFilter } : {}),
+        ...(fiscalYearFilter ? { fiscal_year: fiscalYearFilter } : {}),
         ...(stateFilter === "all" ? {} : { state: stateFilter }),
         ...(correctionFilter.trim()
           ? { correction: correctionFilter.trim() }
@@ -108,6 +115,7 @@ const AdminResultsRoute = () => {
   }, [
     correctionFilter,
     currentCursor,
+    fiscalYearFilter,
     formFilter,
     fromFilter,
     monthFilter,
@@ -123,6 +131,7 @@ const AdminResultsRoute = () => {
     setUserFilter(draftFilters.user);
     setProvinceFilter(draftFilters.province);
     setMonthFilter(draftFilters.month);
+    setFiscalYearFilter(draftFilters.fiscal_year);
     setStateFilter(draftFilters.state);
     setCorrectionFilter(draftFilters.correction);
     setFromFilter(draftFilters.from);
@@ -155,7 +164,7 @@ const AdminResultsRoute = () => {
       />
       <Card>
         <form
-          className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
+          className="grid gap-4 md:grid-cols-2 xl:grid-cols-3"
           onSubmit={(event) => {
             event.preventDefault();
             applyFilters();
@@ -222,46 +231,6 @@ const AdminResultsRoute = () => {
             />
           </label>
           <label className="grid gap-1 text-sm font-semibold text-[var(--ink-soft)]">
-            จังหวัด
-            <select
-              className={selectClass}
-              onChange={(event) =>
-                setDraftFilters((filters) => ({
-                  ...filters,
-                  province: event.target.value,
-                }))
-              }
-              value={draftFilters.province}
-            >
-              <option value="">ทั้งหมด</option>
-              {provinceChoices.map((province) => (
-                <option key={province} value={province}>
-                  {province}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-1 text-sm font-semibold text-[var(--ink-soft)]">
-            เดือน
-            <select
-              className={selectClass}
-              onChange={(event) =>
-                setDraftFilters((filters) => ({
-                  ...filters,
-                  month: event.target.value,
-                }))
-              }
-              value={draftFilters.month}
-            >
-              <option value="">ทั้งหมด</option>
-              {monthChoices.map((month) => (
-                <option key={month} value={month}>
-                  {month}
-                </option>
-              ))}
-            </select>
-          </label>
-          <label className="grid gap-1 text-sm font-semibold text-[var(--ink-soft)]">
             ตั้งแต่
             <Input
               aria-label="ตั้งแต่"
@@ -289,7 +258,69 @@ const AdminResultsRoute = () => {
               value={draftFilters.to}
             />
           </label>
-          <div className="flex items-end gap-2 md:col-span-2 xl:col-span-4">
+          <div className="grid gap-4 md:col-span-2 md:grid-cols-3 xl:col-span-3">
+            <label className="grid gap-1 text-sm font-semibold text-[var(--ink-soft)]">
+              จังหวัด
+              <select
+                className={selectClass}
+                onChange={(event) =>
+                  setDraftFilters((filters) => ({
+                    ...filters,
+                    province: event.target.value,
+                  }))
+                }
+                value={draftFilters.province}
+              >
+                <option value="">ทั้งหมด</option>
+                {provinceChoices.map((province) => (
+                  <option key={province} value={province}>
+                    {province}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-semibold text-[var(--ink-soft)]">
+              เดือน
+              <select
+                className={selectClass}
+                onChange={(event) =>
+                  setDraftFilters((filters) => ({
+                    ...filters,
+                    month: event.target.value,
+                  }))
+                }
+                value={draftFilters.month}
+              >
+                <option value="">ทั้งหมด</option>
+                {monthChoices.map((month) => (
+                  <option key={month} value={month}>
+                    {month}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-semibold text-[var(--ink-soft)]">
+              ปีงบประมาณ
+              <select
+                className={selectClass}
+                onChange={(event) =>
+                  setDraftFilters((filters) => ({
+                    ...filters,
+                    fiscal_year: event.target.value,
+                  }))
+                }
+                value={draftFilters.fiscal_year}
+              >
+                <option value="">ทั้งหมด</option>
+                {fiscalYearChoices().map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex items-end gap-2 md:col-span-2 xl:col-span-3">
             <Button type="submit">
               <Search size={16} />
               ค้นหา

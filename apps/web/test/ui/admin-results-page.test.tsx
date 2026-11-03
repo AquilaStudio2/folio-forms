@@ -225,6 +225,7 @@ describe("Province results search", () => {
     expect(screen.queryByText("ไม่พบผลลัพธ์ตามตัวกรอง")).not.toBeInTheDocument();
     expect(screen.getByRole("combobox", { name: "จังหวัด" })).toBeEnabled();
     expect(screen.getByRole("combobox", { name: "เดือน" })).toBeEnabled();
+    expect(screen.getByRole("combobox", { name: "ปีงบประมาณ" })).toBeEnabled();
     pending.resolve(Response.json({ nextCursor: null, results: [] }));
     expect(await screen.findByText("ไม่พบผลลัพธ์ตามตัวกรอง")).toBeVisible();
     expect(screen.queryByLabelText("กำลังโหลดผลลัพธ์")).not.toBeInTheDocument();
@@ -245,6 +246,7 @@ describe("Province results search", () => {
       expect(screen.queryByText("พบ 0 รายการในหน้านี้")).not.toBeInTheDocument();
       expect(screen.getByRole("combobox", { name: "จังหวัด" })).toBeEnabled();
       expect(screen.getByRole("combobox", { name: "เดือน" })).toBeEnabled();
+      expect(screen.getByRole("combobox", { name: "ปีงบประมาณ" })).toBeEnabled();
       expect(
         screen.getByRole("button", { exact: true, name: "ถัดไป" })
       ).toBeDisabled();
@@ -449,5 +451,263 @@ describe("Month results search", () => {
     ).toBeVisible();
     expectQuery({ month: "ตุลาคม", province: "เชียงใหม่" });
     expect(month).toHaveValue("พฤศจิกายน");
+  });
+});
+
+describe("Fiscal year results search", () => {
+  it.each(["admin", "viewer"] satisfies Role[])(
+    "offers a single labelled Buddhist Era year to a %s and applies it by keyboard Search after an empty result",
+    async (role) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date("2026-11-03T00:00:00.000Z"));
+      sessionRole = role;
+      listResponse = () => Response.json({ nextCursor: null, results: [] });
+      const user = userEvent.setup();
+      await mount();
+      expect(screen.getByText("ไม่พบผลลัพธ์ตามตัวกรอง")).toBeVisible();
+      const year = screen.getByRole("combobox", { name: "ปีงบประมาณ" });
+      expect(year).toHaveValue("");
+      expect(year).not.toHaveAttribute("multiple");
+      expect(
+        within(year)
+          .getAllByRole("option")
+          .map((option) => option.textContent)
+      ).toEqual([
+        "ทั้งหมด",
+        "2560",
+        "2561",
+        "2562",
+        "2563",
+        "2564",
+        "2565",
+        "2566",
+        "2567",
+        "2568",
+        "2569",
+        "2570",
+        "2571",
+      ]);
+      expectQuery({});
+      const initialRequests = resultRequests().length;
+      await user.selectOptions(year, "2570");
+      expect(resultRequests()).toHaveLength(initialRequests);
+      screen.getByRole("button", { exact: true, name: "ค้นหา" }).focus();
+      await user.keyboard("{Enter}");
+      await waitFor(() => expectQuery({ fiscal_year: "2570" }));
+      expect(await screen.findByText("ไม่พบผลลัพธ์ตามตัวกรอง")).toBeVisible();
+      expect(within(year).getAllByRole("option")).toHaveLength(13);
+    }
+  );
+  it.each([
+    {
+      expected: [
+        "2559",
+        "2560",
+        "2561",
+        "2562",
+        "2563",
+        "2564",
+        "2565",
+        "2566",
+        "2567",
+        "2568",
+        "2569",
+        "2570",
+      ],
+      now: "2026-09-30T16:59:59.999Z",
+    },
+    {
+      expected: [
+        "2560",
+        "2561",
+        "2562",
+        "2563",
+        "2564",
+        "2565",
+        "2566",
+        "2567",
+        "2568",
+        "2569",
+        "2570",
+        "2571",
+      ],
+      now: "2026-09-30T17:00:00.000Z",
+    },
+    {
+      expected: [
+        "2560",
+        "2561",
+        "2562",
+        "2563",
+        "2564",
+        "2565",
+        "2566",
+        "2567",
+        "2568",
+        "2569",
+        "2570",
+        "2571",
+      ],
+      now: "2026-12-31T17:00:00.000Z",
+    },
+  ])(
+    "presents the twelve central years at $now using the Bangkok fiscal-year boundary",
+    async ({ now, expected }) => {
+      vi.useFakeTimers({ toFake: ["Date"] });
+      vi.setSystemTime(new Date(now));
+      listResponse = () => Response.json({ nextCursor: null, results: [] });
+      await mount();
+      const year = screen.getByRole("combobox", { name: "ปีงบประมาณ" });
+      expect(
+        within(year)
+          .getAllByRole("option")
+          .map((option) => option.textContent)
+      ).toEqual(["ทั้งหมด", ...expected]);
+    }
+  );
+
+  it("preserves every applied criterion on navigation and Reload, applies pending values at page one, and clears each new filter independently", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-03T00:00:00.000Z"));
+    const user = userEvent.setup();
+    listResponse = () =>
+      Response.json({ nextCursor: "year-next-page", results: [result()] });
+    await mount();
+    await user.type(
+      screen.getByRole("textbox", { name: "Form Public ID" }),
+      "0123456789abcdef0123456789abcdef"
+    );
+    await user.type(
+      screen.getByRole("textbox", { name: "อีเมลผู้ใช้" }),
+      "owner@example.test"
+    );
+    await user.selectOptions(
+      screen.getByRole("combobox", { name: "สถานะ" }),
+      "submitted"
+    );
+    fireEvent.change(
+      screen.getByRole("spinbutton", { name: "Correction ล่าสุด" }),
+      { target: { value: "2" } }
+    );
+    fireEvent.change(screen.getByLabelText("ตั้งแต่"), {
+      target: { value: "2026-11-01" },
+    });
+    fireEvent.change(screen.getByLabelText("ถึง"), {
+      target: { value: "2026-11-30" },
+    });
+    const province = screen.getByRole("combobox", { name: "จังหวัด" });
+    const month = screen.getByRole("combobox", { name: "เดือน" });
+    const year = screen.getByRole("combobox", { name: "ปีงบประมาณ" });
+    await user.selectOptions(province, "เชียงใหม่");
+    await user.selectOptions(month, "ตุลาคม");
+    await user.selectOptions(year, "2570");
+    expectQuery({});
+    const search = screen.getByRole("button", { exact: true, name: "ค้นหา" });
+    const next = screen.getByRole("button", { exact: true, name: "ถัดไป" });
+    const previous = screen.getByRole("button", {
+      exact: true,
+      name: "ก่อนหน้า",
+    });
+    await user.click(search);
+    const applied = {
+      correction: "2",
+      fiscal_year: "2570",
+      form: "0123456789abcdef0123456789abcdef",
+      from: "2026-11-01",
+      month: "ตุลาคม",
+      province: "เชียงใหม่",
+      state: "submitted",
+      to: "2026-11-30T23:59:59.999Z",
+      user: "owner@example.test",
+    };
+    await waitFor(() => expectQuery(applied));
+    await user.selectOptions(year, "2569");
+    await user.selectOptions(month, "กันยายน");
+    await user.selectOptions(province, "เชียงราย");
+    await user.click(
+      screen.getByRole("button", { exact: true, name: "โหลดใหม่" })
+    );
+    await waitFor(() => expectQuery(applied));
+    await user.click(next);
+    await waitFor(() => expectQuery({ ...applied, cursor: "year-next-page" }));
+    await user.click(previous);
+    await waitFor(() => expectQuery(applied));
+    await user.click(next);
+    await waitFor(() => expectQuery({ ...applied, cursor: "year-next-page" }));
+    await user.click(search);
+    const changed = {
+      ...applied,
+      fiscal_year: "2569",
+      month: "กันยายน",
+      province: "เชียงราย",
+    };
+    await waitFor(() => expectQuery(changed));
+    expect(previous).toBeDisabled();
+    await user.click(next);
+    await user.selectOptions(year, "");
+    await user.click(search);
+    const { fiscal_year: _year, ...withoutYear } = changed;
+    await waitFor(() => expectQuery(withoutYear));
+    expect(previous).toBeDisabled();
+    await user.selectOptions(year, "2570");
+    await user.click(search);
+    await user.click(next);
+    await user.selectOptions(month, "");
+    await user.click(search);
+    const { month: _month, ...withoutMonth } = {
+      ...changed,
+      fiscal_year: "2570",
+    };
+    await waitFor(() => expectQuery(withoutMonth));
+    expect(previous).toBeDisabled();
+    await user.selectOptions(month, "พฤศจิกายน");
+    await user.click(search);
+    await user.click(next);
+    await user.selectOptions(province, "");
+    await user.click(search);
+    const { province: _province, ...withoutProvince } = {
+      ...withoutMonth,
+      month: "พฤศจิกายน",
+    };
+    await waitFor(() => expectQuery(withoutProvince));
+    expect(previous).toBeDisabled();
+  });
+
+  it("retries the applied three-filter search after an error while preserving pending Fiscal year edits and central choices", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date("2026-11-03T00:00:00.000Z"));
+    const user = userEvent.setup();
+    await mount();
+    const province = screen.getByRole("combobox", { name: "จังหวัด" });
+    const month = screen.getByRole("combobox", { name: "เดือน" });
+    const year = screen.getByRole("combobox", { name: "ปีงบประมาณ" });
+    await user.selectOptions(province, "เชียงใหม่");
+    await user.selectOptions(month, "ตุลาคม");
+    await user.selectOptions(year, "2570");
+    listResponse = () =>
+      Response.json({ error: "internal_error" }, { status: 500 });
+    await user.click(screen.getByRole("button", { exact: true, name: "ค้นหา" }));
+    expect(
+      await screen.findByText("ไม่สามารถโหลดผลลัพธ์ได้ กรุณาลองใหม่อีกครั้ง")
+    ).toBeVisible();
+    expect(screen.queryByText("ไม่พบผลลัพธ์ตามตัวกรอง")).not.toBeInTheDocument();
+    expect(within(year).getAllByRole("option")).toHaveLength(13);
+    expect(
+      screen.getByRole("button", { exact: true, name: "ถัดไป" })
+    ).toBeDisabled();
+    await user.selectOptions(year, "2569");
+    listResponse = () =>
+      Response.json({ nextCursor: null, results: [result()] });
+    await user.click(
+      screen.getByRole("button", { exact: true, name: "ลองใหม่" })
+    );
+    expect(
+      await screen.findByText("Synthetic provincial report")
+    ).toBeVisible();
+    expectQuery({ fiscal_year: "2570", month: "ตุลาคม", province: "เชียงใหม่" });
+    expect(year).toHaveValue("2569");
+    expect(
+      screen.queryByText("ไม่สามารถโหลดผลลัพธ์ได้ กรุณาลองใหม่อีกครั้ง")
+    ).not.toBeInTheDocument();
   });
 });
