@@ -58,7 +58,7 @@ test.each(["docx", "xlsx"] satisfies DocumentKind[])(
     await savedResult(form, { month: "กันยายน" });
     const page = await results({ form: form.publicId, month: "ตุลาคม" });
     expect(page.results.map(({ id }) => id)).toEqual([matching.id]);
-    expect(page.nextCursor).toBeNull();
+    expect(page.pagination.totalPages).toBe(1);
   }
 );
 
@@ -465,30 +465,18 @@ test("sparse Month, Province and latest-Correction intersections fill complete p
     ],
   ] satisfies [Record<string, string>, string[]][]) {
     const seen = [];
-    let cursor: string | undefined;
     for (let offset = 0; offset < expected.length; offset += 25) {
-      const page = await results({ ...query, ...(cursor ? { cursor } : {}) });
+      const page = await results({ ...query, page: String(offset / 25 + 1) });
       expect(page.results.map(({ id }) => id)).toEqual(
         expected.slice(offset, offset + 25)
       );
       seen.push(...page.results.map(({ id }) => id));
-      if (offset + 25 < expected.length) {
-        expect(page.nextCursor).not.toBeNull();
-        if (!page.nextCursor) {
-          throw new Error(
-            "A complete matching page must retain its continuation"
-          );
-        }
-        const last = page.results.at(-1);
-        expect(
-          JSON.parse(
-            Buffer.from(page.nextCursor, "base64url").toString("utf-8")
-          )
-        ).toMatchObject({ id: last?.id });
-        cursor = page.nextCursor;
-      } else {
-        expect(page.nextCursor).toBeNull();
-      }
+      expect(page.pagination).toEqual({
+        page: offset / 25 + 1,
+        pageSize: 25,
+        total: expected.length,
+        totalPages: Math.max(1, Math.ceil(expected.length / 25)),
+      });
     }
     expect(new Set(seen).size).toBe(expected.length);
   }

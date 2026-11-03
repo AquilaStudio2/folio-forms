@@ -695,7 +695,7 @@ export const runImmutableAudits = async (
       safeMetadata: Record<string, unknown>;
       targetId: string | null;
     }[];
-    nextCursor?: string | null;
+    pagination: { page: number; total: number; totalPages: number };
   };
   expect(filteredAuditBody.events).toHaveLength(1);
   expect(filteredAuditBody.events?.[0]).toMatchObject({
@@ -717,7 +717,7 @@ export const runImmutableAudits = async (
       id: string;
       safeMetadata: Record<string, unknown>;
     }[];
-    nextCursor?: string | null;
+    pagination: { page: number; total: number; totalPages: number };
   };
   if (!auditPageBody.events || auditPageBody.events.length === 0) {
     throw new Error("The audit API returned no events");
@@ -733,12 +733,11 @@ export const runImmutableAudits = async (
         new Date(current.createdAt).getTime()
     ).toBe(true);
   }
-  if (auditPageBody.nextCursor) {
+  if (auditPageBody.pagination.totalPages > 1) {
     const nextAuditPageResponse = await app.handle(
-      new Request(
-        `http://test.local/api/admin/audit-events?cursor=${encodeURIComponent(auditPageBody.nextCursor)}`,
-        { headers: { Authorization: `Bearer ${erasureAdminBearer}` } }
-      )
+      new Request("http://test.local/api/admin/audit-events?page=2", {
+        headers: { Authorization: `Bearer ${erasureAdminBearer}` },
+      })
     );
     expect(nextAuditPageResponse.status).toBe(200);
     const nextAuditPageBody = (await nextAuditPageResponse.json()) as {

@@ -12,9 +12,9 @@ import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { AdminFormsPage } from "@/features/admin-forms/admin-forms-page";
-import { catalogPageNumbers } from "@/features/admin-forms/catalog";
 import { API_ORIGIN, SESSION_KEY } from "@/lib/api";
 import type { FormSummary } from "@/lib/api";
+import { pageNumbers } from "@/lib/pagination";
 
 const form = (
   id: number,
@@ -1167,7 +1167,7 @@ describe("catalog page ranges", () => {
   ])(
     "keeps a compact window around $page of $total",
     ({ page, total, expected }) => {
-      expect(catalogPageNumbers(page, total)).toEqual(expected);
+      expect(pageNumbers(page, total)).toEqual(expected);
     }
   );
 });

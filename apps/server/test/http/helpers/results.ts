@@ -10,7 +10,12 @@ const resultValueSchema = z
   .union([z.string(), z.number(), z.boolean()])
   .nullable();
 const resultListSchema = z.object({
-  nextCursor: z.string().nullable(),
+  pagination: z.object({
+    page: z.number().int().positive(),
+    pageSize: z.literal(25),
+    total: z.number().int().nonnegative(),
+    totalPages: z.number().int().positive(),
+  }),
   results: z.array(
     z.object({
       fiscalYear: resultValueSchema,

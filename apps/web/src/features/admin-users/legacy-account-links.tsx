@@ -1,15 +1,16 @@
-import { ChevronRight, ShieldCheck, X } from "lucide-react";
+import { ShieldCheck, X } from "lucide-react";
 import type { RefObject } from "react";
 
+import { ListPagination } from "@/components/list-pagination";
 import { Badge, Button, Card, Notice, Spinner } from "@/components/ui";
 import { formatDate } from "@/lib/api";
 import type { AdminLegacyAccountLinkRequest } from "@/lib/api";
+import type { PaginationInfo } from "@/lib/pagination";
 
 import { roleBadgeLabels, roleBadgeTones } from "./model";
 
 export const LegacyAccountLinks = ({
   requests,
-  nextCursor,
   loading,
   error,
   feedback,
@@ -17,10 +18,10 @@ export const LegacyAccountLinks = ({
   headingRef,
   reload,
   review,
-  loadMore,
+  pagination,
+  onPageChange,
 }: {
   requests: AdminLegacyAccountLinkRequest[];
-  nextCursor: string | null;
   loading: boolean;
   error: string | null;
   feedback: string | null;
@@ -31,7 +32,8 @@ export const LegacyAccountLinks = ({
     request: AdminLegacyAccountLinkRequest,
     decision: "approve" | "reject"
   ) => Promise<void>;
-  loadMore: () => Promise<void>;
+  pagination: PaginationInfo;
+  onPageChange: (page: number) => void;
 }) => (
   <Card className="mt-6 overflow-hidden" aria-busy={loading}>
     <div className="border-b border-[var(--line)] px-5 py-4 sm:px-6">
@@ -187,19 +189,12 @@ export const LegacyAccountLinks = ({
         })}
       </ul>
     ) : null}
-    {nextCursor ? (
-      <div className="flex justify-center border-t border-[var(--line)] p-4">
-        <Button
-          type="button"
-          variant="secondary"
-          size="sm"
-          onClick={loadMore}
-          disabled={loading || pendingAction !== null}
-        >
-          {loading ? <Spinner /> : <ChevronRight size={15} />}
-          โหลดคำขอเพิ่มเติม
-        </Button>
-      </div>
-    ) : null}
+    <ListPagination
+      className="border-t border-[var(--line)] px-5 py-4 sm:px-6"
+      label="แบ่งหน้าคำขอเชื่อมบัญชี"
+      pagination={pagination}
+      disabled={loading || pendingAction !== null || Boolean(error)}
+      onPageChange={onPageChange}
+    />
   </Card>
 );

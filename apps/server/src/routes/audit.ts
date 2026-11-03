@@ -5,16 +5,14 @@ import type { Elysia } from "elysia";
 
 import { safeAuditMetadata } from "../audit/events";
 import {
-  auditEventCursor,
   auditFilterValue,
   auditOutcomeValue,
   auditEventPageSize,
-  auditEventCursorValue,
 } from "../audit/query";
-import type { AuditEventCursor } from "../audit/query";
 import { requireIdentity, requireAdmin } from "../auth/identity";
 import { fail } from "../http/errors";
 import { queryString, idPattern } from "../http/input";
+import { paginationInfo, paginationPage } from "../http/pagination";
 import type { JsonRecord } from "../model-types";
 import { adminResultDate } from "../responses/query";
 import type { RouteDependencies } from "./dependencies";
@@ -27,7 +25,7 @@ export function registerAuditRoutes(
     const identity = await requireIdentity(request);
     requireAdmin(identity);
     const queryRecord = query as unknown as JsonRecord;
-    const cursor = auditEventCursor(queryString(queryRecord, "cursor"));
+    const requestedPage = paginationPage(new URL(request.url).searchParams);
     const actorId = auditFilterValue(
       queryString(queryRecord, "actor"),
       "actor",
@@ -58,14 +56,6 @@ export function registerAuditRoutes(
       fail(400, "invalid_request", "actor is invalid");
     }
     const and: Prisma.AuditEventWhereInput[] = [];
-    if (cursor) {
-      and.push({
-        OR: [
-          { createdAt: { lt: cursor.createdAt } },
-          { createdAt: cursor.createdAt, id: { lt: cursor.id } },
-        ],
-      });
-    }
     if (actorId) {
       and.push({ actorId });
     }
@@ -89,37 +79,47 @@ export function registerAuditRoutes(
         },
       });
     }
-    const events = await prisma.auditEvent.findMany({
-      orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-      select: {
-        action: true,
-        actorId: true,
-        createdAt: true,
-        id: true,
-        outcome: true,
-        safeMetadata: true,
-        targetId: true,
-        targetType: true,
+    return prisma.$transaction(
+      async (tx) => {
+        const where: Prisma.AuditEventWhereInput =
+          and.length > 0 ? { AND: and } : {};
+        const total = await tx.auditEvent.count({ where });
+        const pagination = paginationInfo({
+          page: requestedPage,
+          pageSize: auditEventPageSize,
+          total,
+        });
+        const events = await tx.auditEvent.findMany({
+          orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+          select: {
+            action: true,
+            actorId: true,
+            createdAt: true,
+            id: true,
+            outcome: true,
+            safeMetadata: true,
+            targetId: true,
+            targetType: true,
+          },
+          skip: (pagination.page - 1) * pagination.pageSize,
+          take: pagination.pageSize,
+          where,
+        });
+        return {
+          events: events.map((event) => ({
+            action: event.action,
+            actorId: event.actorId,
+            createdAt: event.createdAt,
+            id: event.id,
+            outcome: event.outcome,
+            safeMetadata: safeAuditMetadata(event.safeMetadata),
+            targetId: event.targetId,
+            targetType: event.targetType,
+          })),
+          pagination,
+        };
       },
-      take: auditEventPageSize + 1,
-      where: and.length > 0 ? { AND: and } : {},
-    });
-    const page = events.slice(0, auditEventPageSize);
-    return {
-      events: page.map((event) => ({
-        action: event.action,
-        actorId: event.actorId,
-        createdAt: event.createdAt,
-        id: event.id,
-        outcome: event.outcome,
-        safeMetadata: safeAuditMetadata(event.safeMetadata),
-        targetId: event.targetId,
-        targetType: event.targetType,
-      })),
-      nextCursor:
-        events.length > auditEventPageSize
-          ? auditEventCursorValue(page.at(-1) as AuditEventCursor)
-          : null,
-    };
+      { isolationLevel: "RepeatableRead" }
+    );
   });
 }

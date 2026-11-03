@@ -412,11 +412,11 @@ X-Editor-Capability: <signed-action-or-operation-capability>
 
 | Method | Path | Purpose |
 | --- | --- | --- |
-| `GET` | `/api/admin/users` | Cursor-page and filter accounts by normalized email, role, and enabled state |
+| `GET` | `/api/admin/users` | List accounts by page and filter by normalized email, role, and enabled state |
 | `POST` | `/api/admin/users` | Provision an account and disclose its temporary password once |
 | `PATCH` | `/api/admin/users/:id` | Enable/disable or change one email/role value and revoke affected Sessions |
 | `POST` | `/api/admin/users/:id/password-reset` | Rotate the credential, revoke Sessions, and disclose a temporary password once |
-| `GET` | `/api/admin/account-links` | Cursor-page pending account links with current evidence and review-generation snapshots |
+| `GET` | `/api/admin/account-links` | List pending account links by page with current evidence and review-generation snapshots |
 | `POST` | `/api/admin/account-links/:id/approve` | Approve the displayed pending review revision; fresh SSO must complete the binding |
 | `POST` | `/api/admin/account-links/:id/reject` | Reject the displayed pending review revision |
 
@@ -445,6 +445,26 @@ The Form catalog defaults to page 1 with no search or status filter. `search` ma
 
 The Admin catalog applies search after typing stops for 2 seconds. Inline feedback distinguishes waiting for typing to stop, an active request with a spinner, and the total matched Forms or no matches. A polite, atomic status region announces completion and the current page without moving focus away from search; request errors also preserve focus while typing. The right-hand Lucide search icon becomes a clear button after a search is applied; clearing restores page 1 and preserves the selected status. Changing search/status resets the page, while paging and refresh preserve both. Deleting the last Form on the last page moves to the previous available page. The catalog uses shadcn/ui controls and preserves the existing application colors.
 
+### List pagination
+
+The following Admin record-list APIs accept `page`, defaulting to 1, and return the same numbered pagination metadata:
+
+| Endpoint | Records per page | Array key | Order |
+| --- | --- | --- | --- |
+| `/api/admin/forms` | 10 | `forms` | `updatedAt DESC, id DESC` |
+| `/api/admin/results` | 25 | `results` | `updatedAt DESC, id DESC` |
+| `/api/admin/audit-events` | 50 | `events` | `createdAt DESC, id DESC` |
+| `/api/admin/users` | 20 | `users` | `id ASC` |
+| `/api/admin/account-links` | 10 | `requests` | `id ASC` |
+
+Each response contains its array and `pagination: { page, pageSize, total, totalPages }`. `total` counts every record matching the active filters before selecting the page. Results apply Province, Month, Fiscal year, and latest-Correction criteria before both counting and paging. Counts and page reads use a consistent database transaction.
+
+`page` must be one positive decimal integer no greater than `2147483647`. Invalid, repeated, zero, negative, or fractional page parameters return HTTP 400. Empty lists report page 1, total 0, and totalPages 1. Requests beyond the final page return that final page and its metadata.
+
+Results, audit events, accounts, and account-link requests replace their former cursor response with this contract. These record-list endpoints reject `cursor` with HTTP 400 and no longer return `nextCursor`. Deploy the API and web changes together. Editor schema search uses its separate cursor contract documented in the Admin form table.
+
+My responses, native Submission history, and the per-Form admin Submissions list display 10 records per page in the browser. Their APIs still return complete lists. My responses statistics count the complete dataset, and history exports include all owned Submissions regardless of the visible page. The [remaining API plan](.scratch/pagination-layout/api-plan.md) covers server pagination for these three lists and both Correction history APIs.
+
 ### Submission artifacts
 
 | Method | Path | Purpose |
@@ -472,7 +492,7 @@ The Admin catalog applies search after typing stops for 2 seconds. Inline feedba
 | `/legacy-sso/confirm` | Authenticated User or Admin | Confirm or cancel a Legacy SSO account switch |
 | `/dashboard` | User | View and resume responses |
 | `/admin` | Admin | View lifecycle state and Draft/Submission counts; remove eligible Draft forms |
-| `/admin/audit` | Admin | Read-only cursor-filtered immutable audit events |
+| `/admin/audit` | Admin | Filter and page through immutable audit events |
 | `/admin/forms/new` | Admin | Create from the starter or upload a validated DOCX |
 | `/admin/forms/:formId` | Admin | Edit under an exclusive lease, save, publish, and share a template |
 | `/admin/forms/:formId/submissions` | Admin | Review form submissions |
@@ -481,6 +501,10 @@ The Admin catalog applies search after typing stops for 2 seconds. Inline feedba
 | `/admin/results/:responseId` | Admin, Viewer | Read saved Drafts and Submission revisions; download available DOCX/XLSX/PDF exports; only Admin can open Correction or delete |
 | `/forms/:publicId/fill` | Authenticated | Fill, save, or submit a shared form |
 | `/receipt/:submissionId` | Authorized | Select original or any Correction; view fields and download matching DOCX/PDF |
+
+The eight record-list sections share `ListPagination`: Forms, Results, Audit Trail, accounts, pending account links, per-Form Submissions, My responses, and native Submission history. Details align left and the numbered controls align right. Controls include first, previous, page numbers, next, and last. Below 640px, details appear above right-aligned controls, and a current-page indicator replaces the page-number buttons. Empty and single-page lists retain disabled navigation.
+
+List cards contain their pagination footer with a top divider and rounded lower corners, including `/admin` and `/dashboard`. Audit Trail filters have 16px padding below 640px and 20px padding at larger widths. See the [pagination specification](.scratch/pagination-layout/spec.md) and [verification report](.scratch/pagination-layout/report.md).
 
 ONLYOFFICE is a desktop-oriented editor. The dashboard and administrative shell are responsive; the fill/editor screen displays a desktop recommendation.
 
@@ -602,6 +626,8 @@ bun test --timeout 120000 ./apps/web/test/form-lifecycle.test.ts ./apps/onlyoffi
 Spreadsheet runtime tests require Docker and the locally available `onlyoffice/documentserver:9.4.0.1` image. The separate HTTP engine test is enabled with `RUN_SPREADSHEET_HTTP=1 bun test --timeout 120000 ./apps/server/test/spreadsheet-runtime/http.test.ts`; provide the local server/ONLYOFFICE environment required by its harness. The runtime script alone skips this HTTP test. Spreadsheet HTTP authoring tests, including column persistence and recovery-fence races, use the isolated database/bucket described above.
 
 Run the catalog tests independently with `bun run --cwd apps/server test:catalog` against an isolated migrated PostgreSQL database, and `bun run --cwd apps/web test:ui` for the interactive UI suite. UI tests mock HTTP and use controlled timers for the 2-second debounce, including stale responses, search cancellation, status/page transitions, deletion, and accessible keyboard controls. Catalog HTTP tests exercise real database search/pagination and authentication; they do not require a running document editor or object-storage service. Provide the required server environment variables, including test secrets and placeholder storage settings. The backend suite uses unique fixture IDs and accounts for retained immutable history so it can be rerun on the same disposable database.
+
+The HTTP script includes `test/http/list-pagination.test.ts` for exact totals, direct page navigation, timestamp ties, invalid page queries, empty results, clamping, and access checks. Run that suite independently with `bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/list-pagination.test.ts` after setting `DATABASE_URL` to a migrated isolated database. The [browser verification script](.scratch/pagination-layout/verify-ui.mjs) checks numbered controls, shared card footers, Audit Trail filter padding, and complete history exports at desktop and mobile widths; setup instructions are in the [verification report](.scratch/pagination-layout/report.md).
 
 Provide the same isolated database and storage environment to both commands. Use a fresh disposable database for each full run; the scenarios retain records, including paginated account-link fixtures and immutable audit history. Set `DOCUMENT_WORKER_URL` to a running isolated document worker to exercise the Python-worker scenario.
 

@@ -363,14 +363,14 @@ export const runManagedAccounts = async (
   });
   expect(managedAccount?.password).not.toBe(managedTemporaryPassword);
 
-  const cursorSeed = Array.from({ length: 21 }, (_, index) => ({
+  const paginationSeed = Array.from({ length: 21 }, (_, index) => ({
     email: `ticket-07-page-${crypto.randomUUID()}-${index}@example.com`,
     emailVerified: true,
     id: crypto.randomUUID(),
     name: `Ticket 07 Page ${index}`,
     role: "user" as const,
   }));
-  await prisma.user.createMany({ data: cursorSeed });
+  await prisma.user.createMany({ data: paginationSeed });
   const firstPageResponse = await accountRequest(
     app,
     "GET",
@@ -379,12 +379,13 @@ export const runManagedAccounts = async (
   );
   expect(firstPageResponse.status).toBe(200);
   const firstPageBody = (await firstPageResponse.json()) as {
-    nextCursor?: unknown;
+    pagination?: { page: number; totalPages: number };
     users?: Record<string, unknown>[];
   };
   if (
     !Array.isArray(firstPageBody.users) ||
-    typeof firstPageBody.nextCursor !== "string"
+    !firstPageBody.pagination ||
+    firstPageBody.pagination.totalPages < 2
   ) {
     throw new TypeError("The first account page was malformed");
   }
@@ -395,7 +396,7 @@ export const runManagedAccounts = async (
   const secondPageResponse = await accountRequest(
     app,
     "GET",
-    `/api/admin/users?cursor=${encodeURIComponent(firstPageBody.nextCursor)}`,
+    "/api/admin/users?page=2",
     adminBearer
   );
   expect(secondPageResponse.status).toBe(200);

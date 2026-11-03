@@ -22,7 +22,7 @@ let managedId: string;
 let pendingLinks: AdminLegacyAccountLinkRequest[];
 let patchFailure: string | null;
 let resetFailure: boolean;
-let accountNextCursor: string | null;
+let accountHasNextPage: boolean;
 let resultState: "draft" | "submitted";
 const mappedAccount = () => ({
   createdAt: "2026-10-27T00:00:00.000Z",
@@ -85,7 +85,15 @@ const accountFixtureResponse = (
   }
   if (pathname === "/api/admin/users") {
     return Response.json({
-      nextCursor: url.searchParams.has("cursor") ? null : accountNextCursor,
+      pagination: {
+        page: Math.min(
+          Number(url.searchParams.get("page") ?? 1),
+          accountHasNextPage ? 2 : 1
+        ),
+        pageSize: 20,
+        total: accountHasNextPage ? 40 : 1,
+        totalPages: accountHasNextPage ? 2 : 1,
+      },
       users: [mappedAccount()],
     });
   }
@@ -122,7 +130,7 @@ beforeEach(() => {
   pendingLinks = [];
   patchFailure = null;
   resetFailure = false;
-  accountNextCursor = null;
+  accountHasNextPage = false;
   resultState = "draft";
   localStorage.setItem(SESSION_KEY, "viewer-token");
   fetchMock.mockReset();
@@ -173,7 +181,15 @@ beforeEach(() => {
     }
     if (pathname === "/api/admin/account-links") {
       return Promise.resolve(
-        Response.json({ nextCursor: null, requests: pendingLinks })
+        Response.json({
+          pagination: {
+            page: 1,
+            pageSize: 10,
+            total: pendingLinks.length,
+            totalPages: 1,
+          },
+          requests: pendingLinks,
+        })
       );
     }
     if (pathname === `/api/admin/results/${responseId}`) {
@@ -228,7 +244,12 @@ beforeEach(() => {
       );
     }
     if (pathname === "/api/admin/results") {
-      return Promise.resolve(Response.json({ nextCursor: null, results: [] }));
+      return Promise.resolve(
+        Response.json({
+          pagination: { page: 1, pageSize: 25, total: 0, totalPages: 1 },
+          results: [],
+        })
+      );
     }
     return Promise.resolve(Response.json({ enabled: false }));
   });
@@ -278,12 +299,14 @@ describe("VIEWER existing results access", () => {
 
   it("clears generated VIEWER credentials on pagination, filtering, further actions and page exit", async () => {
     sessionRole = "admin";
-    accountNextCursor = "next-page";
+    accountHasNextPage = true;
     const router = await mount("/admin/users");
     await screen.findByText("Mapped officer");
     await createLocalViewer();
     await userEvent.click(
-      screen.getByRole("button", { exact: true, name: "ถัดไป" })
+      within(
+        screen.getByRole("navigation", { name: "การแบ่งหน้ารายการผู้ใช้" })
+      ).getByRole("button", { exact: true, name: "หน้าถัดไป" })
     );
     expect(screen.queryByText("Temporary-viewer-123")).not.toBeInTheDocument();
     await waitFor(() =>
@@ -569,8 +592,9 @@ describe("VIEWER existing results access", () => {
       screen.getByRole("button", { name: /^อนุมัติการเชื่อมบัญชี/u })
     ).toBeDisabled();
     expect(
-      fetchMock.mock.calls.filter(([input]) =>
-        String(input).endsWith("/api/admin/account-links")
+      fetchMock.mock.calls.filter(
+        ([input]) =>
+          new URL(String(input)).pathname === "/api/admin/account-links"
       ).length
     ).toBeGreaterThan(1);
   });
@@ -669,8 +693,10 @@ describe("VIEWER existing results access", () => {
     );
     await waitFor(() =>
       expect(
-        fetchMock.mock.calls.some(([input]) =>
-          String(input).includes("/api/admin/users?role=viewer")
+        fetchMock.mock.calls.some(
+          ([input]) =>
+            new URL(String(input)).pathname === "/api/admin/users" &&
+            new URL(String(input)).searchParams.get("role") === "viewer"
         )
       ).toBe(true)
     );

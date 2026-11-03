@@ -1,10 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import {
   ArrowUpRight,
-  ChevronsLeft,
-  ChevronsRight,
-  ChevronLeft,
-  ChevronRight,
   FileText,
   Plus,
   RefreshCw,
@@ -16,18 +12,13 @@ import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
 import { DocumentKindBadge } from "@/components/document-kind-badge";
+import { ListPagination } from "@/components/list-pagination";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import {
-  Pagination,
-  PaginationContent,
-  PaginationEllipsis,
-  PaginationItem,
-} from "@/components/ui/pagination";
 import {
   Select,
   SelectContent,
@@ -39,7 +30,6 @@ import { Spinner } from "@/components/ui/spinner";
 import { ApiError, apiDelete, formatDate } from "@/lib/api";
 import type { FormStatus, FormSummary } from "@/lib/api";
 
-import { catalogPageNumbers } from "./catalog";
 import type { FormCatalogQuery } from "./catalog";
 import { SearchStatus } from "./search-status";
 import { useFormCatalog } from "./use-form-catalog";
@@ -268,7 +258,7 @@ export const AdminFormsPage = () => {
     );
   } else if (forms.length === 0) {
     formsContent = (
-      <Card className="grid min-h-56 place-items-center p-8 text-center">
+      <div className="grid min-h-56 place-items-center p-8 text-center">
         <div>
           <FileText className="mx-auto mb-3 text-[var(--ink-soft)]" size={30} />
           <h2 className="font-semibold">
@@ -289,127 +279,121 @@ export const AdminFormsPage = () => {
             <Link to="/admin/forms/new">สร้างแบบฟอร์ม</Link>
           </Button>
         </div>
-      </Card>
+      </div>
     );
   } else {
     formsContent = (
-      <Card className="gap-0 overflow-hidden py-0">
-        <div className="divide-y divide-[var(--line)]">
-          {forms.map((form) => {
-            const status = formStatusDetails[form.status];
-            const isConfirming = confirmingPublicId === form.publicId;
-            const isRemoving = removingPublicId === form.publicId;
-            const isDeletable = canDeleteDraft(form);
-            return (
-              <div
-                key={form.publicId}
-                className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between"
-              >
-                <div className="flex min-w-0 items-start gap-4">
-                  <span className="mt-1 grid size-10 shrink-0 place-items-center rounded-[10px] bg-[var(--accent-soft)]">
-                    <FileText size={18} />
-                  </span>
-                  <div className="min-w-0">
-                    <h2 className="break-words font-semibold">{form.title}</h2>
-                    <p className="mt-1 max-w-xl break-words text-sm text-[var(--ink-soft)]">
-                      {form.description || "ยังไม่มีคำอธิบาย"}
-                    </p>
-                    <p className="mt-2 text-xs text-[var(--ink-soft)]">
-                      แก้ไขล่าสุด {formatDate(form.updatedAt)}
-                    </p>
-                    <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm">
-                      <div>
-                        <dt className="text-[var(--ink-soft)]">
-                          ฉบับร่างที่กำลังแก้ไข
-                        </dt>
-                        <dd className="font-semibold">
-                          {form.activeDraftCount}
-                        </dd>
-                      </div>
-                      <div>
-                        <dt className="text-[var(--ink-soft)]">คำตอบที่ส่งแล้ว</dt>
-                        <dd className="font-semibold">
-                          {form.submissionCount}
-                        </dd>
-                      </div>
-                    </dl>
-                  </div>
+      <div className="divide-y divide-[var(--line)]">
+        {forms.map((form) => {
+          const status = formStatusDetails[form.status];
+          const isConfirming = confirmingPublicId === form.publicId;
+          const isRemoving = removingPublicId === form.publicId;
+          const isDeletable = canDeleteDraft(form);
+          return (
+            <div
+              key={form.publicId}
+              className="flex flex-col gap-4 p-5 sm:flex-row sm:items-start sm:justify-between"
+            >
+              <div className="flex min-w-0 items-start gap-4">
+                <span className="mt-1 grid size-10 shrink-0 place-items-center rounded-[10px] bg-[var(--accent-soft)]">
+                  <FileText size={18} />
+                </span>
+                <div className="min-w-0">
+                  <h2 className="break-words font-semibold">{form.title}</h2>
+                  <p className="mt-1 max-w-xl break-words text-sm text-[var(--ink-soft)]">
+                    {form.description || "ยังไม่มีคำอธิบาย"}
+                  </p>
+                  <p className="mt-2 text-xs text-[var(--ink-soft)]">
+                    แก้ไขล่าสุด {formatDate(form.updatedAt)}
+                  </p>
+                  <dl className="mt-3 flex flex-wrap gap-x-5 gap-y-2 text-sm">
+                    <div>
+                      <dt className="text-[var(--ink-soft)]">
+                        ฉบับร่างที่กำลังแก้ไข
+                      </dt>
+                      <dd className="font-semibold">{form.activeDraftCount}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-[var(--ink-soft)]">คำตอบที่ส่งแล้ว</dt>
+                      <dd className="font-semibold">{form.submissionCount}</dd>
+                    </div>
+                  </dl>
                 </div>
-                <div className="flex flex-wrap items-center gap-3 pl-14 sm:pl-0">
-                  <DocumentKindBadge documentKind={form.documentKind} />
-                  <Badge variant="secondary" className={status.className}>
-                    {status.label}
-                  </Badge>
-                  {isDeletable && !isConfirming ? (
+              </div>
+              <div className="flex flex-wrap items-center gap-3 pl-14 sm:pl-0">
+                <DocumentKindBadge documentKind={form.documentKind} />
+                <Badge variant="secondary" className={status.className}>
+                  {status.label}
+                </Badge>
+                {isDeletable && !isConfirming ? (
+                  <Button
+                    data-remove-form-id={form.publicId}
+                    variant="destructive"
+                    size="sm"
+                    type="button"
+                    onClick={() => {
+                      setConfirmingPublicId(form.publicId);
+                      setMutationError(null);
+                      setSuccess(null);
+                    }}
+                    disabled={Boolean(removingPublicId)}
+                  >
+                    <Trash2 size={15} />
+                    ลบแบบร่าง
+                  </Button>
+                ) : null}
+                {isDeletable && isConfirming ? (
+                  <div
+                    className="flex flex-wrap items-center gap-2 rounded-[10px] border border-[var(--warning)]/40 bg-[var(--warning-soft)] p-2"
+                    aria-labelledby={`confirm-${form.publicId}`}
+                    role="group"
+                  >
+                    <span
+                      className="px-1 text-sm font-semibold"
+                      id={`confirm-${form.publicId}`}
+                    >
+                      ลบแบบร่างนี้หรือไม่
+                    </span>
                     <Button
-                      data-remove-form-id={form.publicId}
+                      data-confirm-form-id={form.publicId}
                       variant="destructive"
                       size="sm"
                       type="button"
                       onClick={() => {
-                        setConfirmingPublicId(form.publicId);
-                        setMutationError(null);
-                        setSuccess(null);
+                        void removeDraft(form);
                       }}
                       disabled={Boolean(removingPublicId)}
                     >
-                      <Trash2 size={15} />
-                      ลบแบบร่าง
+                      {isRemoving ? <Spinner /> : <Trash2 size={15} />}
+                      {isRemoving ? "กำลังลบ…" : "ยืนยันการลบ"}
                     </Button>
-                  ) : null}
-                  {isDeletable && isConfirming ? (
-                    <div
-                      className="flex flex-wrap items-center gap-2 rounded-[10px] border border-[var(--warning)]/40 bg-[var(--warning-soft)] p-2"
-                      aria-labelledby={`confirm-${form.publicId}`}
-                      role="group"
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      type="button"
+                      onClick={() => {
+                        restoreFocusId.current = form.publicId;
+                        setConfirmingPublicId(null);
+                      }}
+                      disabled={Boolean(removingPublicId)}
                     >
-                      <span
-                        className="px-1 text-sm font-semibold"
-                        id={`confirm-${form.publicId}`}
-                      >
-                        ลบแบบร่างนี้หรือไม่
-                      </span>
-                      <Button
-                        data-confirm-form-id={form.publicId}
-                        variant="destructive"
-                        size="sm"
-                        type="button"
-                        onClick={() => {
-                          void removeDraft(form);
-                        }}
-                        disabled={Boolean(removingPublicId)}
-                      >
-                        {isRemoving ? <Spinner /> : <Trash2 size={15} />}
-                        {isRemoving ? "กำลังลบ…" : "ยืนยันการลบ"}
-                      </Button>
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        type="button"
-                        onClick={() => {
-                          restoreFocusId.current = form.publicId;
-                          setConfirmingPublicId(null);
-                        }}
-                        disabled={Boolean(removingPublicId)}
-                      >
-                        ยกเลิก
-                      </Button>
-                    </div>
-                  ) : null}
-                  <Button asChild variant="ghost" size="sm">
-                    <Link
-                      to="/admin/forms/$formId"
-                      params={{ formId: form.publicId }}
-                    >
-                      เปิดแบบฟอร์ม <ArrowUpRight size={15} />
-                    </Link>
-                  </Button>
-                </div>
+                      ยกเลิก
+                    </Button>
+                  </div>
+                ) : null}
+                <Button asChild variant="ghost" size="sm">
+                  <Link
+                    to="/admin/forms/$formId"
+                    params={{ formId: form.publicId }}
+                  >
+                    เปิดแบบฟอร์ม <ArrowUpRight size={15} />
+                  </Link>
+                </Button>
               </div>
-            );
-          })}
-        </div>
-      </Card>
+            </div>
+          );
+        })}
+      </div>
     );
   }
 
@@ -535,122 +519,25 @@ export const AdminFormsPage = () => {
         </div>
       ) : null}
       <section aria-label="รายการแบบฟอร์ม" aria-busy={loading}>
-        {formsContent}
+        {error ? (
+          formsContent
+        ) : (
+          <Card className="gap-0 overflow-hidden py-0">
+            {formsContent}
+            {loading ? null : (
+              <ListPagination
+                className="border-t border-[var(--line)] px-5 py-4"
+                label="แบ่งหน้ารายการแบบฟอร์ม"
+                pagination={pagination}
+                disabled={
+                  Boolean(removingPublicId) || Boolean(confirmingPublicId)
+                }
+                onPageChange={(page) => changeQuery({ page })}
+              />
+            )}
+          </Card>
+        )}
       </section>
-      {!loading && !error ? (
-        <div className="mt-5 space-y-3">
-          <p className="text-center text-sm text-muted-foreground">
-            {pagination.total === 0
-              ? "0 รายการ"
-              : `แสดง ${(pagination.page - 1) * pagination.pageSize + 1}–${Math.min(pagination.page * pagination.pageSize, pagination.total)} จาก ${pagination.total} รายการ`}
-            {` · หน้า ${pagination.page} จาก ${pagination.totalPages}`}
-          </p>
-          <Pagination aria-label="แบ่งหน้ารายการแบบฟอร์ม">
-            <PaginationContent>
-              <PaginationItem>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  type="button"
-                  aria-label="หน้าแรก"
-                  title="หน้าแรก"
-                  disabled={
-                    pagination.page <= 1 ||
-                    Boolean(removingPublicId) ||
-                    Boolean(confirmingPublicId)
-                  }
-                  onClick={() => changeQuery({ page: 1 })}
-                >
-                  <ChevronsLeft aria-hidden="true" />
-                </Button>
-              </PaginationItem>
-              <PaginationItem>
-                <Button
-                  variant="ghost"
-                  type="button"
-                  aria-label="หน้าก่อนหน้า"
-                  disabled={
-                    pagination.page <= 1 ||
-                    Boolean(removingPublicId) ||
-                    Boolean(confirmingPublicId)
-                  }
-                  onClick={() => changeQuery({ page: pagination.page - 1 })}
-                >
-                  <ChevronLeft aria-hidden="true" />
-                  <span className="hidden sm:inline">ก่อนหน้า</span>
-                </Button>
-              </PaginationItem>
-              <PaginationItem className="sm:hidden">
-                <span className="px-3 text-sm" aria-current="page">
-                  {pagination.page} / {pagination.totalPages}
-                </span>
-              </PaginationItem>
-              {catalogPageNumbers(pagination.page, pagination.totalPages).map(
-                (page, index, pages) => (
-                  <PaginationItem
-                    key={page}
-                    className="hidden items-center gap-1 sm:flex"
-                  >
-                    {index === 0 && page > 1 ? <PaginationEllipsis /> : null}
-                    <Button
-                      type="button"
-                      size="icon"
-                      variant={page === pagination.page ? "outline" : "ghost"}
-                      aria-label={`ไปหน้า ${page}`}
-                      aria-current={
-                        page === pagination.page ? "page" : undefined
-                      }
-                      disabled={
-                        Boolean(removingPublicId) || Boolean(confirmingPublicId)
-                      }
-                      onClick={() => changeQuery({ page })}
-                    >
-                      {page}
-                    </Button>
-                    {index === pages.length - 1 &&
-                    page < pagination.totalPages ? (
-                      <PaginationEllipsis />
-                    ) : null}
-                  </PaginationItem>
-                )
-              )}
-              <PaginationItem>
-                <Button
-                  variant="ghost"
-                  type="button"
-                  aria-label="หน้าถัดไป"
-                  disabled={
-                    pagination.page >= pagination.totalPages ||
-                    Boolean(removingPublicId) ||
-                    Boolean(confirmingPublicId)
-                  }
-                  onClick={() => changeQuery({ page: pagination.page + 1 })}
-                >
-                  <span className="hidden sm:inline">ถัดไป</span>
-                  <ChevronRight aria-hidden="true" />
-                </Button>
-              </PaginationItem>
-              <PaginationItem>
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  type="button"
-                  aria-label="หน้าสุดท้าย"
-                  title="หน้าสุดท้าย"
-                  disabled={
-                    pagination.page >= pagination.totalPages ||
-                    Boolean(removingPublicId) ||
-                    Boolean(confirmingPublicId)
-                  }
-                  onClick={() => changeQuery({ page: pagination.totalPages })}
-                >
-                  <ChevronsRight aria-hidden="true" />
-                </Button>
-              </PaginationItem>
-            </PaginationContent>
-          </Pagination>
-        </div>
-      ) : null}
       <Button
         className="mt-5"
         variant="ghost"

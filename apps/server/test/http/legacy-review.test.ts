@@ -57,6 +57,74 @@ afterEach(() => {
   legacySsoMock = undefined;
 });
 
+test("account-link numbered pagination counts all pending requests and clamps to the final page", async () => {
+  const password = crypto.randomUUID();
+  const reviewer = await createCredentialFixture({
+    email: `pagination-${crypto.randomUUID()}@example.test`,
+    name: "Pagination reviewer",
+    password,
+    role: "admin",
+  });
+  const bearer = await bearerFor(app, reviewer.email, password);
+  const ids = Array.from({ length: 23 }, () => crypto.randomUUID());
+  await prisma.legacyAccountLinkRequest.createMany({
+    data: ids.map((id) => ({
+      email: reviewer.email,
+      id,
+      providerId: "pagination-test",
+      subject: id,
+      userId: reviewer.id,
+    })),
+  });
+  const getPage = (page: number) =>
+    app.handle(
+      new Request(`http://test.local/api/admin/account-links?page=${page}`, {
+        headers: { Authorization: `Bearer ${bearer}` },
+      })
+    );
+  try {
+    const expected = await prisma.legacyAccountLinkRequest.findMany({
+      orderBy: { id: "asc" },
+      select: { id: true },
+      where: { status: "pending" },
+    });
+    const totalPages = Math.ceil(expected.length / 10);
+    const lastRequest = expected.at(-1);
+    if (!lastRequest) {
+      throw new Error("Pagination fixtures require pending requests");
+    }
+    const snapshot = await legacyAccountLinkSnapshot(
+      (request) => app.handle(request),
+      bearer,
+      lastRequest.id
+    );
+    expect(snapshot.id).toBe(lastRequest.id);
+    for (let page = 1; page <= totalPages; page += 1) {
+      const response = await getPage(page);
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        pagination: { page, pageSize: 10, total: expected.length, totalPages },
+        requests: expected.slice((page - 1) * 10, page * 10),
+      });
+    }
+    const beyond = await getPage(999);
+    expect(beyond.status).toBe(200);
+    expect(await beyond.json()).toMatchObject({
+      pagination: {
+        page: totalPages,
+        pageSize: 10,
+        total: expected.length,
+        totalPages,
+      },
+      requests: expected.slice((totalPages - 1) * 10),
+    });
+  } finally {
+    await prisma.legacyAccountLinkRequest.deleteMany({
+      where: { id: { in: ids } },
+    });
+  }
+});
+
 test("PDMS candidate email PATCH and restore invalidate approval and delayed callback without touching terminal reviews", async () => {
   const fixture = await createPdmsReviewFixture(app);
   legacySsoMock = fixture.mock;

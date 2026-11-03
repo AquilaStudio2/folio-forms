@@ -41,6 +41,7 @@ import {
   jsonRecord,
   correctionInput,
 } from "../http/input";
+import { paginationPage } from "../http/pagination";
 import type { JsonRecord } from "../model-types";
 import { readOnlyViewerConfig } from "../onlyoffice";
 import { createOperation } from "../operations/create";
@@ -53,9 +54,6 @@ import { normalizeResponseData } from "../responses/data";
 import { correctionEditorConfig } from "../responses/editor";
 import {
   adminResultDate,
-  adminResultCursor,
-  adminResultPageSize,
-  adminResultCursorValue,
   adminResultSummary,
   findAdminResults,
   revisionSelector,
@@ -274,7 +272,7 @@ export function registerResultRoutes(
       const identity = await requireIdentity(request);
       requireResultReader(identity);
       const queryRecord = query as unknown as JsonRecord;
-      const cursor = adminResultCursor(queryString(queryRecord, "cursor"));
+      const page = paginationPage(new URL(request.url).searchParams);
       const formPublicId = queryString(queryRecord, "form");
       const userQuery = queryString(queryRecord, "user");
       const state = queryString(queryRecord, "state");
@@ -314,14 +312,6 @@ export function registerResultRoutes(
         fail(400, "invalid_request", "state is invalid");
       }
       const and: Prisma.ResponseWhereInput[] = [];
-      if (cursor) {
-        and.push({
-          OR: [
-            { updatedAt: { lt: cursor.updatedAt } },
-            { id: { lt: cursor.id }, updatedAt: cursor.updatedAt },
-          ],
-        });
-      }
       if (formPublicId) {
         and.push({ form: { publicId: formPublicId } });
       }
@@ -343,21 +333,17 @@ export function registerResultRoutes(
           },
         });
       }
-      const responses = await findAdminResults({
+      const results = await findAdminResults({
         correction,
         fiscal_year,
         month,
+        page,
         province,
         where: and.length > 0 ? { AND: and } : {},
       });
-      const page = responses.slice(0, adminResultPageSize);
-      const last = page.at(-1);
       return {
-        nextCursor:
-          responses.length > adminResultPageSize && last
-            ? adminResultCursorValue(last)
-            : null,
-        results: page.map(adminResultSummary),
+        pagination: results.pagination,
+        results: results.results.map(adminResultSummary),
       };
     })
     .get("/api/admin/results/:id", async ({ request, params, query }) => {

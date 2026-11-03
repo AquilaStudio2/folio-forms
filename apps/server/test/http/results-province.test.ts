@@ -55,7 +55,7 @@ for (const kind of ["docx", "xlsx"] satisfies DocumentKind[]) {
 
     const page = await results({ form: form.publicId, province: "เชียงใหม่" });
     expect(page.results.map(({ id }) => id)).toEqual([matching.id]);
-    expect(page.nextCursor).toBeNull();
+    expect(page.pagination.totalPages).toBe(1);
   });
 
   test(`${kind}: province trims only outer whitespace and treats unsupported saved answers as nonmatches`, async () => {
@@ -360,22 +360,31 @@ test("sparse province and latest-Correction matches fill every page past newer n
   const query = { correction: "2", form: form.publicId, province: "เชียงใหม่" };
   const first = await results(query);
   expect(first.results.map(({ id }) => id)).toEqual(expected.slice(0, 25));
-  expect(first.nextCursor).not.toBeNull();
-  if (!first.nextCursor) {
-    throw new Error("The first matching page must have a continuation");
-  }
-  expect(
-    JSON.parse(Buffer.from(first.nextCursor, "base64url").toString("utf-8"))
-  ).toEqual({ id: expected[24], updatedAt: updatedAt.toISOString() });
-  const second = await results({ ...query, cursor: first.nextCursor });
+  expect(first.pagination).toEqual({
+    page: 1,
+    pageSize: 25,
+    total: 65,
+    totalPages: 3,
+  });
+  const second = await results({ ...query, page: "2" });
   expect(second.results.map(({ id }) => id)).toEqual(expected.slice(25, 50));
-  expect(second.nextCursor).not.toBeNull();
-  if (!second.nextCursor) {
-    throw new Error("The second matching page must have a continuation");
-  }
-  const third = await results({ ...query, cursor: second.nextCursor });
+  expect(second.pagination).toEqual({
+    page: 2,
+    pageSize: 25,
+    total: 65,
+    totalPages: 3,
+  });
+  const third = await results({ ...query, page: "3" });
   expect(third.results.map(({ id }) => id)).toEqual(expected.slice(50));
-  expect(third.nextCursor).toBeNull();
+  expect(third.pagination).toEqual({
+    page: 3,
+    pageSize: 25,
+    total: 65,
+    totalPages: 3,
+  });
+  const outOfRange = await results({ ...query, page: "999" });
+  expect(outOfRange.pagination).toEqual(third.pagination);
+  expect(outOfRange.results).toEqual(third.results);
   expect(
     new Set(
       [...first.results, ...second.results, ...third.results].map(

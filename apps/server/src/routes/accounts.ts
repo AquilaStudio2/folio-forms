@@ -38,15 +38,17 @@ import { fail } from "../http/errors";
 import {
   validateId,
   queryString,
-  idPattern,
   accountEmailMaximumLength,
   readJsonRecord,
   accountBodyMaximumBytes,
   requiredString,
 } from "../http/input";
+import { paginationInfo, paginationPage } from "../http/pagination";
 import { invalidateLegacyAccountLinkReview } from "../legacy-sso/accounts";
 import type { JsonRecord } from "../model-types";
 import type { RouteDependencies } from "./dependencies";
+
+const accountLinkPageSize = 10;
 
 export function registerAccountRoutes(
   app: Elysia,
@@ -54,46 +56,49 @@ export function registerAccountRoutes(
 ): void {
   const { aiAuthoring } = dependencies;
   app
-    .get("/api/admin/account-links", async ({ request, query }) => {
+    .get("/api/admin/account-links", async ({ request }) => {
       const identity = await requireIdentity(request);
       requireAdmin(identity);
-      const queryRecord = query as unknown as JsonRecord;
-      const cursor = queryString(queryRecord, "cursor");
-      if (cursor !== undefined && !idPattern.test(cursor)) {
-        fail(400, "invalid_request", "cursor is invalid");
-      }
+      const requestedPage = paginationPage(new URL(request.url).searchParams);
       const where: Prisma.LegacyAccountLinkRequestWhereInput = {
         status: LegacyAccountLinkStatus.pending,
       };
-      if (cursor) {
-        where.id = { gt: cursor };
-      }
-      const rows = await prisma.legacyAccountLinkRequest.findMany({
-        orderBy: { id: "asc" },
-        select: {
-          createdAt: true,
-          email: true,
-          id: true,
-          providerId: true,
-          reviewedGeneration: true,
-          status: true,
-          subject: true,
-          user: { select: adminUserSelect },
+      return prisma.$transaction(
+        async (tx) => {
+          const total = await tx.legacyAccountLinkRequest.count({ where });
+          const pagination = paginationInfo({
+            page: requestedPage,
+            pageSize: accountLinkPageSize,
+            total,
+          });
+          const rows = await tx.legacyAccountLinkRequest.findMany({
+            orderBy: { id: "asc" },
+            select: {
+              createdAt: true,
+              email: true,
+              id: true,
+              providerId: true,
+              reviewedGeneration: true,
+              status: true,
+              subject: true,
+              user: { select: adminUserSelect },
+            },
+            skip: (pagination.page - 1) * pagination.pageSize,
+            take: pagination.pageSize,
+            where,
+          });
+          return {
+            pagination,
+            requests: rows.map(({ user, ...linkRequest }) => ({
+              ...linkRequest,
+              reviewedGeneration:
+                linkRequest.reviewedGeneration?.toString() ?? null,
+              user: accountUserSummary(user),
+            })),
+          };
         },
-        take: accountUserPageSize + 1,
-        where,
-      });
-      const page = rows.slice(0, accountUserPageSize);
-      return {
-        nextCursor:
-          rows.length > accountUserPageSize ? (page.at(-1)?.id ?? null) : null,
-        requests: page.map(({ user, ...linkRequest }) => ({
-          ...linkRequest,
-          reviewedGeneration:
-            linkRequest.reviewedGeneration?.toString() ?? null,
-          user: accountUserSummary(user),
-        })),
-      };
+        { isolationLevel: "RepeatableRead" }
+      );
     })
     .post(
       "/api/admin/account-links/:id/approve",
@@ -163,13 +168,10 @@ export function registerAccountRoutes(
       const identity = await requireIdentity(request);
       requireAdmin(identity);
       const queryRecord = query as unknown as JsonRecord;
-      const cursor = queryString(queryRecord, "cursor");
+      const requestedPage = paginationPage(new URL(request.url).searchParams);
       const emailQuery = queryString(queryRecord, "email");
       const roleQuery = queryString(queryRecord, "role");
       const enabledQuery = queryString(queryRecord, "enabled");
-      if (cursor !== undefined && !idPattern.test(cursor)) {
-        fail(400, "invalid_request", "cursor is invalid");
-      }
       const email = emailQuery ? normalizeEmail(emailQuery) : undefined;
       if (email && email.length > accountEmailMaximumLength) {
         fail(400, "invalid_request", "email filter is too long");
@@ -193,9 +195,6 @@ export function registerAccountRoutes(
         enabled = enabledQuery === "true";
       }
       const where: Prisma.UserWhereInput = {};
-      if (cursor) {
-        where.id = { gt: cursor };
-      }
       if (email) {
         where.email = { contains: email };
       }
@@ -205,18 +204,28 @@ export function registerAccountRoutes(
       if (enabled !== undefined) {
         where.enabled = enabled;
       }
-      const users = await prisma.user.findMany({
-        orderBy: { id: "asc" },
-        select: adminUserSelect,
-        take: accountUserPageSize + 1,
-        where,
-      });
-      const page = users.slice(0, accountUserPageSize);
-      return {
-        nextCursor:
-          users.length > accountUserPageSize ? (page.at(-1)?.id ?? null) : null,
-        users: page.map(accountUserSummary),
-      };
+      return prisma.$transaction(
+        async (tx) => {
+          const total = await tx.user.count({ where });
+          const pagination = paginationInfo({
+            page: requestedPage,
+            pageSize: accountUserPageSize,
+            total,
+          });
+          const users = await tx.user.findMany({
+            orderBy: { id: "asc" },
+            select: adminUserSelect,
+            skip: (pagination.page - 1) * pagination.pageSize,
+            take: pagination.pageSize,
+            where,
+          });
+          return {
+            pagination,
+            users: users.map(accountUserSummary),
+          };
+        },
+        { isolationLevel: "RepeatableRead" }
+      );
     })
     .post(
       "/api/admin/users",

@@ -1,6 +1,8 @@
 // oxlint-disable no-await-in-loop avoid-new -- Polling and delay are intentionally sequential.
 import type { ResultAnswerDisplayValue } from "@onlyoffice/results-filters";
 
+import type { PaginationInfo } from "@/lib/pagination";
+
 export const API_ORIGIN =
   import.meta.env.VITE_API_ORIGIN ?? "http://localhost:8080";
 export const SESSION_KEY = "onlyoffice.sessionToken";
@@ -67,7 +69,7 @@ export interface AdminUser {
 }
 export interface AdminUserListResponse {
   users: AdminUser[];
-  nextCursor: string | null;
+  pagination: PaginationInfo;
 }
 export interface AdminUserMutationResponse {
   user: AdminUser;
@@ -87,7 +89,7 @@ export interface AdminLegacyAccountLinkRequest {
   user: AdminUser;
 }
 export interface AdminLegacyAccountLinkListResponse {
-  nextCursor: string | null;
+  pagination: PaginationInfo;
   requests: AdminLegacyAccountLinkRequest[];
 }
 export interface AdminLegacyAccountLinkMutationResponse {
@@ -196,7 +198,7 @@ export interface ResponseRevisionsResponse {
 export type AdminResultState = "draft" | "submitted";
 export interface AdminResultListQuery {
   correction?: string;
-  cursor?: string;
+  page?: string;
   fiscal_year?: string;
   form?: string;
   from?: string;
@@ -223,7 +225,7 @@ export interface AdminResult {
   userEmail: string;
 }
 export interface AdminResultListResponse {
-  nextCursor: string | null;
+  pagination: PaginationInfo;
   results: AdminResult[];
 }
 export type AuditOutcome = "failure" | "success";
@@ -240,7 +242,7 @@ export interface AdminAuditEvent {
 }
 export interface AdminAuditListResponse {
   events: AdminAuditEvent[];
-  nextCursor: string | null;
+  pagination: PaginationInfo;
 }
 export interface AdminResultDetail extends AdminResult {
   documentKind?: DocumentKind;

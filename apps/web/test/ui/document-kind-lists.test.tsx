@@ -36,7 +36,12 @@ beforeEach(() => {
     vi.fn(() =>
       Promise.resolve(
         Response.json({
-          nextCursor: null,
+          pagination: {
+            page: 1,
+            pageSize: 25,
+            total: rows.length,
+            totalPages: 1,
+          },
           responses: rows,
           results: rows,
           submissions: rows,
