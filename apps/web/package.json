@@ -12,6 +12,7 @@
     "test:ui": "vitest run --config vitest.config.ts"
   },
   "dependencies": {
+    "@onlyoffice/results-filters": "workspace:*",
     "@tanstack/react-router": "^1.132.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",

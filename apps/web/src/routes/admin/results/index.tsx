@@ -1,3 +1,4 @@
+import { provinceChoices } from "@onlyoffice/results-filters";
 // oxlint-disable no-nested-ternary -- Keeps the three explicit loading, empty, and populated table states local to the route.
 import { Link, createFileRoute, useSearch } from "@tanstack/react-router";
 import { Search } from "lucide-react";
@@ -9,6 +10,7 @@ import { Badge, Button, Card, Input, Notice, Spinner } from "@/components/ui";
 import { ApiError, apiGet, formatDate } from "@/lib/api";
 import type {
   AdminResult,
+  AdminResultListQuery,
   AdminResultListResponse,
   AdminResultState,
 } from "@/lib/api";
@@ -38,6 +40,7 @@ const AdminResultsRoute = () => {
   const [cursorHistory, setCursorHistory] = useState<(string | null)[]>([]);
   const [formFilter, setFormFilter] = useState(initialForm);
   const [userFilter, setUserFilter] = useState("");
+  const [provinceFilter, setProvinceFilter] = useState("");
   const [stateFilter, setStateFilter] = useState<AdminResultState | "all">(
     "all"
   );
@@ -48,6 +51,7 @@ const AdminResultsRoute = () => {
     correction: "",
     form: initialForm,
     from: "",
+    province: "",
     state: "all" as AdminResultState | "all",
     to: "",
     user: "",
@@ -61,28 +65,19 @@ const AdminResultsRoute = () => {
     const loadResults = async () => {
       setLoading(true);
       setError(null);
-      const query = new URLSearchParams();
-      if (currentCursor) {
-        query.set("cursor", currentCursor);
-      }
-      if (formFilter.trim()) {
-        query.set("form", formFilter.trim());
-      }
-      if (userFilter.trim()) {
-        query.set("user", userFilter.trim());
-      }
-      if (stateFilter !== "all") {
-        query.set("state", stateFilter);
-      }
-      if (correctionFilter.trim()) {
-        query.set("correction", correctionFilter.trim());
-      }
-      if (fromFilter) {
-        query.set("from", fromFilter);
-      }
-      if (toFilter) {
-        query.set("to", `${toFilter}T23:59:59.999Z`);
-      }
+      const filters: AdminResultListQuery = {
+        ...(currentCursor ? { cursor: currentCursor } : {}),
+        ...(formFilter.trim() ? { form: formFilter.trim() } : {}),
+        ...(userFilter.trim() ? { user: userFilter.trim() } : {}),
+        ...(provinceFilter ? { province: provinceFilter } : {}),
+        ...(stateFilter === "all" ? {} : { state: stateFilter }),
+        ...(correctionFilter.trim()
+          ? { correction: correctionFilter.trim() }
+          : {}),
+        ...(fromFilter ? { from: fromFilter } : {}),
+        ...(toFilter ? { to: `${toFilter}T23:59:59.999Z` } : {}),
+      };
+      const query = new URLSearchParams(Object.entries(filters));
       try {
         const payload = await apiGet<AdminResultListResponse>(
           `/api/admin/results?${query.toString()}`
@@ -94,6 +89,7 @@ const AdminResultsRoute = () => {
       } catch (caughtError) {
         if (!cancelled) {
           setError(errorMessage(caughtError));
+          setNextCursor(null);
           setResults([]);
         }
       } finally {
@@ -111,6 +107,7 @@ const AdminResultsRoute = () => {
     currentCursor,
     formFilter,
     fromFilter,
+    provinceFilter,
     reloadVersion,
     stateFilter,
     toFilter,
@@ -120,6 +117,7 @@ const AdminResultsRoute = () => {
   const applyFilters = () => {
     setFormFilter(draftFilters.form);
     setUserFilter(draftFilters.user);
+    setProvinceFilter(draftFilters.province);
     setStateFilter(draftFilters.state);
     setCorrectionFilter(draftFilters.correction);
     setFromFilter(draftFilters.from);
@@ -152,7 +150,7 @@ const AdminResultsRoute = () => {
       />
       <Card>
         <form
-          className="grid gap-4 md:grid-cols-2 xl:grid-cols-6"
+          className="grid gap-4 md:grid-cols-2 xl:grid-cols-4"
           onSubmit={(event) => {
             event.preventDefault();
             applyFilters();
@@ -219,6 +217,26 @@ const AdminResultsRoute = () => {
             />
           </label>
           <label className="grid gap-1 text-sm font-semibold text-[var(--ink-soft)]">
+            จังหวัด
+            <select
+              className={selectClass}
+              onChange={(event) =>
+                setDraftFilters((filters) => ({
+                  ...filters,
+                  province: event.target.value,
+                }))
+              }
+              value={draftFilters.province}
+            >
+              <option value="">ทั้งหมด</option>
+              {provinceChoices.map((province) => (
+                <option key={province} value={province}>
+                  {province}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="grid gap-1 text-sm font-semibold text-[var(--ink-soft)]">
             ตั้งแต่
             <Input
               aria-label="ตั้งแต่"
@@ -246,7 +264,7 @@ const AdminResultsRoute = () => {
               value={draftFilters.to}
             />
           </label>
-          <div className="flex items-end gap-2 md:col-span-2 xl:col-span-6">
+          <div className="flex items-end gap-2 md:col-span-2 xl:col-span-4">
             <Button type="submit">
               <Search size={16} />
               ค้นหา
@@ -291,7 +309,7 @@ const AdminResultsRoute = () => {
           >
             <Spinner />
           </div>
-        ) : results.length === 0 ? (
+        ) : error ? null : results.length === 0 ? (
           <div className="p-8 text-center text-[var(--ink-soft)]">
             ไม่พบผลลัพธ์ตามตัวกรอง
           </div>
@@ -374,7 +392,11 @@ const AdminResultsRoute = () => {
         )}
         <div className="flex items-center justify-between border-t border-[var(--line)] px-5 py-4">
           <span className="text-sm text-[var(--ink-soft)]" aria-live="polite">
-            {loading ? "กำลังโหลด…" : `พบ ${results.length} รายการในหน้านี้`}
+            {loading
+              ? "กำลังโหลด…"
+              : error
+                ? "โหลดผลลัพธ์ไม่สำเร็จ"
+                : `พบ ${results.length} รายการในหน้านี้`}
           </span>
           <div className="flex gap-2">
             <Button

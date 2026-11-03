@@ -1,0 +1,4 @@
+{
+  "extends": "@onlyoffice/config/tsconfig.base.json",
+  "include": ["src"]
+}

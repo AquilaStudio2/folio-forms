@@ -15,32 +15,59 @@ import type {
   SubmissionWithManifest,
   SubmissionWithRevisions,
 } from "../model-types";
+import { matchesResultAnswers } from "./result-filters";
 
 export const adminResultPageSize = 25;
 
-export async function responseIdsWithLatestCorrection(
-  revision: number,
-  where: Prisma.ResponseWhereInput
-): Promise<string[]> {
+export async function findAdminResults({
+  correction,
+  province,
+  where,
+}: {
+  correction?: number;
+  province?: string;
+  where: Prisma.ResponseWhereInput;
+}) {
   const limit = adminResultPageSize + 1;
-  const ids: string[] = [];
+  const includeAnswers = province !== undefined;
+  const matches = [];
   let after: AdminResultCursor | undefined;
-  // Prisma relation filters cannot express "the latest related row". Scan small
-  // ordered batches and fill the page with matches, rather than filtering one
-  // page (which could hide later matches) or loading every response into memory.
-  while (ids.length < limit) {
+  // Apply every current-revision condition together before filling a page.
+  // Bounded ordered batches keep sparse matches reachable without retaining
+  // every candidate's saved answer data in memory.
+  while (matches.length < limit) {
     const batch = await prisma.response.findMany({
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
       select: {
+        createdAt: true,
+        draftData: includeAnswers,
+        form: { select: { documentKind: true, publicId: true, title: true } },
         id: true,
+        owner: { select: { email: true } },
+        publishedTemplate: {
+          select: {
+            manifest: {
+              select: {
+                fields: {
+                  select: { binding: true, tag: true, type: true },
+                  where: { tag: "province" },
+                },
+              },
+            },
+          },
+        },
+        status: true,
         submissions: {
           orderBy: [{ createdAt: "desc" }, { id: "desc" }],
           select: {
             corrections: {
               orderBy: { revision: "desc" },
-              select: { revision: true },
+              select: { data: includeAnswers, revision: true },
               take: 1,
             },
+            createdAt: true,
+            data: includeAnswers,
+            id: true,
           },
           take: 1,
         },
@@ -52,7 +79,9 @@ export async function responseIdsWithLatestCorrection(
           where,
           // A positive revision must exist somewhere on this response, but it
           // still needs to belong to the latest submission below.
-          ...(revision > 0 ? [{ corrections: { some: { revision } } }] : []),
+          ...(correction !== undefined && correction > 0
+            ? [{ corrections: { some: { revision: correction } } }]
+            : []),
           ...(after
             ? [
                 {
@@ -67,13 +96,32 @@ export async function responseIdsWithLatestCorrection(
       },
     });
     for (const response of batch) {
+      const submission = response.submissions[0];
       if (
-        (response.submissions[0]?.corrections[0]?.revision ?? 0) === revision
+        correction !== undefined &&
+        (submission?.corrections[0]?.revision ?? 0) !== correction
       ) {
-        ids.push(response.id);
-        if (ids.length === limit) {
-          return ids;
+        continue;
+      }
+      if (province !== undefined) {
+        const data =
+          response.status === ResponseStatus.submitted
+            ? (submission?.corrections[0]?.data ?? submission?.data)
+            : response.draftData;
+        if (
+          !matchesResultAnswers({
+            data,
+            documentKind: response.form.documentKind,
+            fields: response.publishedTemplate.manifest?.fields ?? [],
+            filters: { province },
+          })
+        ) {
+          continue;
         }
+      }
+      matches.push(response);
+      if (matches.length === limit) {
+        return matches;
       }
     }
     if (batch.length < limit) {
@@ -81,7 +129,7 @@ export async function responseIdsWithLatestCorrection(
     }
     after = batch.at(-1);
   }
-  return ids;
+  return matches;
 }
 
 interface AdminResultCursor {

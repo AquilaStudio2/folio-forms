@@ -34,6 +34,7 @@
         "@onlyoffice/auth": "workspace:*",
         "@onlyoffice/db": "workspace:*",
         "@onlyoffice/env": "workspace:*",
+        "@onlyoffice/results-filters": "workspace:*",
         "@sinclair/typebox": "^0.34.52",
         "better-auth": "catalog:",
         "dotenv": "catalog:",
@@ -57,6 +58,7 @@
       "name": "@onlyoffice/web",
       "version": "0.1.0",
       "dependencies": {
+        "@onlyoffice/results-filters": "workspace:*",
         "@tanstack/react-router": "^1.132.0",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -124,6 +126,14 @@
       "devDependencies": {
         "@onlyoffice/config": "workspace:*",
         "@types/bun": "catalog:",
+        "typescript": "catalog:",
+      },
+    },
+    "packages/results-filters": {
+      "name": "@onlyoffice/results-filters",
+      "version": "0.0.0",
+      "devDependencies": {
+        "@onlyoffice/config": "workspace:*",
         "typescript": "catalog:",
       },
     },
@@ -393,6 +403,8 @@
     "@onlyoffice/db": ["@onlyoffice/db@workspace:packages/db"],
 
     "@onlyoffice/env": ["@onlyoffice/env@workspace:packages/env"],
+
+    "@onlyoffice/results-filters": ["@onlyoffice/results-filters@workspace:packages/results-filters"],
 
     "@onlyoffice/web": ["@onlyoffice/web@workspace:apps/web"],
 
