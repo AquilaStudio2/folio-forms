@@ -58,6 +58,7 @@ test("Excel validation failures show the cell and allow another action", async (
     ],
   });
   acknowledgeBridge(harness);
+  await flushPlugin();
   await expect(
     harness.window.FormBridge.runAction("submit")
   ).resolves.toMatchObject({
@@ -83,6 +84,7 @@ test("Excel saves use canonical server extraction and never Word control APIs", 
     ],
   });
   acknowledgeBridge(harness);
+  await flushPlugin();
   await expect(
     harness.window.FormBridge.runAction("save-draft", "", {
       action: "insert",
@@ -115,6 +117,7 @@ test("Excel correction saves carry a reason with no browser answers", async () =
     ],
   });
   acknowledgeBridge(harness);
+  await flushPlugin();
   await expect(
     harness.window.FormBridge.runAction("save-correction", "แก้ไขข้อมูล")
   ).resolves.toMatchObject({ ok: true });
@@ -303,10 +306,13 @@ test("a failed Excel save restores transient editing restrictions without cleari
     editorSaveSupported: false,
   });
   acknowledgeBridge(harness);
+  await flushPlugin();
+  const methodCount = harness.methodInvocations.length;
   await expect(
     harness.window.FormBridge.runAction("save-draft")
   ).resolves.toMatchObject({ ok: false });
   const restrictions = harness.methodInvocations
+    .slice(methodCount)
     .filter(({ method }) => method === "SetEditingRestrictions")
     .map(({ args }) => args[0]);
   expect(restrictions).toEqual(["readOnly", "none"]);
@@ -994,6 +1000,7 @@ test("response append-row button inserts after all current rows with native save
     spreadsheetSelection: { names: { rows: "'Sheet1'!B4:C6" }, rowCount: 3 },
   });
   acknowledgeBridge(harness);
+  await flushPlugin();
   await click(harness, "เพิ่มแถว");
   expect(JSON.parse(harness.requests[0].body).rowChange).toEqual({
     action: "insert",
@@ -1011,6 +1018,7 @@ test("Excel response accepts authenticated shared submit actions from the parent
     ],
   });
   acknowledgeBridge(harness);
+  await flushPlugin();
   harness.dispatch({
     data: {
       action: "submit",

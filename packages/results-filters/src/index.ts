@@ -1,0 +1,116 @@
+export type ResultAnswerDisplayValue = string | number | boolean | null;
+
+// The 76 province names follow NSO's provincial statistics directory.
+// Bangkok is included as required by the results-search contract.
+// https://www.nso.go.th/nsoweb/officialStatistics
+// https://www.tmd.go.th/weather/provinces
+export const provinceChoices: readonly string[] = [
+  "กระบี่",
+  "กรุงเทพมหานคร",
+  "กาญจนบุรี",
+  "กาฬสินธุ์",
+  "กำแพงเพชร",
+  "ขอนแก่น",
+  "จันทบุรี",
+  "ฉะเชิงเทรา",
+  "ชลบุรี",
+  "ชัยนาท",
+  "ชัยภูมิ",
+  "ชุมพร",
+  "เชียงราย",
+  "เชียงใหม่",
+  "ตรัง",
+  "ตราด",
+  "ตาก",
+  "นครนายก",
+  "นครปฐม",
+  "นครพนม",
+  "นครราชสีมา",
+  "นครศรีธรรมราช",
+  "นครสวรรค์",
+  "นนทบุรี",
+  "นราธิวาส",
+  "น่าน",
+  "บึงกาฬ",
+  "บุรีรัมย์",
+  "ปทุมธานี",
+  "ประจวบคีรีขันธ์",
+  "ปราจีนบุรี",
+  "ปัตตานี",
+  "พระนครศรีอยุธยา",
+  "พะเยา",
+  "พังงา",
+  "พัทลุง",
+  "พิจิตร",
+  "พิษณุโลก",
+  "เพชรบุรี",
+  "เพชรบูรณ์",
+  "แพร่",
+  "ภูเก็ต",
+  "มหาสารคาม",
+  "มุกดาหาร",
+  "แม่ฮ่องสอน",
+  "ยโสธร",
+  "ยะลา",
+  "ร้อยเอ็ด",
+  "ระนอง",
+  "ระยอง",
+  "ราชบุรี",
+  "ลพบุรี",
+  "ลำปาง",
+  "ลำพูน",
+  "เลย",
+  "ศรีสะเกษ",
+  "สกลนคร",
+  "สงขลา",
+  "สตูล",
+  "สมุทรปราการ",
+  "สมุทรสงคราม",
+  "สมุทรสาคร",
+  "สระแก้ว",
+  "สระบุรี",
+  "สิงห์บุรี",
+  "สุโขทัย",
+  "สุพรรณบุรี",
+  "สุราษฎร์ธานี",
+  "สุรินทร์",
+  "หนองคาย",
+  "หนองบัวลำภู",
+  "อ่างทอง",
+  "อำนาจเจริญ",
+  "อุดรธานี",
+  "อุตรดิตถ์",
+  "อุทัยธานี",
+  "อุบลราชธานี",
+];
+
+export const monthChoices: readonly string[] = [
+  "มกราคม",
+  "กุมภาพันธ์",
+  "มีนาคม",
+  "เมษายน",
+  "พฤษภาคม",
+  "มิถุนายน",
+  "กรกฎาคม",
+  "สิงหาคม",
+  "กันยายน",
+  "ตุลาคม",
+  "พฤศจิกายน",
+  "ธันวาคม",
+];
+
+const bangkokYearMonth = new Intl.DateTimeFormat("en-US", {
+  calendar: "gregory",
+  month: "numeric",
+  numberingSystem: "latn",
+  timeZone: "Asia/Bangkok",
+  year: "numeric",
+});
+
+export const fiscalYearChoices = (now = new Date()): readonly string[] => {
+  const parts = bangkokYearMonth.formatToParts(now);
+  const year = Number(parts.find((part) => part.type === "year")?.value);
+  const month = Number(parts.find((part) => part.type === "month")?.value);
+  const current = year + (month < 10 ? 543 : 544);
+  return Array.from({ length: 12 }, (_, index) => String(current - 10 + index));
+};

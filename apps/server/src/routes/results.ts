@@ -6,6 +6,11 @@ import {
   FillMethod,
   OperationTargetType,
 } from "@onlyoffice/db";
+import {
+  fiscalYearChoices,
+  monthChoices,
+  provinceChoices,
+} from "@onlyoffice/results-filters";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Elysia } from "elysia";
 
@@ -52,10 +57,11 @@ import {
   adminResultPageSize,
   adminResultCursorValue,
   adminResultSummary,
-  responseIdsWithLatestCorrection,
+  findAdminResults,
   revisionSelector,
   selectedSubmissionRevision,
 } from "../responses/query";
+import { resultAnswerValues } from "../responses/result-filters";
 import { objectExists, objectKey } from "../storage";
 import type { RouteDependencies } from "./dependencies";
 
@@ -272,6 +278,21 @@ export function registerResultRoutes(
       const formPublicId = queryString(queryRecord, "form");
       const userQuery = queryString(queryRecord, "user");
       const state = queryString(queryRecord, "state");
+      const province = queryString(queryRecord, "province");
+      const month = queryString(queryRecord, "month");
+      const fiscal_year = queryString(queryRecord, "fiscal_year");
+      if (province !== undefined && !provinceChoices.includes(province)) {
+        fail(400, "invalid_request", "province is invalid");
+      }
+      if (month !== undefined && !monthChoices.includes(month)) {
+        fail(400, "invalid_request", "month is invalid");
+      }
+      if (
+        fiscal_year !== undefined &&
+        !fiscalYearChoices().includes(fiscal_year)
+      ) {
+        fail(400, "invalid_request", "fiscal_year is invalid");
+      }
       const from = adminResultDate(queryString(queryRecord, "from"), "from");
       const to = adminResultDate(queryString(queryRecord, "to"), "to");
       const correctionQuery = queryString(queryRecord, "correction");
@@ -322,42 +343,19 @@ export function registerResultRoutes(
           },
         });
       }
-      if (correction !== undefined) {
-        and.push({
-          id: {
-            in: await responseIdsWithLatestCorrection(correction, {
-              AND: [...and],
-            }),
-          },
-        });
-      }
-      const responses = await prisma.response.findMany({
-        include: {
-          form: { select: { documentKind: true, publicId: true, title: true } },
-          owner: { select: { email: true } },
-          submissions: {
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-            select: {
-              corrections: {
-                orderBy: { revision: "desc" },
-                select: { revision: true },
-                take: 1,
-              },
-              createdAt: true,
-              id: true,
-            },
-            take: 1,
-          },
-        },
-        orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
-        take: adminResultPageSize + 1,
+      const responses = await findAdminResults({
+        correction,
+        fiscal_year,
+        month,
+        province,
         where: and.length > 0 ? { AND: and } : {},
       });
       const page = responses.slice(0, adminResultPageSize);
+      const last = page.at(-1);
       return {
         nextCursor:
-          responses.length > adminResultPageSize
-            ? adminResultCursorValue(page.at(-1) as (typeof page)[number])
+          responses.length > adminResultPageSize && last
+            ? adminResultCursorValue(last)
             : null,
         results: page.map(adminResultSummary),
       };
@@ -440,6 +438,9 @@ export function registerResultRoutes(
           );
       const publishedTemplate = response.publishedTemplate;
       const manifest = publishedTemplate?.manifest;
+      const submittedData = selected?.correction
+        ? selected.correction.data
+        : submission?.data;
       const manifestFields =
         manifest && publishedTemplate
           ? response.form.documentKind === "xlsx"
@@ -452,6 +453,11 @@ export function registerResultRoutes(
           : [];
       return {
         result: {
+          ...resultAnswerValues({
+            data: submitted ? submittedData : response.draftData,
+            documentKind: response.form.documentKind,
+            fields: manifest?.fields ?? [],
+          }),
           correction: selected?.correction
             ? {
                 createdAt: selected.correction.createdAt,

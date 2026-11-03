@@ -229,6 +229,8 @@ const FormEditorRoute = () => {
     setMetadataBusy(null);
     setEditorState("loading");
     setEditorDirty(false);
+    // A new editor must not replay a command issued for the previous form.
+    setSaveRequest(0);
 
     const loadForm = async () => {
       try {

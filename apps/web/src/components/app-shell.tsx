@@ -1,7 +1,6 @@
 import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ClipboardList,
-  FilePlus2,
   FileText,
   KeyRound,
   LogOut,
@@ -20,6 +19,9 @@ import { Button, Notice, Spinner } from "@/components/ui";
 import { ApiError, homePathForRole } from "@/lib/api";
 import { roleFor, useAuth } from "@/lib/auth";
 
+const navigationLinkClassName =
+  "inline-flex min-h-10 items-center gap-2 whitespace-nowrap rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] transition-colors hover:bg-[var(--accent-soft)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[var(--ink)] [&>svg]:shrink-0";
+
 const AdminNavigation = ({
   pathname,
   onNavigate,
@@ -37,66 +39,59 @@ const AdminNavigation = ({
     <>
       <Link
         to="/admin"
-        className={`rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] hover:bg-[var(--accent-soft)] ${
+        className={`${navigationLinkClassName} ${
           formsAreActive ? "bg-[var(--accent-soft)] text-[var(--ink)]" : ""
         }`}
         activeOptions={{ exact: true }}
         aria-current={formsAreActive ? "page" : undefined}
         onClick={onNavigate}
       >
+        <FileText size={16} />
         แบบฟอร์ม
       </Link>
       <Link
         to="/admin/results"
         search={{ form: undefined }}
-        className={`rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] hover:bg-[var(--accent-soft)] ${
+        className={`${navigationLinkClassName} ${
           resultsAreActive ? "bg-[var(--accent-soft)] text-[var(--ink)]" : ""
         }`}
         aria-current={resultsAreActive ? "page" : undefined}
         onClick={onNavigate}
       >
-        <ClipboardList className="mr-1 inline" size={15} />
+        <ClipboardList size={16} />
         ผลลัพธ์
       </Link>
       <Link
         to="/admin/audit"
-        className={`rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] hover:bg-[var(--accent-soft)] ${
+        className={`${navigationLinkClassName} ${
           auditAreActive ? "bg-[var(--accent-soft)] text-[var(--ink)]" : ""
         }`}
         aria-current={auditAreActive ? "page" : undefined}
         onClick={onNavigate}
       >
-        <ScrollText className="mr-1 inline" size={15} />
+        <ScrollText size={16} />
         Audit Trail
       </Link>
       <Link
         to="/admin/users"
-        className="rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] hover:bg-[var(--accent-soft)]"
+        className={navigationLinkClassName}
         activeProps={{
           className: "bg-[var(--accent-soft)] text-[var(--ink)]",
         }}
         onClick={onNavigate}
       >
-        <UsersRound className="mr-1 inline" size={15} />
+        <UsersRound size={16} />
         จัดการผู้ใช้
       </Link>
       <Link
-        to="/admin/forms/new"
-        className="rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] hover:bg-[var(--accent-soft)]"
-        onClick={onNavigate}
-      >
-        <FilePlus2 className="mr-1 inline" size={15} />
-        สร้างแบบฟอร์ม
-      </Link>
-      <Link
         to="/admin/ai-authoring"
-        className={`rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] hover:bg-[var(--accent-soft)] ${
+        className={`${navigationLinkClassName} ${
           authoringIsActive ? "bg-[var(--accent-soft)] text-[var(--ink)]" : ""
         }`}
         aria-current={authoringIsActive ? "page" : undefined}
         onClick={onNavigate}
       >
-        <WandSparkles className="mr-1 inline" size={15} />
+        <WandSparkles size={16} />
         AI Authoring
       </Link>
     </>
@@ -143,13 +138,13 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
   return (
     <div className="min-h-screen bg-[var(--canvas)] text-[var(--ink)]">
       <header className="border-b border-[var(--line)] bg-[var(--paper)]">
-        <div className="mx-auto flex max-w-[1240px] items-center justify-between px-5 py-4 lg:px-8">
+        <div className="mx-auto grid max-w-[1240px] grid-cols-[minmax(0,1fr)_auto] items-center gap-x-6 gap-y-3 px-5 py-3 lg:px-8">
           <Link
             to={homePath}
-            className="flex items-center gap-3"
+            className="flex w-fit shrink-0 items-center gap-3 whitespace-nowrap"
             onClick={() => setOpen(false)}
           >
-            <span className="grid size-9 place-items-center rounded-[10px] bg-[var(--ink)] text-[var(--accent)]">
+            <span className="grid size-9 shrink-0 place-items-center rounded-[10px] bg-[var(--ink)] text-[var(--accent)]">
               <FileText size={18} strokeWidth={2.5} />
             </span>
             <span className="text-lg font-bold tracking-[-0.03em]">
@@ -157,18 +152,18 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
             </span>
           </Link>
           <button
-            className="rounded-lg p-2 lg:hidden"
+            className="justify-self-end rounded-lg p-2 lg:hidden"
             type="button"
             aria-label="เปิดหรือปิดเมนูนำทาง"
             aria-expanded={open}
-            aria-controls="main-navigation"
+            aria-controls="main-navigation account-navigation"
             onClick={() => setOpen((value) => !value)}
           >
             {open ? <X size={20} /> : <Menu size={20} />}
           </button>
           <nav
             id="main-navigation"
-            className={`${open ? "absolute inset-x-0 top-[73px] z-10 flex border-b border-[var(--line)] bg-[var(--paper)] p-5" : "hidden"} flex-col gap-2 lg:static lg:flex lg:flex-row lg:items-center lg:border-0 lg:bg-transparent lg:p-0`}
+            className={`${open ? "flex" : "hidden"} col-span-2 flex-col gap-1 border-t border-[var(--line)] pt-3 lg:row-start-2 lg:flex lg:flex-row lg:items-center lg:gap-2`}
             aria-label="เมนูหลัก"
           >
             {role === "admin" ? (
@@ -181,17 +176,17 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
               <Link
                 to="/admin/results"
                 search={{ form: undefined }}
-                className="rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] hover:bg-[var(--accent-soft)]"
+                className={navigationLinkClassName}
                 onClick={() => setOpen(false)}
               >
-                <ClipboardList className="mr-1 inline" size={15} />
+                <ClipboardList size={16} />
                 ผลลัพธ์
               </Link>
             ) : null}
             {role === "user" ? (
               <Link
                 to="/dashboard"
-                className="rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] hover:bg-[var(--accent-soft)]"
+                className={navigationLinkClassName}
                 activeProps={{
                   className: "bg-[var(--accent-soft)] text-[var(--ink)]",
                 }}
@@ -200,27 +195,36 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
                 My responses
               </Link>
             ) : null}
-            <LegacySsoSwitchButton
-              onError={() => setLegacySsoError(true)}
-              onStart={() => {
-                setOpen(false);
-                setLegacySsoError(false);
-              }}
-            />
-            <Link
-              to="/change-password"
-              search={{
-                returnTo: homePath,
-              }}
-              className="rounded-lg px-3 py-2 text-sm font-semibold text-[var(--ink-soft)] hover:bg-[var(--accent-soft)]"
-              onClick={() => setOpen(false)}
-            >
-              <KeyRound className="mr-1 inline" size={15} />
-              เปลี่ยนรหัสผ่าน
-            </Link>
+          </nav>
+          <div
+            id="account-navigation"
+            role="group"
+            aria-label="บัญชีผู้ใช้"
+            className={`${open ? "flex" : "hidden"} col-span-2 min-w-0 flex-col gap-2 whitespace-nowrap border-t border-[var(--line)] pt-3 lg:col-span-1 lg:col-start-2 lg:row-start-1 lg:flex lg:flex-row lg:items-center lg:justify-end lg:border-0 lg:pt-0 [&_svg]:shrink-0`}
+          >
+            <div className="flex flex-col items-start gap-1 lg:flex-row lg:items-center">
+              <LegacySsoSwitchButton
+                onError={() => setLegacySsoError(true)}
+                onStart={() => {
+                  setOpen(false);
+                  setLegacySsoError(false);
+                }}
+              />
+              <Link
+                to="/change-password"
+                search={{
+                  returnTo: homePath,
+                }}
+                className={navigationLinkClassName}
+                onClick={() => setOpen(false)}
+              >
+                <KeyRound size={16} />
+                เปลี่ยนรหัสผ่าน
+              </Link>
+            </div>
             <span className="mx-1 hidden h-6 w-px bg-[var(--line)] lg:block" />
-            <span className="flex items-center gap-2 px-3 py-2 text-sm text-[var(--ink-soft)]">
-              <span className="grid size-7 place-items-center rounded-full bg-[var(--success-soft)] text-[var(--success)]">
+            <span className="flex w-fit min-w-0 items-center gap-2 rounded-full bg-[var(--muted-soft)] px-3 py-1.5 text-sm text-[var(--ink-soft)]">
+              <span className="grid size-7 shrink-0 place-items-center rounded-full bg-[var(--success-soft)] text-[var(--success)]">
                 {role === "admin" ? (
                   <ShieldCheck size={15} />
                 ) : (
@@ -235,13 +239,14 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
               variant="ghost"
               size="sm"
               type="button"
+              className="min-h-10 justify-start whitespace-nowrap lg:justify-center"
               disabled={loggingOut}
               onClick={logout}
             >
               {loggingOut ? <Spinner /> : <LogOut size={15} />}
               {loggingOut ? "กำลังออกจากระบบ…" : "ออกจากระบบ"}
             </Button>
-          </nav>
+          </div>
         </div>
       </header>
       {logoutError ? (

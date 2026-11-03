@@ -1,3 +1,8 @@
+import {
+  fiscalYearChoices,
+  monthChoices,
+  provinceChoices,
+} from "@onlyoffice/results-filters";
 // oxlint-disable no-nested-ternary -- Keeps the three explicit loading, empty, and populated table states local to the route.
 import { Link, createFileRoute, useSearch } from "@tanstack/react-router";
 import { Search } from "lucide-react";
@@ -9,6 +14,7 @@ import { Badge, Button, Card, Input, Notice, Spinner } from "@/components/ui";
 import { ApiError, apiGet, formatDate } from "@/lib/api";
 import type {
   AdminResult,
+  AdminResultListQuery,
   AdminResultListResponse,
   AdminResultState,
 } from "@/lib/api";
@@ -38,6 +44,9 @@ const AdminResultsRoute = () => {
   const [cursorHistory, setCursorHistory] = useState<(string | null)[]>([]);
   const [formFilter, setFormFilter] = useState(initialForm);
   const [userFilter, setUserFilter] = useState("");
+  const [provinceFilter, setProvinceFilter] = useState("");
+  const [monthFilter, setMonthFilter] = useState("");
+  const [fiscalYearFilter, setFiscalYearFilter] = useState("");
   const [stateFilter, setStateFilter] = useState<AdminResultState | "all">(
     "all"
   );
@@ -46,8 +55,11 @@ const AdminResultsRoute = () => {
   const [toFilter, setToFilter] = useState("");
   const [draftFilters, setDraftFilters] = useState({
     correction: "",
+    fiscal_year: "",
     form: initialForm,
     from: "",
+    month: "",
+    province: "",
     state: "all" as AdminResultState | "all",
     to: "",
     user: "",
@@ -61,28 +73,21 @@ const AdminResultsRoute = () => {
     const loadResults = async () => {
       setLoading(true);
       setError(null);
-      const query = new URLSearchParams();
-      if (currentCursor) {
-        query.set("cursor", currentCursor);
-      }
-      if (formFilter.trim()) {
-        query.set("form", formFilter.trim());
-      }
-      if (userFilter.trim()) {
-        query.set("user", userFilter.trim());
-      }
-      if (stateFilter !== "all") {
-        query.set("state", stateFilter);
-      }
-      if (correctionFilter.trim()) {
-        query.set("correction", correctionFilter.trim());
-      }
-      if (fromFilter) {
-        query.set("from", fromFilter);
-      }
-      if (toFilter) {
-        query.set("to", `${toFilter}T23:59:59.999Z`);
-      }
+      const filters: AdminResultListQuery = {
+        ...(currentCursor ? { cursor: currentCursor } : {}),
+        ...(formFilter.trim() ? { form: formFilter.trim() } : {}),
+        ...(userFilter.trim() ? { user: userFilter.trim() } : {}),
+        ...(provinceFilter ? { province: provinceFilter } : {}),
+        ...(monthFilter ? { month: monthFilter } : {}),
+        ...(fiscalYearFilter ? { fiscal_year: fiscalYearFilter } : {}),
+        ...(stateFilter === "all" ? {} : { state: stateFilter }),
+        ...(correctionFilter.trim()
+          ? { correction: correctionFilter.trim() }
+          : {}),
+        ...(fromFilter ? { from: fromFilter } : {}),
+        ...(toFilter ? { to: `${toFilter}T23:59:59.999Z` } : {}),
+      };
+      const query = new URLSearchParams(Object.entries(filters));
       try {
         const payload = await apiGet<AdminResultListResponse>(
           `/api/admin/results?${query.toString()}`
@@ -94,6 +99,7 @@ const AdminResultsRoute = () => {
       } catch (caughtError) {
         if (!cancelled) {
           setError(errorMessage(caughtError));
+          setNextCursor(null);
           setResults([]);
         }
       } finally {
@@ -109,8 +115,11 @@ const AdminResultsRoute = () => {
   }, [
     correctionFilter,
     currentCursor,
+    fiscalYearFilter,
     formFilter,
     fromFilter,
+    monthFilter,
+    provinceFilter,
     reloadVersion,
     stateFilter,
     toFilter,
@@ -120,6 +129,9 @@ const AdminResultsRoute = () => {
   const applyFilters = () => {
     setFormFilter(draftFilters.form);
     setUserFilter(draftFilters.user);
+    setProvinceFilter(draftFilters.province);
+    setMonthFilter(draftFilters.month);
+    setFiscalYearFilter(draftFilters.fiscal_year);
     setStateFilter(draftFilters.state);
     setCorrectionFilter(draftFilters.correction);
     setFromFilter(draftFilters.from);
@@ -152,7 +164,7 @@ const AdminResultsRoute = () => {
       />
       <Card>
         <form
-          className="grid gap-4 md:grid-cols-2 xl:grid-cols-6"
+          className="grid gap-4 p-4 sm:p-5 md:grid-cols-2 xl:grid-cols-3"
           onSubmit={(event) => {
             event.preventDefault();
             applyFilters();
@@ -246,7 +258,69 @@ const AdminResultsRoute = () => {
               value={draftFilters.to}
             />
           </label>
-          <div className="flex items-end gap-2 md:col-span-2 xl:col-span-6">
+          <div className="grid gap-4 md:col-span-2 md:grid-cols-3 xl:col-span-3">
+            <label className="grid gap-1 text-sm font-semibold text-[var(--ink-soft)]">
+              จังหวัด
+              <select
+                className={selectClass}
+                onChange={(event) =>
+                  setDraftFilters((filters) => ({
+                    ...filters,
+                    province: event.target.value,
+                  }))
+                }
+                value={draftFilters.province}
+              >
+                <option value="">ทั้งหมด</option>
+                {provinceChoices.map((province) => (
+                  <option key={province} value={province}>
+                    {province}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-semibold text-[var(--ink-soft)]">
+              เดือน
+              <select
+                className={selectClass}
+                onChange={(event) =>
+                  setDraftFilters((filters) => ({
+                    ...filters,
+                    month: event.target.value,
+                  }))
+                }
+                value={draftFilters.month}
+              >
+                <option value="">ทั้งหมด</option>
+                {monthChoices.map((month) => (
+                  <option key={month} value={month}>
+                    {month}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="grid gap-1 text-sm font-semibold text-[var(--ink-soft)]">
+              ปีงบประมาณ
+              <select
+                className={selectClass}
+                onChange={(event) =>
+                  setDraftFilters((filters) => ({
+                    ...filters,
+                    fiscal_year: event.target.value,
+                  }))
+                }
+                value={draftFilters.fiscal_year}
+              >
+                <option value="">ทั้งหมด</option>
+                {fiscalYearChoices().map((year) => (
+                  <option key={year} value={year}>
+                    {year}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </div>
+          <div className="flex items-end gap-2 md:col-span-2 xl:col-span-3">
             <Button type="submit">
               <Search size={16} />
               ค้นหา
@@ -291,32 +365,41 @@ const AdminResultsRoute = () => {
           >
             <Spinner />
           </div>
-        ) : results.length === 0 ? (
+        ) : error ? null : results.length === 0 ? (
           <div className="p-8 text-center text-[var(--ink-soft)]">
             ไม่พบผลลัพธ์ตามตัวกรอง
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[850px] text-left text-sm">
+            <table className="w-full min-w-[1150px] text-left text-sm">
               <caption className="sr-only">รายการฉบับร่างและคำตอบที่ส่งแล้ว</caption>
               <thead className="border-b border-[var(--line)] bg-[var(--paper-soft)] text-xs uppercase tracking-[0.12em] text-[var(--ink-soft)]">
                 <tr>
-                  <th className="px-5 py-3" scope="col">
+                  <th className="px-4 py-3" scope="col">
                     แบบฟอร์ม
                   </th>
-                  <th className="px-5 py-3" scope="col">
+                  <th className="px-4 py-3" scope="col">
                     ผู้ใช้
                   </th>
-                  <th className="px-5 py-3" scope="col">
+                  <th className="whitespace-nowrap px-4 py-3" scope="col">
+                    จังหวัด
+                  </th>
+                  <th className="whitespace-nowrap px-4 py-3" scope="col">
+                    เดือน
+                  </th>
+                  <th className="whitespace-nowrap px-4 py-3" scope="col">
+                    ปีงบประมาณ
+                  </th>
+                  <th className="px-4 py-3" scope="col">
                     สถานะ
                   </th>
-                  <th className="px-5 py-3" scope="col">
+                  <th className="px-4 py-3" scope="col">
                     แก้ไขล่าสุด
                   </th>
-                  <th className="px-5 py-3" scope="col">
+                  <th className="px-4 py-3" scope="col">
                     Correction
                   </th>
-                  <th className="px-5 py-3" scope="col">
+                  <th className="px-4 py-3" scope="col">
                     <span className="sr-only">เปิด</span>
                   </th>
                 </tr>
@@ -327,7 +410,7 @@ const AdminResultsRoute = () => {
                     className="border-b border-[var(--line)] last:border-0"
                     key={result.id}
                   >
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-4">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold">
                           {result.formTitle}
@@ -338,10 +421,19 @@ const AdminResultsRoute = () => {
                         {result.formPublicId}
                       </div>
                     </td>
-                    <td className="px-5 py-4 text-[var(--ink-soft)]">
+                    <td className="max-w-64 break-all px-4 py-4 text-[var(--ink-soft)]">
                       {result.userEmail}
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="max-w-48 break-all px-4 py-4 text-[var(--ink-soft)]">
+                      {String(result.province ?? "-")}
+                    </td>
+                    <td className="max-w-48 break-all px-4 py-4 text-[var(--ink-soft)]">
+                      {String(result.month ?? "-")}
+                    </td>
+                    <td className="max-w-48 break-all px-4 py-4 text-[var(--ink-soft)]">
+                      {String(result.fiscalYear ?? "-")}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4">
                       <Badge
                         tone={
                           result.state === "submitted" ? "success" : "warning"
@@ -350,13 +442,13 @@ const AdminResultsRoute = () => {
                         {stateLabel(result.state)}
                       </Badge>
                     </td>
-                    <td className="px-5 py-4 text-[var(--ink-soft)]">
+                    <td className="px-4 py-4 text-[var(--ink-soft)]">
                       {formatDate(result.updatedAt)}
                     </td>
-                    <td className="px-5 py-4 text-[var(--ink-soft)]">
+                    <td className="px-4 py-4 text-[var(--ink-soft)]">
                       {result.latestCorrectionNumber ?? "—"}
                     </td>
-                    <td className="px-5 py-4 text-right">
+                    <td className="whitespace-nowrap px-4 py-4 text-right">
                       <Link
                         className="font-semibold text-[var(--accent)] underline-offset-4 hover:underline"
                         params={{ responseId: result.id }}
@@ -374,7 +466,11 @@ const AdminResultsRoute = () => {
         )}
         <div className="flex items-center justify-between border-t border-[var(--line)] px-5 py-4">
           <span className="text-sm text-[var(--ink-soft)]" aria-live="polite">
-            {loading ? "กำลังโหลด…" : `พบ ${results.length} รายการในหน้านี้`}
+            {loading
+              ? "กำลังโหลด…"
+              : error
+                ? "โหลดผลลัพธ์ไม่สำเร็จ"
+                : `พบ ${results.length} รายการในหน้านี้`}
           </span>
           <div className="flex gap-2">
             <Button

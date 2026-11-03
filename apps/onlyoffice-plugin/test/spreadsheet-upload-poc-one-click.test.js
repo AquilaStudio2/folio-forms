@@ -523,6 +523,7 @@ test.each([
   "preserved save rejects missing or malformed target binding identity before native save or request",
   async (uploadPocBindingId) => {
     const { harness } = await setup();
+    const methodCount = harness.methodInvocations.length;
     const result = await harness.window.FormBridge.runAction(
       "save-template",
       "",
@@ -532,9 +533,9 @@ test.each([
     expect(result.ok).toBe(false);
     expect(harness.requests).toHaveLength(0);
     expect(
-      harness.methodInvocations.some(
-        (call) => call.method === "SetEditingRestrictions"
-      )
+      harness.methodInvocations
+        .slice(methodCount)
+        .some((call) => call.method === "SetEditingRestrictions")
     ).toBe(false);
   }
 );

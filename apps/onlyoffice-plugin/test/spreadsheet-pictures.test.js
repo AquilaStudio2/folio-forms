@@ -155,6 +155,7 @@ test.each(["fill", "correction"])(
       spreadsheetPictureFrames: [pictureFrame],
     });
     acknowledgeBridge(harness);
+    await flushPlugin();
     const panel = descendants(harness.body).find(
       (node) =>
         node.tagName === "SECTION" &&
@@ -473,6 +474,7 @@ test("response guard reconciles before freezing/saving, skips unchanged dirty no
     spreadsheetPictureFrames: [pictureFrame],
   });
   acknowledgeBridge(harness);
+  await flushPlugin();
   const calls = [];
   const { callCommand } = harness.window.Asc.plugin;
   harness.window.Asc.plugin.callCommand = (
@@ -534,6 +536,8 @@ test("authenticated parent save receives failure when picture reconciliation fai
     spreadsheetPictureFrames: [pictureFrame],
   });
   acknowledgeBridge(harness);
+  await flushPlugin();
+  const methodCount = harness.methodCalls.length;
   harness.window.Asc.plugin.callCommand = (
     _command,
     _close,
@@ -559,7 +563,9 @@ test("authenticated parent save receives failure when picture reconciliation fai
     error: "ดูแลกรอบรูปไม่ได้ กรุณาลองอีกครั้งหรือเปิดแบบฟอร์มใหม่",
     status: "failed",
   });
-  expect(harness.methodCalls).not.toContain("SetEditingRestrictions");
+  expect(harness.methodCalls.slice(methodCount)).not.toContain(
+    "SetEditingRestrictions"
+  );
   expect(
     harness.window.Asc.scope.folioSpreadsheetPictureReconcile
   ).toBeUndefined();
@@ -577,6 +583,7 @@ test("upload blocks simultaneous saves and guard work, then releases controls fo
     spreadsheetPictureFrames: [pictureFrame],
   });
   acknowledgeBridge(harness);
+  await flushPlugin();
   const upload = control(harness, "ภาพประกอบ (จำเป็น) · JPEG / PNG ไม่เกิน 10 MB");
   let complete;
   const commands = [];
@@ -616,6 +623,7 @@ test("upload refuses missing published frame geometry and resets the picker", as
       version: 1,
     },
   });
+  await flushPlugin();
   const upload = control(harness, "ภาพประกอบ (จำเป็น) · JPEG / PNG ไม่เกิน 10 MB");
   upload.files = [{ size: 10, type: "image/png" }];
   upload.value = "photo.png";
