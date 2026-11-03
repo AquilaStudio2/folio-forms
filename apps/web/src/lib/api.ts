@@ -195,6 +195,7 @@ export type AdminResultState = "draft" | "submitted";
 export interface AdminResultListQuery {
   correction?: string;
   cursor?: string;
+  fiscal_year?: string;
   form?: string;
   from?: string;
   month?: string;
