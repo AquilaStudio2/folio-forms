@@ -22,10 +22,13 @@ import { routeTree } from "@/routeTree.gen";
 const result = (id = "11111111-1111-4111-8111-111111111111"): AdminResult => ({
   createdAt: "2026-10-15T00:00:00.000Z",
   documentKind: "docx",
+  fiscalYear: null,
   formPublicId: "0123456789abcdef0123456789abcdef",
   formTitle: "Synthetic provincial report",
   id,
   latestCorrectionNumber: null,
+  month: null,
+  province: null,
   state: "draft",
   submissionId: null,
   submittedAt: null,
@@ -94,6 +97,65 @@ beforeEach(() => {
 });
 
 afterEach(() => window.history.replaceState(null, "", "/"));
+
+it("shows reporting columns for DOCX and Excel with a dash for each unavailable value", async () => {
+  listResponse = () =>
+    Response.json({
+      nextCursor: null,
+      results: [
+        {
+          ...result(),
+          fiscalYear: 2570,
+          formTitle: "DOCX reporting values",
+          month: "ตุลาคม",
+          province: "เชียงใหม่",
+        },
+        {
+          ...result("22222222-2222-4222-8222-222222222222"),
+          documentKind: "xlsx",
+          fiscalYear: 2569,
+          formTitle: "Excel reporting values",
+          month: "กันยายน",
+          province: "เชียงราย",
+        },
+        {
+          ...result("33333333-3333-4333-8333-333333333333"),
+          formTitle: "Unavailable reporting values",
+        },
+        {
+          ...result("44444444-4444-4444-8444-444444444444"),
+          documentKind: "xlsx",
+          formTitle: "Partially available reporting values",
+          province: "เชียงใหม่",
+        },
+      ],
+    });
+  await mount();
+  const table = screen.getByRole("table", {
+    name: "รายการฉบับร่างและคำตอบที่ส่งแล้ว",
+  });
+  for (const name of ["จังหวัด", "เดือน", "ปีงบประมาณ"]) {
+    expect(within(table).getByRole("columnheader", { name })).toBeVisible();
+  }
+  const rows = within(table).getAllByRole("row").slice(1);
+  for (const [index, values] of [
+    [0, ["เชียงใหม่", "ตุลาคม", "2570"]],
+    [1, ["เชียงราย", "กันยายน", "2569"]],
+  ] as const) {
+    for (const value of values) {
+      expect(
+        within(rows[index]).getByRole("cell", { name: value })
+      ).toBeVisible();
+    }
+  }
+  expect(
+    within(rows[2]).getAllByRole("cell", { exact: true, name: "-" })
+  ).toHaveLength(3);
+  expect(within(rows[3]).getByRole("cell", { name: "เชียงใหม่" })).toBeVisible();
+  expect(
+    within(rows[3]).getAllByRole("cell", { exact: true, name: "-" })
+  ).toHaveLength(2);
+});
 
 describe("Province results search", () => {
   it("applies a labelled single Province choice through Search and omits the all-values default", async () => {

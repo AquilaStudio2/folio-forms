@@ -15,7 +15,8 @@ import type {
   SubmissionWithManifest,
   SubmissionWithRevisions,
 } from "../model-types";
-import { matchesResultAnswers } from "./result-filters";
+import { matchesResultAnswers, resultAnswerValues } from "./result-filters";
+import type { ResultAnswerValues } from "./result-filters";
 
 export const adminResultPageSize = 25;
 
@@ -33,8 +34,6 @@ export async function findAdminResults({
   where: Prisma.ResponseWhereInput;
 }) {
   const limit = adminResultPageSize + 1;
-  const includeAnswers =
-    province !== undefined || month !== undefined || fiscal_year !== undefined;
   const matches = [];
   let after: AdminResultCursor | undefined;
   // Apply every current-revision condition together before filling a page.
@@ -45,7 +44,7 @@ export async function findAdminResults({
       orderBy: [{ updatedAt: "desc" }, { id: "desc" }],
       select: {
         createdAt: true,
-        draftData: includeAnswers,
+        draftData: true,
         form: { select: { documentKind: true, publicId: true, title: true } },
         id: true,
         owner: { select: { email: true } },
@@ -57,11 +56,7 @@ export async function findAdminResults({
                   select: { binding: true, tag: true, type: true },
                   where: {
                     tag: {
-                      in: [
-                        ...(province === undefined ? [] : ["province"]),
-                        ...(month === undefined ? [] : ["month"]),
-                        ...(fiscal_year === undefined ? [] : ["fiscal_year"]),
-                      ],
+                      in: ["province", "month", "fiscal_year"],
                     },
                   },
                 },
@@ -75,11 +70,11 @@ export async function findAdminResults({
           select: {
             corrections: {
               orderBy: { revision: "desc" },
-              select: { data: includeAnswers, revision: true },
+              select: { data: true, revision: true },
               take: 1,
             },
             createdAt: true,
-            data: includeAnswers,
+            data: true,
             id: true,
           },
           take: 1,
@@ -110,29 +105,32 @@ export async function findAdminResults({
     });
     for (const response of batch) {
       const submission = response.submissions[0];
+      const latestCorrection = submission?.corrections[0];
       if (
         correction !== undefined &&
-        (submission?.corrections[0]?.revision ?? 0) !== correction
+        (latestCorrection?.revision ?? 0) !== correction
       ) {
         continue;
       }
-      if (includeAnswers) {
-        const data =
+      const values = resultAnswerValues({
+        data:
           response.status === ResponseStatus.submitted
-            ? (submission?.corrections[0]?.data ?? submission?.data)
-            : response.draftData;
-        if (
-          !matchesResultAnswers({
-            data,
-            documentKind: response.form.documentKind,
-            fields: response.publishedTemplate.manifest?.fields ?? [],
-            filters: { fiscal_year, month, province },
-          })
-        ) {
-          continue;
-        }
+            ? latestCorrection
+              ? latestCorrection.data
+              : submission?.data
+            : response.draftData,
+        documentKind: response.form.documentKind,
+        fields: response.publishedTemplate.manifest?.fields ?? [],
+      });
+      if (
+        !matchesResultAnswers({
+          filters: { fiscal_year, month, province },
+          values,
+        })
+      ) {
+        continue;
       }
-      matches.push(response);
+      matches.push({ ...response, ...values });
       if (matches.length === limit) {
         return matches;
       }
@@ -250,28 +248,33 @@ export function submissionSummary(
   };
 }
 
-export function adminResultSummary(response: {
-  createdAt: Date;
-  form: { documentKind: DocumentKind; publicId: string; title: string };
-  id: string;
-  owner: { email: string };
-  status: ResponseStatus;
-  submissions: {
+export function adminResultSummary(
+  response: ResultAnswerValues & {
     createdAt: Date;
+    form: { documentKind: DocumentKind; publicId: string; title: string };
     id: string;
-    corrections: { revision: number }[];
-  }[];
-  updatedAt: Date;
-}): JsonRecord {
+    owner: { email: string };
+    status: ResponseStatus;
+    submissions: {
+      createdAt: Date;
+      id: string;
+      corrections: { revision: number }[];
+    }[];
+    updatedAt: Date;
+  }
+): JsonRecord {
   const submitted = response.status === ResponseStatus.submitted;
   const submission = response.submissions[0] ?? null;
   return {
     createdAt: response.createdAt,
     documentKind: response.form.documentKind,
+    fiscalYear: response.fiscalYear,
     formPublicId: response.form.publicId,
     formTitle: response.form.title,
     id: response.id,
     latestCorrectionNumber: submission?.corrections[0]?.revision ?? null,
+    month: response.month,
+    province: response.province,
     state: submitted ? "submitted" : "draft",
     submissionId: submission?.id ?? null,
     submittedAt: submission?.createdAt ?? null,

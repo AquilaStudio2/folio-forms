@@ -8,7 +8,7 @@ Completed on 2026-11-03, Asia/Bangkok.
 
 Integration branch: `codex/admin-results-tag-filters`.
 
-Baseline: `5fe30b5967d8a8132f30009f5cf667de9d5b87b2`. Verified feature tip: `0a47732e3f841a47737cf229894be34230cb1b73`. Subsequent closure changes are documentation and evidence only.
+Baseline: `5fe30b5967d8a8132f30009f5cf667de9d5b87b2`. Original verified feature tip: `0a47732e3f841a47737cf229894be34230cb1b73`; its documentation closure is `5d5cd7f`. The reporting-column follow-up below adds further production changes after that closure.
 
 | Ticket | Implementation | Integration merge | Status |
 | --- | --- | --- | --- |
@@ -49,6 +49,8 @@ Verification used separate synthetic databases and buckets, a real API, and the 
 
 ## Standards
 
+The Standards and Spec review sections cover the original feature through `0a47732`, before the separately verified reporting-column follow-up.
+
 No hard documented-standard violations found. No remaining baseline smells found. Tooling-enforced rules were excluded.
 
 The original P3 Duplicated Code finding is resolved. `apps/server/test/http/helpers/results.ts:38` supplies the shared fixture factory used by all three results suites. Form, Response, Submission, Correction, authenticated request, and response-parsing logic now have one implementation. Suite-specific defaults remain explicit at each caller; the factory adds no unused configuration or speculative behavior.
@@ -76,3 +78,19 @@ The only production change is `p-4 sm:p-5` on the existing form at `apps/web/src
 This review ran the read-only scenario verifier and whitespace check. Both passed. It did not rerun tests or modify code, branches, databases, or services. Running-page acceptance remains with the parent agent.
 
 Final Spec findings: 0. No outstanding requirements or review corrections remain.
+
+## Reporting-column follow-up
+
+The user subsequently requested Province, Month, and Fiscal year in the results table, with `-` for missing or nonconforming values. The three columns follow User and work for both DOCX and Excel XLSX. Each cell handles its own unavailable value independently.
+
+The API projects nullable `province`, `month`, and numeric `fiscalYear` from the configured scalar Tags and current answer JSON. Filtering and summaries reuse the same projection. The list always retrieves the three reporting values within the existing bounded query, including when filters are inactive. Detail responses expose the same value contract for the selected revision. Saved supported years remain visible outside the current selectable fiscal-year window.
+
+Verification for this follow-up:
+
+- All four authenticated results HTTP suites passed: Province 15, Month 14, Fiscal year 13, reporting columns 13; 55 total. The column suite includes list/detail consistency, number/string year equivalence, unavailable values, scalar Tag eligibility, XLSX bindings, every Response state, and complete latest-Correction precedence, including JSON null without fallback to an older Submission.
+- Results-page, Viewer-access, and spreadsheet-results UI suites passed 60 tests, including 21 results-page tests. The new rendered-page scenario verifies both document kinds and fully/partially unavailable reporting cells.
+- Root type checks and build passed. Root formatting/lint and whitespace checks passed before committing.
+- Running-page verification used three additional synthetic Responses in the isolated browser database. An existing email filter selected an invalid XLSX row displaying `- / - / -`, a partial XLSX row displaying `เชียงใหม่ / - / -`, and a valid DOCX row displaying `เชียงใหม่ / ตุลาคม / 2570`. Existing XLSX rows also displayed their current normalized values, including the latest Correction.
+- The padded filter panel and all nine table columns were inspected at the existing browser viewport. A subsequent browser comment requested single-line status and Open labels. Horizontal table-cell padding was reduced to 16px, and both labels now prevent wrapping. Live inspection confirmed a 24px single-line status badge and a 19px single-line Open label. The table keeps horizontal scrolling for narrower widths.
+
+![Reporting columns with independent missing-value fallbacks](evidence/results-reporting-columns.png)

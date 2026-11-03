@@ -207,10 +207,13 @@ export interface AdminResultListQuery {
 export interface AdminResult {
   documentKind?: DocumentKind;
   createdAt: string;
+  fiscalYear: number | null;
   formPublicId: string;
   formTitle: string;
   id: string;
   latestCorrectionNumber: number | null;
+  month: string | null;
+  province: string | null;
   state: AdminResultState;
   submissionId: string | null;
   submittedAt: string | null;

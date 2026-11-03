@@ -61,6 +61,7 @@ import {
   revisionSelector,
   selectedSubmissionRevision,
 } from "../responses/query";
+import { resultAnswerValues } from "../responses/result-filters";
 import { objectExists, objectKey } from "../storage";
 import type { RouteDependencies } from "./dependencies";
 
@@ -437,6 +438,9 @@ export function registerResultRoutes(
           );
       const publishedTemplate = response.publishedTemplate;
       const manifest = publishedTemplate?.manifest;
+      const submittedData = selected?.correction
+        ? selected.correction.data
+        : submission?.data;
       const manifestFields =
         manifest && publishedTemplate
           ? response.form.documentKind === "xlsx"
@@ -449,6 +453,11 @@ export function registerResultRoutes(
           : [];
       return {
         result: {
+          ...resultAnswerValues({
+            data: submitted ? submittedData : response.draftData,
+            documentKind: response.form.documentKind,
+            fields: manifest?.fields ?? [],
+          }),
           correction: selected?.correction
             ? {
                 createdAt: selected.correction.createdAt,

@@ -10,8 +10,11 @@ const resultListSchema = z.object({
   nextCursor: z.string().nullable(),
   results: z.array(
     z.object({
+      fiscalYear: z.number().nullable(),
       id: z.string(),
       latestCorrectionNumber: z.number().nullable(),
+      month: z.string().nullable(),
+      province: z.string().nullable(),
       state: z.enum(["draft", "submitted"]),
     })
   ),
@@ -134,7 +137,7 @@ export const createResultsHttpFixtures = ({
 
   const savedCorrection = (
     submission: { id: string; responseId: string },
-    data: Prisma.InputJsonObject,
+    data: Prisma.InputJsonValue | typeof Prisma.JsonNull,
     revision: number
   ) =>
     prisma.correction.create({

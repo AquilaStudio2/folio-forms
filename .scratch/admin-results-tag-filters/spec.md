@@ -10,6 +10,8 @@ Admins and Viewers can search saved Responses by Form, user, status, latest Corr
 
 Add three labelled, single-value filters to the existing results page. Read their values from designated scalar root Fields in the current saved answer JSON. Combine every active new filter with every active existing filter using AND, and return the existing Response rows with their current ordering and pagination.
 
+Display จังหวัด, เดือน, and ปีงบประมาณ as three additional results-table columns, including when their filters are inactive. Use the same configured Tags, supported formats, and current saved values as the filters. Show the literal `-` in each unavailable cell independently when its scalar Tag is absent, its value is missing, or its saved format is unsupported.
+
 | Filter | Field Tag | Supported saved value | Central choices |
 | --- | --- | --- | --- |
 | จังหวัด | `province` | Full Thai province name, with outer whitespace trimmed before exact comparison | Complete Thai province-name list, including `กรุงเทพมหานคร` |
@@ -68,12 +70,15 @@ Each filter defaults to all values. Central choices remain available even when n
 46. As an Admin, I want an invalid or unsupported saved value to be treated as a nonmatch for its active criterion, so that one inconsistent answer does not prevent the rest of the results from loading.
 
 47. As an Admin, I want space around the filter controls and actions, so that the filter panel is comfortable to read and use.
+48. As an Admin or Viewer, I want each result's province, month, and fiscal year visible in the table for DOCX and XLSX, so that I can read its current classification without opening the result.
+49. As an Admin or Viewer, I want `-` in each unavailable reporting cell, so that a missing Tag or unsupported value does not obscure the other valid values or remove an otherwise eligible result.
+50. As an Admin or Viewer, I want the status badge and Open link to stay on one line, so that the wider results table remains easy to scan.
 
 ## Implementation Decisions
 
 - Extend the existing results-page controls, typed API client, results-list HTTP handler, and Response query/revision-selection logic. Reuse the current results and detail flows.
 - Extend the existing results-list API with optional, single-value `province`, `month`, and `fiscal_year` query parameters. The client omits inactive parameters. Preserve the existing `form`, `user`, `state`, `correction`, `from`, `to`, and `cursor` parameters and their meanings.
-- Preserve the existing result-summary and cursor response contract. Supply central choices through one authoritative application catalog, with consistent values for controls and request validation.
+- Extend result summaries with nullable `province`, `month`, and numeric `fiscalYear` values. Preserve all existing properties and the cursor contract. Supply central choices through one authoritative application catalog, with consistent values for controls and request validation.
 - Validate supplied query values at the HTTP boundary using the application's existing invalid-request behavior. Saved answer values are matched defensively, with unsupported types or formats producing a nonmatch for an active criterion.
 - A Response is eligible for an active criterion only when its own Published Template declares a scalar root Field with that exact, case-sensitive canonical Tag. Use the Response's published contract, not the editable Template Draft or a display label.
 - Read the designated root property in saved answer JSON. Table containers, table columns, nested arrays, nested objects, and undeclared JSON properties do not establish eligibility.
@@ -92,6 +97,9 @@ Each filter defaults to all values. Central choices remain available even when n
 - Apply ordinary eligibility conditions, current-revision selection, answer matching, and any latest-Correction condition before deciding which matches fill a page. An intermediate cap of candidate IDs from latest-Correction filtering must not hide later answer matches.
 - Preserve the existing 25-result page size, descending update-time and identifier ordering, and cursor contract. Determine whether another page exists from additional combined matches, and derive the cursor from a returned result.
 - Use bounded ordered candidate batches and select the data needed for matching and summaries. Preserve complete search results without loading all answer JSON into application memory at once.
+- Project the three reporting values once per candidate and reuse that projection for filtering and table summaries. Fetch all three designated scalar Fields and current saved answer data even when the filters are inactive. Keep the existing bounded queries without per-result database lookups.
+- Display the three reporting columns after User. A missing or unsupported value becomes null in the API and `-` in its table cell; valid neighboring values still display. Keep supported saved fiscal years visible independently of the dynamic choice window. The table retains horizontal scrolling on narrow screens.
+- Use compact horizontal cell padding to make room for all columns. Prevent wrapping within status badges and the Open link, as requested in the subsequent browser review.
 - Keep the existing distinction between pending control edits and applied criteria. Search applies the complete set and resets pagination. Reload, next page, and previous page retain the complete applied set.
 - Keep controls labelled and keyboard accessible. Preserve current loading, authentication, permission, request-error, and empty-result behavior, with the central choices still available for an empty result set.
 - Provide responsive internal padding around the filter panel's labels, controls, and actions, as requested during browser review. Preserve the existing design and filter interactions.
@@ -109,6 +117,7 @@ Each filter defaults to all values. Central choices remain available even when n
 - Construct sparse pagination fixtures with more than one page of newer nonmatches before older matches. Exercise multiple matching pages, identical update timestamps, end-of-results behavior, and combined latest-Correction filtering. Assert that qualifying Responses are neither omitted nor duplicated across the unchanged search.
 - Keep a small secondary seam at the rendered results page using the existing React Testing Library, router, and HTTP-mocking setup. Prior art is the Admin Forms page suite, which selects labelled controls, submits interactions, and inspects outgoing requests. Mock only the network response here, and leave answer-matching behavior to the HTTP application tests.
 - At the rendered page, verify single selection and all-values choices, labelled keyboard interactions, complete old-plus-new search parameters, applying through Search, clearing one criterion, reset to the first page, preserved criteria on navigation and Reload, central choices after no matches, and existing permission/error displays.
+- Verify reporting values and independent null fallbacks through the authenticated HTTP API for both document kinds and every current Response state. At the rendered page, assert the three accessible column headings, both document-kind rows, and literal `-` cells for fully and partially unavailable values.
 - Exercise catalog presentation and fiscal-year boundaries with a controlled clock through the highest existing observable seam. Check the full province list, all twelve Thai months in order, twelve fiscal years, and Bangkok midnight at October 1. Avoid tests that merely duplicate a private range-generation loop.
 - Perform a running-page check with synthetic matching and nonmatching Responses after implementation. Confirm that the three new controls fit the existing filter panel and that opening a returned result shows the values that qualified it.
 - Run the relevant HTTP and UI suites and the project's normal formatting, lint, and type checks when implementing. This specification records the verification plan and does not claim that the feature tests have already run.
@@ -155,3 +164,4 @@ Unless stated otherwise, select province `เชียงใหม่`, month `�
 - Canonical Tags are part of immutable published Form contracts. A future rename needs an explicit compatibility or migration decision.
 - The fiscal-year clock determines available choices only. A saved answer keeps its own independently stated Month and Fiscal year.
 - Published through the repository's Local Markdown issue tracker. The implementation report records the delivered branch, verification results, and review outcomes. The user's browser review additionally requested internal padding and reaffirmed Excel and DOCX support; both are verified.
+- The subsequent user request adds the three reporting columns and per-cell `-` fallbacks. Its implementation and separate verification are recorded in the implementation report.

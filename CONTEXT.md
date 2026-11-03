@@ -66,7 +66,7 @@ A mapped input in a Form. For DOCX, it is a tagged content control: its Title/Al
 
 ## Result Filter Field
 
-A scalar Field containing a Response's stated province, calendar month, or Buddhist Era fiscal year for results searching. The value belongs to its current saved Draft or latest Submission with its latest Correction.
+A scalar Field containing a Response's stated province, calendar month, or Buddhist Era fiscal year for results searching and display. The value belongs to its current saved Draft or latest Submission with its latest Correction. Results show `-` for each missing or unsupported value independently.
 
 ## PDMS Project Name Source
 

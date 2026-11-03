@@ -371,26 +371,35 @@ const AdminResultsRoute = () => {
           </div>
         ) : (
           <div className="overflow-x-auto">
-            <table className="w-full min-w-[850px] text-left text-sm">
+            <table className="w-full min-w-[1150px] text-left text-sm">
               <caption className="sr-only">รายการฉบับร่างและคำตอบที่ส่งแล้ว</caption>
               <thead className="border-b border-[var(--line)] bg-[var(--paper-soft)] text-xs uppercase tracking-[0.12em] text-[var(--ink-soft)]">
                 <tr>
-                  <th className="px-5 py-3" scope="col">
+                  <th className="px-4 py-3" scope="col">
                     แบบฟอร์ม
                   </th>
-                  <th className="px-5 py-3" scope="col">
+                  <th className="px-4 py-3" scope="col">
                     ผู้ใช้
                   </th>
-                  <th className="px-5 py-3" scope="col">
+                  <th className="whitespace-nowrap px-4 py-3" scope="col">
+                    จังหวัด
+                  </th>
+                  <th className="whitespace-nowrap px-4 py-3" scope="col">
+                    เดือน
+                  </th>
+                  <th className="whitespace-nowrap px-4 py-3" scope="col">
+                    ปีงบประมาณ
+                  </th>
+                  <th className="px-4 py-3" scope="col">
                     สถานะ
                   </th>
-                  <th className="px-5 py-3" scope="col">
+                  <th className="px-4 py-3" scope="col">
                     แก้ไขล่าสุด
                   </th>
-                  <th className="px-5 py-3" scope="col">
+                  <th className="px-4 py-3" scope="col">
                     Correction
                   </th>
-                  <th className="px-5 py-3" scope="col">
+                  <th className="px-4 py-3" scope="col">
                     <span className="sr-only">เปิด</span>
                   </th>
                 </tr>
@@ -401,7 +410,7 @@ const AdminResultsRoute = () => {
                     className="border-b border-[var(--line)] last:border-0"
                     key={result.id}
                   >
-                    <td className="px-5 py-4">
+                    <td className="px-4 py-4">
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="font-semibold">
                           {result.formTitle}
@@ -412,10 +421,19 @@ const AdminResultsRoute = () => {
                         {result.formPublicId}
                       </div>
                     </td>
-                    <td className="px-5 py-4 text-[var(--ink-soft)]">
+                    <td className="max-w-64 break-all px-4 py-4 text-[var(--ink-soft)]">
                       {result.userEmail}
                     </td>
-                    <td className="px-5 py-4">
+                    <td className="whitespace-nowrap px-4 py-4 text-[var(--ink-soft)]">
+                      {result.province ?? "-"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4 text-[var(--ink-soft)]">
+                      {result.month ?? "-"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4 text-[var(--ink-soft)]">
+                      {result.fiscalYear ?? "-"}
+                    </td>
+                    <td className="whitespace-nowrap px-4 py-4">
                       <Badge
                         tone={
                           result.state === "submitted" ? "success" : "warning"
@@ -424,13 +442,13 @@ const AdminResultsRoute = () => {
                         {stateLabel(result.state)}
                       </Badge>
                     </td>
-                    <td className="px-5 py-4 text-[var(--ink-soft)]">
+                    <td className="px-4 py-4 text-[var(--ink-soft)]">
                       {formatDate(result.updatedAt)}
                     </td>
-                    <td className="px-5 py-4 text-[var(--ink-soft)]">
+                    <td className="px-4 py-4 text-[var(--ink-soft)]">
                       {result.latestCorrectionNumber ?? "—"}
                     </td>
-                    <td className="px-5 py-4 text-right">
+                    <td className="whitespace-nowrap px-4 py-4 text-right">
                       <Link
                         className="font-semibold text-[var(--accent)] underline-offset-4 hover:underline"
                         params={{ responseId: result.id }}
