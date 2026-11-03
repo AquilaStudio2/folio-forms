@@ -1,6 +1,5 @@
 import {
   readTemplateArchive,
-  validateOfficeRelationships,
   templateArchiveText,
   parseTemplateXml,
   templateAttribute,
@@ -19,6 +18,8 @@ import type {
   SpreadsheetField,
   SpreadsheetColumn,
 } from "./contract";
+import { validateSpreadsheetRelationships } from "./hyperlinks";
+import type { SpreadsheetHyperlink } from "./hyperlinks";
 import { readSpreadsheetPictures } from "./picture-reader";
 import { validateUploadPocEmbeddings } from "./upload-poc-package";
 
@@ -41,6 +42,7 @@ export interface SpreadsheetCell {
   style: number;
 }
 export interface SpreadsheetWorkbook {
+  hyperlinks: SpreadsheetHyperlink[];
   archive: Record<string, Uint8Array>;
   sheet: string;
   sheetPath: string;
@@ -54,7 +56,7 @@ export const readSpreadsheetWorkbook = (
   bytes: Uint8Array
 ): SpreadsheetWorkbook => {
   const archive = readTemplateArchive(bytes, () => true);
-  validateOfficeRelationships(archive);
+  const hyperlinks = validateSpreadsheetRelationships(archive);
   let workbookType = false;
   parseTemplateXml(templateArchiveText(archive, "[Content_Types].xml"), {
     open: (element) => {
@@ -358,6 +360,10 @@ export const readSpreadsheetWorkbook = (
     archive,
     cells,
     date1904,
+    hyperlinks: (hyperlinks.get(sheetPath) ?? []).map((link) => ({
+      ...link,
+      range: { ...link.range, sheet: sheet.name },
+    })),
     merges,
     names,
     sheet: sheet.name,

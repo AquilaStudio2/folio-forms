@@ -247,7 +247,27 @@ export const prepareSpreadsheetOperation = async (
             (cell.row !== range.firstRow || cell.column !== range.firstColumn)
         )
     )
-    .map((cell) => ({ address: cell.address, value: cell.value }));
+    .map((cell) => {
+      const hyperlink = current.hyperlinks.find(
+        (link) =>
+          cell.row >= link.range.firstRow &&
+          cell.row <= link.range.lastRow &&
+          cell.column >= link.range.firstColumn &&
+          cell.column <= link.range.lastColumn
+      );
+      return {
+        address: cell.address,
+        value: cell.value,
+        ...(hyperlink
+          ? {
+              hyperlink: {
+                target: hyperlink.target,
+                tooltip: hyperlink.tooltip,
+              },
+            }
+          : {}),
+      };
+    });
   const selectedProject = await pdmsSelectionValue(metadata, contract, {
     documentKey: currentDocumentKey,
     targetId: response.id,

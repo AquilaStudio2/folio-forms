@@ -2,17 +2,14 @@ import path from "node:path";
 
 import { strToU8, zipSync } from "fflate";
 
-import {
-  readTemplateArchive,
-  templateArchiveText,
-  validateOfficeRelationships,
-} from "../package";
+import { readTemplateArchive, templateArchiveText } from "../package";
 import {
   parseSpreadsheetRange,
   spreadsheetCellPosition,
   spreadsheetColumnName,
 } from "./contract";
 import type { SpreadsheetRange } from "./contract";
+import { validateSpreadsheetRelationships } from "./hyperlinks";
 import {
   serializeSpreadsheetXml,
   spreadsheetXmlChildren,
@@ -71,7 +68,7 @@ export const compactSpreadsheetDraftOptions = (
   bytes: Uint8Array
 ): Uint8Array => {
   const archive = readTemplateArchive(bytes, () => true);
-  validateOfficeRelationships(archive);
+  validateSpreadsheetRelationships(archive);
   const book = spreadsheetXmlTree(
     templateArchiveText(archive, "xl/workbook.xml")
   );

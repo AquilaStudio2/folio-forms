@@ -103,6 +103,32 @@ export const validateSpreadsheetEdits = (
       throw new Error(`A protected cell was changed: ${address}`);
     }
   }
+  const protectedHyperlinks = (workbook: SpreadsheetWorkbook): string[] =>
+    workbook.hyperlinks
+      .filter(
+        (link) =>
+          !inputs.some(
+            (range) =>
+              inputRangeContains(
+                range,
+                link.range.firstRow,
+                link.range.firstColumn
+              ) &&
+              inputRangeContains(
+                range,
+                link.range.lastRow,
+                link.range.lastColumn
+              )
+          )
+      )
+      .map((link) => JSON.stringify(link))
+      .toSorted();
+  if (
+    JSON.stringify(protectedHyperlinks(previous)) !==
+    JSON.stringify(protectedHyperlinks(current))
+  ) {
+    throw new Error("A protected cell hyperlink was changed");
+  }
 };
 
 /** Remove protection only from the server's private worker copy. */
