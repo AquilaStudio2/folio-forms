@@ -502,7 +502,7 @@ const AdminResultDetailRoute = () => {
             />
           </Card>
         ) : null}
-        <Card>
+        <Card className="p-6">
           <p className="mb-4 text-sm text-[var(--ink-soft)]">
             {isDraft ? "ข้อมูลฉบับร่าง" : submittedDataLabel}
           </p>
