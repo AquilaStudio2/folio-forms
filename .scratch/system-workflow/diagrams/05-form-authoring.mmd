@@ -1,0 +1,33 @@
+flowchart TD
+    list(["/admin"])
+    create["New form หรือ AI DOCX"]
+    kind{"ชนิดเอกสาร"}
+    docx["DOCX เปล่าหรืออัปโหลด"]
+    xlsx["XLSX workbook เปล่า"]
+    draft["สร้าง Form และ TemplateDraft"]
+    lease["เปิด editor พร้อม lease"]
+    design["จัดหน้าและตั้งค่าฟิลด์"]
+    save["Save Template ผ่าน Operation"]
+    saved["บันทึกต้นแบบที่เปิดต่อได้"]
+    publish["Publish ผ่าน Operation"]
+    validate["ตรวจเอกสารและ field contract"]
+    immutable["สร้าง PublishedTemplate และ Manifest"]
+    share["คัดลอก share link"]
+    metadata["แก้ชื่อและคำอธิบาย"]
+    method["DOCX เลือกวิธีกรอกที่รองรับ"]
+    duplicate["Duplicate เป็น Form ร่างใหม่"]
+    archive["Archive ปิดรับคนใหม่"]
+    restore["Unarchive"]
+    delete["ลบร่างที่ไม่มี Response"]
+    list --> create --> kind
+    kind -->|"docx"| docx --> draft
+    kind -->|"xlsx"| xlsx --> draft
+    draft --> lease --> design
+    design --> save --> saved
+    saved --> design
+    design --> publish --> validate --> immutable --> share
+    immutable --> metadata
+    immutable --> method
+    immutable -->|"เปลี่ยนโครงสร้าง"| duplicate --> draft
+    immutable --> archive --> restore --> immutable
+    list -->|"ไม่เคยเผยแพร่และไม่มี Response"| delete

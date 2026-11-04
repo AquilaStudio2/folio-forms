@@ -1,0 +1,31 @@
+flowchart TD
+    author(["Admin เปิด XLSX Draft"])
+    select["เลือก cell, merged cell หรือ table"]
+    settings["ตั้ง key, label, type และ rules"]
+    native["สร้าง named ranges และ validation"]
+    patch["PATCH spreadsheet-bindings"]
+    known{"ยืนยันผลการเขียนได้"}
+    recover["recover ด้วย revision และ editor snapshot"]
+    block["ระงับการแก้เพิ่มจนรู้ผล"]
+    rules["เก็บ DraftFieldRule และ binding"]
+    publish["Publish ตรึง ManifestField"]
+    fill["User เปิดร่างและ input protection"]
+    source{"มี PDMS source และเปิด feature"}
+    catalog["สร้าง catalog ต่อ editor opening"]
+    ongoing["อ่านรายชื่อจาก PDMS Ongoing"]
+    snapshot["เก็บ names snapshot ที่โหลดสำเร็จ"]
+    picker["ค้นหาและเลือกชื่อโครงการ"]
+    target["ตรวจ binding, แถว, lease และ document"]
+    operation["บันทึกผ่าน Operation"]
+    extract["สกัด scalar และ table array"]
+    result["Draft หรือ Submission JSON และ XLSX"]
+    author --> select --> settings --> native --> patch --> known
+    known -->|"ได้"| rules
+    known -->|"ไม่ได้"| block --> recover --> known
+    rules --> publish --> fill --> source
+    source -->|"ไม่มี"| operation
+    source -->|"มี"| catalog
+    catalog -.-> ongoing
+    ongoing -.-> snapshot
+    snapshot --> picker --> target --> operation
+    operation --> extract --> result

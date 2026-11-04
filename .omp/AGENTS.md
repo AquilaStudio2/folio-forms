@@ -15,3 +15,4 @@ Use CodeGraph first for code flow, relationships, callers, callees, and change i
 - Issues and specs: read the [issue tracker](../docs/agents/issue-tracker.md) before publishing local Markdown.
 - Ticket status changes: read the [triage labels](../docs/agents/triage-labels.md).
 - Domain exploration or architecture changes: read the [domain docs](../docs/agents/domain.md) first.
+- Application, integration, or deployment changes: read [workflow maintenance](../docs/agents/system-workflow.md), review the affected flows, and update the system map in the same change before committing.

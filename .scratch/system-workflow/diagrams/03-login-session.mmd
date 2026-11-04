@@ -1,0 +1,39 @@
+flowchart TD
+    open(["เปิดหน้าแอป"])
+    token["AuthProvider โหลด bearer"]
+    claim["ลอง claim SSO transfer"]
+    check["GET /api/session"]
+    valid{"session และบัญชีใช้ได้"}
+    login["/login"]
+    credentials["POST sign-in/email"]
+    local["Better Auth ตรวจรหัส"]
+    temporary{"local ต้องเปลี่ยนรหัส"}
+    password["/change-password"]
+    revoke["บันทึก hash และ revoke sessions"]
+    destination["กลับ returnTo ตามสิทธิ์"]
+    admin["Admin ไป /admin"]
+    user["User ไป /dashboard"]
+    viewer["Viewer ไป /admin/results"]
+    warning["เหลือ 5 นาที แสดงเตือน"]
+    save["บันทึกหรือจัดการงานค้าง"]
+    renew["login ใหม่ หรือ PDMS SSO"]
+    logout["Sign out"]
+    clear["revoke session และจบ AI workspace"]
+    open --> token
+    token -->|"มี bearer"| check
+    token -->|"ไม่มี bearer"| claim
+    claim -->|"claim สำเร็จ"| check
+    claim -->|"ไม่มี transfer"| login
+    check --> valid
+    valid -->|"ไม่ผ่าน"| login
+    login --> credentials --> local --> temporary
+    valid -->|"ผ่าน"| temporary
+    temporary -->|"ใช่"| password --> revoke --> login
+    temporary -->|"ไม่ใช่"| destination
+    destination --> admin
+    destination --> user
+    destination --> viewer
+    destination -.-> warning --> save --> renew
+    renew -->|"local login"| login
+    renew -.->|"PDMS SSO ตามภาพ 04"| destination
+    destination -.-> logout --> clear --> login

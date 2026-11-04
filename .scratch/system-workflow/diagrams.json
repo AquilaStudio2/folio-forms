@@ -1,0 +1,163 @@
+[
+  {
+    "file": "diagrams/01-overview.mmd",
+    "id": "01",
+    "mermaidSyntax": "flowchart TD\n    entry([\"เปิด Folio หรือ share link\"])\n    auth[\"ตรวจ Folio session\"]\n    login[\"เข้าสู่ระบบ local หรือ PDMS\"]\n    role{\"บทบาทบัญชี\"}\n    admin[\"Admin: จัดการแบบฟอร์ม\"]\n    user[\"User: งานของฉัน\"]\n    viewer[\"Viewer: อ่านผลลัพธ์\"]\n    author[\"สร้างและตั้งค่าต้นแบบ\"]\n    publish[\"เผยแพร่ครั้งแรก\"]\n    share[\"ลิงก์กรอกแบบฟอร์ม\"]\n    fill[\"เริ่มหรือเปิด Response เดิม\"]\n    edit[\"กรอก DOCX หรือ XLSX\"]\n    draft[\"บันทึก Draft\"]\n    submit[\"ส่งคำตอบ\"]\n    operation[\"รอ Operation สำเร็จ\"]\n    history[\"เก็บ Submission ถาวร\"]\n    refill[\"เปิด Draft รอบถัดไป\"]\n    results[\"ดูผลและดาวน์โหลด\"]\n    correction[\"Admin เพิ่ม Correction\"]\n    entry --> auth\n    auth -->|\"ไม่มี session\"| login\n    login --> role\n    auth -->|\"session ใช้ได้\"| role\n    role -->|\"admin\"| admin\n    role -->|\"user\"| user\n    role -->|\"viewer\"| viewer\n    admin --> author --> publish --> share --> fill\n    user -->|\"กรอกต่อจาก dashboard\"| fill\n    fill --> edit\n    edit --> draft --> operation\n    edit --> submit --> operation\n    operation -->|\"บันทึกร่างสำเร็จ\"| edit\n    operation -->|\"ส่งสำเร็จ\"| history\n    history --> refill --> edit\n    history --> results\n    viewer --> results\n    admin --> results\n    results -->|\"Admin และ Response ยัง submitted\"| correction\n    correction --> results\n",
+    "title": "ภาพรวมตั้งแต่เข้าระบบจนอ่านผล",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/02-pages.mmd",
+    "id": "02",
+    "mermaidSyntax": "flowchart LR\n    root[\"/ เลือกหน้าตามบทบาท\"]\n    login[\"/login\"]\n    password[\"/change-password\"]\n    sso[\"/legacy-sso/confirm\"]\n    handoff[\"/handoff แสดงปัญหาลิงก์\"]\n    admin[\"/admin รายการฟอร์ม\"]\n    newForm[\"/admin/forms/new\"]\n    form[\"/admin/forms/:formId\"]\n    submissions[\".../submissions\"]\n    submission[\".../submissions/:submissionId\"]\n    results[\"/admin/results\"]\n    detail[\"/admin/results/:responseId\"]\n    correction[\".../:responseId/correction\"]\n    users[\"/admin/users\"]\n    audit[\"/admin/audit\"]\n    ai[\"/admin/ai-authoring\"]\n    dashboard[\"/dashboard\"]\n    fill[\"/forms/:publicId/fill\"]\n    receipt[\"/receipt/:submissionId\"]\n    root -->|\"guest\"| login\n    login -->|\"รหัสผ่านชั่วคราว\"| password\n    password -->|\"เปลี่ยนแล้ว login ใหม่\"| login\n    login -.->|\"SSO ขณะมี session\"| sso\n    root -->|\"Admin\"| admin\n    root -->|\"User\"| dashboard\n    root -->|\"Viewer\"| results\n    admin --> newForm --> form\n    admin --> form\n    form --> submissions --> submission\n    admin --> results --> detail -->|\"Admin เท่านั้น\"| correction\n    admin --> users\n    admin --> audit\n    admin --> ai -->|\"นำ DOCX ไปสร้าง Form\"| form\n    dashboard --> fill\n    dashboard --> receipt\n    fill -.->|\"เปิดประวัติการส่ง\"| receipt\n    fill -.->|\"Prefill ใช้ไม่ได้\"| handoff\n",
+    "title": "แผนที่ทุกหน้า",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/03-login-session.mmd",
+    "id": "03",
+    "mermaidSyntax": "flowchart TD\n    open([\"เปิดหน้าแอป\"])\n    token[\"AuthProvider โหลด bearer\"]\n    claim[\"ลอง claim SSO transfer\"]\n    check[\"GET /api/session\"]\n    valid{\"session และบัญชีใช้ได้\"}\n    login[\"/login\"]\n    credentials[\"POST sign-in/email\"]\n    local[\"Better Auth ตรวจรหัส\"]\n    temporary{\"local ต้องเปลี่ยนรหัส\"}\n    password[\"/change-password\"]\n    revoke[\"บันทึก hash และ revoke sessions\"]\n    destination[\"กลับ returnTo ตามสิทธิ์\"]\n    admin[\"Admin ไป /admin\"]\n    user[\"User ไป /dashboard\"]\n    viewer[\"Viewer ไป /admin/results\"]\n    warning[\"เหลือ 5 นาที แสดงเตือน\"]\n    save[\"บันทึกหรือจัดการงานค้าง\"]\n    renew[\"login ใหม่ หรือ PDMS SSO\"]\n    logout[\"Sign out\"]\n    clear[\"revoke session และจบ AI workspace\"]\n    open --> token\n    token -->|\"มี bearer\"| check\n    token -->|\"ไม่มี bearer\"| claim\n    claim -->|\"claim สำเร็จ\"| check\n    claim -->|\"ไม่มี transfer\"| login\n    check --> valid\n    valid -->|\"ไม่ผ่าน\"| login\n    login --> credentials --> local --> temporary\n    valid -->|\"ผ่าน\"| temporary\n    temporary -->|\"ใช่\"| password --> revoke --> login\n    temporary -->|\"ไม่ใช่\"| destination\n    destination --> admin\n    destination --> user\n    destination --> viewer\n    destination -.-> warning --> save --> renew\n    renew -->|\"local login\"| login\n    renew -.->|\"PDMS SSO ตามภาพ 04\"| destination\n    destination -.-> logout --> clear --> login\n",
+    "title": "Login, session, เปลี่ยนรหัส และออกจากระบบ",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/04-pdms-sso.mmd",
+    "id": "04",
+    "mermaidSyntax": "flowchart TD\n    begin([\"เลือกเข้าสู่ระบบ PDMS\"])\n    start[\"Folio สร้าง SSO transaction\"]\n    portal[\"PDMS Portal ยืนยันตัวตน\"]\n    callback[\"กลับ callback พร้อม one-time code\"]\n    exchange[\"Folio แลก code กับ PDMS Auth\"]\n    evidence[\"ตรวจ subject, email และ roles\"]\n    linked{\"มี provider และ subject ผูกแล้ว\"}\n    existing[\"ใช้ Folio account เดิม\"]\n    collision{\"อีเมลชนบัญชีเดิม\"}\n    provision[\"สร้าง Folio account ใหม่\"]\n    pending[\"รอ Admin review ใน Users\"]\n    decision{\"อนุมัติ snapshot ล่าสุด\"}\n    denied[\"ไม่สร้าง session เป้าหมาย\"]\n    fresh[\"เริ่ม SSO ใหม่หลังอนุมัติ\"]\n    map[\"คำนวณ role และ baseline\"]\n    switching{\"เริ่มขณะมี Folio session\"}\n    confirm[\"/legacy-sso/confirm\"]\n    cancel[\"ยกเลิก คง session เดิม\"]\n    finalize[\"ใช้ role และสร้าง Folio session\"]\n    transfer[\"claim transfer ใช้ครั้งเดียว\"]\n    home[\"ไปหน้าตาม role และ returnTo\"]\n    begin --> start --> portal --> callback --> exchange --> evidence --> linked\n    linked -->|\"มี\"| existing --> map\n    linked -->|\"ไม่มี\"| collision\n    collision -->|\"ไม่ชน\"| provision --> map\n    collision -->|\"ชน\"| pending --> decision\n    decision -->|\"ปฏิเสธหรือยังรอ\"| denied\n    decision -->|\"อนุมัติ\"| fresh --> start\n    map --> switching\n    switching -->|\"ไม่มี session เดิม\"| finalize\n    switching -->|\"มี\"| confirm\n    confirm -->|\"ยกเลิก\"| cancel\n    confirm -->|\"ยืนยัน\"| finalize\n    finalize --> transfer --> home\n",
+    "title": "PDMS SSO และการเชื่อมบัญชี",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/05-form-authoring.mmd",
+    "id": "05",
+    "mermaidSyntax": "flowchart TD\n    list([\"/admin\"])\n    create[\"New form หรือ AI DOCX\"]\n    kind{\"ชนิดเอกสาร\"}\n    docx[\"DOCX เปล่าหรืออัปโหลด\"]\n    xlsx[\"XLSX workbook เปล่า\"]\n    draft[\"สร้าง Form และ TemplateDraft\"]\n    lease[\"เปิด editor พร้อม lease\"]\n    design[\"จัดหน้าและตั้งค่าฟิลด์\"]\n    save[\"Save Template ผ่าน Operation\"]\n    saved[\"บันทึกต้นแบบที่เปิดต่อได้\"]\n    publish[\"Publish ผ่าน Operation\"]\n    validate[\"ตรวจเอกสารและ field contract\"]\n    immutable[\"สร้าง PublishedTemplate และ Manifest\"]\n    share[\"คัดลอก share link\"]\n    metadata[\"แก้ชื่อและคำอธิบาย\"]\n    method[\"DOCX เลือกวิธีกรอกที่รองรับ\"]\n    duplicate[\"Duplicate เป็น Form ร่างใหม่\"]\n    archive[\"Archive ปิดรับคนใหม่\"]\n    restore[\"Unarchive\"]\n    delete[\"ลบร่างที่ไม่มี Response\"]\n    list --> create --> kind\n    kind -->|\"docx\"| docx --> draft\n    kind -->|\"xlsx\"| xlsx --> draft\n    draft --> lease --> design\n    design --> save --> saved\n    saved --> design\n    design --> publish --> validate --> immutable --> share\n    immutable --> metadata\n    immutable --> method\n    immutable -->|\"เปลี่ยนโครงสร้าง\"| duplicate --> draft\n    immutable --> archive --> restore --> immutable\n    list -->|\"ไม่เคยเผยแพร่และไม่มี Response\"| delete\n",
+    "title": "Admin สร้าง ออกแบบ เผยแพร่ และแก้แบบฟอร์ม",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/06-response-lifecycle.mmd",
+    "id": "06",
+    "mermaidSyntax": "flowchart TD\n    link([\"เปิด /forms/:publicId/fill\"])\n    login[\"ต้องมี Folio session\"]\n    start[\"POST /api/forms/:publicId/start\"]\n    current{\"สถานะ Response เดิม\"}\n    fresh[\"ไม่มี Response: สร้าง Draft\"]\n    resume[\"draft: ใช้ไฟล์และข้อมูลเดิม\"]\n    busy[\"submitting: รอ Operation\"]\n    reopen[\"submitted: เปิด Draft ใหม่\"]\n    kind{\"ชนิดเอกสารที่เปิดใหม่\"}\n    docx[\"DOCX ใช้ Submission ล่าสุด\"]\n    xlsx[\"XLSX ใช้ PublishedTemplate\"]\n    config[\"ขอ editor-config และ lease\"]\n    method{\"Fill Method\"}\n    native[\"Native form ส่งค่าและรูป\"]\n    office[\"ONLYOFFICE และ Form Bridge\"]\n    save[\"Save Draft\"]\n    submit[\"Submit ตรวจ required\"]\n    operation[\"รอ Operation completed\"]\n    history[\"เพิ่ม Submission ใหม่\"]\n    receipt[\"อ่านใบรับและประวัติย้อนหลัง\"]\n    exit[\"งานค้าง: บันทึก ทิ้ง หรืออยู่ต่อ\"]\n    link --> login --> start --> current\n    current -->|\"ไม่มี\"| fresh --> config\n    current -->|\"draft\"| resume --> config\n    current -->|\"submitting\"| busy\n    current -->|\"submitted\"| reopen --> kind\n    kind -->|\"docx\"| docx --> config\n    kind -->|\"xlsx\"| xlsx --> config\n    config --> method\n    method -->|\"native และ DOCX\"| native\n    method -->|\"onlyoffice\"| office\n    native --> save\n    office --> save\n    native --> submit\n    office --> submit\n    save --> operation\n    submit --> operation\n    operation -->|\"save สำเร็จ\"| config\n    operation -->|\"submit สำเร็จ\"| history\n    history -->|\"หน้า fill เปิดรอบถัดไปอัตโนมัติ\"| start\n    history --> receipt\n    native -.-> exit\n    office -.-> exit\n",
+    "title": "User เริ่มกรอก บันทึก ส่ง และกรอกครั้งถัดไป",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/07-save-sequence.mmd",
+    "id": "07",
+    "mermaidSyntax": "sequenceDiagram\n    participant User\n    participant FormBridge\n    participant FolioAPI\n    participant OnlyOffice\n    participant RustFS\n    participant PostgreSQL\n    User->>FormBridge: เลือก Save หรือ Submit\n    FormBridge->>OnlyOffice: flush การแก้ไขปัจจุบัน\n    FormBridge->>FolioAPI: ส่ง action พร้อม capability\n    FolioAPI->>PostgreSQL: ตรวจ lease และสร้าง Operation\n    FolioAPI-->>FormBridge: 202 และ operationId\n    FolioAPI->>OnlyOffice: forceSave พร้อม callback claim\n    OnlyOffice-->>FolioAPI: callback พร้อม document key\n    FolioAPI->>OnlyOffice: อ่านเอกสารจาก URL ที่อนุญาต\n    FolioAPI->>FolioAPI: ตรวจ contract และสกัดข้อมูล\n    FolioAPI->>RustFS: เก็บ staging และ final document\n    FolioAPI->>PostgreSQL: commit ข้อมูลและ completed\n    FormBridge->>FolioAPI: poll Operation\n    FolioAPI-->>FormBridge: completed หรือ failed\n    FormBridge-->>User: อัปเดตสถานะในหน้าเว็บ\n",
+    "title": "การกดบันทึกหนึ่งครั้งเดินทางอย่างไร",
+    "type": "sequenceDiagram"
+  },
+  {
+    "file": "diagrams/08-spreadsheet-pdms.mmd",
+    "id": "08",
+    "mermaidSyntax": "flowchart TD\n    author([\"Admin เปิด XLSX Draft\"])\n    select[\"เลือก cell, merged cell หรือ table\"]\n    settings[\"ตั้ง key, label, type และ rules\"]\n    native[\"สร้าง named ranges และ validation\"]\n    patch[\"PATCH spreadsheet-bindings\"]\n    known{\"ยืนยันผลการเขียนได้\"}\n    recover[\"recover ด้วย revision และ editor snapshot\"]\n    block[\"ระงับการแก้เพิ่มจนรู้ผล\"]\n    rules[\"เก็บ DraftFieldRule และ binding\"]\n    publish[\"Publish ตรึง ManifestField\"]\n    fill[\"User เปิดร่างและ input protection\"]\n    source{\"มี PDMS source และเปิด feature\"}\n    catalog[\"สร้าง catalog ต่อ editor opening\"]\n    ongoing[\"อ่านรายชื่อจาก PDMS Ongoing\"]\n    snapshot[\"เก็บ names snapshot ที่โหลดสำเร็จ\"]\n    picker[\"ค้นหาและเลือกชื่อโครงการ\"]\n    target[\"ตรวจ binding, แถว, lease และ document\"]\n    operation[\"บันทึกผ่าน Operation\"]\n    extract[\"สกัด scalar และ table array\"]\n    result[\"Draft หรือ Submission JSON และ XLSX\"]\n    author --> select --> settings --> native --> patch --> known\n    known -->|\"ได้\"| rules\n    known -->|\"ไม่ได้\"| block --> recover --> known\n    rules --> publish --> fill --> source\n    source -->|\"ไม่มี\"| operation\n    source -->|\"มี\"| catalog\n    catalog -.-> ongoing\n    ongoing -.-> snapshot\n    snapshot --> picker --> target --> operation\n    operation --> extract --> result\n",
+    "title": "Excel, field mapping และตัวเลือกโครงการ PDMS",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/09-results-correction.mmd",
+    "id": "09",
+    "mermaidSyntax": "flowchart TD\n    search([\"Admin หรือ Viewer เปิด Results\"])\n    filters[\"กรองและขอหน้ารายการ\"]\n    response[\"เลือก Response ปัจจุบัน\"]\n    state{\"Response submitted อยู่หรือไม่\"}\n    draft[\"อ่าน Draft data และ saved document\"]\n    submission[\"เลือก Submission ล่าสุด\"]\n    revision[\"เลือก Original หรือ Correction\"]\n    read[\"แท็บ Document และ Fields\"]\n    doc[\"ดาวน์โหลด DOCX หรือ XLSX\"]\n    pdf[\"แปลง PDF จากไฟล์ revision ที่เลือก\"]\n    canCorrect{\"Admin และยังเป็น Submission ล่าสุด\"}\n    workspace[\"สร้าง Correction workspace แยก\"]\n    edit[\"แก้ค่าและกรอกเหตุผล\"]\n    operation[\"Save Correction ผ่าน Operation\"]\n    compare[\"ตรวจ base revision และ lease อีกครั้ง\"]\n    append[\"เพิ่ม Correction และ changedData\"]\n    preserved[\"คง Original และ revision ก่อนหน้า\"]\n    past[\"Admin submissions หรือ receipt ตาม submissionId\"]\n    search --> filters --> response --> state\n    state -->|\"ไม่ใช่\"| draft --> read\n    state -->|\"ใช่\"| submission --> revision --> read\n    read -->|\"เฉพาะ submitted\"| doc\n    read -->|\"เฉพาะ submitted\"| pdf\n    submission --> canCorrect\n    canCorrect -->|\"ผ่าน\"| workspace --> edit --> operation --> compare --> append\n    append --> preserved --> revision\n    past -->|\"อ่าน Submission เก่าได้แม้ Response กลับ draft\"| revision\n",
+    "title": "Results, ประวัติ, Correction และการดาวน์โหลด",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/10-accounts-deletion-audit.mmd",
+    "id": "10",
+    "mermaidSyntax": "flowchart LR\n    users([\"Admin เปิด Users\"])\n    create[\"สร้างบัญชีและแสดง temporary password\"]\n    password[\"ผู้ใช้ local ต้องเปลี่ยนรหัส\"]\n    mutate[\"เปลี่ยนอีเมล role หรือ enabled\"]\n    guard[\"ตรวจ Admin คนสุดท้ายและ concurrent change\"]\n    revoke[\"เพิกถอน sessions ตามการเปลี่ยน\"]\n    reset[\"Reset password\"]\n    erase[\"ลบบัญชี\"]\n    clean{\"ไม่มี Response และ cleanup ค้าง\"}\n    denied[\"หยุดและให้ลบข้อมูลก่อน\"]\n    account[\"ลบบัญชีและข้อมูลเชื่อมที่เกี่ยวข้อง\"]\n    response[\"Admin ลบ Response หรือเจ้าของทิ้งร่าง\"]\n    check[\"ตรวจสิทธิ์ สถานะ Operation และ lease\"]\n    delete[\"ลบ Response, Submission และ Correction\"]\n    intents[\"บันทึก object cleanup intents\"]\n    files[\"ลบไฟล์ตาม ownership\"]\n    retry[\"cleanup ไม่จบ ให้ recovery ทำต่อ\"]\n    tombstone[\"เก็บ deletion tombstone\"]\n    audit[\"เก็บ AuditEvent ที่ไม่มี credential\"]\n    view[\"/admin/audit อ่านและกรอง\"]\n    users --> create --> password\n    users --> mutate --> guard --> revoke\n    users --> reset --> revoke\n    users --> erase --> clean\n    clean -->|\"ไม่ผ่าน\"| denied\n    clean -->|\"ผ่าน\"| account\n    response --> check --> delete --> intents --> files\n    files -->|\"ยังไม่ครบ\"| retry --> files\n    delete --> tombstone\n    create -.-> audit\n    revoke -.-> audit\n    account -.-> audit\n    tombstone -.-> audit\n    audit --> view\n",
+    "title": "จัดการบัญชี Audit และการลบข้อมูล",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/11-ai-authoring.mmd",
+    "id": "11",
+    "mermaidSyntax": "flowchart TD\n    admin([\"Admin เปิด AI Authoring\"])\n    available{\"มี OmniRoute configuration\"}\n    disabled[\"แสดงว่า AI ยังไม่เปิดใช้\"]\n    input[\"ยินยอมและส่ง prompt หรือ PDF\"]\n    session[\"สร้าง workspace ผูก Folio session\"]\n    model[\"เรียก OmniRoute จาก server\"]\n    generate{\"document tool ที่ model เลือก\"}\n    structured[\"สร้าง DOCX จาก structured fields\"]\n    worker[\"Python ใน isolated document worker\"]\n    validate[\"ตรวจ DOCX และ tagged fields\"]\n    preview[\"ดูตัวอย่างและบทสนทนา\"]\n    revise[\"ขอแก้ DOCX ปัจจุบัน\"]\n    download[\"ดาวน์โหลด DOCX\"]\n    use[\"กดนำไปสร้าง Template Draft\"]\n    form[\"POST /api/admin/forms ด้วย DOCX\"]\n    design[\"เปิด editor ตรวจแล้ว Publish\"]\n    endSession[\"จบ หมดอายุ logout หรือ revoke\"]\n    cleanup[\"ล้าง workspace ชั่วคราว\"]\n    admin --> available\n    available -->|\"ไม่มี\"| disabled\n    available -->|\"มี\"| input --> session --> model --> generate\n    generate -->|\"structured\"| structured --> validate\n    generate -->|\"Python พร้อมใช้\"| worker --> validate\n    validate --> preview\n    preview --> revise --> model\n    preview --> download\n    preview --> use --> form --> design\n    session -.-> endSession --> cleanup\n",
+    "title": "AI Authoring เชื่อมกับ Form อย่างไร",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/12-prefill-handoff.mmd",
+    "id": "12",
+    "mermaidSyntax": "flowchart TD\n    source([\"ระบบต้นทางเตรียมข้อมูล\"])\n    create[\"POST integrations/prefill/handoffs\"]\n    validate[\"ตรวจสิทธิ์ integration และ published fields\"]\n    handoff[\"เก็บ Handoff และออก code ใช้ครั้งเดียว\"]\n    launch[\"Browser top-level POST /prefill/handoff\"]\n    claim[\"reserve และสร้าง PendingClaim cookie\"]\n    fill[\"redirect ไปหน้า fill\"]\n    login[\"Login หากไม่มี session\"]\n    start[\"POST start อ่าน PendingClaim\"]\n    match[\"ตรวจอีเมล อายุ configuration และสถานะ\"]\n    state{\"Response ปัจจุบัน\"}\n    snapshot[\"สร้างหรือใช้ Draft และ PrefillSnapshot\"]\n    consume[\"consume claim และ Handoff\"]\n    edit[\"กรอกตาม editable หรือ locked policy\"]\n    receipt[\"submitted แล้ว คืน receipt เดิม\"]\n    failure[\"แสดง handoff_unavailable\"]\n    status[\"ต้นทาง poll externalReference\"]\n    safe[\"คืนสถานะตามสิทธิ์ integration\"]\n    source --> create --> validate --> handoff\n    handoff --> launch --> claim --> fill --> login --> start --> match --> state\n    state -->|\"ไม่มีหรือเป็น Draft\"| snapshot --> consume --> edit\n    state -->|\"submitted\"| receipt\n    match -->|\"ไม่ผ่าน\"| failure\n    launch -->|\"ใช้ไม่ได้\"| failure\n    source -.-> status --> safe\n",
+    "title": "Prefill handoff จากระบบภายนอก",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/13-architecture.mmd",
+    "id": "13",
+    "mermaidSyntax": "flowchart LR\n    subgraph client [\"ผู้ใช้งาน\"]\n        browser[\"Browser\"]\n    end\n    subgraph gateway [\"ทางเข้า\"]\n        pingap[\"Pingap gateway\"]\n    end\n    subgraph service [\"บริการใน Compose\"]\n        web[\"Web SPA server\"]\n        assets[\"Web assets server\"]\n        api[\"Folio API\"]\n        office[\"ONLYOFFICE Docs\"]\n        worker[\"AI document worker\"]\n        daemon[\"Private worker Docker daemon\"]\n    end\n    subgraph datastore [\"ข้อมูลถาวร\"]\n        postgres[\"PostgreSQL\"]\n        rustfs[\"RustFS private bucket\"]\n        workspace[\"Worker workspace volume\"]\n    end\n    subgraph external [\"Integration ตาม configuration\"]\n        pdms[\"PDMS Portal และ Auth\"]\n        ongoing[\"PDMS Ongoing API\"]\n        omni[\"OmniRoute\"]\n        prefill[\"Prefill source system\"]\n    end\n    browser -->|\"ผ่าน external TLS ingress\"| pingap\n    pingap -->|\"SPA routes\"| web\n    pingap -->|\"/assets\"| assets\n    pingap -->|\"/api และ document callbacks\"| api\n    pingap -->|\"/office\"| office\n    api -->|\"Prisma และ transactions\"| postgres\n    api -->|\"เอกสารที่บันทึกแล้ว\"| rustfs\n    api <-->|\"config, save, Builder และ conversion\"| office\n    api -->|\"สร้าง AI DOCX\"| worker\n    worker <-->|\"job containers และผลลัพธ์\"| daemon\n    worker -->|\"temporary source\"| workspace\n    api -.->|\"PDMS: แลก SSO code\"| pdms\n    api -.->|\"Ongoing: อ่านชื่อโครงการ\"| ongoing\n    api -.->|\"OmniRoute: สร้างและแก้เอกสาร\"| omni\n    prefill -.->|\"Prefill: สร้าง handoff และถามสถานะ\"| api\n",
+    "title": "บริการและการเชื่อมต่อจริงตาม Compose",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/14-data-model.mmd",
+    "id": "14",
+    "mermaidSyntax": "erDiagram\n    direction LR\n    User ||--o{ Response : owns\n    Form ||--o| TemplateDraft : has\n    TemplateDraft ||--o{ DraftFieldRule : configures\n    Form ||--o| PublishedTemplate : publishes\n    PublishedTemplate ||--o| FieldManifest : has\n    FieldManifest ||--o{ ManifestField : contains\n    Form ||--o| PrefillConfiguration : configures\n    PrefillConfiguration ||--o{ PrefillField : maps\n    Form ||--o{ Response : receives\n    PublishedTemplate ||--o{ Response : defines\n    Response ||--o| PrefillSnapshot : snapshots\n    Response ||--o{ Submission : submits\n    Submission ||--o{ Correction : revisedBy\n    User {\n        string id PK\n        string email UK\n        string role\n        boolean enabled\n    }\n    Form {\n        uuid id PK\n        string publicId UK\n        string documentKind\n        string fillMethod\n        string status\n    }\n    TemplateDraft {\n        uuid id PK\n        uuid formId FK,UK\n        string objectKey\n        int bindingRevision\n    }\n    DraftFieldRule {\n        uuid id PK\n        uuid templateDraftId FK\n        string tag\n        json binding\n    }\n    PublishedTemplate {\n        uuid id PK\n        uuid formId FK,UK\n        string objectKey\n        int version\n    }\n    FieldManifest {\n        uuid id PK\n        uuid publishedTemplateId FK,UK\n    }\n    ManifestField {\n        uuid id PK\n        uuid manifestId FK\n        string tag\n        string type\n        json binding\n    }\n    PrefillConfiguration {\n        uuid id PK\n        uuid formId FK,UK\n        uuid publishedTemplateId FK,UK\n    }\n    PrefillField {\n        uuid id PK\n        uuid configurationId FK\n        string tag\n        string pointer\n    }\n    Response {\n        uuid id PK\n        uuid formId FK\n        string userId FK\n        uuid publishedTemplateId FK\n        string status\n        json draftData\n    }\n    PrefillSnapshot {\n        uuid id PK\n        uuid responseId FK,UK\n        json values\n        json lockedFields\n    }\n    Submission {\n        uuid id PK\n        uuid responseId FK\n        json data\n        string objectKey\n    }\n    Correction {\n        uuid id PK\n        uuid responseId FK\n        uuid submissionId FK\n        string reason\n        json changedData\n        json data\n    }\n",
+    "title": "ความสัมพันธ์ข้อมูลหลัก",
+    "type": "erDiagram"
+  },
+  {
+    "file": "diagrams/15-startup-recovery.mmd",
+    "id": "15",
+    "mermaidSyntax": "flowchart TD\n    boot([\"เริ่ม Compose\"])\n    infra[\"รอ DB, bucket และ ONLYOFFICE\"]\n    migrate[\"Prisma migrate deploy\"]\n    admin[\"ensureBootstrapAdmin\"]\n    recover[\"reconcileRecoverableState\"]\n    listen[\"เริ่ม Folio API\"]\n    ready[\"/ready ตรวจ DB, RustFS และ starter\"]\n    gateway[\"Gateway พร้อมรับ traffic\"]\n    timer[\"ทุก 60 วินาที\"]\n    cleanup[\"drain object cleanup intents\"]\n    handoff[\"expire Handoff และ claims\"]\n    operations[\"Operation เกินเวลาเป็น failed\"]\n    leases[\"ล้าง lease หมดอายุเมื่อไม่มีงาน active\"]\n    callback[\"ล้าง CallbackClaim หมดอายุ\"]\n    failure[\"save หรือ callback ล้มเหลว\"]\n    previous[\"คง canonical เดิมและคืนสถานะที่แก้ต่อได้\"]\n    retry[\"UI แสดงเหตุผลและให้ลองใหม่\"]\n    boot --> infra --> migrate --> admin --> recover --> listen --> ready --> gateway\n    listen -.-> timer --> recover\n    recover --> cleanup --> handoff --> operations --> leases --> callback\n    failure --> previous --> retry\n",
+    "title": "เริ่มระบบ งานค้าง และการกู้สถานะ",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/16-save-and-return.mmd",
+    "id": "16",
+    "mermaidSyntax": "flowchart TD\n    editing([\"กำลังออกแบบหรือกรอก\"])\n    owner{\"กำลังแก้ข้อมูลของใคร\"}\n    template[\"Admin กด Save Template\"]\n    response[\"User กดบันทึกฉบับร่าง\"]\n    operation[\"รอ Operation ของการบันทึก\"]\n    completed{\"completed แล้วหรือยัง\"}\n    pending[\"pending หรือ processing ให้รอ\"]\n    failed[\"failed ยังไม่ยืนยันฉบับใหม่\"]\n    saved[\"เก็บฉบับล่าสุดใน Folio แล้ว\"]\n    close[\"ออกหรือปิดหน้า\"]\n    login[\"กลับด้วยบัญชีที่มีสิทธิ์\"]\n    target{\"กลับไปทำงานใด\"}\n    admin[\"Admin เปิด Form เดิมจากรายการ\"]\n    dashboard[\"User เปิดกรอกต่อจาก Dashboard\"]\n    immutable{\"Form ยัง draft หรือไม่\"}\n    design[\"เปิด Template Draft ที่บันทึกไว้\"]\n    published[\"เผยแพร่แล้ว เปลี่ยนโครงสร้างใช้ Duplicate\"]\n    draft[\"เปิด Response Draft เดิมของบัญชีนี้\"]\n    continueEdit[\"แก้ต่อแล้วบันทึกหรือส่ง\"]\n    editing --> owner\n    owner -->|\"ต้นแบบของ Admin\"| template --> operation\n    owner -->|\"คำตอบของ User\"| response --> operation\n    operation --> completed\n    completed -->|\"ยังทำงาน\"| pending --> completed\n    completed -->|\"ล้มเหลว\"| failed --> editing\n    completed -->|\"สำเร็จ\"| saved --> close --> login --> target\n    target -->|\"ต้นแบบ\"| admin --> immutable\n    immutable -->|\"draft\"| design --> continueEdit\n    immutable -->|\"published หรือ archived\"| published\n    target -->|\"คำตอบ\"| dashboard --> draft --> continueEdit\n",
+    "title": "บันทึกแล้วปิดหน้า กลับมาแก้ต่อได้อย่างไร",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/17-form-status.mmd",
+    "id": "17",
+    "mermaidSyntax": "stateDiagram-v2\n    direction TB\n    state \"draft: ต้นแบบยังแก้ได้\" as draft\n    state \"published: ตรึงต้นแบบแล้ว\" as published\n    state \"archived: หยุดรับผู้เริ่มใหม่\" as archived\n    [*] --> draft: สร้าง Form\n    draft --> published: Publish สำเร็จ\n    published --> archived: Archive\n    archived --> published: Unarchive\n",
+    "title": "สถานะ Form และสิ่งที่ Admin ทำได้ในแต่ละสถานะ",
+    "type": "stateDiagram-v2"
+  },
+  {
+    "file": "diagrams/18-response-status.mmd",
+    "id": "18",
+    "mermaidSyntax": "stateDiagram-v2\n    direction TB\n    state \"draft: คำตอบรอบปัจจุบันแก้ได้\" as draft\n    state \"submitting: กำลังสร้างผลการส่ง\" as submitting\n    state \"submitted: มีผลส่งสำเร็จแล้ว\" as submitted\n    [*] --> draft: เริ่มกรอก\n    draft --> submitting: รับ Submit แล้ว\n    submitting --> submitted: สร้าง Submission สำเร็จ\n    submitting --> draft: งานส่ง failed\n    submitted --> draft: เปิดกรอกรอบถัดไป\n",
+    "title": "สถานะ Response และเหตุผลที่ส่งแล้วกลับเห็นร่าง",
+    "type": "stateDiagram-v2"
+  },
+  {
+    "file": "diagrams/19-operation-status.mmd",
+    "id": "19",
+    "mermaidSyntax": "stateDiagram-v2\n    direction TB\n    state \"pending: รับงานแล้ว\" as pending\n    state \"processing: กำลังประมวลผล\" as processing\n    state \"completed: บันทึกสำเร็จแล้ว\" as completed\n    state \"failed: งานนี้ไม่สำเร็จ\" as failed\n    [*] --> pending: รับ action\n    pending --> processing: เริ่มประมวลผล\n    pending --> failed: เริ่มงานไม่ได้หรือหมดเวลา\n    processing --> completed: ไฟล์และข้อมูลผ่านการตรวจ\n    processing --> failed: ตรวจไม่ผ่านหรือหมดเวลา\n    completed --> [*]\n    failed --> [*]\n",
+    "title": "สถานะการบันทึกสำเร็จกับสถานะของฟอร์มเป็นคนละเรื่อง",
+    "type": "stateDiagram-v2"
+  },
+  {
+    "file": "diagrams/20-exit-and-reconnect.mmd",
+    "id": "20",
+    "mermaidSyntax": "flowchart TD\n    exit([\"จะออกจากหน้า fill\"])\n    busy{\"กำลังบันทึก ส่ง หรือ export\"}\n    wait[\"ปุ่มออกให้รอจนงานจบ\"]\n    dirty{\"มีการแก้หลังฉบับที่บันทึก\"}\n    leave[\"ไป Dashboard หรือหน้าปลายทาง\"]\n    prompt[\"แสดง dialog งานยังไม่บันทึก\"]\n    choice{\"เลือกทำอะไร\"}\n    save[\"บันทึกแล้วออก\"]\n    operation[\"รอ Save Draft Operation\"]\n    result{\"บันทึกสำเร็จ\"}\n    stay[\"อยู่ต่อและเก็บค่าที่กำลังพิมพ์\"]\n    discard[\"ทิ้งฉบับร่าง\"]\n    erased[\"ลบ Response และประวัติที่ผูกอยู่\"]\n    reauth[\"ขอ login ใหม่หรือสลับ PDMS\"]\n    saved[\"บันทึกก่อนหรือยกเลิกการสลับ\"]\n    expired[\"หมด session แล้ว\"]\n    login[\"เข้าสู่ระบบอีกครั้ง\"]\n    reopen[\"กลับไปฉบับที่บันทึกสำเร็จล่าสุด\"]\n    exit --> busy\n    busy -->|\"ใช่\"| wait\n    busy -->|\"ไม่\"| dirty\n    dirty -->|\"ไม่\"| leave\n    dirty -->|\"มี\"| prompt --> choice\n    choice -->|\"บันทึกแล้วออก\"| save --> operation --> result\n    result -->|\"สำเร็จ\"| leave\n    result -->|\"ล้มเหลว\"| stay\n    choice -->|\"อยู่ต่อ\"| stay\n    choice -->|\"ทิ้งฉบับร่าง\"| discard --> erased --> leave\n    reauth -->|\"มีงานค้าง\"| saved\n    saved -->|\"บันทึกสำเร็จ\"| login\n    saved -->|\"ยกเลิก\"| stay\n    expired --> login --> reopen\n",
+    "title": "ออกจากหน้า Reload เน็ตหลุด และ session หมดอายุ",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/21-correction-continuation.mmd",
+    "id": "21",
+    "mermaidSyntax": "flowchart TD\n    submitted([\"มี Submission ที่ส่งแล้ว\"])\n    actor{\"ใครต้องการแก้\"}\n    user[\"User เปิดกรอกรอบถัดไป\"]\n    newDraft[\"Response กลับ draft\"]\n    next[\"ส่งแล้วเพิ่ม Submission ใหม่\"]\n    gate{\"Admin เปิด Correction ได้หรือไม่\"}\n    block[\"Response เป็น draft หรือเป้าหมายเก่า จึงถูกกัน\"]\n    workspace[\"สร้าง workspace จาก revision ปัจจุบัน\"]\n    edit[\"แก้เอกสารใน workspace\"]\n    preview[\"Save workspace ยังไม่เผยแพร่ Correction\"]\n    reason[\"ระบุเหตุผลแล้ว Save Correction\"]\n    commit[\"ตรวจ latest Submission และ base revision\"]\n    revision[\"เพิ่ม Correction ที่อ่านย้อนหลังได้\"]\n    history[\"Original และ revision ก่อนหน้ายังอยู่\"]\n    abandon[\"ยกเลิกหรือปล่อย lease หมด\"]\n    cleanup[\"workspace ชั่วคราวอาจถูกเก็บกวาด\"]\n    submitted --> actor\n    actor -->|\"User\"| user --> newDraft --> next\n    actor -->|\"Admin\"| gate\n    gate -->|\"ไม่ใช่ submitted ล่าสุด\"| block\n    gate -->|\"ผ่านเงื่อนไข\"| workspace --> edit\n    edit --> preview --> edit\n    edit --> reason --> commit --> revision --> history\n    edit --> abandon --> cleanup\n",
+    "title": "ส่งแล้วแก้ได้แค่ไหน และ Correction กลับมาทำต่อได้ไหม",
+    "type": "flowchart"
+  },
+  {
+    "file": "diagrams/22-all-statuses.mmd",
+    "id": "22",
+    "mermaidSyntax": "stateDiagram-v2\n    direction TB\n    state \"pending: รอเปิด code\" as pending\n    state \"reserved: browser เปิดแล้ว\" as reserved\n    state \"consumed: ใช้กับ Response แล้ว\" as consumed\n    state \"expired: หมดอายุ\" as expired\n    state \"deleted: ล้างข้อมูลแล้ว\" as deleted\n    [*] --> pending: สร้าง Handoff\n    pending --> reserved: top-level POST\n    reserved --> consumed: redeem หรือรับ receipt\n    pending --> expired: code หมดอายุ\n    reserved --> expired: Handoff หมดอายุ\n    pending --> deleted: ลบข้อมูลที่เกี่ยวข้อง\n    reserved --> deleted: ลบข้อมูลที่เกี่ยวข้อง\n    consumed --> deleted: ลบข้อมูลที่เกี่ยวข้อง\n",
+    "title": "สถานะทั้งหมดและสิ่งที่ไม่ใช่ status ของฟอร์ม",
+    "type": "stateDiagram-v2"
+  },
+  {
+    "file": "diagrams/23-daily-scenarios.mmd",
+    "id": "23",
+    "mermaidSyntax": "flowchart TD\n    create([\"Admin สร้าง Form\"])\n    template[\"Form draft ออกแบบต้นแบบ\"]\n    templateSaved[\"Save Template completed\"]\n    returnAdmin[\"ปิดแล้วเปิด Form เดิมมาแก้ต่อ\"]\n    publish[\"Publish completed: Form published\"]\n    share[\"แชร์ลิงก์ให้ User\"]\n    first[\"User login และเริ่ม Response draft\"]\n    save[\"กรอกบางส่วนแล้ว Save Draft completed\"]\n    leave[\"ออกจากระบบหรือปิด browser\"]\n    tomorrow[\"วันถัดไป login บัญชีเดิม\"]\n    resume[\"Dashboard กรอกต่อจากร่างเดิม\"]\n    submit[\"Submit: submitting\"]\n    success[\"completed เพิ่ม Submission ครั้งแรก\"]\n    reopen[\"หน้า fill เปิด Response draft รอบใหม่\"]\n    next[\"บันทึกหรือส่งรอบถัดไป\"]\n    past[\"อ่าน Submission แต่ละครั้งแยกได้\"]\n    create --> template --> templateSaved --> returnAdmin\n    returnAdmin -->|\"ต้นแบบพร้อม\"| publish --> share --> first\n    first --> save --> leave --> tomorrow --> resume --> submit --> success\n    success --> reopen --> next\n    success --> past\n    next -->|\"ส่งสำเร็จอีกครั้ง\"| past\n",
+    "title": "ตัวอย่างใช้งานจริงตั้งแต่วันสร้างจนกลับมากรอกต่อ",
+    "type": "flowchart"
+  }
+]

@@ -1,0 +1,33 @@
+flowchart TD
+    exit(["จะออกจากหน้า fill"])
+    busy{"กำลังบันทึก ส่ง หรือ export"}
+    wait["ปุ่มออกให้รอจนงานจบ"]
+    dirty{"มีการแก้หลังฉบับที่บันทึก"}
+    leave["ไป Dashboard หรือหน้าปลายทาง"]
+    prompt["แสดง dialog งานยังไม่บันทึก"]
+    choice{"เลือกทำอะไร"}
+    save["บันทึกแล้วออก"]
+    operation["รอ Save Draft Operation"]
+    result{"บันทึกสำเร็จ"}
+    stay["อยู่ต่อและเก็บค่าที่กำลังพิมพ์"]
+    discard["ทิ้งฉบับร่าง"]
+    erased["ลบ Response และประวัติที่ผูกอยู่"]
+    reauth["ขอ login ใหม่หรือสลับ PDMS"]
+    saved["บันทึกก่อนหรือยกเลิกการสลับ"]
+    expired["หมด session แล้ว"]
+    login["เข้าสู่ระบบอีกครั้ง"]
+    reopen["กลับไปฉบับที่บันทึกสำเร็จล่าสุด"]
+    exit --> busy
+    busy -->|"ใช่"| wait
+    busy -->|"ไม่"| dirty
+    dirty -->|"ไม่"| leave
+    dirty -->|"มี"| prompt --> choice
+    choice -->|"บันทึกแล้วออก"| save --> operation --> result
+    result -->|"สำเร็จ"| leave
+    result -->|"ล้มเหลว"| stay
+    choice -->|"อยู่ต่อ"| stay
+    choice -->|"ทิ้งฉบับร่าง"| discard --> erased --> leave
+    reauth -->|"มีงานค้าง"| saved
+    saved -->|"บันทึกสำเร็จ"| login
+    saved -->|"ยกเลิก"| stay
+    expired --> login --> reopen

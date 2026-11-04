@@ -1,0 +1,15 @@
+flowchart TD
+    login["Login หรือ PDMS SSO"]
+    role{"บทบาท"}
+    admin["Admin สร้างและเผยแพร่"]
+    fill["User กรอกและส่ง"]
+    viewer["Viewer อ่านผล"]
+    results["ผลลัพธ์ ประวัติ และไฟล์"]
+    correction["Admin เพิ่ม Correction"]
+    login --> role
+    role -->|"Admin"| admin --> fill
+    role -->|"User"| fill
+    role -->|"Viewer"| viewer --> results
+    fill -->|"ผ่าน Operation"| results
+    results -->|"เมื่อยัง submitted"| correction
+    correction --> results

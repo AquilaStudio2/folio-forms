@@ -1,0 +1,44 @@
+flowchart TD
+    link(["เปิด /forms/:publicId/fill"])
+    login["ต้องมี Folio session"]
+    start["POST /api/forms/:publicId/start"]
+    current{"สถานะ Response เดิม"}
+    fresh["ไม่มี Response: สร้าง Draft"]
+    resume["draft: ใช้ไฟล์และข้อมูลเดิม"]
+    busy["submitting: รอ Operation"]
+    reopen["submitted: เปิด Draft ใหม่"]
+    kind{"ชนิดเอกสารที่เปิดใหม่"}
+    docx["DOCX ใช้ Submission ล่าสุด"]
+    xlsx["XLSX ใช้ PublishedTemplate"]
+    config["ขอ editor-config และ lease"]
+    method{"Fill Method"}
+    native["Native form ส่งค่าและรูป"]
+    office["ONLYOFFICE และ Form Bridge"]
+    save["Save Draft"]
+    submit["Submit ตรวจ required"]
+    operation["รอ Operation completed"]
+    history["เพิ่ม Submission ใหม่"]
+    receipt["อ่านใบรับและประวัติย้อนหลัง"]
+    exit["งานค้าง: บันทึก ทิ้ง หรืออยู่ต่อ"]
+    link --> login --> start --> current
+    current -->|"ไม่มี"| fresh --> config
+    current -->|"draft"| resume --> config
+    current -->|"submitting"| busy
+    current -->|"submitted"| reopen --> kind
+    kind -->|"docx"| docx --> config
+    kind -->|"xlsx"| xlsx --> config
+    config --> method
+    method -->|"native และ DOCX"| native
+    method -->|"onlyoffice"| office
+    native --> save
+    office --> save
+    native --> submit
+    office --> submit
+    save --> operation
+    submit --> operation
+    operation -->|"save สำเร็จ"| config
+    operation -->|"submit สำเร็จ"| history
+    history -->|"หน้า fill เปิดรอบถัดไปอัตโนมัติ"| start
+    history --> receipt
+    native -.-> exit
+    office -.-> exit

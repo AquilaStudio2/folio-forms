@@ -1,0 +1,40 @@
+flowchart TD
+    entry(["เปิด Folio หรือ share link"])
+    auth["ตรวจ Folio session"]
+    login["เข้าสู่ระบบ local หรือ PDMS"]
+    role{"บทบาทบัญชี"}
+    admin["Admin: จัดการแบบฟอร์ม"]
+    user["User: งานของฉัน"]
+    viewer["Viewer: อ่านผลลัพธ์"]
+    author["สร้างและตั้งค่าต้นแบบ"]
+    publish["เผยแพร่ครั้งแรก"]
+    share["ลิงก์กรอกแบบฟอร์ม"]
+    fill["เริ่มหรือเปิด Response เดิม"]
+    edit["กรอก DOCX หรือ XLSX"]
+    draft["บันทึก Draft"]
+    submit["ส่งคำตอบ"]
+    operation["รอ Operation สำเร็จ"]
+    history["เก็บ Submission ถาวร"]
+    refill["เปิด Draft รอบถัดไป"]
+    results["ดูผลและดาวน์โหลด"]
+    correction["Admin เพิ่ม Correction"]
+    entry --> auth
+    auth -->|"ไม่มี session"| login
+    login --> role
+    auth -->|"session ใช้ได้"| role
+    role -->|"admin"| admin
+    role -->|"user"| user
+    role -->|"viewer"| viewer
+    admin --> author --> publish --> share --> fill
+    user -->|"กรอกต่อจาก dashboard"| fill
+    fill --> edit
+    edit --> draft --> operation
+    edit --> submit --> operation
+    operation -->|"บันทึกร่างสำเร็จ"| edit
+    operation -->|"ส่งสำเร็จ"| history
+    history --> refill --> edit
+    history --> results
+    viewer --> results
+    admin --> results
+    results -->|"Admin และ Response ยัง submitted"| correction
+    correction --> results

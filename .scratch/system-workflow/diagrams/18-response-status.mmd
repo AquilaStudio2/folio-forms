@@ -1,0 +1,10 @@
+stateDiagram-v2
+    direction TB
+    state "draft: คำตอบรอบปัจจุบันแก้ได้" as draft
+    state "submitting: กำลังสร้างผลการส่ง" as submitting
+    state "submitted: มีผลส่งสำเร็จแล้ว" as submitted
+    [*] --> draft: เริ่มกรอก
+    draft --> submitting: รับ Submit แล้ว
+    submitting --> submitted: สร้าง Submission สำเร็จ
+    submitting --> draft: งานส่ง failed
+    submitted --> draft: เปิดกรอกรอบถัดไป

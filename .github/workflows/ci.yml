@@ -41,6 +41,9 @@ jobs:
       - name: Lint
         run: bun run check
 
+      - name: Check system workflow guide
+        run: bun run docs:workflow:check
+
       - name: Web tests
         run: bun run --cwd apps/web test
 

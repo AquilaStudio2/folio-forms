@@ -1,0 +1,35 @@
+flowchart TD
+    begin(["เลือกเข้าสู่ระบบ PDMS"])
+    start["Folio สร้าง SSO transaction"]
+    portal["PDMS Portal ยืนยันตัวตน"]
+    callback["กลับ callback พร้อม one-time code"]
+    exchange["Folio แลก code กับ PDMS Auth"]
+    evidence["ตรวจ subject, email และ roles"]
+    linked{"มี provider และ subject ผูกแล้ว"}
+    existing["ใช้ Folio account เดิม"]
+    collision{"อีเมลชนบัญชีเดิม"}
+    provision["สร้าง Folio account ใหม่"]
+    pending["รอ Admin review ใน Users"]
+    decision{"อนุมัติ snapshot ล่าสุด"}
+    denied["ไม่สร้าง session เป้าหมาย"]
+    fresh["เริ่ม SSO ใหม่หลังอนุมัติ"]
+    map["คำนวณ role และ baseline"]
+    switching{"เริ่มขณะมี Folio session"}
+    confirm["/legacy-sso/confirm"]
+    cancel["ยกเลิก คง session เดิม"]
+    finalize["ใช้ role และสร้าง Folio session"]
+    transfer["claim transfer ใช้ครั้งเดียว"]
+    home["ไปหน้าตาม role และ returnTo"]
+    begin --> start --> portal --> callback --> exchange --> evidence --> linked
+    linked -->|"มี"| existing --> map
+    linked -->|"ไม่มี"| collision
+    collision -->|"ไม่ชน"| provision --> map
+    collision -->|"ชน"| pending --> decision
+    decision -->|"ปฏิเสธหรือยังรอ"| denied
+    decision -->|"อนุมัติ"| fresh --> start
+    map --> switching
+    switching -->|"ไม่มี session เดิม"| finalize
+    switching -->|"มี"| confirm
+    confirm -->|"ยกเลิก"| cancel
+    confirm -->|"ยืนยัน"| finalize
+    finalize --> transfer --> home

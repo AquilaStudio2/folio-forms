@@ -1,0 +1,35 @@
+flowchart LR
+    users(["Admin เปิด Users"])
+    create["สร้างบัญชีและแสดง temporary password"]
+    password["ผู้ใช้ local ต้องเปลี่ยนรหัส"]
+    mutate["เปลี่ยนอีเมล role หรือ enabled"]
+    guard["ตรวจ Admin คนสุดท้ายและ concurrent change"]
+    revoke["เพิกถอน sessions ตามการเปลี่ยน"]
+    reset["Reset password"]
+    erase["ลบบัญชี"]
+    clean{"ไม่มี Response และ cleanup ค้าง"}
+    denied["หยุดและให้ลบข้อมูลก่อน"]
+    account["ลบบัญชีและข้อมูลเชื่อมที่เกี่ยวข้อง"]
+    response["Admin ลบ Response หรือเจ้าของทิ้งร่าง"]
+    check["ตรวจสิทธิ์ สถานะ Operation และ lease"]
+    delete["ลบ Response, Submission และ Correction"]
+    intents["บันทึก object cleanup intents"]
+    files["ลบไฟล์ตาม ownership"]
+    retry["cleanup ไม่จบ ให้ recovery ทำต่อ"]
+    tombstone["เก็บ deletion tombstone"]
+    audit["เก็บ AuditEvent ที่ไม่มี credential"]
+    view["/admin/audit อ่านและกรอง"]
+    users --> create --> password
+    users --> mutate --> guard --> revoke
+    users --> reset --> revoke
+    users --> erase --> clean
+    clean -->|"ไม่ผ่าน"| denied
+    clean -->|"ผ่าน"| account
+    response --> check --> delete --> intents --> files
+    files -->|"ยังไม่ครบ"| retry --> files
+    delete --> tombstone
+    create -.-> audit
+    revoke -.-> audit
+    account -.-> audit
+    tombstone -.-> audit
+    audit --> view

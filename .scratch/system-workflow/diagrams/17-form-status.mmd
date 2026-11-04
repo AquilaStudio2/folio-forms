@@ -1,0 +1,9 @@
+stateDiagram-v2
+    direction TB
+    state "draft: ต้นแบบยังแก้ได้" as draft
+    state "published: ตรึงต้นแบบแล้ว" as published
+    state "archived: หยุดรับผู้เริ่มใหม่" as archived
+    [*] --> draft: สร้าง Form
+    draft --> published: Publish สำเร็จ
+    published --> archived: Archive
+    archived --> published: Unarchive

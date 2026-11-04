@@ -1,0 +1,13 @@
+{
+  "source_commit": "83a31cc8f6a741700eb429a74d99576ea531bdc8",
+  "source_fingerprint": "883d10ed3d53eaa0158f592f92abf1559170c89f6dfcbdfee6d1f455bca614a5",
+  "diagram_count": 23,
+  "web_route_declarations": 24,
+  "api_route_declarations": 92,
+  "prisma_models": 27,
+  "status_groups": 5,
+  "status_values": 19,
+  "svg_xml_parse": "passed",
+  "html_sha256": "e4d31ea7a9e44f2aa8385fb2347a4829acf36fcdf5d8ccb32471fea7ba2c9cdf",
+  "scope": "Source inventory, diagram rendering, and generated artifacts. Inspect changed diagrams in a browser separately; no live login, PDMS, OmniRoute, or data mutation was tested by this command."
+}
