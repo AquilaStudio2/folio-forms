@@ -2,6 +2,7 @@ import { Link, useLocation, useNavigate } from "@tanstack/react-router";
 import {
   ClipboardList,
   FileText,
+  Inbox,
   KeyRound,
   LogOut,
   Menu,
@@ -93,6 +94,17 @@ const AdminNavigation = ({
       >
         <WandSparkles size={16} />
         AI Authoring
+      </Link>
+      <Link
+        to="/dashboard"
+        className={navigationLinkClassName}
+        activeProps={{
+          className: "bg-[var(--accent-soft)] text-[var(--ink)]",
+        }}
+        onClick={onNavigate}
+      >
+        <Inbox size={16} />
+        คำตอบของฉัน
       </Link>
     </>
   );

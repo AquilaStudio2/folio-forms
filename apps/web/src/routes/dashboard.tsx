@@ -204,13 +204,22 @@ const DashboardRoute = () => {
                   {submitted ? "ส่งแล้ว" : "ฉบับร่าง"}
                 </Badge>
                 {submitted ? (
-                  <Link
-                    to="/receipt/$submissionId"
-                    params={{ submissionId: row.submissionId ?? row.id }}
-                    className="inline-flex items-center gap-1 text-sm font-semibold underline decoration-[var(--line-strong)] underline-offset-4 hover:decoration-[var(--ink)]"
-                  >
-                    ดูใบรับคำตอบ <ArrowUpRight size={15} />
-                  </Link>
+                  <>
+                    <Link
+                      to="/receipt/$submissionId"
+                      params={{ submissionId: row.submissionId ?? row.id }}
+                      className="inline-flex items-center gap-1 text-sm font-semibold underline decoration-[var(--line-strong)] underline-offset-4 hover:decoration-[var(--ink)]"
+                    >
+                      ดูใบรับคำตอบ <ArrowUpRight size={15} />
+                    </Link>
+                    <Link
+                      to="/forms/$publicId/submissions"
+                      params={{ publicId: row.formPublicId ?? "" }}
+                      className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--ink-soft)] underline-offset-4 hover:underline"
+                    >
+                      ดูประวัติการส่งทั้งหมด
+                    </Link>
+                  </>
                 ) : (
                   <Link
                     to="/forms/$publicId/fill"
