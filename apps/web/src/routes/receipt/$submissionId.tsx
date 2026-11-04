@@ -138,7 +138,7 @@ const ReceiptRoute = () => {
             className="inline-flex items-center gap-2 text-sm font-semibold text-[var(--ink-soft)] hover:text-[var(--ink)]"
           >
             <ArrowLeft size={15} />
-            กลับไปยังคำตอบของฉัน
+            กลับไปยังแดชบอร์ด
           </Link>
           <span className="text-sm font-bold tracking-[-0.03em]">
             Folio Forms

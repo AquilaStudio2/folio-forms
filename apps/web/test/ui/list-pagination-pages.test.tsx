@@ -121,7 +121,7 @@ it("paginates My responses without changing global statistics and returns to the
   expect(
     screen.getByText("กำลังดำเนินการ").previousElementSibling
   ).toHaveTextContent("6");
-  const nav = screen.getByRole("navigation", { name: "แบ่งหน้าคำตอบของฉัน" });
+  const nav = screen.getByRole("navigation", { name: "แบ่งหน้าแดชบอร์ด" });
   await userEvent.click(within(nav).getByRole("button", { name: "หน้าถัดไป" }));
   expect(screen.getByText("Response 11")).toBeInTheDocument();
   expect(screen.queryByText("Response 1")).not.toBeInTheDocument();
@@ -146,7 +146,7 @@ it("keeps an empty My responses footer visible with disabled navigation", async 
   await mount("/dashboard");
   await screen.findByText("ยังไม่มีคำตอบ");
   expect(screen.getByText("0 รายการ · หน้า 1 จาก 1")).toBeInTheDocument();
-  const nav = screen.getByRole("navigation", { name: "แบ่งหน้าคำตอบของฉัน" });
+  const nav = screen.getByRole("navigation", { name: "แบ่งหน้าแดชบอร์ด" });
   for (const button of within(nav).getAllByRole("button")) {
     expect(button).toBeDisabled();
   }

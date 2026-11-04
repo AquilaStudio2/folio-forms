@@ -315,7 +315,7 @@ const DashboardRoute = () => {
         </div>
       ) : null}
       <PageHeader
-        title="คำตอบของฉัน"
+        title="แดชบอร์ด"
         description="กลับไปกรอกฉบับร่างที่บันทึกไว้ หรือดูคำตอบที่ส่งแล้ว"
       />
       <div className="mb-8 grid gap-4 sm:grid-cols-3">
@@ -351,7 +351,7 @@ const DashboardRoute = () => {
           {loading ? null : (
             <ListPagination
               className="border-t border-[var(--line)] px-5 py-4"
-              label="แบ่งหน้าคำตอบของฉัน"
+              label="แบ่งหน้าแดชบอร์ด"
               pagination={pagination}
               disabled={discardingId !== null || discardCandidateId !== null}
               onPageChange={setPage}

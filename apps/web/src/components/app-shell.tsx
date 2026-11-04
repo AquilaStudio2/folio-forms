@@ -104,7 +104,7 @@ const AdminNavigation = ({
         onClick={onNavigate}
       >
         <Inbox size={16} />
-        คำตอบของฉัน
+        แดชบอร์ด
       </Link>
     </>
   );

@@ -200,7 +200,7 @@ const FormSubmissionHistoryRoute = () => {
               className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--ink-soft)] underline-offset-4 hover:underline"
               to="/dashboard"
             >
-              <ArrowLeft size={15} /> กลับไปหน้าคำตอบของฉัน
+              <ArrowLeft size={15} /> กลับไปหน้าแดชบอร์ด
             </Link>
             <Button
               disabled={exporting || submissions.length === 0}

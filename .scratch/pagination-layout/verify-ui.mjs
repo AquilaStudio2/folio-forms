@@ -393,7 +393,7 @@ try {
         });
       }
       if (name === "dashboard") {
-        const nav = page.getByRole("navigation", { name: "แบ่งหน้าคำตอบของฉัน" });
+        const nav = page.getByRole("navigation", { name: "แบ่งหน้าแดชบอร์ด" });
         await nav.getByRole("button", { exact: true, name: "หน้าถัดไป" }).click();
         await page.getByText("QA response 11", { exact: true }).waitFor();
         assert.equal(
