@@ -412,7 +412,7 @@ const AdminResultDetailRoute = () => {
             </Link>
           }
         />
-        <Card>
+        <Card className="space-y-4 p-6">
           <div className="flex flex-wrap items-center gap-3">
             <Badge tone={isSubmitted ? "success" : "warning"}>
               {isSubmitted ? "ส่งแล้ว" : "ฉบับร่าง"}
