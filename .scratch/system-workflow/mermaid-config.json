@@ -1,0 +1,22 @@
+{
+  "theme": "base",
+  "fontFamily": "Thonburi, Tahoma, Arial, sans-serif",
+  "fontSize": 16,
+  "htmlLabels": false,
+  "flowchart": {
+    "htmlLabels": false,
+    "curve": "basis",
+    "nodeSpacing": 32,
+    "rankSpacing": 48
+  },
+  "themeVariables": {
+    "primaryColor": "#edf6f1",
+    "primaryTextColor": "#203c36",
+    "primaryBorderColor": "#8aafa1",
+    "lineColor": "#60786d",
+    "secondaryColor": "#f8f4df",
+    "tertiaryColor": "#eaf0f7",
+    "background": "#ffffff",
+    "fontFamily": "Thonburi, Tahoma, Arial, sans-serif"
+  }
+}

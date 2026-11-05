@@ -1,0 +1,26 @@
+flowchart TD
+    source(["ระบบต้นทางเตรียมข้อมูล"])
+    create["POST integrations/prefill/handoffs"]
+    validate["ตรวจสิทธิ์ integration และ published fields"]
+    handoff["เก็บ Handoff และออก code ใช้ครั้งเดียว"]
+    launch["Browser top-level POST /prefill/handoff"]
+    claim["reserve และสร้าง PendingClaim cookie"]
+    fill["redirect ไปหน้า fill"]
+    login["Login หากไม่มี session"]
+    start["POST start อ่าน PendingClaim"]
+    match["ตรวจอีเมล อายุ configuration และสถานะ"]
+    state{"Response ปัจจุบัน"}
+    snapshot["สร้างหรือใช้ Draft และ PrefillSnapshot"]
+    consume["consume claim และ Handoff"]
+    edit["กรอกตาม editable หรือ locked policy"]
+    receipt["submitted แล้ว คืน receipt เดิม"]
+    failure["แสดง handoff_unavailable"]
+    status["ต้นทาง poll externalReference"]
+    safe["คืนสถานะตามสิทธิ์ integration"]
+    source --> create --> validate --> handoff
+    handoff --> launch --> claim --> fill --> login --> start --> match --> state
+    state -->|"ไม่มีหรือเป็น Draft"| snapshot --> consume --> edit
+    state -->|"submitted"| receipt
+    match -->|"ไม่ผ่าน"| failure
+    launch -->|"ใช้ไม่ได้"| failure
+    source -.-> status --> safe

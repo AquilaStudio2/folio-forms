@@ -1,0 +1,25 @@
+flowchart TD
+    submitted(["มี Submission ที่ส่งแล้ว"])
+    actor{"ใครต้องการแก้"}
+    user["User เปิดกรอกรอบถัดไป"]
+    newDraft["Response กลับ draft"]
+    next["ส่งแล้วเพิ่ม Submission ใหม่"]
+    gate{"Admin เปิด Correction ได้หรือไม่"}
+    block["Response เป็น draft หรือเป้าหมายเก่า จึงถูกกัน"]
+    workspace["สร้าง workspace จาก revision ปัจจุบัน"]
+    edit["แก้เอกสารใน workspace"]
+    preview["Save workspace ยังไม่เผยแพร่ Correction"]
+    reason["ระบุเหตุผลแล้ว Save Correction"]
+    commit["ตรวจ latest Submission และ base revision"]
+    revision["เพิ่ม Correction ที่อ่านย้อนหลังได้"]
+    history["Original และ revision ก่อนหน้ายังอยู่"]
+    abandon["ยกเลิกหรือปล่อย lease หมด"]
+    cleanup["workspace ชั่วคราวอาจถูกเก็บกวาด"]
+    submitted --> actor
+    actor -->|"User"| user --> newDraft --> next
+    actor -->|"Admin"| gate
+    gate -->|"ไม่ใช่ submitted ล่าสุด"| block
+    gate -->|"ผ่านเงื่อนไข"| workspace --> edit
+    edit --> preview --> edit
+    edit --> reason --> commit --> revision --> history
+    edit --> abandon --> cleanup

@@ -1,0 +1,13 @@
+stateDiagram-v2
+    direction TB
+    state "pending: รับงานแล้ว" as pending
+    state "processing: กำลังประมวลผล" as processing
+    state "completed: บันทึกสำเร็จแล้ว" as completed
+    state "failed: งานนี้ไม่สำเร็จ" as failed
+    [*] --> pending: รับ action
+    pending --> processing: เริ่มประมวลผล
+    pending --> failed: เริ่มงานไม่ได้หรือหมดเวลา
+    processing --> completed: ไฟล์และข้อมูลผ่านการตรวจ
+    processing --> failed: ตรวจไม่ผ่านหรือหมดเวลา
+    completed --> [*]
+    failed --> [*]

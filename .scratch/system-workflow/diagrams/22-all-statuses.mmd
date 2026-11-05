@@ -1,0 +1,15 @@
+stateDiagram-v2
+    direction TB
+    state "pending: รอเปิด code" as pending
+    state "reserved: browser เปิดแล้ว" as reserved
+    state "consumed: ใช้กับ Response แล้ว" as consumed
+    state "expired: หมดอายุ" as expired
+    state "deleted: ล้างข้อมูลแล้ว" as deleted
+    [*] --> pending: สร้าง Handoff
+    pending --> reserved: top-level POST
+    reserved --> consumed: redeem หรือรับ receipt
+    pending --> expired: code หมดอายุ
+    reserved --> expired: Handoff หมดอายุ
+    pending --> deleted: ลบข้อมูลที่เกี่ยวข้อง
+    reserved --> deleted: ลบข้อมูลที่เกี่ยวข้อง
+    consumed --> deleted: ลบข้อมูลที่เกี่ยวข้อง

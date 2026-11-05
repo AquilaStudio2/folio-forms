@@ -12,6 +12,7 @@
       "devDependencies": {
         "@onlyoffice/config": "workspace:*",
         "@types/bun": "catalog:",
+        "marked": "18.0.11",
         "oxfmt": "latest",
         "oxlint": "latest",
         "turbo": "^2.10.7",

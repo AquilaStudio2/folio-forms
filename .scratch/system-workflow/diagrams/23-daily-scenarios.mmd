@@ -1,0 +1,23 @@
+flowchart TD
+    create(["Admin สร้าง Form"])
+    template["Form draft ออกแบบต้นแบบ"]
+    templateSaved["Save Template completed"]
+    returnAdmin["ปิดแล้วเปิด Form เดิมมาแก้ต่อ"]
+    publish["Publish completed: Form published"]
+    share["แชร์ลิงก์ให้ User"]
+    first["User login และเริ่ม Response draft"]
+    save["กรอกบางส่วนแล้ว Save Draft completed"]
+    leave["ออกจากระบบหรือปิด browser"]
+    tomorrow["วันถัดไป login บัญชีเดิม"]
+    resume["Dashboard กรอกต่อจากร่างเดิม"]
+    submit["Submit: submitting"]
+    success["completed เพิ่ม Submission ครั้งแรก"]
+    reopen["หน้า fill เปิด Response draft รอบใหม่"]
+    next["บันทึกหรือส่งรอบถัดไป"]
+    past["อ่าน Submission แต่ละครั้งแยกได้"]
+    create --> template --> templateSaved --> returnAdmin
+    returnAdmin -->|"ต้นแบบพร้อม"| publish --> share --> first
+    first --> save --> leave --> tomorrow --> resume --> submit --> success
+    success --> reopen --> next
+    success --> past
+    next -->|"ส่งสำเร็จอีกครั้ง"| past

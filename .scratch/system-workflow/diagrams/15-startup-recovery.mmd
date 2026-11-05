@@ -1,0 +1,22 @@
+flowchart TD
+    boot(["เริ่ม Compose"])
+    infra["รอ DB, bucket และ ONLYOFFICE"]
+    migrate["Prisma migrate deploy"]
+    admin["ensureBootstrapAdmin"]
+    recover["reconcileRecoverableState"]
+    listen["เริ่ม Folio API"]
+    ready["/ready ตรวจ DB, RustFS และ starter"]
+    gateway["Gateway พร้อมรับ traffic"]
+    timer["ทุก 60 วินาที"]
+    cleanup["drain object cleanup intents"]
+    handoff["expire Handoff และ claims"]
+    operations["Operation เกินเวลาเป็น failed"]
+    leases["ล้าง lease หมดอายุเมื่อไม่มีงาน active"]
+    callback["ล้าง CallbackClaim หมดอายุ"]
+    failure["save หรือ callback ล้มเหลว"]
+    previous["คง canonical เดิมและคืนสถานะที่แก้ต่อได้"]
+    retry["UI แสดงเหตุผลและให้ลองใหม่"]
+    boot --> infra --> migrate --> admin --> recover --> listen --> ready --> gateway
+    listen -.-> timer --> recover
+    recover --> cleanup --> handoff --> operations --> leases --> callback
+    failure --> previous --> retry

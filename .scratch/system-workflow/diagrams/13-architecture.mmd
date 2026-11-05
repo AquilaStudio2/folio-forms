@@ -1,0 +1,41 @@
+flowchart LR
+    subgraph client ["ผู้ใช้งาน"]
+        browser["Browser"]
+    end
+    subgraph gateway ["ทางเข้า"]
+        pingap["Pingap gateway"]
+    end
+    subgraph service ["บริการใน Compose"]
+        web["Web SPA server"]
+        assets["Web assets server"]
+        api["Folio API"]
+        office["ONLYOFFICE Docs"]
+        worker["AI document worker"]
+        daemon["Private worker Docker daemon"]
+    end
+    subgraph datastore ["ข้อมูลถาวร"]
+        postgres["PostgreSQL"]
+        rustfs["RustFS private bucket"]
+        workspace["Worker workspace volume"]
+    end
+    subgraph external ["Integration ตาม configuration"]
+        pdms["PDMS Portal และ Auth"]
+        ongoing["PDMS Ongoing API"]
+        omni["OmniRoute"]
+        prefill["Prefill source system"]
+    end
+    browser -->|"ผ่าน external TLS ingress"| pingap
+    pingap -->|"SPA routes"| web
+    pingap -->|"/assets"| assets
+    pingap -->|"/api และ document callbacks"| api
+    pingap -->|"/office"| office
+    api -->|"Prisma และ transactions"| postgres
+    api -->|"เอกสารที่บันทึกแล้ว"| rustfs
+    api <-->|"config, save, Builder และ conversion"| office
+    api -->|"สร้าง AI DOCX"| worker
+    worker <-->|"job containers และผลลัพธ์"| daemon
+    worker -->|"temporary source"| workspace
+    api -.->|"PDMS: แลก SSO code"| pdms
+    api -.->|"Ongoing: อ่านชื่อโครงการ"| ongoing
+    api -.->|"OmniRoute: สร้างและแก้เอกสาร"| omni
+    prefill -.->|"Prefill: สร้าง handoff และถามสถานะ"| api

@@ -1,0 +1,38 @@
+flowchart LR
+    root["/ เลือกหน้าตามบทบาท"]
+    login["/login"]
+    password["/change-password"]
+    sso["/legacy-sso/confirm"]
+    handoff["/handoff แสดงปัญหาลิงก์"]
+    admin["/admin รายการฟอร์ม"]
+    newForm["/admin/forms/new"]
+    form["/admin/forms/:formId"]
+    submissions[".../submissions"]
+    submission[".../submissions/:submissionId"]
+    results["/admin/results"]
+    detail["/admin/results/:responseId"]
+    correction[".../:responseId/correction"]
+    users["/admin/users"]
+    audit["/admin/audit"]
+    ai["/admin/ai-authoring"]
+    dashboard["/dashboard"]
+    fill["/forms/:publicId/fill"]
+    receipt["/receipt/:submissionId"]
+    root -->|"guest"| login
+    login -->|"รหัสผ่านชั่วคราว"| password
+    password -->|"เปลี่ยนแล้ว login ใหม่"| login
+    login -.->|"SSO ขณะมี session"| sso
+    root -->|"Admin"| admin
+    root -->|"User"| dashboard
+    root -->|"Viewer"| results
+    admin --> newForm --> form
+    admin --> form
+    form --> submissions --> submission
+    admin --> results --> detail -->|"Admin เท่านั้น"| correction
+    admin --> users
+    admin --> audit
+    admin --> ai -->|"นำ DOCX ไปสร้าง Form"| form
+    dashboard --> fill
+    dashboard --> receipt
+    fill -.->|"เปิดประวัติการส่ง"| receipt
+    fill -.->|"Prefill ใช้ไม่ได้"| handoff

@@ -1,0 +1,96 @@
+erDiagram
+    direction LR
+    User ||--o{ Response : owns
+    Form ||--o| TemplateDraft : has
+    TemplateDraft ||--o{ DraftFieldRule : configures
+    Form ||--o| PublishedTemplate : publishes
+    PublishedTemplate ||--o| FieldManifest : has
+    FieldManifest ||--o{ ManifestField : contains
+    Form ||--o| PrefillConfiguration : configures
+    PrefillConfiguration ||--o{ PrefillField : maps
+    Form ||--o{ Response : receives
+    PublishedTemplate ||--o{ Response : defines
+    Response ||--o| PrefillSnapshot : snapshots
+    Response ||--o{ Submission : submits
+    Submission ||--o{ Correction : revisedBy
+    User {
+        string id PK
+        string email UK
+        string role
+        boolean enabled
+    }
+    Form {
+        uuid id PK
+        string publicId UK
+        string documentKind
+        string fillMethod
+        string status
+    }
+    TemplateDraft {
+        uuid id PK
+        uuid formId FK,UK
+        string objectKey
+        int bindingRevision
+    }
+    DraftFieldRule {
+        uuid id PK
+        uuid templateDraftId FK
+        string tag
+        json binding
+    }
+    PublishedTemplate {
+        uuid id PK
+        uuid formId FK,UK
+        string objectKey
+        int version
+    }
+    FieldManifest {
+        uuid id PK
+        uuid publishedTemplateId FK,UK
+    }
+    ManifestField {
+        uuid id PK
+        uuid manifestId FK
+        string tag
+        string type
+        json binding
+    }
+    PrefillConfiguration {
+        uuid id PK
+        uuid formId FK,UK
+        uuid publishedTemplateId FK,UK
+    }
+    PrefillField {
+        uuid id PK
+        uuid configurationId FK
+        string tag
+        string pointer
+    }
+    Response {
+        uuid id PK
+        uuid formId FK
+        string userId FK
+        uuid publishedTemplateId FK
+        string status
+        json draftData
+    }
+    PrefillSnapshot {
+        uuid id PK
+        uuid responseId FK,UK
+        json values
+        json lockedFields
+    }
+    Submission {
+        uuid id PK
+        uuid responseId FK
+        json data
+        string objectKey
+    }
+    Correction {
+        uuid id PK
+        uuid responseId FK
+        uuid submissionId FK
+        string reason
+        json changedData
+        json data
+    }

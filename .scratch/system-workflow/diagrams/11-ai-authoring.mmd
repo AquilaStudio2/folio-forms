@@ -1,0 +1,29 @@
+flowchart TD
+    admin(["Admin เปิด AI Authoring"])
+    available{"มี OmniRoute configuration"}
+    disabled["แสดงว่า AI ยังไม่เปิดใช้"]
+    input["ยินยอมและส่ง prompt หรือ PDF"]
+    session["สร้าง workspace ผูก Folio session"]
+    model["เรียก OmniRoute จาก server"]
+    generate{"document tool ที่ model เลือก"}
+    structured["สร้าง DOCX จาก structured fields"]
+    worker["Python ใน isolated document worker"]
+    validate["ตรวจ DOCX และ tagged fields"]
+    preview["ดูตัวอย่างและบทสนทนา"]
+    revise["ขอแก้ DOCX ปัจจุบัน"]
+    download["ดาวน์โหลด DOCX"]
+    use["กดนำไปสร้าง Template Draft"]
+    form["POST /api/admin/forms ด้วย DOCX"]
+    design["เปิด editor ตรวจแล้ว Publish"]
+    endSession["จบ หมดอายุ logout หรือ revoke"]
+    cleanup["ล้าง workspace ชั่วคราว"]
+    admin --> available
+    available -->|"ไม่มี"| disabled
+    available -->|"มี"| input --> session --> model --> generate
+    generate -->|"structured"| structured --> validate
+    generate -->|"Python พร้อมใช้"| worker --> validate
+    validate --> preview
+    preview --> revise --> model
+    preview --> download
+    preview --> use --> form --> design
+    session -.-> endSession --> cleanup

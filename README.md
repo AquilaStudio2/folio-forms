@@ -673,6 +673,7 @@ The stack has no application or off-host backup. Attached-disk loss, ransomware,
 ## Related documentation
 
 - [Domain glossary](CONTEXT.md)
+- [System workflow diagrams and PM sharing guide](.scratch/system-workflow/README.md)
 - [Architecture and data ownership (Thai)](docs/ARCHITECTURE.th.md)
 - [Repository structure and file placement (Thai)](docs/STRUCTURE.th.md)
 - [Spreadsheet authoring fixes and local verification, 20 October 2026 (Thai)](.scratch/spreadsheet-authoring-reliability/report.md)

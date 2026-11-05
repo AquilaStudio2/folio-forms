@@ -1,0 +1,31 @@
+flowchart TD
+    editing(["กำลังออกแบบหรือกรอก"])
+    owner{"กำลังแก้ข้อมูลของใคร"}
+    template["Admin กด Save Template"]
+    response["User กดบันทึกฉบับร่าง"]
+    operation["รอ Operation ของการบันทึก"]
+    completed{"completed แล้วหรือยัง"}
+    pending["pending หรือ processing ให้รอ"]
+    failed["failed ยังไม่ยืนยันฉบับใหม่"]
+    saved["เก็บฉบับล่าสุดใน Folio แล้ว"]
+    close["ออกหรือปิดหน้า"]
+    login["กลับด้วยบัญชีที่มีสิทธิ์"]
+    target{"กลับไปทำงานใด"}
+    admin["Admin เปิด Form เดิมจากรายการ"]
+    dashboard["User เปิดกรอกต่อจาก Dashboard"]
+    immutable{"Form ยัง draft หรือไม่"}
+    design["เปิด Template Draft ที่บันทึกไว้"]
+    published["เผยแพร่แล้ว เปลี่ยนโครงสร้างใช้ Duplicate"]
+    draft["เปิด Response Draft เดิมของบัญชีนี้"]
+    continueEdit["แก้ต่อแล้วบันทึกหรือส่ง"]
+    editing --> owner
+    owner -->|"ต้นแบบของ Admin"| template --> operation
+    owner -->|"คำตอบของ User"| response --> operation
+    operation --> completed
+    completed -->|"ยังทำงาน"| pending --> completed
+    completed -->|"ล้มเหลว"| failed --> editing
+    completed -->|"สำเร็จ"| saved --> close --> login --> target
+    target -->|"ต้นแบบ"| admin --> immutable
+    immutable -->|"draft"| design --> continueEdit
+    immutable -->|"published หรือ archived"| published
+    target -->|"คำตอบ"| dashboard --> draft --> continueEdit

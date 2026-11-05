@@ -1,0 +1,1213 @@
+{
+  "commit": "83a31cc8f6a741700eb429a74d99576ea531bdc8",
+  "branch": "main",
+  "source_fingerprint": "883d10ed3d53eaa0158f592f92abf1559170c89f6dfcbdfee6d1f455bca614a5",
+  "source_files": 295,
+  "pages": [
+    {
+      "route": "__root",
+      "file": "apps/web/src/routes/__root.tsx",
+      "line": 1
+    },
+    {
+      "route": "/admin/ai-authoring",
+      "file": "apps/web/src/routes/admin/ai-authoring.tsx",
+      "line": 396
+    },
+    {
+      "route": "/admin/audit",
+      "file": "apps/web/src/routes/admin/audit.tsx",
+      "line": 330
+    },
+    {
+      "route": "/admin/forms/$formId/",
+      "file": "apps/web/src/routes/admin/forms/$formId/index.tsx",
+      "line": 870
+    },
+    {
+      "route": "/admin/forms/$formId/submissions/$submissionId",
+      "file": "apps/web/src/routes/admin/forms/$formId/submissions/$submissionId.tsx",
+      "line": 253
+    },
+    {
+      "route": "/admin/forms/$formId/submissions/",
+      "file": "apps/web/src/routes/admin/forms/$formId/submissions/index.tsx",
+      "line": 149
+    },
+    {
+      "route": "/admin/forms/$formId/submissions",
+      "file": "apps/web/src/routes/admin/forms/$formId/submissions.tsx",
+      "line": 6
+    },
+    {
+      "route": "/admin/forms/$formId",
+      "file": "apps/web/src/routes/admin/forms/$formId.tsx",
+      "line": 6
+    },
+    {
+      "route": "/admin/forms/new",
+      "file": "apps/web/src/routes/admin/forms/new.tsx",
+      "line": 367
+    },
+    {
+      "route": "/admin/",
+      "file": "apps/web/src/routes/admin/index.tsx",
+      "line": 5
+    },
+    {
+      "route": "/admin/results/$responseId/correction",
+      "file": "apps/web/src/routes/admin/results/$responseId/correction.tsx",
+      "line": 147
+    },
+    {
+      "route": "/admin/results/$responseId/",
+      "file": "apps/web/src/routes/admin/results/$responseId/index.tsx",
+      "line": 524
+    },
+    {
+      "route": "/admin/results/",
+      "file": "apps/web/src/routes/admin/results/index.tsx",
+      "line": 465
+    },
+    {
+      "route": "/admin/results",
+      "file": "apps/web/src/routes/admin/results.tsx",
+      "line": 5
+    },
+    {
+      "route": "/admin/users",
+      "file": "apps/web/src/routes/admin/users.tsx",
+      "line": 749
+    },
+    {
+      "route": "/admin",
+      "file": "apps/web/src/routes/admin.tsx",
+      "line": 35
+    },
+    {
+      "route": "/change-password",
+      "file": "apps/web/src/routes/change-password.tsx",
+      "line": 229
+    },
+    {
+      "route": "/dashboard",
+      "file": "apps/web/src/routes/dashboard.tsx",
+      "line": 357
+    },
+    {
+      "route": "/forms/$publicId/fill",
+      "file": "apps/web/src/routes/forms/$publicId/fill.tsx",
+      "line": 1247
+    },
+    {
+      "route": "/handoff",
+      "file": "apps/web/src/routes/handoff.tsx",
+      "line": 59
+    },
+    {
+      "route": "/",
+      "file": "apps/web/src/routes/index.tsx",
+      "line": 26
+    },
+    {
+      "route": "/legacy-sso/confirm",
+      "file": "apps/web/src/routes/legacy-sso.confirm.tsx",
+      "line": 212
+    },
+    {
+      "route": "/login",
+      "file": "apps/web/src/routes/login.tsx",
+      "line": 320
+    },
+    {
+      "route": "/receipt/$submissionId",
+      "file": "apps/web/src/routes/receipt/$submissionId.tsx",
+      "line": 225
+    }
+  ],
+  "apis": [
+    {
+      "method": "GET",
+      "path": "/api/admin/account-links",
+      "file": "apps/server/src/routes/accounts.ts",
+      "line": 59
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/account-links/:id/approve",
+      "file": "apps/server/src/routes/accounts.ts",
+      "line": 103
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/account-links/:id/reject",
+      "file": "apps/server/src/routes/accounts.ts",
+      "line": 135
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/users",
+      "file": "apps/server/src/routes/accounts.ts",
+      "line": 167
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/users",
+      "file": "apps/server/src/routes/accounts.ts",
+      "line": 230
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/users/:id",
+      "file": "apps/server/src/routes/accounts.ts",
+      "line": 307
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/users/:id",
+      "file": "apps/server/src/routes/accounts.ts",
+      "line": 485
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/users/:id/password-reset",
+      "file": "apps/server/src/routes/accounts.ts",
+      "line": 587
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/ai-authoring",
+      "file": "apps/server/src/routes/ai-authoring.ts",
+      "line": 21
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/ai-authoring/sessions",
+      "file": "apps/server/src/routes/ai-authoring.ts",
+      "line": 26
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/ai-authoring/sessions/current",
+      "file": "apps/server/src/routes/ai-authoring.ts",
+      "line": 57
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/ai-authoring/sessions/:sessionId/revisions",
+      "file": "apps/server/src/routes/ai-authoring.ts",
+      "line": 69
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/ai-authoring/sessions/:sessionId/docx",
+      "file": "apps/server/src/routes/ai-authoring.ts",
+      "line": 97
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/ai-authoring/sessions/:sessionId",
+      "file": "apps/server/src/routes/ai-authoring.ts",
+      "line": 117
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/audit-events",
+      "file": "apps/server/src/routes/audit.ts",
+      "line": 24
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/sign-in/email",
+      "file": "apps/server/src/routes/auth.ts",
+      "line": 23
+    },
+    {
+      "method": "GET",
+      "path": "/api/session",
+      "file": "apps/server/src/routes/auth.ts",
+      "line": 30
+    },
+    {
+      "method": "POST",
+      "path": "/api/account/password",
+      "file": "apps/server/src/routes/auth.ts",
+      "line": 53
+    },
+    {
+      "method": "POST",
+      "path": "/api/auth/sign-out",
+      "file": "apps/server/src/routes/auth.ts",
+      "line": 139
+    },
+    {
+      "method": "ALL",
+      "path": "/api/auth/*",
+      "file": "apps/server/src/routes/auth.ts",
+      "line": 167
+    },
+    {
+      "method": "POST",
+      "path": "/api/editor-leases/:id/renew",
+      "file": "apps/server/src/routes/editor-leases.ts",
+      "line": 14
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/editor-leases/:id",
+      "file": "apps/server/src/routes/editor-leases.ts",
+      "line": 23
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/forms/:publicId/editor-config",
+      "file": "apps/server/src/routes/form-authoring.ts",
+      "line": 118
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/forms/:publicId/schema",
+      "file": "apps/server/src/routes/form-authoring.ts",
+      "line": 227
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/forms/:publicId/field-rules",
+      "file": "apps/server/src/routes/form-authoring.ts",
+      "line": 235
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/forms/:publicId/field-rules",
+      "file": "apps/server/src/routes/form-authoring.ts",
+      "line": 262
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/forms/:publicId/save",
+      "file": "apps/server/src/routes/form-authoring.ts",
+      "line": 443
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/forms/:publicId/publish",
+      "file": "apps/server/src/routes/form-authoring.ts",
+      "line": 575
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/forms/:publicId/submissions",
+      "file": "apps/server/src/routes/form-authoring.ts",
+      "line": 699
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/forms",
+      "file": "apps/server/src/routes/form-catalog.ts",
+      "line": 69
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/forms/:publicId",
+      "file": "apps/server/src/routes/form-catalog.ts",
+      "line": 74
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/forms/:publicId/duplicate",
+      "file": "apps/server/src/routes/form-catalog.ts",
+      "line": 236
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/forms/:publicId",
+      "file": "apps/server/src/routes/form-catalog.ts",
+      "line": 397
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/forms",
+      "file": "apps/server/src/routes/form-catalog.ts",
+      "line": 613
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/forms/:publicId/template/:format",
+      "file": "apps/server/src/routes/form-catalog.ts",
+      "line": 726
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/forms/:publicId",
+      "file": "apps/server/src/routes/form-catalog.ts",
+      "line": 772
+    },
+    {
+      "method": "GET",
+      "path": "/api/legacy-sso/status",
+      "file": "apps/server/src/routes/legacy-sso.ts",
+      "line": 25
+    },
+    {
+      "method": "POST",
+      "path": "/api/legacy-sso/start",
+      "file": "apps/server/src/routes/legacy-sso.ts",
+      "line": 31
+    },
+    {
+      "method": "GET",
+      "path": "/api/legacy-sso/callback",
+      "file": "apps/server/src/routes/legacy-sso.ts",
+      "line": 45
+    },
+    {
+      "method": "GET",
+      "path": "/api/legacy-sso/switch",
+      "file": "apps/server/src/routes/legacy-sso.ts",
+      "line": 53
+    },
+    {
+      "method": "POST",
+      "path": "/api/legacy-sso/switch/confirm",
+      "file": "apps/server/src/routes/legacy-sso.ts",
+      "line": 58
+    },
+    {
+      "method": "POST",
+      "path": "/api/legacy-sso/switch/cancel",
+      "file": "apps/server/src/routes/legacy-sso.ts",
+      "line": 70
+    },
+    {
+      "method": "POST",
+      "path": "/api/legacy-sso/session",
+      "file": "apps/server/src/routes/legacy-sso.ts",
+      "line": 82
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice/document/:key",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 52
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/config.json",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 93
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/pdms-project/config.json",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 133
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/pdms-project/index.html",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 161
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/pdms-project/popup.js",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 162
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/upload-poc/config.json",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 163
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/upload-poc/index.html",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 192
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/upload-poc/picker.js",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 193
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 194
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 195
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/index.html",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 196
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/plugin.js",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 197
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/resources/light/settings.svg",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 198
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/resources/dark/settings.svg",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 201
+    },
+    {
+      "method": "POST",
+      "path": "/onlyoffice/callback",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 204
+    },
+    {
+      "method": "GET",
+      "path": "/api/operations/:id",
+      "file": "apps/server/src/routes/operations.ts",
+      "line": 19
+    },
+    {
+      "method": "POST",
+      "path": "/api/editor/pdms-project-catalog/retry",
+      "file": "apps/server/src/routes/pdms-project-catalog.ts",
+      "line": 101
+    },
+    {
+      "method": "POST",
+      "path": "/api/integrations/prefill/handoffs",
+      "file": "apps/server/src/routes/prefill.ts",
+      "line": 29
+    },
+    {
+      "method": "POST",
+      "path": "/api/integrations/prefill/status",
+      "file": "apps/server/src/routes/prefill.ts",
+      "line": 65
+    },
+    {
+      "method": "POST",
+      "path": "/prefill/handoff",
+      "file": "apps/server/src/routes/prefill.ts",
+      "line": 93
+    },
+    {
+      "method": "GET",
+      "path": "/prefill/handoff",
+      "file": "apps/server/src/routes/prefill.ts",
+      "line": 140
+    },
+    {
+      "method": "GET",
+      "path": "/api/forms/:publicId",
+      "file": "apps/server/src/routes/public-forms.ts",
+      "line": 44
+    },
+    {
+      "method": "GET",
+      "path": "/api/forms/:publicId/editor-config",
+      "file": "apps/server/src/routes/public-forms.ts",
+      "line": 81
+    },
+    {
+      "method": "GET",
+      "path": "/api/forms/:publicId/my-submissions",
+      "file": "apps/server/src/routes/public-forms.ts",
+      "line": 102
+    },
+    {
+      "method": "GET",
+      "path": "/api/forms/:publicId/my-submissions/export",
+      "file": "apps/server/src/routes/public-forms.ts",
+      "line": 112
+    },
+    {
+      "method": "POST",
+      "path": "/api/forms/:publicId/start",
+      "file": "apps/server/src/routes/public-forms.ts",
+      "line": 130
+    },
+    {
+      "method": "POST",
+      "path": "/api/forms/:publicId/draft",
+      "file": "apps/server/src/routes/response-actions.ts",
+      "line": 62
+    },
+    {
+      "method": "POST",
+      "path": "/api/forms/:publicId/submit",
+      "file": "apps/server/src/routes/response-actions.ts",
+      "line": 240
+    },
+    {
+      "method": "GET",
+      "path": "/api/responses/me",
+      "file": "apps/server/src/routes/responses.ts",
+      "line": 50
+    },
+    {
+      "method": "GET",
+      "path": "/api/responses/:id/corrections",
+      "file": "apps/server/src/routes/responses.ts",
+      "line": 84
+    },
+    {
+      "method": "GET",
+      "path": "/api/responses/:id/draft/:format",
+      "file": "apps/server/src/routes/responses.ts",
+      "line": 216
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/responses/:id",
+      "file": "apps/server/src/routes/responses.ts",
+      "line": 284
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/responses/:id",
+      "file": "apps/server/src/routes/responses.ts",
+      "line": 328
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/results",
+      "file": "apps/server/src/routes/results.ts",
+      "line": 271
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/results/:id",
+      "file": "apps/server/src/routes/results.ts",
+      "line": 349
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/results/:id/viewer-config",
+      "file": "apps/server/src/routes/results.ts",
+      "line": 499
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/results/:id/correction/editor-config",
+      "file": "apps/server/src/routes/results.ts",
+      "line": 574
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/results/:id/correction",
+      "file": "apps/server/src/routes/results.ts",
+      "line": 587
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/results/:id/correction/workspace",
+      "file": "apps/server/src/routes/results.ts",
+      "line": 588
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/forms/:publicId/spreadsheet-bindings",
+      "file": "apps/server/src/routes/spreadsheet-authoring.ts",
+      "line": 224
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/forms/:publicId/spreadsheet-bindings",
+      "file": "apps/server/src/routes/spreadsheet-authoring.ts",
+      "line": 241
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/forms/:publicId/spreadsheet-bindings/recover",
+      "file": "apps/server/src/routes/spreadsheet-authoring.ts",
+      "line": 365
+    },
+    {
+      "method": "GET",
+      "path": "/api/submissions/:id/data",
+      "file": "apps/server/src/routes/submissions.ts",
+      "line": 40
+    },
+    {
+      "method": "GET",
+      "path": "/api/submissions/:id/corrections",
+      "file": "apps/server/src/routes/submissions.ts",
+      "line": 96
+    },
+    {
+      "method": "GET",
+      "path": "/api/submissions/:id/json",
+      "file": "apps/server/src/routes/submissions.ts",
+      "line": 205
+    },
+    {
+      "method": "GET",
+      "path": "/api/submissions/:id/:format",
+      "file": "apps/server/src/routes/submissions.ts",
+      "line": 238
+    },
+    {
+      "method": "GET",
+      "path": "/api/submissions/:id/pdf",
+      "file": "apps/server/src/routes/submissions.ts",
+      "line": 283
+    },
+    {
+      "method": "GET",
+      "path": "/health",
+      "file": "apps/server/src/app.ts",
+      "line": 177
+    },
+    {
+      "method": "GET",
+      "path": "/ready",
+      "file": "apps/server/src/app.ts",
+      "line": 178
+    }
+  ],
+  "models": [
+    {
+      "model": "User",
+      "table": "user",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 95
+    },
+    {
+      "model": "LegacyAccountLinkRequest",
+      "table": "legacy_account_link_requests",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 123
+    },
+    {
+      "model": "Session",
+      "table": "session",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 145
+    },
+    {
+      "model": "Account",
+      "table": "account",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 164
+    },
+    {
+      "model": "Verification",
+      "table": "verification",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 190
+    },
+    {
+      "model": "Form",
+      "table": "forms",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 203
+    },
+    {
+      "model": "TemplateDraft",
+      "table": "template_drafts",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 231
+    },
+    {
+      "model": "DraftFieldRule",
+      "table": "draft_field_rules",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 248
+    },
+    {
+      "model": "PublishedTemplate",
+      "table": "published_templates",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 274
+    },
+    {
+      "model": "FieldManifest",
+      "table": "field_manifests",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 292
+    },
+    {
+      "model": "ManifestField",
+      "table": "manifest_fields",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 305
+    },
+    {
+      "model": "PrefillConfiguration",
+      "table": "prefill_configurations",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 332
+    },
+    {
+      "model": "PrefillField",
+      "table": "prefill_fields",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 347
+    },
+    {
+      "model": "Response",
+      "table": "responses",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 362
+    },
+    {
+      "model": "PrefillSnapshot",
+      "table": "prefill_snapshots",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 393
+    },
+    {
+      "model": "Submission",
+      "table": "submissions",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 410
+    },
+    {
+      "model": "Correction",
+      "table": "corrections",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 432
+    },
+    {
+      "model": "Handoff",
+      "table": "handoffs",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 455
+    },
+    {
+      "model": "PendingClaim",
+      "table": "pending_claims",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 484
+    },
+    {
+      "model": "Operation",
+      "table": "operations",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 498
+    },
+    {
+      "model": "CallbackClaim",
+      "table": "callback_claims",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 535
+    },
+    {
+      "model": "EditorLease",
+      "table": "editor_leases",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 549
+    },
+    {
+      "model": "ObjectCleanupIntent",
+      "table": "object_cleanup_intents",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 574
+    },
+    {
+      "model": "AuditEvent",
+      "table": "audit_events",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 588
+    },
+    {
+      "model": "LoginFailure",
+      "table": "login_failures",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 606
+    },
+    {
+      "model": "DeletionTombstone",
+      "table": "deletion_tombstones",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 620
+    },
+    {
+      "model": "PdmsProjectCatalogSession",
+      "table": "pdms_project_catalog_sessions",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 633
+    }
+  ],
+  "relations": [
+    {
+      "from": "LegacyAccountLinkRequest",
+      "field": "user",
+      "to": "User",
+      "optional": false,
+      "foreign_keys": [
+        "userId"
+      ]
+    },
+    {
+      "from": "LegacyAccountLinkRequest",
+      "field": "reviewer",
+      "to": "User",
+      "optional": true,
+      "foreign_keys": [
+        "reviewedById"
+      ]
+    },
+    {
+      "from": "Session",
+      "field": "user",
+      "to": "User",
+      "optional": false,
+      "foreign_keys": [
+        "userId"
+      ]
+    },
+    {
+      "from": "Account",
+      "field": "user",
+      "to": "User",
+      "optional": false,
+      "foreign_keys": [
+        "userId"
+      ]
+    },
+    {
+      "from": "Form",
+      "field": "creator",
+      "to": "User",
+      "optional": true,
+      "foreign_keys": [
+        "createdBy"
+      ]
+    },
+    {
+      "from": "TemplateDraft",
+      "field": "form",
+      "to": "Form",
+      "optional": false,
+      "foreign_keys": [
+        "formId"
+      ]
+    },
+    {
+      "from": "DraftFieldRule",
+      "field": "templateDraft",
+      "to": "TemplateDraft",
+      "optional": false,
+      "foreign_keys": [
+        "templateDraftId"
+      ]
+    },
+    {
+      "from": "PublishedTemplate",
+      "field": "form",
+      "to": "Form",
+      "optional": false,
+      "foreign_keys": [
+        "formId"
+      ]
+    },
+    {
+      "from": "FieldManifest",
+      "field": "publishedTemplate",
+      "to": "PublishedTemplate",
+      "optional": false,
+      "foreign_keys": [
+        "publishedTemplateId"
+      ]
+    },
+    {
+      "from": "ManifestField",
+      "field": "manifest",
+      "to": "FieldManifest",
+      "optional": false,
+      "foreign_keys": [
+        "manifestId"
+      ]
+    },
+    {
+      "from": "PrefillConfiguration",
+      "field": "form",
+      "to": "Form",
+      "optional": false,
+      "foreign_keys": [
+        "formId"
+      ]
+    },
+    {
+      "from": "PrefillConfiguration",
+      "field": "publishedTemplate",
+      "to": "PublishedTemplate",
+      "optional": true,
+      "foreign_keys": [
+        "publishedTemplateId"
+      ]
+    },
+    {
+      "from": "PrefillField",
+      "field": "configuration",
+      "to": "PrefillConfiguration",
+      "optional": false,
+      "foreign_keys": [
+        "configurationId"
+      ]
+    },
+    {
+      "from": "Response",
+      "field": "form",
+      "to": "Form",
+      "optional": false,
+      "foreign_keys": [
+        "formId"
+      ]
+    },
+    {
+      "from": "Response",
+      "field": "owner",
+      "to": "User",
+      "optional": false,
+      "foreign_keys": [
+        "userId"
+      ]
+    },
+    {
+      "from": "Response",
+      "field": "publishedTemplate",
+      "to": "PublishedTemplate",
+      "optional": false,
+      "foreign_keys": [
+        "publishedTemplateId"
+      ]
+    },
+    {
+      "from": "PrefillSnapshot",
+      "field": "response",
+      "to": "Response",
+      "optional": false,
+      "foreign_keys": [
+        "responseId"
+      ]
+    },
+    {
+      "from": "PrefillSnapshot",
+      "field": "form",
+      "to": "Form",
+      "optional": false,
+      "foreign_keys": [
+        "formId"
+      ]
+    },
+    {
+      "from": "PrefillSnapshot",
+      "field": "owner",
+      "to": "User",
+      "optional": false,
+      "foreign_keys": [
+        "userId"
+      ]
+    },
+    {
+      "from": "Submission",
+      "field": "response",
+      "to": "Response",
+      "optional": false,
+      "foreign_keys": [
+        "responseId"
+      ]
+    },
+    {
+      "from": "Submission",
+      "field": "form",
+      "to": "Form",
+      "optional": false,
+      "foreign_keys": [
+        "formId"
+      ]
+    },
+    {
+      "from": "Submission",
+      "field": "owner",
+      "to": "User",
+      "optional": false,
+      "foreign_keys": [
+        "userId"
+      ]
+    },
+    {
+      "from": "Correction",
+      "field": "response",
+      "to": "Response",
+      "optional": false,
+      "foreign_keys": [
+        "responseId"
+      ]
+    },
+    {
+      "from": "Correction",
+      "field": "submission",
+      "to": "Submission",
+      "optional": false,
+      "foreign_keys": [
+        "submissionId"
+      ]
+    },
+    {
+      "from": "Handoff",
+      "field": "form",
+      "to": "Form",
+      "optional": true,
+      "foreign_keys": [
+        "formId"
+      ]
+    },
+    {
+      "from": "Handoff",
+      "field": "response",
+      "to": "Response",
+      "optional": true,
+      "foreign_keys": [
+        "responseId"
+      ]
+    },
+    {
+      "from": "PendingClaim",
+      "field": "handoff",
+      "to": "Handoff",
+      "optional": false,
+      "foreign_keys": [
+        "handoffId"
+      ]
+    },
+    {
+      "from": "Operation",
+      "field": "form",
+      "to": "Form",
+      "optional": false,
+      "foreign_keys": [
+        "formId"
+      ]
+    },
+    {
+      "from": "Operation",
+      "field": "response",
+      "to": "Response",
+      "optional": true,
+      "foreign_keys": [
+        "responseId"
+      ]
+    },
+    {
+      "from": "Operation",
+      "field": "submission",
+      "to": "Submission",
+      "optional": true,
+      "foreign_keys": [
+        "submissionId"
+      ]
+    },
+    {
+      "from": "Operation",
+      "field": "correction",
+      "to": "Correction",
+      "optional": true,
+      "foreign_keys": [
+        "correctionId"
+      ]
+    },
+    {
+      "from": "Operation",
+      "field": "actor",
+      "to": "User",
+      "optional": true,
+      "foreign_keys": [
+        "actorId"
+      ]
+    },
+    {
+      "from": "Operation",
+      "field": "owner",
+      "to": "User",
+      "optional": true,
+      "foreign_keys": [
+        "ownerUserId"
+      ]
+    },
+    {
+      "from": "CallbackClaim",
+      "field": "operation",
+      "to": "Operation",
+      "optional": false,
+      "foreign_keys": [
+        "operationId"
+      ]
+    },
+    {
+      "from": "EditorLease",
+      "field": "holderSession",
+      "to": "Session",
+      "optional": false,
+      "foreign_keys": [
+        "holderSessionId"
+      ]
+    },
+    {
+      "from": "EditorLease",
+      "field": "holder",
+      "to": "User",
+      "optional": false,
+      "foreign_keys": [
+        "holderUserId"
+      ]
+    }
+  ],
+  "status_enums": {
+    "FormStatus": [
+      "draft",
+      "published",
+      "archived"
+    ],
+    "ResponseStatus": [
+      "draft",
+      "submitting",
+      "submitted"
+    ],
+    "OperationStatus": [
+      "pending",
+      "processing",
+      "completed",
+      "failed"
+    ],
+    "HandoffStatus": [
+      "pending",
+      "reserved",
+      "consumed",
+      "expired",
+      "deleted"
+    ],
+    "LegacyAccountLinkStatus": [
+      "pending",
+      "approved",
+      "rejected",
+      "linked"
+    ]
+  },
+  "private_worker_endpoints": [
+    {
+      "method": "GET",
+      "path": "/health"
+    },
+    {
+      "method": "POST",
+      "path": "/run"
+    }
+  ]
+}
