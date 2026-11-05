@@ -207,6 +207,7 @@ const FormSubmissionHistoryRoute = () => {
               onClick={handleExport}
               size="sm"
               variant="secondary"
+              className="hidden"
             >
               <Download size={15} />
               {exporting ? "กำลังดาวน์โหลด…" : "ดาวน์โหลดข้อมูลที่ส่งทั้งหมด"}
