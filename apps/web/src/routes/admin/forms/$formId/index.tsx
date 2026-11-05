@@ -770,13 +770,22 @@ const FormEditorRoute = () => {
             {loadedForm.description || "จัดรูปแบบเอกสาร แล้วเผยแพร่เมื่อพร้อม"}
           </p>
         </div>
-        <Link
-          to="/admin/results"
-          search={{ form: publicId }}
-          className="inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4"
-        >
-          ดูคำตอบ <ExternalLink size={15} />
-        </Link>
+        <div className="flex flex-wrap items-center gap-4">
+          <Link
+            to="/admin/results"
+            search={{ form: publicId }}
+            className="inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4"
+          >
+            ดูคำตอบ <ExternalLink size={15} />
+          </Link>
+          <Link
+            to="/admin/forms/$formId/submissions"
+            params={{ formId: publicId }}
+            className="inline-flex items-center gap-2 text-sm font-semibold underline underline-offset-4"
+          >
+            ดูประวัติการส่งทั้งหมดของทุกคน <ExternalLink size={15} />
+          </Link>
+        </div>
       </div>
       {error || notice || operationBusy ? (
         <div ref={feedbackRef} className="mb-4 space-y-2" tabIndex={-1}>
