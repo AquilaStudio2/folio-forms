@@ -41,7 +41,6 @@ jobs:
       - name: Lint
         run: bun run check
 
-        ## comment this step 
       # - name: Check system workflow guide
       #   run: bun run docs:workflow:check
 
