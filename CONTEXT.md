@@ -92,6 +92,10 @@ A User's single attempt to fill a Form. A User can have at most one Response for
 
 A manually saved, resumable Response state containing both the current document and its extracted field data. A Draft is not complete unless both representations were saved successfully.
 
+## Excel Fill Download
+
+A copy of the workbook open while filling an XLSX Form, including edits awaiting a Draft save. The fill page provides the copy as an Excel file or a PDF independently of Draft persistence.
+
 ## Submission
 
 An immutable completed result of a Response, recorded each time that Response is submitted. A Submission exists when its extracted field data and filled DOCX or XLSX were persisted successfully together. PDF exports are generated on demand from the saved document; PDF conversion failure does not remove a completed Submission. A Response accumulates its Submissions in order; each remains individually readable (receipt, export, Correction history) no matter how many times the Response has since been reopened and resubmitted.

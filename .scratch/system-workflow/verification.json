@@ -1,5 +1,5 @@
 {
-  "source_commit": "dfde6d9f3fe07d095b492efd41ba4eb56d353cd6",
+  "source_commit": "a292d78800977a86d5d7296a1de7940da6223c3a",
   "source_fingerprint": "fef4291a7d22d587156759b549b4f8ddea7e7f4bc9a1110292b5fbb2524ccb77",
   "diagram_count": 23,
   "web_route_declarations": 25,
@@ -8,6 +8,6 @@
   "status_groups": 5,
   "status_values": 19,
   "svg_xml_parse": "passed",
-  "html_sha256": "5ee4ec32834ce73f9ae75beef0f4ff457f47520bb78b3c5f1bc46ca1c1bbbb94",
+  "html_sha256": "ca87ec1741cd2efda7d3a46953f193fe569eb85dc73ada7077feb833eac5a54d",
   "scope": "Source inventory, diagram rendering, and generated artifacts. Inspect changed diagrams in a browser separately; no live login, PDMS, OmniRoute, or data mutation was tested by this command."
 }
