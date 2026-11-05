@@ -1,10 +1,10 @@
 # Folio Forms: แผนผังการทำงานทั้งระบบ
 
-สำรวจวันที่ 4 พฤศจิกายน 2026 จาก branch `main`, commit `83a31cc8f6a741700eb429a74d99576ea531bdc8`
+ทบทวนวันที่ 5 พฤศจิกายน 2026 จากฐาน `main` ที่ `44b63d0` รวมการเปลี่ยนปุ่มดาวน์โหลดใน branch `codex/excel-fill-download`
 
-เอกสารนี้อธิบายพฤติกรรมใน source code ณ commit นี้ ไม่ใช่ผลทดสอบระบบ production ทุก integration ภายนอก การสำรวจไม่ได้เปลี่ยนโค้ดแอปหรือข้อมูลผู้ใช้
+เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
-พบ route และ layout ฝั่งเว็บ 24 declarations รวมเป็น 19 เส้นทางหน้าเว็บ โดย `/` เป็นหน้าส่งต่อ ส่วนอีก 5 declarations เป็น layout ครอบหน้า พบ HTTP route declarations ของเซิร์ฟเวอร์หลัก 92 รายการ ซึ่งรวม API, plugin assets, health checks และ wildcard ของ Better Auth อีกทั้งมี private document worker แยกต่างหาก และ Prisma models 27 ตัว
+รายการ source ครอบคลุมหน้าและ layout ฝั่งเว็บ, HTTP routes ของเซิร์ฟเวอร์หลัก, private document worker และ Prisma models
 
 ดูรายการที่สร้างจาก source และคำสั่งตรวจซ้ำได้ใน [inventory.md](inventory.md), [inventory.json](inventory.json) และ [survey.py](survey.py)
 
@@ -28,6 +28,8 @@
 
 ปุ่มบันทึกของ Folio ต้องรอผล `Operation = completed` การพิมพ์ใน editor การกด Save ของ ONLYOFFICE เพียงอย่างเดียว หรือการเห็นสถานะกำลังบันทึก ยังไม่ยืนยันว่าฉบับที่กลับมาเปิดใหม่ถูกเก็บครบแล้ว
 
+บนหน้ากรอก Excel ปุ่ม **ดาวน์โหลด Excel** และ **ดาวน์โหลด PDF** ให้สำเนาจากสมุดงานที่กำลังเปิด รวมค่าที่เพิ่งแก้ การกลับมาเปิดร่างใน Folio ใช้ค่าจากการบันทึก Draft ที่สำเร็จครั้งล่าสุด
+
 <p><a href="#section-16">อ่านโฟลวบันทึกและเปิดกลับ</a> · <a href="#section-17">สถานะ Form</a> · <a href="#section-18">สถานะคำตอบ</a> · <a href="#section-22">สถานะทั้งหมด</a> · <a href="#section-23">ตัวอย่างใช้งานข้ามวัน</a></p>
 
 ## 01 ภาพรวมตั้งแต่เข้าระบบจนอ่านผล
@@ -46,6 +48,7 @@ flowchart TD
     share["ลิงก์กรอกแบบฟอร์ม"]
     fill["เริ่มหรือเปิด Response เดิม"]
     edit["กรอก DOCX หรือ XLSX"]
+    excelExport["XLSX: ดาวน์โหลดจากตัวแก้ไข"]
     draft["บันทึก Draft"]
     submit["ส่งคำตอบ"]
     operation["รอ Operation สำเร็จ"]
@@ -63,6 +66,7 @@ flowchart TD
     admin --> author --> publish --> share --> fill
     user -->|"กรอกต่อจาก dashboard"| fill
     fill --> edit
+    edit -.->|"XLSX"| excelExport
     edit --> draft --> operation
     edit --> submit --> operation
     operation -->|"บันทึกร่างสำเร็จ"| edit
@@ -101,6 +105,7 @@ flowchart LR
     ai["/admin/ai-authoring"]
     dashboard["/dashboard"]
     fill["/forms/:publicId/fill"]
+    ownHistory["/forms/:publicId/submissions"]
     receipt["/receipt/:submissionId"]
     root -->|"guest"| login
     login -->|"รหัสผ่านชั่วคราว"| password
@@ -118,6 +123,7 @@ flowchart LR
     admin --> ai -->|"นำ DOCX ไปสร้าง Form"| form
     dashboard --> fill
     dashboard --> receipt
+    dashboard -->|"เคยส่งแล้ว"| ownHistory --> receipt
     fill -.->|"เปิดประวัติการส่ง"| receipt
     fill -.->|"Prefill ใช้ไม่ได้"| handoff
 ```
@@ -129,10 +135,10 @@ flowchart LR
 | `/change-password`, ผู้มี session | เปลี่ยนรหัสปัจจุบันเป็นรหัสใหม่ | ตรวจรหัสเดิม บันทึก hash ใหม่ เพิกถอน sessions แล้วให้เข้าสู่ระบบใหม่ |
 | `/legacy-sso/confirm`, ผู้เริ่มสลับบัญชี | แสดง Folio ปัจจุบันและบัญชี PDMS เป้าหมาย | ยืนยันก่อนเปลี่ยน session แม้เป็นคนเดียวกัน ยกเลิกแล้วใช้ session เดิม |
 | `/handoff`, ทุกคน | แสดงว่า Prefill handoff ใช้ไม่ได้หรือหมดอายุ | ลองโหลดใหม่หรือกลับระบบต้นทาง หน้านี้ไม่สร้าง session หรือ Response |
-| `/dashboard`, User และ Admin ที่เปิดเข้ามา | แสดงสถานะล่าสุดของ Response ที่ตนเป็นเจ้าของ | ร่างเปิดกรอกต่อ ผล submitted เปิดใบรับ มีปุ่มทิ้งร่าง โปรดอ่านพฤติกรรมการลบในภาพ 10 |
+| `/dashboard`, User และ Admin ที่เปิดเข้ามา | แสดงสถานะล่าสุดของ Response ที่ตนเป็นเจ้าของ | ร่างเปิดกรอกต่อ ผล submitted เปิดใบรับ ผู้ที่เคยส่งเปิดประวัติทั้งหมดได้ รวมเมื่อกลับมาเป็นร่าง มีปุ่มทิ้งร่างตามภาพ 10 |
 | `/admin`, Admin | ค้นหา แบ่งหน้า กรองชนิดไฟล์และสถานะ ดูจำนวนร่างและ Submission | สร้างฟอร์ม เปิดรายละเอียด หรือลบร่างที่ยังไม่เคยเผยแพร่และไม่มี Response |
 | `/admin/forms/new`, Admin | เลือก DOCX หรือ XLSX และใส่ชื่อกับคำอธิบาย | DOCX เริ่มเปล่าหรืออัปโหลดได้ XLSX เริ่มจาก workbook เปล่า สร้างแล้วไปหน้า editor |
-| `/admin/forms/:formId`, Admin | ออกแบบต้นแบบ ตั้งค่าฟิลด์ บันทึก เผยแพร่ คัดลอกลิงก์ | เปลี่ยนชื่อและคำอธิบายได้หลังเผยแพร่ เปลี่ยนโครงสร้างให้ Duplicate เป็น Form ใหม่ เก็บถาวรหรือเปิดกลับได้ |
+| `/admin/forms/:formId`, Admin | ออกแบบต้นแบบ ตั้งค่าฟิลด์ บันทึก เผยแพร่ คัดลอกลิงก์ | หลังเผยแพร่เปลี่ยนชื่อและคำอธิบายได้ มีลิงก์ประวัติการส่งของทุกคน เปลี่ยนโครงสร้างด้วย Duplicate เป็น Form ใหม่ เก็บถาวรหรือเปิดกลับได้ |
 | `/admin/forms/:formId/submissions`, Admin | ดู Submission ทุกครั้งของฟอร์มนั้น | เปิดรายละเอียดแต่ละ `submissionId` ประวัตินี้แยกจากสถานะปัจจุบันของ Response |
 | `/admin/forms/:formId/submissions/:submissionId`, Admin | อ่านข้อมูลและประวัติ Correction ของ Submission ที่เลือก | สลับ revision และดาวน์โหลด DOCX หรือ XLSX ตามชนิดฟอร์ม รวม PDF |
 | `/admin/results`, Admin และ Viewer | ค้นหาสถานะปัจจุบันของ Response ทั้งระบบ | กรอง Form, ผู้ใช้, จังหวัด, เดือน, ปีงบประมาณ, สถานะ, Correction และช่วงเวลา แล้วเปิดรายละเอียด |
@@ -141,7 +147,8 @@ flowchart LR
 | `/admin/users`, Admin | ค้นหาและจัดการบัญชี กับคำขอเชื่อมบัญชี PDMS | สร้างบัญชี เปลี่ยนอีเมล บทบาท เปิดปิดบัญชี reset รหัส ลบบัญชีหลังลบ Responses แล้ว และอนุมัติหรือปฏิเสธการเชื่อม |
 | `/admin/audit`, Admin | อ่าน Audit Trail ที่ระบบบันทึก | กรองผู้กระทำ action เป้าหมาย outcome และช่วงเวลา หน้านี้ไม่แก้หรือลบ event |
 | `/admin/ai-authoring`, Admin | สร้าง DOCX จากคำอธิบายหรือ PDF แล้วคุยเพื่อแก้ฉบับปัจจุบัน | ดูตัวอย่าง ดาวน์โหลด จบ session หรือกดนำไปสร้าง Template Draft จากนั้นยังต้องตรวจและ Publish |
-| `/forms/:publicId/fill`, User และ Admin | เริ่มกรอกหรือกลับมาร่างเดิม ใช้ Native form หรือ ONLYOFFICE | กรอก บันทึกร่าง ส่ง ดาวน์โหลดงานที่บันทึกแล้ว เตือนเมื่อมีงานค้างก่อนออกหรือเปลี่ยน session ส่งสำเร็จแล้วเปิดร่างรอบถัดไป |
+| `/forms/:publicId/fill`, User และ Admin | เริ่มกรอกหรือกลับมาร่างเดิม ใช้ Native form หรือ ONLYOFFICE | กรอก บันทึกร่าง และส่ง XLSX ดาวน์โหลดจากสมุดงานในตัวแก้ไข DOCX บันทึกก่อนดาวน์โหลด เมื่อมีงานค้างจะเตือนก่อนออกหรือเปลี่ยน session ส่งสำเร็จแล้วเปิดร่างรอบถัดไป |
+| `/forms/:publicId/submissions`, เจ้าของ Response | ดูประวัติที่ตนเคยส่งของฟอร์มนั้น | เปิดใบรับแต่ละ Submission หรือกลับ Dashboard |
 | `/receipt/:submissionId`, เจ้าของและ Admin | ใบรับคำตอบของ Submission หนึ่งครั้ง | อ่านข้อมูล เลือก Correction revision ดาวน์โหลดเอกสารหรือ PDF และกลับระบบต้นทางตาม URL ที่เซิร์ฟเวอร์กำหนด |
 
 Viewer ถูก UI จำกัดไว้ที่ `/admin/results` และ `/admin/results/:responseId` แม้ API อ่าน Submission จะยอมรับบทบาท Viewer ด้วย
@@ -310,7 +317,7 @@ Archive ปิดเริ่ม Response สำหรับผู้ที่�
 flowchart TD
     link(["เปิด /forms/:publicId/fill"])
     login["ต้องมี Folio session"]
-    start["POST /api/forms/:publicId/start"]
+    start["เริ่ม Response ผ่าน API"]
     current{"สถานะ Response เดิม"}
     fresh["ไม่มี Response: สร้าง Draft"]
     resume["draft: ใช้ไฟล์และข้อมูลเดิม"]
@@ -321,8 +328,10 @@ flowchart TD
     xlsx["XLSX ใช้ PublishedTemplate"]
     config["ขอ editor-config และ lease"]
     method{"Fill Method"}
-    native["Native form ส่งค่าและรูป"]
     office["ONLYOFFICE และ Form Bridge"]
+    capture["ยืนยันค่าเซลล์และจับสำเนา XLSX"]
+    file["ตรวจ session และ lease แล้วคืน Excel หรือ PDF"]
+    native["Native form ส่งค่าและรูป"]
     save["Save Draft"]
     submit["Submit ตรวจ required"]
     operation["รอ Operation completed"]
@@ -337,12 +346,13 @@ flowchart TD
     kind -->|"docx"| docx --> config
     kind -->|"xlsx"| xlsx --> config
     config --> method
-    method -->|"native และ DOCX"| native
     method -->|"onlyoffice"| office
-    native --> save
+    office -->|"ดาวน์โหลดในหน้ากรอก XLSX"| capture --> file
+    method -->|"native และ DOCX"| native
     office --> save
-    native --> submit
     office --> submit
+    native --> save
+    native --> submit
     save --> operation
     submit --> operation
     operation -->|"save สำเร็จ"| config
@@ -359,9 +369,13 @@ flowchart TD
 
 Prefill ของร่างเดิมเป็น snapshot ตอนเริ่ม Resume ไม่ดึงข้อมูลต้นทางมาเติมซ้ำ Handoff ของ Response ที่ submitted อยู่แล้วพาไป receipt แทนการเปิดรอบใหม่
 
-ประวัติบนหน้า Native form มีเงื่อนไขเฉพาะฟอร์มตามรายการในโค้ด จึงไม่ควรตีความว่าทุก Native form มีตารางประวัติเหมือนกัน ส่วน API ประวัติของตัวเองและหน้า Admin submissions เป็นเส้นทางอ่านประวัติแยก
+เมื่อเจ้าของเคยส่งแบบฟอร์ม Dashboard แสดงลิงก์ไปประวัติรายฟอร์ม รวมเมื่อเปิดร่างรอบใหม่ หน้า `/forms/:publicId/submissions` แสดงเฉพาะ Submission ของเจ้าของและเปิดใบรับแต่ละครั้ง ประวัติแบบฝังในหน้า Native form ใช้ตามรายการฟอร์มในโค้ด ส่วน Admin เปิดประวัติของทุกคนจากหน้าออกแบบ Form
 
-อ้างอิง [start และรูปแบบการเปิดใหม่](../../apps/server/src/routes/public-forms.ts#L260), [userEditorConfig](../../apps/server/src/responses/editor.ts#L336), [fill หลัง Submit](../../apps/web/src/routes/forms/$publicId/fill.tsx#L476) และ [native submit](../../apps/web/src/routes/forms/$publicId/fill.tsx#L608)
+บนหน้า XLSX ปุ่มดาวน์โหลดรอให้ Form Bridge พร้อม เมื่อกด ปลั๊กอินยืนยันค่าเซลล์ที่ยังแก้ค้างผ่าน SDK ของ ONLYOFFICE 9.4 บน gateway ต้นทางเดียวกัน แล้วสร้างสำเนา XLSX ของสมุดงานปัจจุบัน แต่ละคำขอใช้ session ของเจ้าของ Response และ capability ผูกกับ editor lease และ document key ปัจจุบัน API อ่านสำเนาผ่าน cache ของ ONLYOFFICE ที่ตรวจต้นทางและขอบเขต แล้วตรวจโครงสร้างไฟล์และกฎ external resources ของสมุดงาน
+
+ปุ่ม Excel คืนสำเนาเป็นไฟล์ `.xlsx` ปุ่ม PDF ส่งสำเนาชั่วคราวเข้าเครื่องแปลง PDF เดิม แล้วเบราว์เซอร์เริ่มดาวน์โหลดเมื่อแปลงเสร็จ ปุ่มแสดงสถานะเตรียมไฟล์และลองใหม่ได้เมื่อดาวน์โหลดล้มเหลว ผลของการดาวน์โหลดเป็นไฟล์สำหรับผู้กรอก การอัปเดต Draft เกิดเมื่อบันทึกผ่าน Operation สำเร็จ
+
+อ้างอิง [start และรูปแบบการเปิดใหม่](../../apps/server/src/routes/public-forms.ts#L260), [userEditorConfig](../../apps/server/src/responses/editor.ts#L336), [fill หลัง Submit](../../apps/web/src/routes/forms/$publicId/fill.tsx#L439), [native submit](../../apps/web/src/routes/forms/$publicId/fill.tsx#L618), [จับสำเนาในปลั๊กอิน](../../apps/onlyoffice-plugin/src/office.js#L52) และ [API ดาวน์โหลดจาก editor](../../apps/server/src/routes/responses.ts#L229)
 
 ## 07 การกดบันทึกหนึ่งครั้งเดินทางอย่างไร
 
@@ -490,7 +504,7 @@ Correction เริ่มจากเอกสาร revision ปัจจุ�
 
 เมื่อ User เปิดร่างรอบถัดไปแล้ว จะเพิ่ม Correction บน Submission เก่าไม่ได้ ประวัติเดิมยังอ่านได้ Revision number ของ Correction นับต่อในระดับ Response แต่ข้อมูลและเอกสารผูกกับ Submission ที่แก้
 
-ดาวน์โหลด DOCX หรือ XLSX ใช้ไฟล์ที่บันทึกแล้ว PDF สร้างตามคำขอจาก revision ที่เลือก ถ้าแปลง PDF ไม่สำเร็จ Submission ที่ส่งสำเร็จแล้วไม่ได้ถูกย้อนกลับ หน้า receipt แสดงข้อมูลและดาวน์โหลดได้ แต่ไม่ได้มี editor สำหรับเปลี่ยน Submission
+การดาวน์โหลดจากใบรับหรือรายละเอียด Submission ใช้ไฟล์ DOCX หรือ XLSX ที่บันทึกแล้ว PDF สร้างตามคำขอจาก revision ที่เลือก ถ้าแปลง PDF ไม่สำเร็จ Submission ที่ส่งสำเร็จแล้วไม่ได้ถูกย้อนกลับ หน้า receipt แสดงข้อมูลและดาวน์โหลดได้ แต่ไม่ได้มี editor สำหรับเปลี่ยน Submission
 
 หน้า Results รายละเอียดของ Draft ปัจจุบันแสดงอ่านอย่างเดียวและไม่มีปุ่มดาวน์โหลด ทั้ง Admin และ Viewer ส่วน API export Draft แยกมีสิทธิ์ของเจ้าของและ Viewer ตาม route จึงต้องแยกความสามารถของ API ออกจากปุ่มที่มีในหน้านี้
 
@@ -876,6 +890,7 @@ flowchart TD
 | Admin บันทึกชื่อหรือคำอธิบาย | Form metadata ผ่านคำขอแยก | ชื่อใหม่ไม่ได้ยืนยันว่าการแก้เนื้อหาใน editor ถูก Save Template ไปด้วย |
 | Admin Apply ตั้งค่าฟิลด์ | กฎฟิลด์ผ่าน API และการปรับใน editor ตามชนิดเอกสาร | ต้องบันทึกต้นแบบให้ไฟล์กับกฎสอดคล้องกันก่อนถือว่างานพร้อมเปิดใหม่หรือ Publish |
 | User เริ่มกรอกแล้วพิมพ์เฉย ๆ | มี Response ตั้งต้น แต่ค่าที่พิมพ์ยังอาจอยู่ใน browser หรือ editor | ไม่รับประกันว่าค่าที่พิมพ์ค้างจะกลับมาครบ |
+| User ดาวน์โหลด Excel หรือ PDF จากหน้ากรอก XLSX | ได้สำเนาจากสมุดงานที่เปิดอยู่บนเครื่องผู้กรอก | Folio เปิดจาก Draft ที่บันทึกสำเร็จล่าสุด |
 | User กดบันทึกฉบับร่างและ completed | ค่าคำตอบและไฟล์ DOCX หรือ XLSX ของร่างเดียวกัน | เปิดต่อได้ด้วยบัญชีเจ้าของเดิม ใช้ Response เดิม ไม่สร้างคำตอบใหม่เพิ่ม |
 | User บันทึกแล้วปิด browser และ login ใหม่ | ร่างยังอยู่ในฐานข้อมูลกับ object storage | กลับมาทำต่อได้ ถ้าบัญชียังใช้ได้ Form และ Response ยังอยู่ และได้สิทธิ์ editor |
 | User พิมพ์เพิ่มหลังบันทึกครั้งล่าสุดแล้วปิดหน้า | ฉบับที่ยืนยันแล้วคือครั้งล่าสุดที่ completed | ค่าที่เพิ่มหลังครั้งนั้นไม่ถือว่าบันทึกเข้าร่างของ Folio แล้ว |
@@ -993,9 +1008,9 @@ stateDiagram-v2
 
 Operation ที่ pending หรือ processing และไม่มีการอัปเดตความคืบหน้าเกิน 4 นาที มีเส้นทางถูกตัดเป็น failed ผ่าน polling หรือ recovery รอบถัดไป ตัวจับเวลานี้ไม่ใช่คำรับประกันว่าทุกงานเสร็จภายใน 4 นาทีรวม
 
-Save สำเร็จแล้วแต่ดาวน์โหลด PDF ไม่ได้ แปลได้ว่าการดาวน์โหลดหรือแปลงไฟล์ล้มเหลวต่างหาก UI มีเส้นทางแยกข้อความบันทึกไม่สำเร็จออกจากบันทึกแล้วแต่ดาวน์โหลดไม่ได้
+DOCX แสดงผลบันทึกและดาวน์โหลดแยกกันเมื่อการบันทึกสำเร็จแล้วแต่แปลง PDF ล้มเหลว บนหน้ากรอก XLSX การดาวน์โหลดมีสถานะเตรียมไฟล์และข้อผิดพลาดของตัวเอง การบันทึก Draft แสดงผลจาก Operation ของคำสั่งบันทึก
 
-อ้างอิง [Operation lifecycle](../../apps/server/src/operations/lifecycle.ts#L26), [คืน submitting เป็น draft](../../apps/server/src/operations/lifecycle.ts#L149), [poll Operation](../../apps/server/src/routes/operations.ts#L19) และ [Save แล้ว export](../../apps/web/src/routes/forms/$publicId/fill.tsx#L799)
+อ้างอิง [Operation lifecycle](../../apps/server/src/operations/lifecycle.ts#L26), [คืน submitting เป็น draft](../../apps/server/src/operations/lifecycle.ts#L149), [poll Operation](../../apps/server/src/routes/operations.ts#L19) และ [คำสั่งหน้ากรอก](../../apps/web/src/routes/forms/$publicId/fill.tsx)
 
 ## 20 ออกจากหน้า Reload เน็ตหลุด และ session หมดอายุ
 
@@ -1041,6 +1056,7 @@ flowchart TD
 | --- | --- |
 | กดกลับจาก fill โดยไม่ได้แก้เพิ่ม | ไป Dashboard ได้ |
 | มีการแก้แล้วกดออกหรือเปลี่ยนหน้าภายในแอป | มี dialog ให้บันทึกแล้วออก ทิ้งร่าง หรืออยู่ต่อ |
+| ดาวน์โหลดจากหน้ากรอก XLSX ขณะที่มีงานค้าง | ผู้กรอกได้ไฟล์จากค่าปัจจุบัน เมื่อกดออก Folio ยังเตือนให้จัดการงานค้าง |
 | กดอยู่ต่อ | ปิด dialog และยกเลิก navigation ค่าที่กำลังพิมพ์ยังอยู่ในหน้าปัจจุบัน |
 | กดบันทึกแล้วออก | รอ Save Draft สำเร็จจึงออก ถ้าบันทึกล้มเหลวยังไม่ออกตาม flow นี้ |
 | กดทิ้งฉบับร่าง | เรียกการลบ Response จริง ไม่ใช่แค่ทิ้งการพิมพ์หลัง Save ครั้งล่าสุด และตามโค้ดจะลบประวัติที่ผูกอยู่ด้วย |
@@ -1058,7 +1074,7 @@ flowchart TD
 
 XLSX ยังมีสถานะการตั้งค่าฟิลด์ที่ผลการเขียนไม่แน่ชัด หากระบบยังยืนยันว่า Apply สำเร็จหรือ rollback สำเร็จไม่ได้ จะกัน mutation ต่อ การปิดข้อความ error ไม่ได้ทำให้การตั้งค่านั้นปลอดภัยที่จะ Save หรือ Publish ต่อทันที
 
-อ้างอิง [saveAndExit และ discardDraft](../../apps/web/src/routes/forms/$publicId/fill.tsx#L768), [ตัวเลือก dialog](../../apps/web/src/routes/forms/$publicId/fill.tsx#L902), [beforeunload](../../apps/web/src/routes/forms/$publicId/fill.tsx#L186), [reauth guard](../../apps/web/src/lib/use-reauthentication-guard.ts#L8) และ [Admin guard](../../apps/web/src/routes/admin/forms/$formId/index.tsx#L181)
+อ้างอิง [saveAndExit และ discardDraft](../../apps/web/src/routes/forms/$publicId/fill.tsx#L793), [ตัวเลือก dialog](../../apps/web/src/routes/forms/$publicId/fill.tsx#L970), [navigation blocker](../../apps/web/src/routes/forms/$publicId/fill.tsx#L196), [reauth guard](../../apps/web/src/lib/use-reauthentication-guard.ts#L8) และ [Admin guard](../../apps/web/src/routes/admin/forms/$formId/index.tsx#L181)
 
 ## 21 ส่งแล้วแก้ได้แค่ไหน และ Correction กลับมาทำต่อได้ไหม
 
@@ -1189,6 +1205,7 @@ flowchart TD
 | เก็บร่างแล้ว logout ข้อมูลหายไหม | logout ไม่ลบ Draft ที่บันทึกสำเร็จ กลับด้วยบัญชีเดิมเพื่อเปิดต่อ |
 | เปิดลิงก์เดิมจะสร้าง Response ซ้ำไหม | ไม่เกินหนึ่ง Response ต่อ Form ต่อบัญชี ถ้ายังมีร่างที่ใช้ได้จะเปิดต่อร่างนั้น |
 | เปลี่ยนไปอีกบัญชีแล้วจะได้ร่างเดิมไหม | ไม่ใช่ร่างเดียวกัน ร่างผูกเจ้าของบัญชี Folio SSO ที่ผูกกับ Folio account เดียวกันจึงเป็นเจ้าของเดิม |
+| บันทึกค่า 100 แล้วแก้เป็น 200 จากนั้นดาวน์โหลดบนหน้า Excel จะได้ค่าไหน | ไฟล์ Excel และ PDF ได้ 200 ส่วนร่างใน Folio ใช้ 100 จนกดบันทึกฉบับร่างอีกครั้ง |
 | ดาวน์โหลด DOCX หรือ XLSX ไปแก้ข้างนอกแล้วจะ sync กลับเองไหม | ไม่มี flow sync คำตอบจากไฟล์ภายนอกอัตโนมัติใน API นี้ กลับมาแก้ผ่านหน้า fill |
 | Publish แล้ว User กรอกอยู่ Admin เปลี่ยนแบบเดิมได้ไหม | เปลี่ยนโครงสร้างเดิมไม่ได้ ใช้ Duplicate เป็น Form และ share link ใหม่ |
 | เปลี่ยนชื่อ Form แล้วผู้กรอกใช้ลิงก์เดิมได้ไหม | ได้ metadata ไม่สร้าง publicId ใหม่ ส่วน Duplicate สร้างลิงก์ใหม่ |
@@ -1223,6 +1240,7 @@ flowchart TD
 | แก้ validation, สูตร, protection หรือภาพ Excel | plugin spreadsheet modules | `documents/spreadsheets/` และ `operations/spreadsheet-document.ts` |
 | PDMS project picker | `features/onlyoffice/pdms-popup-relay.ts`, plugin `pdms-project-picker.js` และ `pdms-popup.js` | `pdms/projects.ts`, `catalog.ts`, `selection.ts`, `routes/pdms-project-catalog.ts` |
 | หน้า User กรอก Native หรือ ONLYOFFICE | `routes/forms/$publicId/fill.tsx`, `components/native-form.tsx`, `features/forms/native-response.ts` | `routes/public-forms.ts`, `routes/response-actions.ts`, `responses/editor.ts`, `responses/data.ts` |
+| ดาวน์โหลดจากหน้ากรอก Excel | หน้า fill, `components/onlyoffice-editor.tsx`, plugin `bridge.js` | `POST /api/responses/:id/editor-export/:format`, ตัวแปลง PDF และสำเนาชั่วคราว XLSX |
 | การบันทึกจริงและ callback | plugin `operations.js`, `bridge.js`, web `components/onlyoffice-editor.tsx` | `operations/create.ts`, `force-save.ts`, `callback.ts`, `template-completion.ts`, `response-completion.ts` |
 | Dashboard และ discard ร่าง | `routes/dashboard.tsx`, หน้า fill | `routes/responses.ts`, `responses/deletion.ts` ต้องพิจารณาประวัติ Submission ที่อยู่ใต้ Response ด้วย |
 | Results, filters และ Correction | `routes/admin/results/`, `components/submission-result-viewer.tsx` | `routes/results.ts`, `responses/query.ts`, `responses/result-filters.ts`, `packages/results-filters/`, `responses/editor.ts` |
@@ -1252,6 +1270,7 @@ flowchart TD
 | Form fill | `routes/public-forms.ts`: published metadata, start/resume/reopen, editor-config และประวัติการส่งของเจ้าของ |
 | Response actions | `routes/response-actions.ts`: save Draft และ Submit ทั้ง native กับ ONLYOFFICE |
 | Response read/delete | `routes/responses.ts`: my responses, current correction history, saved Draft export, owner discard และ Admin erase |
+| Excel Fill Download | `POST /api/responses/:id/editor-export/:format`: เจ้าของ Response ใช้ editor lease ปัจจุบันดาวน์โหลดสำเนา XLSX หรือแปลงเป็น PDF |
 | Results/correction | `routes/results.ts`: list, detail, viewer-config, correction editor, final correction และ workspace save |
 | Submission | `routes/submissions.ts`: data/fields, correction history, JSON, DOCX หรือ XLSX และ PDF ตาม revision |
 | Operation/lease | `routes/operations.ts`, `routes/editor-leases.ts`: poll, renew และ release |
@@ -1269,4 +1288,4 @@ flowchart TD
 
 ใช้ CodeGraph ไล่ entrypoints, caller และ module ที่รับผิดชอบ แล้วอ่านส่วน source ที่ถูกตัดออกเฉพาะจุดที่มีผลต่อ flow รายการ routes และ models สร้างซ้ำด้วยสคริปต์ ไม่อ้างจำนวนจาก README
 
-เอกสารอธิบายพฤติกรรมตามโค้ด รวม branch ของสิทธิ์ ความล้มเหลว และการลบที่มีผลต่อข้อมูล ไม่ได้ยิง login จริง ไม่ได้สร้างหรือลบข้อมูลแอป และไม่ได้ทดสอบ live PDMS หรือ OmniRoute จึงไม่สรุปสถานะ deployment ของบริการเหล่านั้น
+ทดสอบเฉพาะการดาวน์โหลดจากหน้ากรอก XLSX บันทึก Draft และส่งคำตอบด้วยเบราว์เซอร์และ ONLYOFFICE 9.4 ในเครื่อง ใช้ฟอร์มและฐานข้อมูลทดสอบแยก การตรวจในระบบจริงครอบคลุมค่าที่พิมพ์ค้าง การแปลง PDF และการอ่าน Draft กลับหลังดาวน์โหลด ส่วน flow อื่นในคู่มืออิงการอ่าน source รวมการเชื่อมต่อ PDMS, OmniRoute และ deployment

@@ -7,14 +7,18 @@ import {
   screen,
   waitFor,
 } from "@testing-library/react";
-import type { ComponentType } from "react";
-import { useEffect } from "react";
+import userEvent from "@testing-library/user-event";
+import type { ComponentType, Ref } from "react";
+import { useEffect, useImperativeHandle } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { EditorBridgeMessage } from "@/features/onlyoffice/editor-protocol";
+import { createDeferred } from "@/lib/form-lifecycle";
 import { Route } from "@/routes/forms/$publicId/fill";
 
 const bridge = vi.hoisted(() => ({
+  captureWorkbook: vi.fn(),
+  onDirtyChange: undefined as ((dirty: boolean) => void) | undefined,
   onMessage: undefined as
     | ((message: EditorBridgeMessage) => Promise<void>)
     | undefined,
@@ -39,19 +43,25 @@ vi.mock("@tanstack/react-router", async (original) => ({
 }));
 vi.mock("@/components/onlyoffice-editor", () => ({
   OnlyOfficeEditor: ({
+    captureWorkbookRef,
     saveAction,
     saveRequest,
     onCommandReadyChange,
+    onDirtyChange,
     openingRevision = 0,
     onBridgeMessage,
   }: {
+    captureWorkbookRef?: Ref<() => Promise<unknown>>;
     openingRevision?: number;
     onBridgeMessage: (message: EditorBridgeMessage) => Promise<void>;
+    onDirtyChange: (dirty: boolean) => void;
     saveAction: string;
     saveRequest: number;
     onCommandReadyChange: (ready: boolean) => void;
   }) => {
     bridge.onMessage = onBridgeMessage;
+    bridge.onDirtyChange = onDirtyChange;
+    useImperativeHandle(captureWorkbookRef, () => bridge.captureWorkbook, []);
     useEffect(
       () => onCommandReadyChange(auth.commandReady),
       [onCommandReadyChange]
@@ -68,27 +78,30 @@ vi.mock("@/components/onlyoffice-editor", () => ({
 }));
 beforeEach(() => {
   auth.commandReady = true;
+  bridge.captureWorkbook.mockReset();
 });
 const Fill = Route.options.component as ComponentType;
-const mount = () => {
+const mount = (exportWorkbook?: (init?: RequestInit) => Promise<Response>) => {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (_input, init) =>
-      Response.json(
-        init?.method === "POST"
-          ? {
-              editorConfigUrl: "/editor-config",
-              fillMethod: "onlyoffice",
-              response: { id: "response" },
-            }
-          : {
-              form: {
-                documentKind: "xlsx",
-                fillMethod: "onlyoffice",
-                title: "Excel form",
-              },
-            }
-      )
+    vi.fn(async (input: string, init?: RequestInit) =>
+      input.includes("/editor-export/") && exportWorkbook
+        ? exportWorkbook(init)
+        : Response.json(
+            init?.method === "POST"
+              ? {
+                  editorConfigUrl: "/editor-config",
+                  fillMethod: "onlyoffice",
+                  response: { id: "response" },
+                }
+              : {
+                  form: {
+                    documentKind: "xlsx",
+                    fillMethod: "onlyoffice",
+                    title: "Excel form",
+                  },
+                }
+          )
     )
   );
   return render(<Fill />);
@@ -102,18 +115,19 @@ describe("Excel response actions", () => {
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "บันทึกฉบับร่าง" })).toBeDisabled();
     expect(
-      screen.getByRole("button", { name: "บันทึกและดาวน์โหลด XLSX" })
+      screen.getByRole("button", { name: "ดาวน์โหลด Excel" })
     ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "ดาวน์โหลด PDF" })).toBeDisabled();
     expect(screen.getByTestId("editor")).toHaveAttribute("data-request", "0");
   });
   it("shows XLSX/PDF exports and a direct draft save action", async () => {
     mount();
     const save = await screen.findByRole("button", { name: "บันทึกฉบับร่าง" });
     expect(
-      screen.getByRole("button", { name: "บันทึกและดาวน์โหลด XLSX" })
+      screen.getByRole("button", { name: "ดาวน์โหลด Excel" })
     ).toBeInTheDocument();
     expect(
-      screen.getByRole("button", { name: "บันทึกและดาวน์โหลด PDF" })
+      screen.getByRole("button", { name: "ดาวน์โหลด PDF" })
     ).toBeInTheDocument();
     expect(screen.queryByText(/ใช้แท็บ Form/u)).not.toBeInTheDocument();
     await waitFor(() => expect(save).toBeEnabled());
@@ -125,6 +139,74 @@ describe("Excel response actions", () => {
       "data-action",
       "save-draft"
     );
+  });
+  it("accepts the keyboard download command before the first Draft save", async () => {
+    const pending = createDeferred<never>();
+    bridge.captureWorkbook.mockReturnValue(pending.promise);
+    mount();
+    const excel = await screen.findByRole("button", { name: "ดาวน์โหลด Excel" });
+    const pdf = screen.getByRole("button", { name: "ดาวน์โหลด PDF" });
+    await waitFor(() => expect(excel).toBeEnabled());
+    excel.focus();
+    await userEvent.keyboard("{Enter}");
+
+    expect(bridge.captureWorkbook).toHaveBeenCalledOnce();
+    expect(screen.getByText("กำลังเตรียมไฟล์ดาวน์โหลด…")).toBeInTheDocument();
+    expect(excel).toBeDisabled();
+    expect(pdf).toBeDisabled();
+    expect(screen.getByTestId("editor")).toHaveAttribute("data-request", "0");
+    await act(async () =>
+      pending.reject(new Error("Unable to capture workbook"))
+    );
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "ดาวน์โหลดไฟล์ไม่สำเร็จ"
+    );
+    expect(excel).toBeEnabled();
+  });
+  it("retries PDF conversion with a fresh capture and keeps unsaved edits", async () => {
+    bridge.captureWorkbook
+      .mockResolvedValueOnce({
+        capability: "test-capability",
+        snapshotUrl: "https://office.test/first",
+      })
+      .mockResolvedValueOnce({
+        capability: "test-capability",
+        snapshotUrl: "https://office.test/retry",
+      });
+    const pendingConversion = createDeferred<Response>();
+    const convert = vi
+      .fn<(init?: RequestInit) => Promise<Response>>()
+      .mockResolvedValueOnce(
+        Response.json({ error: "pdf_conversion_failed" }, { status: 502 })
+      )
+      .mockReturnValueOnce(pendingConversion.promise);
+    mount(convert);
+    const pdf = await screen.findByRole("button", { name: "ดาวน์โหลด PDF" });
+    act(() => bridge.onDirtyChange?.(true));
+
+    await userEvent.click(pdf);
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "ดาวน์โหลดไฟล์ไม่สำเร็จ"
+    );
+    await userEvent.click(pdf);
+    await waitFor(() => expect(convert).toHaveBeenCalledTimes(2));
+    expect(convert.mock.calls[1]?.[0]?.body).toBe(
+      JSON.stringify({ snapshotUrl: "https://office.test/retry" })
+    );
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.getByTestId("editor")).toHaveAttribute("data-request", "0");
+    expect(
+      screen.getByText(/สถานะ: มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก/u)
+    ).toBeInTheDocument();
+    await act(async () =>
+      pendingConversion.resolve(new Response(null, { status: 502 }))
+    );
+    await userEvent.click(
+      screen.getByRole("button", { name: "ออกจากแบบฟอร์ม" })
+    );
+    expect(
+      screen.getByRole("dialog", { name: "มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก" })
+    ).toBeInTheDocument();
   });
   it("sends submit through the authenticated editor command bridge", async () => {
     mount();

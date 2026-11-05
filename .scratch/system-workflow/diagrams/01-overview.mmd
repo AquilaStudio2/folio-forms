@@ -11,6 +11,7 @@ flowchart TD
     share["ลิงก์กรอกแบบฟอร์ม"]
     fill["เริ่มหรือเปิด Response เดิม"]
     edit["กรอก DOCX หรือ XLSX"]
+    excelExport["XLSX: ดาวน์โหลดจากตัวแก้ไข"]
     draft["บันทึก Draft"]
     submit["ส่งคำตอบ"]
     operation["รอ Operation สำเร็จ"]
@@ -28,6 +29,7 @@ flowchart TD
     admin --> author --> publish --> share --> fill
     user -->|"กรอกต่อจาก dashboard"| fill
     fill --> edit
+    edit -.->|"XLSX"| excelExport
     edit --> draft --> operation
     edit --> submit --> operation
     operation -->|"บันทึกร่างสำเร็จ"| edit

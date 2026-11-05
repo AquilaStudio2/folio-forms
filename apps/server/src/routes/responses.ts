@@ -17,15 +17,27 @@ import {
   requireResponseWriter,
 } from "../auth/identity";
 import { responsePicturePresence } from "../documents/pictures";
-import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
+import { withSpreadsheetExportSnapshot } from "../documents/spreadsheets/export-snapshot";
+import {
+  readSpreadsheetWorkbook,
+  XLSX_CONTENT_TYPE,
+} from "../documents/spreadsheets/workbook";
+import {
+  requireActionEditorAuthorization,
+  requireEditorScope,
+} from "../editor/authorization";
+import { editorLeaseProof, requireActiveEditorLease } from "../editor/leases";
 import { spreadsheetPicturePresence } from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 import {
   validateId,
   readJsonRecord,
   accountBodyMaximumBytes,
+  documentActionBodyMaximumBytes,
   jsonRecord,
+  requiredString,
 } from "../http/input";
+import { downloadEditorWorkbook } from "../onlyoffice";
 import { activeOperationForResponse } from "../operations/lifecycle";
 import { deleteResponseData } from "../responses/deletion";
 import { responseSummary, correctionRevisionSummary } from "../responses/query";
@@ -213,6 +225,115 @@ export function registerResponseRoutes(
         ],
       };
     })
+    .post(
+      "/api/responses/:id/editor-export/:format",
+      async ({ request, params }) => {
+        const responseId = validateId(params.id, "Response");
+        const { format } = params;
+        if (format !== "xlsx" && format !== "pdf") {
+          fail(404, "not_found", "Workbook export was not found");
+        }
+
+        const identity = await requireIdentity(request);
+        requireResponseWriter(identity);
+        const authorization = await requireActionEditorAuthorization(request);
+        if (
+          authorization.actor.id !== identity.id ||
+          authorization.capability.leaseProof !==
+            editorLeaseProof(identity, "response", responseId)
+        ) {
+          fail(
+            403,
+            "editor_capability_scope_mismatch",
+            "Workbook export requires the active editor session"
+          );
+        }
+
+        const response = await prisma.response.findUnique({
+          select: {
+            draftDocumentKey: true,
+            form: { select: { documentKind: true, version: true } },
+            formId: true,
+            publishedVersion: true,
+            status: true,
+            userId: true,
+          },
+          where: { id: responseId },
+        });
+        if (!response || response.form.documentKind !== "xlsx") {
+          fail(404, "not_found", "Workbook export was not found");
+        }
+        if (response.userId !== identity.id) {
+          fail(
+            403,
+            "forbidden",
+            "You may only export your own response workbook"
+          );
+        }
+        const documentKey = response.draftDocumentKey;
+        if (
+          response.status !== ResponseStatus.draft ||
+          response.publishedVersion !== response.form.version ||
+          !documentKey
+        ) {
+          fail(409, "stale_response", "The response is no longer editable");
+        }
+        const scope = {
+          documentKey,
+          formId: response.formId,
+          targetId: responseId,
+          targetType: "response",
+        } as const;
+        requireEditorScope(authorization, {
+          ...scope,
+          action: "export-workbook",
+        });
+        await requireActiveEditorLease(authorization, scope);
+
+        const input = await readJsonRecord(
+          request,
+          documentActionBodyMaximumBytes
+        );
+        if (Object.keys(input).length !== 1) {
+          fail(400, "invalid_request", "Only snapshotUrl is accepted");
+        }
+        const workbook = await downloadEditorWorkbook({
+          documentKey,
+          signal: request.signal,
+          snapshotUrl: requiredString(input, "snapshotUrl"),
+        });
+        try {
+          // Validate live OOXML before sending it to a client or the converter.
+          readSpreadsheetWorkbook(workbook);
+        } catch {
+          fail(
+            422,
+            "invalid_workbook_snapshot",
+            "The workbook snapshot is not a supported Excel document"
+          );
+        }
+        const headers = {
+          "Cache-Control": "no-store",
+          "Content-Disposition": `attachment; filename="response-${responseId}.${format}"`,
+          "Content-Type":
+            format === "xlsx" ? XLSX_CONTENT_TYPE : "application/pdf",
+        };
+        if (format === "xlsx") {
+          return new Response(workbook, { headers });
+        }
+        try {
+          const pdf = await withSpreadsheetExportSnapshot(
+            workbook,
+            (key) => onlyOffice.convertDocxToPdf(key, true, "xlsx"),
+            request.signal
+          );
+          return new Response(pdf, { headers });
+        } catch {
+          fail(502, "pdf_conversion_failed", "สร้าง PDF ไม่สำเร็จ กรุณาลองใหม่");
+        }
+      },
+      { parse: "none" }
+    )
     .get(
       "/api/responses/:id/draft/:format",
       async ({ request, params, set }) => {

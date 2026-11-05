@@ -577,11 +577,16 @@ export const apiGet = <T>(
   path: string,
   options?: Pick<RequestInit, "signal"> & RequestOptions
 ) => request<T>(path, options, options);
-export const apiGetBlob = async (path: string): Promise<Blob> => {
+const requestBlob = async (path: string, init?: RequestInit): Promise<Blob> => {
+  const headers = new Headers(init?.headers);
   const token = getToken();
+  if (token) {
+    headers.set("Authorization", `Bearer ${token}`);
+  }
   const response = await fetch(`${API_ORIGIN}${path}`, {
+    ...init,
     credentials: "include",
-    headers: token ? { Authorization: `Bearer ${token}` } : undefined,
+    headers,
   });
   if (!response.ok) {
     throw new ApiError(
@@ -592,6 +597,7 @@ export const apiGetBlob = async (path: string): Promise<Blob> => {
   }
   return response.blob();
 };
+export const apiGetBlob = (path: string): Promise<Blob> => requestBlob(path);
 
 export const apiPost = <T>(
   path: string,
@@ -638,8 +644,12 @@ export const apiDelete = <T>(
     method: "DELETE",
     ...options,
   });
-export const downloadArtifact = async (path: string, filename: string) => {
-  const blob = await apiGetBlob(path);
+export const downloadArtifact = async (
+  path: string,
+  filename: string,
+  init?: RequestInit
+) => {
+  const blob = await requestBlob(path, init);
   const href = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = href;

@@ -23,6 +23,11 @@ type FieldControlType =
 type EditorOperationStatus = "pending" | "completed" | "failed";
 export type OnlyOfficeEditorState = "loading" | "ready" | "blocked" | "error";
 
+export type CaptureWorkbook = () => Promise<{
+  capability: string;
+  snapshotUrl: string;
+}>;
+
 export interface EditorLease {
   id: string;
   expiresAt: string;
@@ -55,7 +60,7 @@ export interface EditorConfig {
   apiScriptUrl?: string;
   apiUrl?: string;
   bridge?: {
-    capabilities?: Partial<Record<EditorAction, string>>;
+    capabilities?: Partial<Record<EditorAction | "export-workbook", string>>;
     id?: string;
     lease?: EditorLease;
     pluginOrigin?: string;

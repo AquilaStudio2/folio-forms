@@ -33,7 +33,10 @@ import type {
   ExportFormat,
   NativeEditorConfig,
 } from "@/features/forms/native-response";
-import type { EditorBridgeMessage } from "@/features/onlyoffice/editor-protocol";
+import type {
+  CaptureWorkbook,
+  EditorBridgeMessage,
+} from "@/features/onlyoffice/editor-protocol";
 import {
   ApiError,
   apiDelete,
@@ -158,6 +161,13 @@ const FillRoute = () => {
   const [exportAfterSave, setExportAfterSave] = useState<ExportFormat | null>(
     null
   );
+  const [downloadingWorkbook, setDownloadingWorkbook] = useState(false);
+  const [workbookDownloadError, setWorkbookDownloadError] = useState<
+    string | null
+  >(null);
+  const captureWorkbookRef = useRef<CaptureWorkbook>(null);
+  const workbookDownloadRef = useRef<AbortController | null>(null);
+  useEffect(() => () => workbookDownloadRef.current?.abort(), []);
   const [clearDirtyRequest, setClearDirtyRequest] = useState(0);
   const [discardBusy, setDiscardBusy] = useState(false);
   const [submissionHistory, setSubmissionHistory] = useState<
@@ -765,6 +775,8 @@ const FillRoute = () => {
     exportAfterSave,
     saveBeforeExit
   );
+  const editorActionDisabled =
+    !editorCommandReady || saveFlowBusy || discardBusy || downloadingWorkbook;
   const handleExit = async () => {
     if (saveFlowBusy || discardBusy) {
       return;
@@ -779,7 +791,12 @@ const FillRoute = () => {
     setOperationError(null);
   };
   const saveAndExit = () => {
-    if (!activeResponseId || saveFlowBusy || discardBusy) {
+    if (
+      !activeResponseId ||
+      saveFlowBusy ||
+      discardBusy ||
+      workbookDownloadRef.current
+    ) {
       return;
     }
     if (nativeConfig) {
@@ -847,12 +864,58 @@ const FillRoute = () => {
     setEditorAction("save-draft");
     setSaveRequest((value) => value + 1);
   };
+  const downloadWorkbook = async (format: "xlsx" | "pdf") => {
+    const capture = captureWorkbookRef.current;
+    if (
+      !capture ||
+      !activeResponseId ||
+      editorActionDisabled ||
+      workbookDownloadRef.current
+    ) {
+      return;
+    }
+    const controller = new AbortController();
+    workbookDownloadRef.current = controller;
+    setWorkbookDownloadError(null);
+    setDownloadingWorkbook(true);
+    try {
+      const { capability, snapshotUrl } = await capture();
+      controller.signal.throwIfAborted();
+      await downloadArtifact(
+        `/api/responses/${activeResponseId}/editor-export/${format}`,
+        `response-${activeResponseId}.${format}`,
+        {
+          body: JSON.stringify({ snapshotUrl }),
+          headers: {
+            "Content-Type": "application/json",
+            "X-Editor-Capability": capability,
+          },
+          method: "POST",
+          signal: AbortSignal.any([
+            controller.signal,
+            AbortSignal.timeout(210_000),
+          ]),
+        }
+      );
+    } catch (caughtError: unknown) {
+      if (!controller.signal.aborted) {
+        setWorkbookDownloadError(
+          formRequestError(
+            caughtError,
+            "ดาวน์โหลดไฟล์ไม่สำเร็จ กรุณาตรวจค่าที่กรอกแล้วลองใหม่"
+          )
+        );
+      }
+    } finally {
+      workbookDownloadRef.current = null;
+      setDownloadingWorkbook(false);
+    }
+  };
   const runSpreadsheetAction = (action: "save-draft" | "submit") => {
     if (
-      !editorCommandReady ||
+      editorActionDisabled ||
       !activeResponseId ||
-      saveFlowBusy ||
-      discardBusy
+      workbookDownloadRef.current
     ) {
       return;
     }
@@ -870,7 +933,12 @@ const FillRoute = () => {
     setExitIntent(null);
   };
   const discardDraft = async () => {
-    if (!activeResponseId || discardBusy || saveFlowBusy) {
+    if (
+      !activeResponseId ||
+      discardBusy ||
+      saveFlowBusy ||
+      workbookDownloadRef.current
+    ) {
       return;
     }
     setDiscardBusy(true);
@@ -929,7 +997,7 @@ const FillRoute = () => {
               variant="secondary"
               type="button"
               onClick={discardDraft}
-              disabled={discardBusy || saveFlowBusy}
+              disabled={discardBusy || saveFlowBusy || downloadingWorkbook}
             >
               {discardBusy ? <Spinner /> : null}
               {discardBusy ? "กำลังลบ…" : "ทิ้งฉบับร่าง"}
@@ -938,7 +1006,7 @@ const FillRoute = () => {
           <Button
             type="button"
             onClick={saveAndExit}
-            disabled={discardBusy || saveFlowBusy}
+            disabled={discardBusy || saveFlowBusy || downloadingWorkbook}
           >
             {saveBeforeExit ? <Spinner /> : null}
             {saveBeforeExit ? "กำลังบันทึก…" : "บันทึกแล้วออก"}
@@ -1016,6 +1084,21 @@ const FillRoute = () => {
           <div className="mb-4">
             <Notice tone="danger">
               {operationError} คุณสามารถแก้ไขข้อมูลแล้วลองใหม่ได้
+            </Notice>
+          </div>
+        ) : null}
+        {workbookDownloadError ? (
+          <div className="mb-4">
+            <Notice tone="danger">{workbookDownloadError}</Notice>
+          </div>
+        ) : null}
+        {downloadingWorkbook ? (
+          <div className="mb-4">
+            <Notice>
+              <span className="inline-flex items-center gap-2">
+                <Spinner />
+                กำลังเตรียมไฟล์ดาวน์โหลด…
+              </span>
             </Notice>
           </div>
         ) : null}
@@ -1181,9 +1264,7 @@ const FillRoute = () => {
                     variant="secondary"
                     size="sm"
                     onClick={() => runSpreadsheetAction("save-draft")}
-                    disabled={
-                      !editorCommandReady || saveFlowBusy || discardBusy
-                    }
+                    disabled={editorActionDisabled}
                   >
                     บันทึกฉบับร่าง
                   </Button>
@@ -1191,9 +1272,7 @@ const FillRoute = () => {
                     type="button"
                     size="sm"
                     onClick={() => runSpreadsheetAction("submit")}
-                    disabled={
-                      !editorCommandReady || saveFlowBusy || discardBusy
-                    }
+                    disabled={editorActionDisabled}
                   >
                     ส่งคำตอบ
                   </Button>
@@ -1204,28 +1283,39 @@ const FillRoute = () => {
                 variant="secondary"
                 size="sm"
                 onClick={() =>
-                  saveAndExport(form.documentKind === "xlsx" ? "xlsx" : "docx")
+                  form.documentKind === "xlsx"
+                    ? downloadWorkbook("xlsx")
+                    : saveAndExport("docx")
                 }
-                disabled={!editorCommandReady || saveFlowBusy || discardBusy}
+                disabled={editorActionDisabled}
               >
-                {exportAfterSave === (form.documentKind ?? "docx") ? (
-                  <Spinner />
-                ) : null}
-                บันทึกและดาวน์โหลด {(form.documentKind ?? "docx").toUpperCase()}
+                {exportAfterSave === "docx" ? <Spinner /> : null}
+                {form.documentKind === "xlsx"
+                  ? "ดาวน์โหลด Excel"
+                  : "บันทึกและดาวน์โหลด DOCX"}
               </Button>
               <Button
                 type="button"
                 variant="secondary"
                 size="sm"
-                onClick={() => saveAndExport("pdf")}
-                disabled={!editorCommandReady || saveFlowBusy || discardBusy}
+                onClick={() =>
+                  form.documentKind === "xlsx"
+                    ? downloadWorkbook("pdf")
+                    : saveAndExport("pdf")
+                }
+                disabled={editorActionDisabled}
               >
                 {exportAfterSave === "pdf" ? <Spinner /> : null}
-                บันทึกและดาวน์โหลด PDF
+                {form.documentKind === "xlsx"
+                  ? "ดาวน์โหลด PDF"
+                  : "บันทึกและดาวน์โหลด PDF"}
               </Button>
             </div>
             <div className="overflow-hidden rounded-[var(--radius)] border border-[var(--line-strong)] bg-[var(--muted)] shadow-inner">
               <OnlyOfficeEditor
+                captureWorkbookRef={
+                  form.documentKind === "xlsx" ? captureWorkbookRef : undefined
+                }
                 clearDirtyRequest={clearDirtyRequest}
                 configUrl={editorConfigUrl ?? undefined}
                 onBridgeMessage={handleBridgeMessage}

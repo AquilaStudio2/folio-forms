@@ -49,6 +49,27 @@ export function createOffice(options) {
       }
     });
   }
+  async function captureWorkbook() {
+    // The pinned spreadsheet SDK confirms active input without starting a save.
+    // The Folio gateway serves the plugin and its editor parent on one origin.
+    const editor = window.parent.Asc?.editor;
+    const editing = editor?.asc_getCellEditMode?.();
+    if (
+      editing !== false &&
+      (editing !== true ||
+        editor.asc_closeCellEditor?.() !== true ||
+        editor.asc_getCellEditMode() !== false)
+    ) {
+      throw new Error("The active cell edit could not be confirmed");
+    }
+    const snapshotUrl = await executeMethodResult("GetFileToDownload", [
+      "xlsx",
+    ]);
+    if (typeof snapshotUrl !== "string" || !snapshotUrl) {
+      throw new Error("ONLYOFFICE could not capture the workbook");
+    }
+    return snapshotUrl;
+  }
   function restrictEditorToForms() {
     return executeMethodResult("SetEditingRestrictions", ["forms"]);
   }
@@ -292,6 +313,7 @@ export function createOffice(options) {
   }
 
   return {
+    captureWorkbook,
     callCommandResult,
     executeMethodResult,
     restrictEditorToForms,

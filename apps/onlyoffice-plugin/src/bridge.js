@@ -309,6 +309,25 @@ export function createBridge(options, office, callbacks) {
     }
   }
 
+  async function sendWorkbookCapture(requestId) {
+    let snapshotUrl;
+    try {
+      snapshotUrl = await office.captureWorkbook();
+    } catch {
+      // Reply without a URL if native input or snapshot creation failed.
+    }
+    try {
+      postBridgeMessage({
+        requestId,
+        snapshotUrl,
+        source: BRIDGE_MESSAGE_SOURCE,
+        type: "workbook-capture",
+      });
+    } catch {
+      // The host may close while the snapshot is in flight.
+    }
+  }
+
   function handleParentMessage(event) {
     const message = event?.data;
     let topWindow;
@@ -329,6 +348,7 @@ export function createBridge(options, office, callbacks) {
       (message.type !== BRIDGE_ACK_TYPE &&
         message.type !== CAPABILITY_RESPONSE_TYPE &&
         message.type !== RUN_ACTION_TYPE &&
+        message.type !== "capture-workbook" &&
         message.type !== CLEAR_DIRTY_TYPE &&
         message.type !== EDITOR_SAVE_RESPONSE_TYPE)
     ) {
@@ -353,6 +373,18 @@ export function createBridge(options, office, callbacks) {
     }
 
     if (!bridgeAcknowledged) {
+      return;
+    }
+
+    if (message.type === "capture-workbook") {
+      if (
+        options.documentKind === "xlsx" &&
+        (options.action === ACTIONS.FILL || options.action === ACTIONS.DRAFT) &&
+        typeof message.requestId === "string" &&
+        message.requestId.length > 0
+      ) {
+        void sendWorkbookCapture(message.requestId);
+      }
       return;
     }
 

@@ -458,6 +458,16 @@ export async function userEditorConfig(
               ? "fill"
               : "draft",
         capabilities: {
+          ...(form.documentKind === "xlsx" && requestedAction !== "submit"
+            ? {
+                "export-workbook": actionEditorCapability(
+                  identity,
+                  catalogScope,
+                  "export-workbook",
+                  lease
+                ),
+              }
+            : {}),
           "save-draft": actionEditorCapability(
             identity,
             catalogScope,

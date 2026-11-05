@@ -1,4 +1,12 @@
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import type { Ref } from "react";
+import {
+  useCallback,
+  useEffect,
+  useId,
+  useImperativeHandle,
+  useRef,
+  useState,
+} from "react";
 
 import {
   acknowledgeBridge,
@@ -15,6 +23,7 @@ import {
 } from "@/features/onlyoffice/editor-protocol";
 import type {
   CapabilityRequestMessage,
+  CaptureWorkbook,
   EditorBridgeMessage,
   EditorConfig,
   EditorLease,
@@ -51,6 +60,7 @@ const changedPdmsDocument = (
   );
 
 export const OnlyOfficeEditor = ({
+  captureWorkbookRef,
   clearDirtyRequest = 0,
   configUrl,
   onBridgeMessage,
@@ -66,6 +76,7 @@ export const OnlyOfficeEditor = ({
   trackNativeDirty = false,
   title,
 }: {
+  captureWorkbookRef?: Ref<CaptureWorkbook>;
   clearDirtyRequest?: number;
   configUrl?: string;
   onBridgeMessage?: (message: EditorBridgeMessage) => void | Promise<void>;
@@ -120,6 +131,11 @@ export const OnlyOfficeEditor = ({
   } | null>(null);
   const onStateChangeRef = useRef(onStateChange);
   const pinnedSourceRef = useRef<MessageEventSource | null>(null);
+  const pendingCaptureRef = useRef<{
+    requestId: string;
+    resolve: (snapshotUrl: string) => void;
+    reject: (error: Error) => void;
+  } | null>(null);
   const lastClearDirtyRequestRef = useRef(0);
   const lastSaveRequestRef = useRef(0);
   const terminalOperationIdsRef = useRef(new Set<string>());
@@ -136,6 +152,69 @@ export const OnlyOfficeEditor = ({
   const [expanded, setExpanded] = useState(false);
   const [retryToken, setRetryToken] = useState(0);
   const [bridgeReadyVersion, setBridgeReadyVersion] = useState(0);
+
+  useImperativeHandle(captureWorkbookRef, () => {
+    const bridge = config?.bridge;
+    const documentKey = recordOrEmpty(config?.config?.document).key;
+    const supported = Boolean(bridge?.capabilities?.["export-workbook"]);
+    return async () => {
+      const source = pinnedSourceRef.current;
+      if (
+        !supported ||
+        !configUrl ||
+        loadedConfigUrlRef.current !== configUrl ||
+        !bridge?.id ||
+        !bridge.pluginOrigin ||
+        !bridge.lease ||
+        !isEditorWindowSource(source, surfaceRef.current) ||
+        pendingCaptureRef.current
+      ) {
+        throw new Error("The workbook editor is unavailable");
+      }
+
+      const { id, pluginOrigin } = bridge;
+      const requestId = crypto.randomUUID();
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      let snapshotUrl: string;
+      try {
+        // oxlint-disable-next-line promise/avoid-new -- Resolve the one correlated plugin reply or time out.
+        snapshotUrl = await new Promise<string>((resolve, reject) => {
+          pendingCaptureRef.current = { reject, requestId, resolve };
+          timeout = setTimeout(
+            () => reject(new Error("Workbook capture timed out")),
+            20_000
+          );
+          source.postMessage(
+            {
+              bridgeId: id,
+              requestId,
+              source: "folio-parent",
+              type: "capture-workbook",
+            },
+            pluginOrigin
+          );
+        });
+      } finally {
+        clearTimeout(timeout);
+        pendingCaptureRef.current = null;
+      }
+
+      const fresh = await apiGet<EditorConfig>(
+        editorConfigPath(configUrl, pdmsOpeningId),
+        { timeoutMs: 10_000 }
+      );
+      const capability = fresh.bridge?.capabilities?.["export-workbook"];
+      if (
+        !capability ||
+        pinnedSourceRef.current !== source ||
+        fresh.bridge?.lease?.id !== bridge.lease.id ||
+        recordOrEmpty(fresh.config?.document).key !== documentKey
+      ) {
+        throw new Error("The workbook editor session has changed");
+      }
+      return { capability, snapshotUrl };
+    };
+  }, [config, configUrl, pdmsOpeningId]);
 
   const reportState = useCallback((nextState: OnlyOfficeEditorState) => {
     setEditorState(nextState);
@@ -656,6 +735,9 @@ export const OnlyOfficeEditor = ({
           pinnedSourceRef.current &&
           pinnedSourceRef.current !== event.source
         ) {
+          pendingCaptureRef.current?.reject(
+            new Error("The workbook editor reconnected during capture")
+          );
           respondToEditorSave(
             "The plugin closed before native saving completed"
           );
@@ -679,6 +761,23 @@ export const OnlyOfficeEditor = ({
         event.source !== pinnedSource ||
         !isEditorWindowSource(pinnedSource, surfaceRef.current)
       ) {
+        return;
+      }
+
+      if (
+        isRecord(data) &&
+        data.bridgeId === bridgeId &&
+        data.source === "form-bridge" &&
+        data.type === "workbook-capture"
+      ) {
+        const pending = pendingCaptureRef.current;
+        if (pending && data.requestId === pending.requestId) {
+          if (isNonEmptyString(data.snapshotUrl)) {
+            pending.resolve(data.snapshotUrl);
+          } else {
+            pending.reject(new Error("The workbook could not be captured"));
+          }
+        }
         return;
       }
 
@@ -776,6 +875,9 @@ export const OnlyOfficeEditor = ({
       window.addEventListener("message", handleBridgeMessage);
     }
     const detachBridge = () => {
+      pendingCaptureRef.current?.reject(
+        new Error("The workbook editor closed during capture")
+      );
       respondToEditorSave("The native editor closed before changes were saved");
       cancelled = true;
       pdmsPopupRelay.close();

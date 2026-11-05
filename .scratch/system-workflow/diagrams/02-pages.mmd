@@ -17,6 +17,7 @@ flowchart LR
     ai["/admin/ai-authoring"]
     dashboard["/dashboard"]
     fill["/forms/:publicId/fill"]
+    ownHistory["/forms/:publicId/submissions"]
     receipt["/receipt/:submissionId"]
     root -->|"guest"| login
     login -->|"รหัสผ่านชั่วคราว"| password
@@ -34,5 +35,6 @@ flowchart LR
     admin --> ai -->|"นำ DOCX ไปสร้าง Form"| form
     dashboard --> fill
     dashboard --> receipt
+    dashboard -->|"เคยส่งแล้ว"| ownHistory --> receipt
     fill -.->|"เปิดประวัติการส่ง"| receipt
     fill -.->|"Prefill ใช้ไม่ได้"| handoff

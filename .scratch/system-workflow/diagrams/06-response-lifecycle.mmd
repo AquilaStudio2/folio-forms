@@ -1,7 +1,7 @@
 flowchart TD
     link(["เปิด /forms/:publicId/fill"])
     login["ต้องมี Folio session"]
-    start["POST /api/forms/:publicId/start"]
+    start["เริ่ม Response ผ่าน API"]
     current{"สถานะ Response เดิม"}
     fresh["ไม่มี Response: สร้าง Draft"]
     resume["draft: ใช้ไฟล์และข้อมูลเดิม"]
@@ -12,8 +12,10 @@ flowchart TD
     xlsx["XLSX ใช้ PublishedTemplate"]
     config["ขอ editor-config และ lease"]
     method{"Fill Method"}
-    native["Native form ส่งค่าและรูป"]
     office["ONLYOFFICE และ Form Bridge"]
+    capture["ยืนยันค่าเซลล์และจับสำเนา XLSX"]
+    file["ตรวจ session และ lease แล้วคืน Excel หรือ PDF"]
+    native["Native form ส่งค่าและรูป"]
     save["Save Draft"]
     submit["Submit ตรวจ required"]
     operation["รอ Operation completed"]
@@ -28,12 +30,13 @@ flowchart TD
     kind -->|"docx"| docx --> config
     kind -->|"xlsx"| xlsx --> config
     config --> method
-    method -->|"native และ DOCX"| native
     method -->|"onlyoffice"| office
-    native --> save
+    office -->|"ดาวน์โหลดในหน้ากรอก XLSX"| capture --> file
+    method -->|"native และ DOCX"| native
     office --> save
-    native --> submit
     office --> submit
+    native --> save
+    native --> submit
     save --> operation
     submit --> operation
     operation -->|"save สำเร็จ"| config

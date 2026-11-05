@@ -1,8 +1,8 @@
 {
-  "commit": "83a31cc8f6a741700eb429a74d99576ea531bdc8",
-  "branch": "main",
-  "source_fingerprint": "883d10ed3d53eaa0158f592f92abf1559170c89f6dfcbdfee6d1f455bca614a5",
-  "source_files": 295,
+  "commit": "44b63d08d738e1cced4f45d265f1195aef4fb789",
+  "branch": "codex/excel-fill-download-01",
+  "source_fingerprint": "90cbda990df0895cfde95fc358e216576d7bfcae00702dccfc6f8a573424ff37",
+  "source_files": 296,
   "pages": [
     {
       "route": "__root",
@@ -22,7 +22,7 @@
     {
       "route": "/admin/forms/$formId/",
       "file": "apps/web/src/routes/admin/forms/$formId/index.tsx",
-      "line": 870
+      "line": 879
     },
     {
       "route": "/admin/forms/$formId/submissions/$submissionId",
@@ -92,12 +92,17 @@
     {
       "route": "/dashboard",
       "file": "apps/web/src/routes/dashboard.tsx",
-      "line": 357
+      "line": 367
     },
     {
       "route": "/forms/$publicId/fill",
       "file": "apps/web/src/routes/forms/$publicId/fill.tsx",
-      "line": 1247
+      "line": 1337
+    },
+    {
+      "route": "/forms/$publicId/submissions",
+      "file": "apps/web/src/routes/forms/$publicId/submissions.tsx",
+      "line": 243
     },
     {
       "route": "/handoff",
@@ -556,31 +561,37 @@
       "method": "GET",
       "path": "/api/responses/me",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 50
+      "line": 62
     },
     {
       "method": "GET",
       "path": "/api/responses/:id/corrections",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 84
+      "line": 96
+    },
+    {
+      "method": "POST",
+      "path": "/api/responses/:id/editor-export/:format",
+      "file": "apps/server/src/routes/responses.ts",
+      "line": 228
     },
     {
       "method": "GET",
       "path": "/api/responses/:id/draft/:format",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 216
+      "line": 337
     },
     {
       "method": "DELETE",
       "path": "/api/admin/responses/:id",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 284
+      "line": 405
     },
     {
       "method": "DELETE",
       "path": "/api/responses/:id",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 328
+      "line": 449
     },
     {
       "method": "GET",

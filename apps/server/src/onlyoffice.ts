@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { env } from "@onlyoffice/env/server";
 
 import { uploadPocGuid } from "./documents/spreadsheets/upload-poc-preview";
+import { fail } from "./http/errors";
 import type { PdmsProjectCatalog } from "./pdms/catalog";
 
 export const pluginGuid = "asc.{E0B14962-3B9D-4E82-923E-89A93E8A1A51}";
@@ -25,6 +26,7 @@ const editorCapabilityActions = new Set<unknown>([
   "save-correction",
   "save-correction-workspace",
   "configure-fields",
+  "export-workbook",
   "poll-operation",
 ]);
 const editorCapabilityTargets = new Set<unknown>([
@@ -58,6 +60,7 @@ export type EditorCapabilityAction =
   | "save-correction"
   | "save-correction-workspace"
   | "configure-fields"
+  | "export-workbook"
   | "poll-operation";
 export type EditorCapabilityTarget =
   | "template-draft"
@@ -714,6 +717,7 @@ async function boundedResponseBytes(
 ): Promise<Uint8Array> {
   const contentLength = Number(response.headers.get("content-length") ?? "");
   if (Number.isFinite(contentLength) && contentLength > maximumBytes) {
+    await response.body?.cancel();
     throw new Error("ONLYOFFICE download is too large");
   }
   const reader = response.body?.getReader();
@@ -741,6 +745,93 @@ async function boundedResponseBytes(
     offset += chunk.byteLength;
   }
   return bytes;
+}
+
+const workbookCacheSuffix =
+  /^[a-z0-9]{1,16}\/output\.xlsx\/[a-z0-9_.-]+\.xlsx$/iu;
+const cacheSignature = /^[a-z0-9_-]{22}$/iu;
+const cacheExpiration = /^\d{1,12}$/u;
+const workbookCacheParameters = new Set([
+  "md5",
+  "expires",
+  "shardkey",
+  "filename",
+]);
+
+// oxlint-disable-next-line complexity -- Validate the pinned editor's signed cache URL before making an upstream request.
+function workbookCachePath(value: string, documentKey: string): string {
+  const publicOffice = new URL(env.ONLYOFFICE_URL);
+  const publicPrefix = trimOrigin(publicOffice.pathname);
+  const expectedPrefix = `${publicPrefix}/cache/files/data/${documentKey}_`;
+  const url = URL.canParse(value) ? new URL(value) : null;
+  if (
+    !url ||
+    url.origin !== publicOffice.origin ||
+    url.username ||
+    url.password ||
+    url.hash ||
+    !url.pathname.startsWith(expectedPrefix) ||
+    !workbookCacheSuffix.test(url.pathname.slice(expectedPrefix.length))
+  ) {
+    fail(
+      400,
+      "invalid_workbook_snapshot",
+      "The workbook snapshot URL is invalid"
+    );
+  }
+  const { searchParams } = url;
+  const expiration = searchParams.get("expires") ?? "";
+  const shardKey = searchParams.get("shardkey");
+  if (
+    searchParams.size !== workbookCacheParameters.size ||
+    [...workbookCacheParameters].some(
+      (parameter) => !searchParams.has(parameter)
+    ) ||
+    !cacheSignature.test(searchParams.get("md5") ?? "") ||
+    !cacheExpiration.test(expiration) ||
+    Number(expiration) <= Math.floor(Date.now() / 1000) ||
+    shardKey !== documentKey
+  ) {
+    fail(
+      400,
+      "invalid_workbook_snapshot",
+      "The workbook snapshot URL is invalid"
+    );
+  }
+  return `${url.pathname.slice(publicPrefix.length)}${url.search}`;
+}
+
+export async function downloadEditorWorkbook({
+  documentKey,
+  signal,
+  snapshotUrl,
+}: {
+  documentKey: string;
+  signal: AbortSignal;
+  snapshotUrl: string;
+}): Promise<Uint8Array> {
+  const path = workbookCachePath(snapshotUrl, documentKey);
+  try {
+    const response = await fetch(
+      `${trimOrigin(env.ONLYOFFICE_INTERNAL_URL)}${path}`,
+      {
+        redirect: "error",
+        signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]),
+      }
+    );
+    if (response.status !== 200) {
+      await response.body?.cancel();
+      throw new Error("ONLYOFFICE refused the workbook snapshot");
+    }
+    return await boundedResponseBytes(response, maxOnlyOfficeDownloadBytes);
+  } catch {
+    // The upstream URL carries a signed cache credential. Keep it out of errors.
+    fail(
+      502,
+      "workbook_capture_failed",
+      "Unable to download the workbook snapshot"
+    );
+  }
 }
 
 export function createOnlyOfficeClient(

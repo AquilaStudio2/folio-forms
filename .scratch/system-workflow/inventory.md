@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `83a31cc8f6a741700eb429a74d99576ea531bdc8`
+Commit: `44b63d08d738e1cced4f45d265f1195aef4fb789`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -13,7 +13,7 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `__root` | `apps/web/src/routes/__root.tsx:1` |
 | `/admin/ai-authoring` | `apps/web/src/routes/admin/ai-authoring.tsx:396` |
 | `/admin/audit` | `apps/web/src/routes/admin/audit.tsx:330` |
-| `/admin/forms/$formId/` | `apps/web/src/routes/admin/forms/$formId/index.tsx:870` |
+| `/admin/forms/$formId/` | `apps/web/src/routes/admin/forms/$formId/index.tsx:879` |
 | `/admin/forms/$formId/submissions/$submissionId` | `apps/web/src/routes/admin/forms/$formId/submissions/$submissionId.tsx:253` |
 | `/admin/forms/$formId/submissions/` | `apps/web/src/routes/admin/forms/$formId/submissions/index.tsx:149` |
 | `/admin/forms/$formId/submissions` | `apps/web/src/routes/admin/forms/$formId/submissions.tsx:6` |
@@ -27,8 +27,9 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `/admin/users` | `apps/web/src/routes/admin/users.tsx:749` |
 | `/admin` | `apps/web/src/routes/admin.tsx:35` |
 | `/change-password` | `apps/web/src/routes/change-password.tsx:229` |
-| `/dashboard` | `apps/web/src/routes/dashboard.tsx:357` |
-| `/forms/$publicId/fill` | `apps/web/src/routes/forms/$publicId/fill.tsx:1247` |
+| `/dashboard` | `apps/web/src/routes/dashboard.tsx:367` |
+| `/forms/$publicId/fill` | `apps/web/src/routes/forms/$publicId/fill.tsx:1337` |
+| `/forms/$publicId/submissions` | `apps/web/src/routes/forms/$publicId/submissions.tsx:243` |
 | `/handoff` | `apps/web/src/routes/handoff.tsx:59` |
 | `/` | `apps/web/src/routes/index.tsx:26` |
 | `/legacy-sso/confirm` | `apps/web/src/routes/legacy-sso.confirm.tsx:212` |
@@ -110,11 +111,12 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | POST | `/api/forms/:publicId/start` | `apps/server/src/routes/public-forms.ts:130` |
 | POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:62` |
 | POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:240` |
-| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:50` |
-| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:84` |
-| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:216` |
-| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:284` |
-| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:328` |
+| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:62` |
+| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:96` |
+| POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:228` |
+| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:337` |
+| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:405` |
+| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:449` |
 | GET | `/api/admin/results` | `apps/server/src/routes/results.ts:271` |
 | GET | `/api/admin/results/:id` | `apps/server/src/routes/results.ts:349` |
 | GET | `/api/admin/results/:id/viewer-config` | `apps/server/src/routes/results.ts:499` |
