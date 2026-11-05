@@ -1,11 +1,12 @@
 flowchart TD
     exit(["จะออกจากหน้า fill"])
-    busy{"กำลังบันทึก ส่ง หรือ export"}
+    busy{"กำลังบันทึก ส่ง ทิ้งร่าง หรือดาวน์โหลด DOCX"}
     wait["ปุ่มออกให้รอจนงานจบ"]
     dirty{"มีการแก้หลังฉบับที่บันทึก"}
     leave["ไป Dashboard หรือหน้าปลายทาง"]
     prompt["แสดง dialog งานยังไม่บันทึก"]
     choice{"เลือกทำอะไร"}
+    captureWait["รอจับสำเนา Excel ก่อนบันทึกหรือทิ้งร่าง"]
     save["บันทึกแล้วออก"]
     operation["รอ Save Draft Operation"]
     result{"บันทึกสำเร็จ"}
@@ -22,6 +23,7 @@ flowchart TD
     busy -->|"ไม่"| dirty
     dirty -->|"ไม่"| leave
     dirty -->|"มี"| prompt --> choice
+    prompt -.->|"กำลังจับสำเนา"| captureWait --> choice
     choice -->|"บันทึกแล้วออก"| save --> operation --> result
     result -->|"สำเร็จ"| leave
     result -->|"ล้มเหลว"| stay

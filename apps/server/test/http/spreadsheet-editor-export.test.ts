@@ -1,5 +1,5 @@
 // oxlint-disable unicorn/no-await-expression-member -- Keep HTTP assertions next to their requests.
-import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
+import { afterAll, beforeAll, expect, mock, test } from "bun:test";
 
 import { prisma } from "@onlyoffice/db";
 import { env } from "@onlyoffice/env/server";
@@ -8,6 +8,7 @@ import { createApp } from "../../src/app";
 import { requireIdentity } from "../../src/auth/identity";
 import { actionEditorCapability } from "../../src/editor/authorization";
 import { claimEditorLease } from "../../src/editor/leases";
+import { createOnlyOfficeClient } from "../../src/onlyoffice";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
 import { fixtureWorkbook, mutatePart } from "../spreadsheet-unit/fixture";
 
@@ -17,7 +18,19 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-const app = createApp({ legacySso: null, omniRoute: null, pdmsProjects: null });
+const internalOfficeUrl = "http://office.internal.test/onlyoffice";
+const maxDownloadBytes = 64_000;
+const upstream = mock<(url: string, init?: RequestInit) => Promise<Response>>();
+const app = createApp({
+  legacySso: null,
+  omniRoute: null,
+  onlyOffice: createOnlyOfficeClient({
+    fetch: upstream,
+    internalUrl: internalOfficeUrl,
+    maxDownloadBytes,
+  }),
+  pdmsProjects: null,
+});
 const formId = crypto.randomUUID();
 const responseId = crypto.randomUUID();
 const templateId = crypto.randomUUID();
@@ -195,21 +208,19 @@ test("editor export copies safe workbook bytes and blocks external resources bef
       '<Relationship Id="rId99" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" TargetMode="External" Target="https://outside.example.test/remote.png"/></Relationships>'
     )
   );
-  const upstream = spyOn(globalThis, "fetch")
+  upstream
+    .mockReset()
     .mockResolvedValueOnce(new Response(safe))
     .mockResolvedValueOnce(new Response(external));
-  try {
-    const download = await exportRequest();
-    expect(download.status).toBe(200);
-    expect(new Uint8Array(await download.arrayBuffer())).toEqual(safe);
-    expect(new URL(String(upstream.mock.calls[0]?.[0])).origin).toBe(
-      new URL(env.ONLYOFFICE_INTERNAL_URL).origin
-    );
-    expect(upstream.mock.calls[0]?.[1]?.redirect).toBe("error");
-    expect((await exportRequest({ format: "pdf" })).status).toBe(422);
-  } finally {
-    upstream.mockRestore();
-  }
+  const download = await exportRequest();
+  expect(download.status).toBe(200);
+  expect(new Uint8Array(await download.arrayBuffer())).toEqual(safe);
+  expect(upstream.mock.calls[0]?.[0]).toStartWith(
+    `${internalOfficeUrl}/cache/files/data/${documentKey}_`
+  );
+  expect(upstream.mock.calls[0]?.[1]?.redirect).toBe("error");
+  expect((await exportRequest({ format: "pdf" })).status).toBe(422);
+  expect(upstream).toHaveBeenCalledTimes(2);
   const draft = await app.handle(
     new Request(`http://test.local/api/responses/${responseId}/draft/json`, {
       headers: { Authorization: `Bearer ${owner}` },
@@ -217,6 +228,36 @@ test("editor export copies safe workbook bytes and blocks external resources bef
   );
   expect(draft.status).toBe(200);
   expect(await draft.json()).toEqual({ value: 100 });
+});
+
+test("editor export uses the same configured client for the cache and PDF conversion", async () => {
+  const pdf = new TextEncoder().encode("%PDF-fixture");
+  const outputUrl = `${internalOfficeUrl}/converted/snapshot.pdf`;
+  upstream
+    .mockReset()
+    .mockResolvedValueOnce(new Response(fixtureWorkbook()))
+    .mockResolvedValueOnce(Response.json({ fileUrl: outputUrl }))
+    .mockResolvedValueOnce(new Response(pdf));
+
+  const download = await exportRequest({ format: "pdf" });
+  expect(download.status).toBe(200);
+  expect(new Uint8Array(await download.arrayBuffer())).toEqual(pdf);
+  expect(upstream.mock.calls.map(([url]) => new URL(url).pathname)).toEqual([
+    expect.stringMatching(/^\/onlyoffice\/cache\/files\/data\//u),
+    "/onlyoffice/converter",
+    "/onlyoffice/converted/snapshot.pdf",
+  ]);
+});
+
+test("editor export enforces the configured download limit on the signed cache", async () => {
+  upstream
+    .mockReset()
+    .mockResolvedValueOnce(new Response(new Uint8Array(maxDownloadBytes + 1)));
+  const download = await exportRequest();
+  expect(download.status).toBe(502);
+  expect(await download.json()).toMatchObject({
+    error: "workbook_capture_failed",
+  });
 });
 
 test("editor export requires a lease that is still active", async () => {

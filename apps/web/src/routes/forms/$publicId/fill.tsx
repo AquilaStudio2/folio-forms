@@ -161,13 +161,18 @@ const FillRoute = () => {
   const [exportAfterSave, setExportAfterSave] = useState<ExportFormat | null>(
     null
   );
-  const [downloadingWorkbook, setDownloadingWorkbook] = useState(false);
+  const [workbookDownloadPhase, setWorkbookDownloadPhase] = useState<
+    "capturing" | "downloading" | null
+  >(null);
   const [workbookDownloadError, setWorkbookDownloadError] = useState<
     string | null
   >(null);
   const captureWorkbookRef = useRef<CaptureWorkbook>(null);
-  const workbookDownloadRef = useRef<AbortController | null>(null);
-  useEffect(() => () => workbookDownloadRef.current?.abort(), []);
+  const workbookDownloadRef = useRef<{
+    capturing: boolean;
+    controller: AbortController;
+  } | null>(null);
+  useEffect(() => () => workbookDownloadRef.current?.controller.abort(), []);
   const [clearDirtyRequest, setClearDirtyRequest] = useState(0);
   const [discardBusy, setDiscardBusy] = useState(false);
   const [submissionHistory, setSubmissionHistory] = useState<
@@ -775,13 +780,16 @@ const FillRoute = () => {
     exportAfterSave,
     saveBeforeExit
   );
+  const downloadingWorkbook = workbookDownloadPhase !== null;
+  const capturingWorkbook = workbookDownloadPhase === "capturing";
   const editorActionDisabled =
-    !editorCommandReady || saveFlowBusy || discardBusy || downloadingWorkbook;
+    !editorCommandReady || saveFlowBusy || discardBusy || capturingWorkbook;
   const handleExit = async () => {
     if (saveFlowBusy || discardBusy) {
       return;
     }
     if (!dirty) {
+      workbookDownloadRef.current?.controller.abort();
       allowNavigationRef.current = true;
       await navigate({ to: "/dashboard" });
       return;
@@ -795,7 +803,7 @@ const FillRoute = () => {
       !activeResponseId ||
       saveFlowBusy ||
       discardBusy ||
-      workbookDownloadRef.current
+      workbookDownloadRef.current?.capturing
     ) {
       return;
     }
@@ -807,6 +815,7 @@ const FillRoute = () => {
       setOperationError("ตัวแก้ไขยังไม่พร้อม กรุณารอให้เชื่อมต่อแล้วลองใหม่");
       return;
     }
+    workbookDownloadRef.current?.controller.abort();
     setSaveBeforeExit(true);
     setOperationError(null);
     setSuccess(null);
@@ -874,29 +883,47 @@ const FillRoute = () => {
     ) {
       return;
     }
-    const controller = new AbortController();
-    workbookDownloadRef.current = controller;
+    const download = { capturing: true, controller: new AbortController() };
+    const { controller } = download;
+    workbookDownloadRef.current = download;
     setWorkbookDownloadError(null);
-    setDownloadingWorkbook(true);
+    setWorkbookDownloadPhase("capturing");
     try {
-      const { capability, snapshotUrl } = await capture();
+      const { capability, refreshCapability, snapshotUrl } = await capture();
       controller.signal.throwIfAborted();
-      await downloadArtifact(
-        `/api/responses/${activeResponseId}/editor-export/${format}`,
-        `response-${activeResponseId}.${format}`,
-        {
-          body: JSON.stringify({ snapshotUrl }),
-          headers: {
-            "Content-Type": "application/json",
-            "X-Editor-Capability": capability,
-          },
-          method: "POST",
-          signal: AbortSignal.any([
-            controller.signal,
-            AbortSignal.timeout(210_000),
-          ]),
+      download.capturing = false;
+      setWorkbookDownloadPhase("downloading");
+      const signal = AbortSignal.any([
+        controller.signal,
+        AbortSignal.timeout(210_000),
+      ]);
+      const downloadSnapshot = (editorCapability: string) =>
+        downloadArtifact(
+          `/api/responses/${activeResponseId}/editor-export/${format}`,
+          `response-${activeResponseId}.${format}`,
+          {
+            body: JSON.stringify({ snapshotUrl }),
+            headers: {
+              "Content-Type": "application/json",
+              "X-Editor-Capability": editorCapability,
+            },
+            method: "POST",
+            signal,
+          }
+        );
+      try {
+        await downloadSnapshot(capability);
+      } catch (requestError: unknown) {
+        if (
+          !(requestError instanceof ApiError) ||
+          (requestError.code !== "invalid_editor_capability" &&
+            requestError.code !== "editor_lease_inactive")
+        ) {
+          throw requestError;
         }
-      );
+        signal.throwIfAborted();
+        await downloadSnapshot(await refreshCapability(signal));
+      }
     } catch (caughtError: unknown) {
       if (!controller.signal.aborted) {
         setWorkbookDownloadError(
@@ -908,14 +935,14 @@ const FillRoute = () => {
       }
     } finally {
       workbookDownloadRef.current = null;
-      setDownloadingWorkbook(false);
+      setWorkbookDownloadPhase(null);
     }
   };
   const runSpreadsheetAction = (action: "save-draft" | "submit") => {
     if (
       editorActionDisabled ||
       !activeResponseId ||
-      workbookDownloadRef.current
+      workbookDownloadRef.current?.capturing
     ) {
       return;
     }
@@ -937,10 +964,11 @@ const FillRoute = () => {
       !activeResponseId ||
       discardBusy ||
       saveFlowBusy ||
-      workbookDownloadRef.current
+      workbookDownloadRef.current?.capturing
     ) {
       return;
     }
+    workbookDownloadRef.current?.controller.abort();
     setDiscardBusy(true);
     setOperationError(null);
     try {
@@ -997,7 +1025,7 @@ const FillRoute = () => {
               variant="secondary"
               type="button"
               onClick={discardDraft}
-              disabled={discardBusy || saveFlowBusy || downloadingWorkbook}
+              disabled={discardBusy || saveFlowBusy || capturingWorkbook}
             >
               {discardBusy ? <Spinner /> : null}
               {discardBusy ? "กำลังลบ…" : "ทิ้งฉบับร่าง"}
@@ -1006,7 +1034,7 @@ const FillRoute = () => {
           <Button
             type="button"
             onClick={saveAndExit}
-            disabled={discardBusy || saveFlowBusy || downloadingWorkbook}
+            disabled={discardBusy || saveFlowBusy || capturingWorkbook}
           >
             {saveBeforeExit ? <Spinner /> : null}
             {saveBeforeExit ? "กำลังบันทึก…" : "บันทึกแล้วออก"}
@@ -1287,7 +1315,7 @@ const FillRoute = () => {
                     ? downloadWorkbook("xlsx")
                     : saveAndExport("docx")
                 }
-                disabled={editorActionDisabled}
+                disabled={editorActionDisabled || downloadingWorkbook}
               >
                 {exportAfterSave === "docx" ? <Spinner /> : null}
                 {form.documentKind === "xlsx"
@@ -1303,7 +1331,7 @@ const FillRoute = () => {
                     ? downloadWorkbook("pdf")
                     : saveAndExport("pdf")
                 }
-                disabled={editorActionDisabled}
+                disabled={editorActionDisabled || downloadingWorkbook}
               >
                 {exportAfterSave === "pdf" ? <Spinner /> : null}
                 {form.documentKind === "xlsx"

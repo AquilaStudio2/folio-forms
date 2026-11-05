@@ -34,7 +34,7 @@ import { isEditorWindowSource } from "@/features/onlyoffice/editor-window-source
 import { createPdmsPopupRelay } from "@/features/onlyoffice/pdms-popup-relay";
 import type { UploadPocHostOptions } from "@/features/onlyoffice/upload-poc-pending";
 import { UploadPocPendingFiles } from "@/features/onlyoffice/upload-poc-pending";
-import { ApiError, apiDelete, apiGet, apiPost } from "@/lib/api";
+import { ApiError, apiDelete, apiGet, apiPost, getToken } from "@/lib/api";
 
 interface DocsApi {
   DocEditor: new (
@@ -144,6 +144,11 @@ export const OnlyOfficeEditor = ({
   const surfaceId = `${editorId}-surface`;
   const keyboardHelpId = `${editorId}-keyboard-help`;
   const leaseRef = useRef<EditorLease | null>(null);
+  const exportScopeRef = useRef<{
+    capability: string;
+    config: EditorConfig;
+    sessionToken: string | null;
+  } | null>(null);
   const loadedConfigUrlRef = useRef<string | null>(null);
   const [config, setConfig] = useState<EditorConfig | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -156,16 +161,19 @@ export const OnlyOfficeEditor = ({
   useImperativeHandle(captureWorkbookRef, () => {
     const bridge = config?.bridge;
     const documentKey = recordOrEmpty(config?.config?.document).key;
-    const supported = Boolean(bridge?.capabilities?.["export-workbook"]);
     return async () => {
       const source = pinnedSourceRef.current;
+      const scope = exportScopeRef.current;
       if (
-        !supported ||
+        scope?.config !== config ||
+        !scope ||
         !configUrl ||
         loadedConfigUrlRef.current !== configUrl ||
+        !isNonEmptyString(documentKey) ||
         !bridge?.id ||
         !bridge.pluginOrigin ||
-        !bridge.lease ||
+        !leaseRef.current ||
+        scope.sessionToken !== getToken() ||
         !isEditorWindowSource(source, surfaceRef.current) ||
         pendingCaptureRef.current
       ) {
@@ -199,20 +207,44 @@ export const OnlyOfficeEditor = ({
         pendingCaptureRef.current = null;
       }
 
-      const fresh = await apiGet<EditorConfig>(
-        editorConfigPath(configUrl, pdmsOpeningId),
-        { timeoutMs: 10_000 }
-      );
-      const capability = fresh.bridge?.capabilities?.["export-workbook"];
-      if (
-        !capability ||
-        pinnedSourceRef.current !== source ||
-        fresh.bridge?.lease?.id !== bridge.lease.id ||
-        recordOrEmpty(fresh.config?.document).key !== documentKey
-      ) {
+      const isCurrentScope = () =>
+        exportScopeRef.current === scope &&
+        loadedConfigUrlRef.current === configUrl &&
+        editorOpeningRef.current?.id === pdmsOpeningId &&
+        scope.sessionToken === getToken() &&
+        pinnedSourceRef.current === source &&
+        isEditorWindowSource(source, surfaceRef.current);
+      if (!isCurrentScope()) {
         throw new Error("The workbook editor session has changed");
       }
-      return { capability, snapshotUrl };
+      const refreshCapability = async (signal: AbortSignal) => {
+        const requestedLeaseId = leaseRef.current?.id;
+        if (!requestedLeaseId || !isCurrentScope()) {
+          throw new Error("The workbook editor session has changed");
+        }
+        const fresh = await apiGet<EditorConfig>(
+          editorConfigPath(configUrl, pdmsOpeningId),
+          { signal, timeoutMs: 10_000 }
+        );
+        signal.throwIfAborted();
+        const freshLease = fresh.bridge?.lease;
+        const activeLeaseId = leaseRef.current?.id;
+        const capability = fresh.bridge?.capabilities?.["export-workbook"];
+        if (
+          !isCurrentScope() ||
+          !freshLease ||
+          !isNonEmptyString(capability) ||
+          recordOrEmpty(fresh.config?.document).key !== documentKey ||
+          (activeLeaseId !== requestedLeaseId &&
+            activeLeaseId !== freshLease.id)
+        ) {
+          throw new Error("The workbook editor session has changed");
+        }
+        leaseRef.current = freshLease;
+        scope.capability = capability;
+        return capability;
+      };
+      return { capability: scope.capability, refreshCapability, snapshotUrl };
     };
   }, [config, configUrl, pdmsOpeningId]);
 
@@ -390,6 +422,7 @@ export const OnlyOfficeEditor = ({
 
   useEffect(() => {
     let cancelled = false;
+    exportScopeRef.current = null;
     if (!configUrl) {
       setConfig(null);
       setError("ไม่มีการตั้งค่าตัวแก้ไขเอกสาร");
@@ -408,11 +441,20 @@ export const OnlyOfficeEditor = ({
 
     const loadConfig = async () => {
       try {
+        const sessionToken = getToken();
         const nextConfig = await apiGet<EditorConfig>(path);
         if (cancelled) {
           return;
         }
         loadedConfigUrlRef.current = configUrl;
+        const capability = nextConfig.bridge?.capabilities?.["export-workbook"];
+        if (isNonEmptyString(capability)) {
+          exportScopeRef.current = {
+            capability,
+            config: nextConfig,
+            sessionToken,
+          };
+        }
         setConfig(nextConfig);
         if (nextConfig.editorUrl) {
           reportState("ready");

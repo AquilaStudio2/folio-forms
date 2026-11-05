@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `44b63d08d738e1cced4f45d265f1195aef4fb789`
+Commit: `dfde6d9f3fe07d095b492efd41ba4eb56d353cd6`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -28,7 +28,7 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `/admin` | `apps/web/src/routes/admin.tsx:35` |
 | `/change-password` | `apps/web/src/routes/change-password.tsx:229` |
 | `/dashboard` | `apps/web/src/routes/dashboard.tsx:367` |
-| `/forms/$publicId/fill` | `apps/web/src/routes/forms/$publicId/fill.tsx:1337` |
+| `/forms/$publicId/fill` | `apps/web/src/routes/forms/$publicId/fill.tsx:1365` |
 | `/forms/$publicId/submissions` | `apps/web/src/routes/forms/$publicId/submissions.tsx:243` |
 | `/handoff` | `apps/web/src/routes/handoff.tsx:59` |
 | `/` | `apps/web/src/routes/index.tsx:26` |
@@ -111,12 +111,12 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | POST | `/api/forms/:publicId/start` | `apps/server/src/routes/public-forms.ts:130` |
 | POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:62` |
 | POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:240` |
-| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:62` |
-| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:96` |
-| POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:228` |
-| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:337` |
-| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:405` |
-| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:449` |
+| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:61` |
+| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:95` |
+| POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:227` |
+| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:336` |
+| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:404` |
+| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:448` |
 | GET | `/api/admin/results` | `apps/server/src/routes/results.ts:271` |
 | GET | `/api/admin/results/:id` | `apps/server/src/routes/results.ts:349` |
 | GET | `/api/admin/results/:id/viewer-config` | `apps/server/src/routes/results.ts:499` |
@@ -131,8 +131,8 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | GET | `/api/submissions/:id/json` | `apps/server/src/routes/submissions.ts:205` |
 | GET | `/api/submissions/:id/:format` | `apps/server/src/routes/submissions.ts:238` |
 | GET | `/api/submissions/:id/pdf` | `apps/server/src/routes/submissions.ts:283` |
-| GET | `/health` | `apps/server/src/app.ts:177` |
-| GET | `/ready` | `apps/server/src/app.ts:178` |
+| GET | `/health` | `apps/server/src/app.ts:189` |
+| GET | `/ready` | `apps/server/src/app.ts:190` |
 
 ## Private document worker
 

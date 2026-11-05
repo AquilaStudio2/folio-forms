@@ -25,6 +25,7 @@ export type OnlyOfficeEditorState = "loading" | "ready" | "blocked" | "error";
 
 export type CaptureWorkbook = () => Promise<{
   capability: string;
+  refreshCapability: (signal: AbortSignal) => Promise<string>;
   snapshotUrl: string;
 }>;
 

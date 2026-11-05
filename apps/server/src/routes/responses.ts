@@ -37,7 +37,6 @@ import {
   jsonRecord,
   requiredString,
 } from "../http/input";
-import { downloadEditorWorkbook } from "../onlyoffice";
 import { activeOperationForResponse } from "../operations/lifecycle";
 import { deleteResponseData } from "../responses/deletion";
 import { responseSummary, correctionRevisionSummary } from "../responses/query";
@@ -297,7 +296,7 @@ export function registerResponseRoutes(
         if (Object.keys(input).length !== 1) {
           fail(400, "invalid_request", "Only snapshotUrl is accepted");
         }
-        const workbook = await downloadEditorWorkbook({
+        const workbook = await onlyOffice.downloadEditorWorkbook({
           documentKey,
           signal: request.signal,
           snapshotUrl: requiredString(input, "snapshotUrl"),

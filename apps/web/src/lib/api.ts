@@ -335,15 +335,14 @@ const containsControlCharacter = (value: string): boolean => {
   return false;
 };
 
-const errorCodeFor = (
-  body: ApiErrorBody | null | undefined,
-  fallback: string
-): string => {
-  if (typeof body?.error === "string") {
-    return body.error;
-  }
-  if (typeof body?.code === "string") {
-    return body.code;
+const errorCodeFor = (body: unknown, fallback: string): string => {
+  if (body && typeof body === "object") {
+    if ("error" in body && typeof body.error === "string") {
+      return body.error;
+    }
+    if ("code" in body && typeof body.code === "string") {
+      return body.code;
+    }
   }
   return fallback;
 };
@@ -589,9 +588,10 @@ const requestBlob = async (path: string, init?: RequestInit): Promise<Blob> => {
     headers,
   });
   if (!response.ok) {
+    const body: unknown = await response.json().catch(() => null);
     throw new ApiError(
       response.status,
-      "download_failed",
+      errorCodeFor(body, "download_failed"),
       `Download failed (${response.status})`
     );
   }
@@ -650,6 +650,7 @@ export const downloadArtifact = async (
   init?: RequestInit
 ) => {
   const blob = await requestBlob(path, init);
+  init?.signal?.throwIfAborted();
   const href = URL.createObjectURL(blob);
   const anchor = document.createElement("a");
   anchor.href = href;

@@ -133,7 +133,9 @@ Prefill ของร่างเดิมเป็น snapshot ตอนเร�
 
 ปุ่ม Excel คืนสำเนาเป็นไฟล์ `.xlsx` ปุ่ม PDF ส่งสำเนาชั่วคราวเข้าเครื่องแปลง PDF เดิม แล้วเบราว์เซอร์เริ่มดาวน์โหลดเมื่อแปลงเสร็จ ปุ่มแสดงสถานะเตรียมไฟล์และลองใหม่ได้เมื่อดาวน์โหลดล้มเหลว ผลของการดาวน์โหลดเป็นไฟล์สำหรับผู้กรอก การอัปเดต Draft เกิดเมื่อบันทึกผ่าน Operation สำเร็จ
 
-อ้างอิง [start และรูปแบบการเปิดใหม่](../../apps/server/src/routes/public-forms.ts#L260), [userEditorConfig](../../apps/server/src/responses/editor.ts#L336), [fill หลัง Submit](../../apps/web/src/routes/forms/$publicId/fill.tsx#L439), [native submit](../../apps/web/src/routes/forms/$publicId/fill.tsx#L618), [จับสำเนาในปลั๊กอิน](../../apps/onlyoffice-plugin/src/office.js#L52) และ [API ดาวน์โหลดจาก editor](../../apps/server/src/routes/responses.ts#L229)
+เมื่อ capability หรือ lease หมดอายุ หน้า fill ขอสิทธิ์ใหม่หนึ่งครั้งภายใต้ session เดิม แล้วใช้กับสำเนาที่จับไว้หากตัวแก้ไขและ document key ยังตรงกัน คำขอปกติใช้สิทธิ์จากการเปิด editor และอ่านสำเนาจาก ONLYOFFICE
+
+อ้างอิง [start และรูปแบบการเปิดใหม่](../../apps/server/src/routes/public-forms.ts#L260), [userEditorConfig](../../apps/server/src/responses/editor.ts#L336), [fill หลัง Submit](../../apps/web/src/routes/forms/$publicId/fill.tsx#L444), [native submit](../../apps/web/src/routes/forms/$publicId/fill.tsx#L623), [จับสำเนาในปลั๊กอิน](../../apps/onlyoffice-plugin/src/office.js#L52) และ [API ดาวน์โหลดจาก editor](../../apps/server/src/routes/responses.ts#L228)
 
 ## 07 การกดบันทึกหนึ่งครั้งเดินทางอย่างไร
 
@@ -375,7 +377,7 @@ DOCX แสดงผลบันทึกและดาวน์โหลดแ
 | --- | --- |
 | กดกลับจาก fill โดยไม่ได้แก้เพิ่ม | ไป Dashboard ได้ |
 | มีการแก้แล้วกดออกหรือเปลี่ยนหน้าภายในแอป | มี dialog ให้บันทึกแล้วออก ทิ้งร่าง หรืออยู่ต่อ |
-| ดาวน์โหลดจากหน้ากรอก XLSX ขณะที่มีงานค้าง | ผู้กรอกได้ไฟล์จากค่าปัจจุบัน เมื่อกดออก Folio ยังเตือนให้จัดการงานค้าง |
+| ดาวน์โหลดจากหน้ากรอก XLSX ขณะที่มีงานค้าง | Folio ยังเตือนเมื่อกดออก ปุ่มบันทึกและทิ้งร่างพร้อมใช้หลังจับสำเนาเสร็จ เมื่อยืนยันบันทึกแล้วออกหรือทิ้งร่าง ระบบยกเลิกการรอไฟล์ในเบราว์เซอร์แล้วทำคำสั่งที่เลือก |
 | กดอยู่ต่อ | ปิด dialog และยกเลิก navigation ค่าที่กำลังพิมพ์ยังอยู่ในหน้าปัจจุบัน |
 | กดบันทึกแล้วออก | รอ Save Draft สำเร็จจึงออก ถ้าบันทึกล้มเหลวยังไม่ออกตาม flow นี้ |
 | กดทิ้งฉบับร่าง | เรียกการลบ Response จริง ไม่ใช่แค่ทิ้งการพิมพ์หลัง Save ครั้งล่าสุด และตามโค้ดจะลบประวัติที่ผูกอยู่ด้วย |
@@ -393,7 +395,7 @@ DOCX แสดงผลบันทึกและดาวน์โหลดแ
 
 XLSX ยังมีสถานะการตั้งค่าฟิลด์ที่ผลการเขียนไม่แน่ชัด หากระบบยังยืนยันว่า Apply สำเร็จหรือ rollback สำเร็จไม่ได้ จะกัน mutation ต่อ การปิดข้อความ error ไม่ได้ทำให้การตั้งค่านั้นปลอดภัยที่จะ Save หรือ Publish ต่อทันที
 
-อ้างอิง [saveAndExit และ discardDraft](../../apps/web/src/routes/forms/$publicId/fill.tsx#L793), [ตัวเลือก dialog](../../apps/web/src/routes/forms/$publicId/fill.tsx#L970), [navigation blocker](../../apps/web/src/routes/forms/$publicId/fill.tsx#L196), [reauth guard](../../apps/web/src/lib/use-reauthentication-guard.ts#L8) และ [Admin guard](../../apps/web/src/routes/admin/forms/$formId/index.tsx#L181)
+อ้างอิง [saveAndExit และ discardDraft](../../apps/web/src/routes/forms/$publicId/fill.tsx#L801), [ตัวเลือก dialog](../../apps/web/src/routes/forms/$publicId/fill.tsx#L998), [navigation blocker](../../apps/web/src/routes/forms/$publicId/fill.tsx#L201), [reauth guard](../../apps/web/src/lib/use-reauthentication-guard.ts#L8) และ [Admin guard](../../apps/web/src/routes/admin/forms/$formId/index.tsx#L181)
 
 ## 21 ส่งแล้วแก้ได้แค่ไหน และ Correction กลับมาทำต่อได้ไหม
 
@@ -541,4 +543,4 @@ Correction ไม่มี `status` ของตนเองใน Prisma schema
 
 ใช้ CodeGraph ไล่ entrypoints, caller และ module ที่รับผิดชอบ แล้วอ่านส่วน source ที่ถูกตัดออกเฉพาะจุดที่มีผลต่อ flow รายการ routes และ models สร้างซ้ำด้วยสคริปต์ ไม่อ้างจำนวนจาก README
 
-ทดสอบเฉพาะการดาวน์โหลดจากหน้ากรอก XLSX บันทึก Draft และส่งคำตอบด้วยเบราว์เซอร์และ ONLYOFFICE 9.4 ในเครื่อง ใช้ฟอร์มและฐานข้อมูลทดสอบแยก การตรวจในระบบจริงครอบคลุมค่าที่พิมพ์ค้าง การแปลง PDF และการอ่าน Draft กลับหลังดาวน์โหลด ส่วน flow อื่นในคู่มืออิงการอ่าน source รวมการเชื่อมต่อ PDMS, OmniRoute และ deployment
+ใช้เบราว์เซอร์และ ONLYOFFICE 9.4 ในเครื่องกับฟอร์มและฐานข้อมูลทดสอบแยก ตรวจค่าที่พิมพ์ค้าง การแปลง PDF การอ่าน Draft กลับหลังดาวน์โหลด การขอ lease ใหม่ การบันทึกก่อนออกขณะรอ PDF และการส่งคำตอบ ทดสอบการบันทึกแล้วดาวน์โหลดบนหน้า DOCX ทั้ง Native form และ ONLYOFFICE ด้วย ส่วน flow อื่นในคู่มืออิงการอ่าน source รวมการเชื่อมต่อ PDMS, OmniRoute และ deployment

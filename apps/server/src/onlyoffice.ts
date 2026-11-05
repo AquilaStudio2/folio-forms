@@ -665,11 +665,16 @@ export interface OnlyOfficeClient {
     pdfOnly?: boolean,
     documentKind?: "docx" | "xlsx"
   ) => Promise<Uint8Array>;
+  downloadEditorWorkbook: (input: {
+    documentKey: string;
+    signal: AbortSignal;
+    snapshotUrl: string;
+  }) => Promise<Uint8Array>;
 }
 
 export interface OnlyOfficeClientOptions {
   documentBaseUrl?: string;
-  fetch?: typeof fetch;
+  fetch?: (url: string, init?: RequestInit) => Promise<Response>;
   internalUrl?: string;
   maxDownloadBytes?: number;
 }
@@ -801,39 +806,6 @@ function workbookCachePath(value: string, documentKey: string): string {
   return `${url.pathname.slice(publicPrefix.length)}${url.search}`;
 }
 
-export async function downloadEditorWorkbook({
-  documentKey,
-  signal,
-  snapshotUrl,
-}: {
-  documentKey: string;
-  signal: AbortSignal;
-  snapshotUrl: string;
-}): Promise<Uint8Array> {
-  const path = workbookCachePath(snapshotUrl, documentKey);
-  try {
-    const response = await fetch(
-      `${trimOrigin(env.ONLYOFFICE_INTERNAL_URL)}${path}`,
-      {
-        redirect: "error",
-        signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]),
-      }
-    );
-    if (response.status !== 200) {
-      await response.body?.cancel();
-      throw new Error("ONLYOFFICE refused the workbook snapshot");
-    }
-    return await boundedResponseBytes(response, maxOnlyOfficeDownloadBytes);
-  } catch {
-    // The upstream URL carries a signed cache credential. Keep it out of errors.
-    fail(
-      502,
-      "workbook_capture_failed",
-      "Unable to download the workbook snapshot"
-    );
-  }
-}
-
 export function createOnlyOfficeClient(
   options: OnlyOfficeClientOptions = {}
 ): OnlyOfficeClient {
@@ -900,6 +872,28 @@ export function createOnlyOfficeClient(
         );
       }
       return boundedResponseBytes(pdfResponse, maximumDownloadBytes);
+    },
+
+    async downloadEditorWorkbook({ documentKey, signal, snapshotUrl }) {
+      const path = workbookCachePath(snapshotUrl, documentKey);
+      try {
+        const response = await request(`${trimOrigin(internalUrl)}${path}`, {
+          redirect: "error",
+          signal: AbortSignal.any([signal, AbortSignal.timeout(25_000)]),
+        });
+        if (response.status !== 200) {
+          await response.body?.cancel();
+          throw new Error("ONLYOFFICE refused the workbook snapshot");
+        }
+        return await boundedResponseBytes(response, maximumDownloadBytes);
+      } catch {
+        // The upstream URL carries a signed cache credential. Keep it out of errors.
+        fail(
+          502,
+          "workbook_capture_failed",
+          "Unable to download the workbook snapshot"
+        );
+      }
     },
 
     async forceSave(documentKey, userdata): Promise<boolean | { url: string }> {

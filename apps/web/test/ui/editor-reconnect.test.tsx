@@ -1,8 +1,10 @@
 // oxlint-disable max-classes-per-file -- Each native-editor lifecycle fixture implements the SDK constructor.
 import { act, render, screen, waitFor } from "@testing-library/react";
+import { createRef } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OnlyOfficeEditor } from "@/components/onlyoffice-editor";
+import type { CaptureWorkbook } from "@/features/onlyoffice/editor-protocol";
 import type * as ApiModule from "@/lib/api";
 import { createDeferred } from "@/lib/form-lifecycle";
 
@@ -24,6 +26,20 @@ const config = () => ({
     pluginOrigin: window.location.origin,
   },
   config: { document: { key: "document" }, editorConfig: { mode: "edit" } },
+});
+const exportConfig = (documentKey: string, leaseId: string) => ({
+  ...config(),
+  bridge: {
+    ...config().bridge,
+    capabilities: { "export-workbook": `capability-${leaseId}` },
+    lease: {
+      expiresAt: new Date(Date.now() + 90_000).toISOString(),
+      id: leaseId,
+      releaseUrl: `/api/editor-leases/${leaseId}`,
+      renewUrl: `/api/editor-leases/${leaseId}/renew`,
+    },
+  },
+  config: { document: { key: documentKey }, documentType: "cell" },
 });
 let documentStateChanged: ((event: { data: boolean }) => void) | undefined;
 beforeEach(() => {
@@ -83,7 +99,71 @@ const send = (
     );
   });
 };
+const captureSnapshot = (
+  capture: CaptureWorkbook,
+  plugin: ReturnType<typeof pluginFrame>,
+  snapshotUrl: string
+) => {
+  const result = capture();
+  const request = plugin.send.mock.lastCall?.[0];
+  expect(request).toEqual(
+    expect.objectContaining({ type: "capture-workbook" })
+  );
+  send(plugin.source, {
+    requestId: request.requestId,
+    snapshotUrl,
+    type: "workbook-capture",
+  });
+  return result;
+};
 describe("ONLYOFFICE plugin reconnect", () => {
+  it("reuses the open workbook and adopts a reacquired lease for later downloads", async () => {
+    transport.get
+      .mockResolvedValueOnce(exportConfig("document", "initial"))
+      .mockResolvedValueOnce(exportConfig("document", "reacquired"));
+    const capture = createRef<CaptureWorkbook>();
+    const view = render(
+      <OnlyOfficeEditor
+        captureWorkbookRef={capture}
+        configUrl="/editor-config"
+        title="Excel"
+      />
+    );
+    const office = (await screen.findByTitle(
+      "Office sandbox"
+    )) as HTMLIFrameElement;
+    const plugin = pluginFrame(office);
+    send(plugin.source, { type: "bridge-ready" });
+    if (!capture.current) {
+      throw new Error("Workbook capture is unavailable");
+    }
+
+    const snapshot = await captureSnapshot(
+      capture.current,
+      plugin,
+      "https://office.test/snapshot"
+    );
+    expect(snapshot.capability).toBe("capability-initial");
+    expect(transport.get).toHaveBeenCalledOnce();
+    expect(await snapshot.refreshCapability(new AbortController().signal)).toBe(
+      "capability-reacquired"
+    );
+    expect(screen.getByTitle("Office sandbox")).toBe(office);
+    const nextSnapshot = await captureSnapshot(
+      capture.current,
+      plugin,
+      "https://office.test/next-snapshot"
+    );
+    expect(nextSnapshot.capability).toBe("capability-reacquired");
+    expect(transport.get).toHaveBeenCalledTimes(2);
+
+    view.unmount();
+    expect(transport.remove).toHaveBeenCalledWith(
+      "/api/editor-leases/reacquired",
+      undefined,
+      { keepalive: true }
+    );
+  });
   it("marks Excel changes dirty until Folio confirms its saved document", async () => {
     transport.get.mockResolvedValue({
       ...config(),

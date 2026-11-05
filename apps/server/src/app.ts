@@ -58,7 +58,8 @@ export interface AppOptions {
   putObject?: typeof putObject;
   legacySso?: LegacySsoConfig | null;
   omniRoute?: OmniRouteConfig | null;
-  onlyOffice?: OnlyOfficeClient;
+  onlyOffice?: Omit<OnlyOfficeClient, "downloadEditorWorkbook"> &
+    Partial<Pick<OnlyOfficeClient, "downloadEditorWorkbook">>;
   onlyOfficeCallbackOrigins?: readonly string[];
   onlyOfficeCallbackMaxBytes?: number;
   prefillHandoffSecret?: string;
@@ -67,7 +68,18 @@ export interface AppOptions {
 }
 
 export function createApp(options: AppOptions = {}) {
-  const onlyOffice = options.onlyOffice ?? createOnlyOfficeClient();
+  const defaultOffice = createOnlyOfficeClient();
+  const configuredOffice = options.onlyOffice;
+  const onlyOffice: OnlyOfficeClient = configuredOffice
+    ? {
+        convertDocxToPdf:
+          configuredOffice.convertDocxToPdf.bind(configuredOffice),
+        downloadEditorWorkbook:
+          configuredOffice.downloadEditorWorkbook?.bind(configuredOffice) ??
+          defaultOffice.downloadEditorWorkbook,
+        forceSave: configuredOffice.forceSave.bind(configuredOffice),
+      }
+    : defaultOffice;
   const removeObject = options.deleteObject ?? deleteObject;
   const storeObject = options.putObject ?? putObject;
   const allowedCallbackOrigins = options.onlyOfficeCallbackOrigins
