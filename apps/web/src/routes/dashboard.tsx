@@ -178,6 +178,7 @@ const DashboardRoute = () => {
         {visibleRows.map((row) => {
           const submitted =
             row.status === "submitted" || row.status === "completed";
+          const hasSubmissionHistory = Boolean(row.submissionId);
           return (
             <div
               className="flex flex-col gap-4 p-5 sm:flex-row sm:items-center sm:justify-between"
@@ -204,22 +205,13 @@ const DashboardRoute = () => {
                   {submitted ? "ส่งแล้ว" : "ฉบับร่าง"}
                 </Badge>
                 {submitted ? (
-                  <>
-                    <Link
-                      to="/receipt/$submissionId"
-                      params={{ submissionId: row.submissionId ?? row.id }}
-                      className="inline-flex items-center gap-1 text-sm font-semibold underline decoration-[var(--line-strong)] underline-offset-4 hover:decoration-[var(--ink)]"
-                    >
-                      ดูใบรับคำตอบ <ArrowUpRight size={15} />
-                    </Link>
-                    <Link
-                      to="/forms/$publicId/submissions"
-                      params={{ publicId: row.formPublicId ?? "" }}
-                      className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--ink-soft)] underline-offset-4 hover:underline"
-                    >
-                      ดูประวัติการส่งทั้งหมด
-                    </Link>
-                  </>
+                  <Link
+                    to="/receipt/$submissionId"
+                    params={{ submissionId: row.submissionId ?? row.id }}
+                    className="inline-flex items-center gap-1 text-sm font-semibold underline decoration-[var(--line-strong)] underline-offset-4 hover:decoration-[var(--ink)]"
+                  >
+                    ดูใบรับคำตอบ <ArrowUpRight size={15} />
+                  </Link>
                 ) : (
                   <Link
                     to="/forms/$publicId/fill"
@@ -232,6 +224,15 @@ const DashboardRoute = () => {
                     กลับไปกรอกต่อ <ArrowUpRight size={15} />
                   </Link>
                 )}
+                {hasSubmissionHistory ? (
+                  <Link
+                    to="/forms/$publicId/submissions"
+                    params={{ publicId: row.formPublicId ?? "" }}
+                    className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--ink-soft)] underline-offset-4 hover:underline"
+                  >
+                    ดูประวัติการส่งทั้งหมด
+                  </Link>
+                ) : null}
                 {submitted ? null : (
                   <Button
                     type="button"
