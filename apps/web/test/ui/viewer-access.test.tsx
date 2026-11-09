@@ -981,6 +981,7 @@ describe("VIEWER existing results access", () => {
   });
 
   it("blocks duplicate exports while busy and retries a failed PDF without changing the submission", async () => {
+    sessionRole = "admin";
     resultState = "submitted";
     const saved = stubDownloads();
     const pending = Promise.withResolvers<Response>();
@@ -988,12 +989,14 @@ describe("VIEWER existing results access", () => {
     await mount(`/admin/results/${responseId}`);
     const pdf = await screen.findByRole("button", { name: "ดาวน์โหลด PDF" });
     const native = screen.getByRole("button", { name: "ดาวน์โหลด DOCX" });
+    const erase = screen.getByRole("button", { name: "ลบคำตอบถาวร" });
     await waitFor(() => expect(pdf).toBeEnabled());
     await userEvent.click(screen.getByRole("tab", { name: "Fields" }));
     expect(await screen.findByText("Corrected value")).toBeVisible();
     await userEvent.click(pdf);
     expect(pdf).toBeDisabled();
     expect(native).toBeDisabled();
+    expect(erase).toBeDisabled();
     await userEvent.click(pdf);
     await userEvent.click(native);
     expect(
@@ -1012,6 +1015,7 @@ describe("VIEWER existing results access", () => {
     ).toBeVisible();
     expect(saved).not.toHaveBeenCalled();
     expect(pdf).toBeEnabled();
+    expect(erase).toBeEnabled();
     expect(native).toBeEnabled();
     expect(screen.getByText("ส่งแล้ว", { exact: true })).toBeVisible();
     expect(screen.getByText("Corrected value")).toBeVisible();
@@ -1027,6 +1031,7 @@ describe("VIEWER existing results access", () => {
       screen.queryByText("ส่งออกไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง")
     ).not.toBeInTheDocument();
     expect(pdf).toBeEnabled();
+    expect(erase).toBeEnabled();
     expect(native).toBeEnabled();
     expect(
       fetchMock.mock.calls.filter(([input]) =>
