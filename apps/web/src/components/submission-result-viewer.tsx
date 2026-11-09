@@ -1,4 +1,4 @@
-import type { KeyboardEvent } from "react";
+import type { KeyboardEvent, ReactNode } from "react";
 import { useState } from "react";
 
 import { OnlyOfficeEditor } from "@/components/onlyoffice-editor";
@@ -197,6 +197,7 @@ export const SubmissionRevisionHistory = ({
   </ol>
 );
 export const SubmissionResultViewer = ({
+  actions,
   configUrl,
   data,
   documentAvailable,
@@ -205,6 +206,7 @@ export const SubmissionResultViewer = ({
   pictures,
   spreadsheetContract,
 }: {
+  actions?: ReactNode;
   configUrl?: string;
   data: Record<string, unknown>;
   documentAvailable: boolean | null;
@@ -242,43 +244,46 @@ export const SubmissionResultViewer = ({
 
   return (
     <div>
-      <div
-        aria-label="Result view"
-        className="flex flex-wrap gap-2 border-b border-[var(--line)] pb-4"
-        role="tablist"
-      >
-        <button
-          aria-controls="submission-document-panel"
-          aria-selected={activeTab === "document"}
-          className={`min-h-10 rounded-[10px] border border-[var(--line-strong)] px-3 text-sm font-semibold ${
-            activeTab === "document"
-              ? "bg-[var(--ink)] text-[var(--paper)]"
-              : "bg-[var(--paper)] text-[var(--ink-soft)]"
-          }`}
-          id="submission-document-tab"
-          onClick={() => setActiveTab("document")}
-          onKeyDown={activateAdjacentTab}
-          role="tab"
-          type="button"
+      <div className="flex flex-wrap items-center justify-between gap-3 border-b border-[var(--line)] pb-4">
+        <div
+          aria-label="Result view"
+          className="flex flex-wrap gap-2"
+          role="tablist"
         >
-          Document
-        </button>
-        <button
-          aria-controls="submission-fields-panel"
-          aria-selected={activeTab === "fields"}
-          className={`min-h-10 rounded-[10px] border border-[var(--line-strong)] px-3 text-sm font-semibold ${
-            activeTab === "fields"
-              ? "bg-[var(--ink)] text-[var(--paper)]"
-              : "bg-[var(--paper)] text-[var(--ink-soft)]"
-          }`}
-          id="submission-fields-tab"
-          onClick={() => setActiveTab("fields")}
-          onKeyDown={activateAdjacentTab}
-          role="tab"
-          type="button"
-        >
-          Fields
-        </button>
+          <button
+            aria-controls="submission-document-panel"
+            aria-selected={activeTab === "document"}
+            className={`min-h-10 rounded-[10px] border border-[var(--line-strong)] px-3 text-sm font-semibold ${
+              activeTab === "document"
+                ? "bg-[var(--ink)] text-[var(--paper)]"
+                : "bg-[var(--paper)] text-[var(--ink-soft)]"
+            }`}
+            id="submission-document-tab"
+            onClick={() => setActiveTab("document")}
+            onKeyDown={activateAdjacentTab}
+            role="tab"
+            type="button"
+          >
+            Document
+          </button>
+          <button
+            aria-controls="submission-fields-panel"
+            aria-selected={activeTab === "fields"}
+            className={`min-h-10 rounded-[10px] border border-[var(--line-strong)] px-3 text-sm font-semibold ${
+              activeTab === "fields"
+                ? "bg-[var(--ink)] text-[var(--paper)]"
+                : "bg-[var(--paper)] text-[var(--ink-soft)]"
+            }`}
+            id="submission-fields-tab"
+            onClick={() => setActiveTab("fields")}
+            onKeyDown={activateAdjacentTab}
+            role="tab"
+            type="button"
+          >
+            Fields
+          </button>
+        </div>
+        {actions ? <div className="flex flex-wrap gap-2">{actions}</div> : null}
       </div>
       <div
         aria-labelledby="submission-document-tab"

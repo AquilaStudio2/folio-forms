@@ -1,6 +1,6 @@
 # Folio Forms: แผนผังการทำงานทั้งระบบ
 
-ทบทวนวันที่ 5 พฤศจิกายน 2026 จากฐาน `main` ที่ `44b63d0` รวมการเปลี่ยนปุ่มดาวน์โหลดใน branch `codex/excel-fill-download`
+ทบทวนวันที่ 9 พฤศจิกายน 2026 จากฐาน `codex/admin-result-downloads` ที่ `8630bbc` รวมการย้ายปุ่มดาวน์โหลดใน branch `codex/admin-result-downloads-ticket-01`
 
 เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
@@ -142,7 +142,7 @@ flowchart LR
 | `/admin/forms/:formId/submissions`, Admin | ดู Submission ทุกครั้งของฟอร์มนั้น | เปิดรายละเอียดแต่ละ `submissionId` ประวัตินี้แยกจากสถานะปัจจุบันของ Response |
 | `/admin/forms/:formId/submissions/:submissionId`, Admin | อ่านข้อมูลและประวัติ Correction ของ Submission ที่เลือก | สลับ revision และดาวน์โหลด DOCX หรือ XLSX ตามชนิดฟอร์ม รวม PDF |
 | `/admin/results`, Admin และ Viewer | ค้นหาสถานะปัจจุบันของ Response ทั้งระบบ | กรอง Form, ผู้ใช้, จังหวัด, เดือน, ปีงบประมาณ, สถานะ, Correction และช่วงเวลา แล้วเปิดรายละเอียด |
-| `/admin/results/:responseId`, Admin และ Viewer | อ่านร่างที่บันทึก หรือ Submission ล่าสุดพร้อม Correction | มีแท็บเอกสารและฟิลด์ สำหรับ submitted เลือก revision ได้ Admin ไป Correction หรือลบ Response ได้ |
+| `/admin/results/:responseId`, Admin และ Viewer | อ่านร่างที่บันทึก หรือ Submission ล่าสุดพร้อม Correction | มีแท็บ Document / Fields และปุ่มดาวน์โหลดชุดเดียวด้านขวาเฉพาะ submitted: Excel สำหรับ XLSX หรือ DOCX สำหรับ DOCX รวม PDF ตาม revision ที่เลือก Admin ไป Correction หรือลบ Response ได้ |
 | `/admin/results/:responseId/correction`, Admin | แก้ Submission ล่าสุดผ่าน editor แยก | กรอกเหตุผลแล้วบันทึก เก็บ Correction ใหม่พร้อมผู้แก้ เวลา ค่าที่เปลี่ยน และไฟล์ กลับรายละเอียดเมื่อสำเร็จ |
 | `/admin/users`, Admin | ค้นหาและจัดการบัญชี กับคำขอเชื่อมบัญชี PDMS | สร้างบัญชี เปลี่ยนอีเมล บทบาท เปิดปิดบัญชี reset รหัส ลบบัญชีหลังลบ Responses แล้ว และอนุมัติหรือปฏิเสธการเชื่อม |
 | `/admin/audit`, Admin | อ่าน Audit Trail ที่ระบบบันทึก | กรองผู้กระทำ action เป้าหมาย outcome และช่วงเวลา หน้านี้ไม่แก้หรือลบ event |
@@ -476,9 +476,9 @@ flowchart TD
     draft["อ่าน Draft data และ saved document"]
     submission["เลือก Submission ล่าสุด"]
     revision["เลือก Original หรือ Correction"]
-    read["แท็บ Document และ Fields"]
-    doc["ดาวน์โหลด DOCX หรือ XLSX"]
-    pdf["แปลง PDF จากไฟล์ revision ที่เลือก"]
+    read["แท็บ Document / Fields และ actions นอก tablist"]
+    doc["submitted: ดาวน์โหลด Excel หรือ DOCX ที่บันทึกแล้วตาม revision"]
+    pdf["submitted: ดาวน์โหลด PDF จากไฟล์ revision ที่เลือก"]
     canCorrect{"Admin และยังเป็น Submission ล่าสุด"}
     workspace["สร้าง Correction workspace แยก"]
     edit["แก้ค่าและกรอกเหตุผล"]
@@ -508,9 +508,13 @@ Correction เริ่มจากเอกสาร revision ปัจจุ�
 
 การดาวน์โหลดจากใบรับหรือรายละเอียด Submission ใช้ไฟล์ DOCX หรือ XLSX ที่บันทึกแล้ว PDF สร้างตามคำขอจาก revision ที่เลือก ถ้าแปลง PDF ไม่สำเร็จ Submission ที่ส่งสำเร็จแล้วไม่ได้ถูกย้อนกลับ หน้า receipt แสดงข้อมูลและดาวน์โหลดได้ แต่ไม่ได้มี editor สำหรับเปลี่ยน Submission
 
+หน้า Results ของ Admin และ Viewer ย้ายปุ่มดาวน์โหลดมาอยู่ด้านขวาของแถว Document / Fields เพียงชุดเดียว ใช้ได้จากทั้งสองแท็บและตัดบรรทัดบนจอแคบ โดยปุ่มอยู่นอก tablist จึงไม่เปลี่ยนการสลับแท็บด้วยปุ่มลูกศร XLSX แสดง “ดาวน์โหลด Excel” ส่วน DOCX แสดง “ดาวน์โหลด DOCX” และทั้งสองชนิดมี “ดาวน์โหลด PDF”
+
+ปุ่มใช้ Submission และ revision ที่เลือก รวม Original และ Correction เก่า ไม่บังคับกลับไปรุ่นล่าสุด เมื่อประวัติยังไม่พร้อม โหลดล้มเหลว หรือไม่มี revision ที่เลือก จะดาวน์โหลดไม่ได้ ระหว่างส่งออกทั้งสองปุ่มถูกปิดเพื่อกันคำขอซ้ำ ข้อผิดพลาดเดิมแสดงให้ลองใหม่ได้โดยไม่บันทึก Draft ไม่ส่งคำตอบ และไม่เปลี่ยนข้อมูลหรือสถานะ Submission ตัวเลือก Revision และคำสั่ง Correction ยังอยู่ตำแหน่งเดิม Viewer ไม่ได้รับคำสั่งแก้ไขหรือลบเพิ่ม หน้ารายละเอียด Submission อีกหน้ายังคงใช้แท็บและปุ่มส่งออกเดิมโดยไม่รับ actions เพิ่ม
+
 หน้า Results รายละเอียดของ Draft ปัจจุบันแสดงอ่านอย่างเดียวและไม่มีปุ่มดาวน์โหลด ทั้ง Admin และ Viewer ส่วน API export Draft แยกมีสิทธิ์ของเจ้าของและ Viewer ตาม route จึงต้องแยกความสามารถของ API ออกจากปุ่มที่มีในหน้านี้
 
-อ้างอิง [Results API](../../apps/server/src/routes/results.ts#L271), [current result state](../../apps/server/src/responses/query.ts#L269), [Correction workspace](../../apps/server/src/responses/editor.ts#L57), [Correction commit](../../apps/server/src/operations/response-completion.ts#L421) และ [Submission API](../../apps/server/src/routes/submissions.ts#L34)
+อ้างอิง [Results API](../../apps/server/src/routes/results.ts#L271), [current result state](../../apps/server/src/responses/query.ts#L269), [Results actions และ revision](../../apps/web/src/routes/admin/results/$responseId/index.tsx#L491), [layout แท็บและ actions](../../apps/web/src/components/submission-result-viewer.tsx#L199), [handler ส่งออกเดิม](../../apps/web/src/routes/admin/results/$responseId/index.tsx#L266), [Correction workspace](../../apps/server/src/responses/editor.ts#L57), [Correction commit](../../apps/server/src/operations/response-completion.ts#L421) และ [Submission API](../../apps/server/src/routes/submissions.ts#L34)
 
 ## 10 จัดการบัญชี Audit และการลบข้อมูล
 
@@ -1247,7 +1251,7 @@ flowchart TD
 | ดาวน์โหลดจากหน้ากรอก Excel | หน้า fill, `components/onlyoffice-editor.tsx`, plugin `bridge.js` | `POST /api/responses/:id/editor-export/:format`, ตัวแปลง PDF และสำเนาชั่วคราว XLSX |
 | การบันทึกจริงและ callback | plugin `operations.js`, `bridge.js`, web `components/onlyoffice-editor.tsx` | `operations/create.ts`, `force-save.ts`, `callback.ts`, `template-completion.ts`, `response-completion.ts` |
 | Dashboard และ discard ร่าง | `routes/dashboard.tsx`, หน้า fill | `routes/responses.ts`, `responses/deletion.ts` ต้องพิจารณาประวัติ Submission ที่อยู่ใต้ Response ด้วย |
-| Results, filters และ Correction | `routes/admin/results/`, `components/submission-result-viewer.tsx` | `routes/results.ts`, `responses/query.ts`, `responses/result-filters.ts`, `packages/results-filters/`, `responses/editor.ts` |
+| Results, filters, ปุ่มดาวน์โหลดตาม revision และ Correction | `routes/admin/results/`, `components/submission-result-viewer.tsx`, `lib/api.ts` | `routes/results.ts`, `routes/submissions.ts`, `responses/query.ts`, `responses/result-filters.ts`, `packages/results-filters/`, `responses/editor.ts` |
 | Receipt, export และประวัติรายฟอร์ม | `routes/receipt/$submissionId.tsx`, `routes/admin/forms/$formId/submissions/` | `routes/submissions.ts`, `routes/form-authoring.ts`, `responses/query.ts`, `onlyoffice.ts` |
 | Users และ pending account links | `routes/admin/users.tsx`, `features/admin-users/` | `routes/accounts.ts`, `accounts/mutations.ts`, `accounts/review.ts` |
 | Audit | `routes/admin/audit.tsx` | `routes/audit.ts`, `audit/events.ts`, `audit/query.ts` |

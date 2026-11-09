@@ -452,24 +452,6 @@ const AdminResultDetailRoute = () => {
                   <Button variant="primary">เปิด Correction</Button>
                 </Link>
               ) : null}
-              <Button
-                disabled={downloading !== null || !selectedRevisionRecord}
-                onClick={() =>
-                  download(result.documentKind ?? "docx", selectedRevision)
-                }
-                variant="secondary"
-              >
-                <FileText size={16} />
-                {(result.documentKind ?? "docx").toUpperCase()}
-              </Button>
-              <Button
-                disabled={downloading !== null || !selectedRevisionRecord}
-                onClick={() => download("pdf", selectedRevision)}
-                variant="secondary"
-              >
-                <FileText size={16} />
-                PDF
-              </Button>
             </div>
           )}
           {downloadError ? (
@@ -484,7 +466,7 @@ const AdminResultDetailRoute = () => {
                 type="button"
                 variant="danger"
                 onClick={(event) => requestDelete(event.currentTarget)}
-                disabled={deleting || downloading !== null}
+                disabled={deleting}
               >
                 <Trash2 size={16} />
                 ลบคำตอบถาวร
@@ -507,6 +489,34 @@ const AdminResultDetailRoute = () => {
             {isDraft ? "ข้อมูลฉบับร่าง" : submittedDataLabel}
           </p>
           <SubmissionResultViewer
+            actions={
+              isSubmitted ? (
+                <>
+                  <Button
+                    disabled={downloading !== null || !selectedRevisionRecord}
+                    onClick={() =>
+                      download(result.documentKind ?? "docx", selectedRevision)
+                    }
+                    size="sm"
+                    variant="secondary"
+                  >
+                    <FileText size={16} />
+                    {result.documentKind === "xlsx"
+                      ? "ดาวน์โหลด Excel"
+                      : "ดาวน์โหลด DOCX"}
+                  </Button>
+                  <Button
+                    disabled={downloading !== null || !selectedRevisionRecord}
+                    onClick={() => download("pdf", selectedRevision)}
+                    size="sm"
+                    variant="secondary"
+                  >
+                    <FileText size={16} />
+                    ดาวน์โหลด PDF
+                  </Button>
+                </>
+              ) : undefined
+            }
             configUrl={viewerConfigUrl}
             data={displayedData}
             documentAvailable={displayedDocumentAvailable}

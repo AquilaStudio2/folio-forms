@@ -7,7 +7,11 @@ import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import type { AdminLegacyAccountLinkRequest, Role } from "@/lib/api";
+import type {
+  AdminLegacyAccountLinkRequest,
+  DocumentKind,
+  Role,
+} from "@/lib/api";
 import { SESSION_KEY } from "@/lib/api";
 import { routeTree } from "@/routeTree.gen";
 
@@ -24,6 +28,27 @@ let patchFailure: string | null;
 let resetFailure: boolean;
 let accountHasNextPage: boolean;
 let resultState: "draft" | "submitted";
+let resultDocumentKind: DocumentKind;
+let resultLatestRevision: number;
+let historyResponse: Promise<Response> | null;
+let exportResponse: Promise<Response> | null;
+
+const stubDownloads = () => {
+  vi.stubGlobal(
+    "URL",
+    Object.assign(URL, {
+      createObjectURL: vi.fn(() => "blob:download"),
+      revokeObjectURL: vi.fn(),
+    })
+  );
+  const saved = vi.fn<(filename: string) => void>();
+  vi.spyOn(HTMLAnchorElement.prototype, "click").mockImplementation(
+    function captureDownload(this: HTMLAnchorElement) {
+      saved(this.download);
+    }
+  );
+  return saved;
+};
 const mappedAccount = () => ({
   createdAt: "2026-10-27T00:00:00.000Z",
   email: "mapped@example.test",
@@ -132,6 +157,10 @@ beforeEach(() => {
   resetFailure = false;
   accountHasNextPage = false;
   resultState = "draft";
+  resultDocumentKind = "docx";
+  resultLatestRevision = 1;
+  historyResponse = null;
+  exportResponse = null;
   localStorage.setItem(SESSION_KEY, "viewer-token");
   fetchMock.mockReset();
   fetchMock.mockImplementation((input, init) => {
@@ -198,10 +227,12 @@ beforeEach(() => {
           result: {
             data: { name: "Saved value" },
             document: { available: false },
+            documentKind: resultDocumentKind,
             fields: [],
             formPublicId: "0123456789abcdef0123456789abcdef",
             formTitle: "Other owner draft",
             id: responseId,
+            latestCorrectionNumber: resultLatestRevision,
             state: resultState,
             submissionId: "submission",
             updatedAt: "2026-10-27T00:00:00.000Z",
@@ -211,21 +242,29 @@ beforeEach(() => {
       );
     }
     if (pathname === `/api/responses/${responseId}/corrections`) {
+      if (historyResponse) {
+        return historyResponse;
+      }
       return Promise.resolve(
         Response.json({
-          latestRevision: 1,
-          revisions: [0, 1].map((revision) => ({
-            createdAt: "2026-10-27T00:00:00.000Z",
-            data: {
-              name: revision === 0 ? "Original value" : "Corrected value",
-            },
-            document: {
-              available: false,
-              state: revision === 0 ? "submission" : "correction",
-            },
-            reason: revision === 1 ? "Verified correction" : null,
-            revision,
-          })),
+          latestRevision: resultLatestRevision,
+          revisions: Array.from(
+            { length: resultLatestRevision + 1 },
+            (_, revision) => ({
+              createdAt: "2026-10-27T00:00:00.000Z",
+              data: {
+                name: ["Original value", "Corrected value", "Latest value"][
+                  revision
+                ],
+              },
+              document: {
+                available: false,
+                state: revision === 0 ? "submission" : "correction",
+              },
+              reason: revision === 1 ? "Verified correction" : null,
+              revision,
+            })
+          ),
         })
       );
     }
@@ -236,10 +275,13 @@ beforeEach(() => {
         })
       );
     }
-    if (pathname === "/api/submissions/submission/pdf") {
+    if (/^\/api\/submissions\/submission\/(?:docx|xlsx|pdf)$/u.test(pathname)) {
+      if (exportResponse) {
+        return exportResponse;
+      }
       return Promise.resolve(
-        new Response("saved pdf", {
-          headers: { "Content-Type": "application/pdf" },
+        new Response("saved document", {
+          headers: { "Content-Type": "application/octet-stream" },
         })
       );
     }
@@ -758,6 +800,244 @@ describe("VIEWER existing results access", () => {
     expect(JSON.parse(String(patchRequest?.[1]?.body))).toEqual({
       enabled: false,
     });
+  });
+
+  it.each([
+    ["admin", "docx", "ดาวน์โหลด DOCX"],
+    ["admin", "xlsx", "ดาวน์โหลด Excel"],
+    ["viewer", "docx", "ดาวน์โหลด DOCX"],
+    ["viewer", "xlsx", "ดาวน์โหลด Excel"],
+  ] as const)(
+    "lets %s download saved %s and PDF from the selected revision in either tab",
+    async (role, kind, nativeLabel) => {
+      sessionRole = role;
+      resultDocumentKind = kind;
+      resultState = "submitted";
+      resultLatestRevision = 2;
+      const saved = stubDownloads();
+      await mount(`/admin/results/${responseId}`);
+      const native = await screen.findByRole("button", { name: nativeLabel });
+      const pdf = screen.getByRole("button", { name: "ดาวน์โหลด PDF" });
+      await waitFor(() => expect(native).toBeEnabled());
+      expect(
+        screen.getAllByRole("button", { name: /^ดาวน์โหลด/u })
+      ).toHaveLength(2);
+      expect(
+        within(
+          screen.getByRole("tablist", { name: "Result view" })
+        ).queryByRole("button")
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", {
+          name: kind === "xlsx" ? "ดาวน์โหลด DOCX" : "ดาวน์โหลด Excel",
+        })
+      ).not.toBeInTheDocument();
+      if (role === "viewer") {
+        expect(
+          screen.queryByRole("button", { name: "เปิด Correction" })
+        ).not.toBeInTheDocument();
+        expect(
+          screen.queryByRole("button", { name: "ลบคำตอบถาวร" })
+        ).not.toBeInTheDocument();
+      } else {
+        expect(
+          screen.getByRole("button", { name: "เปิด Correction" })
+        ).toBeVisible();
+        expect(
+          screen.getByRole("button", { name: "ลบคำตอบถาวร" })
+        ).toBeVisible();
+      }
+      const selector = screen.getByRole("combobox", { name: "เลือก Revision" });
+      expect(selector).toHaveValue("2");
+      // oxlint-disable no-await-in-loop -- Each download must finish before changing the shared route's revision or focus.
+      for (const [revision, value] of [
+        [2, "Latest value"],
+        [1, "Corrected value"],
+        [0, "Original value"],
+      ] as const) {
+        await userEvent.selectOptions(selector, String(revision));
+        await userEvent.click(screen.getByRole("tab", { name: "Document" }));
+        await userEvent.click(native);
+        await waitFor(() =>
+          expect(saved).toHaveBeenCalledWith(
+            `submission-submission-${revision}.${kind}`
+          )
+        );
+        const documentTab = screen.getByRole("tab", { name: "Document" });
+        documentTab.focus();
+        await userEvent.keyboard("{ArrowRight}");
+        const fieldsTab = screen.getByRole("tab", { name: "Fields" });
+        expect(fieldsTab).toHaveFocus();
+        expect(fieldsTab).toHaveAttribute("aria-selected", "true");
+        expect(await screen.findByText(value)).toBeVisible();
+        await userEvent.tab();
+        expect(native).toHaveFocus();
+        await userEvent.tab();
+        expect(pdf).toHaveFocus();
+        await userEvent.keyboard("{Enter}");
+        await waitFor(() =>
+          expect(saved).toHaveBeenCalledWith(
+            `submission-submission-${revision}.pdf`
+          )
+        );
+        for (const format of [kind, "pdf"]) {
+          expect(
+            fetchMock.mock.calls.some(([input]) =>
+              String(input).endsWith(
+                `/submissions/submission/${format}?revision=${revision}`
+              )
+            )
+          ).toBe(true);
+        }
+        fieldsTab.focus();
+        await userEvent.keyboard("{ArrowLeft}");
+        expect(documentTab).toHaveFocus();
+        expect(documentTab).toHaveAttribute("aria-selected", "true");
+      }
+      // oxlint-enable no-await-in-loop
+      expect(saved).toHaveBeenCalledTimes(6);
+      expect(selector).toHaveValue("0");
+      expect(screen.getByText("ส่งแล้ว", { exact: true })).toBeVisible();
+      expect(
+        fetchMock.mock.calls.filter(
+          ([, init]) => init?.method && init.method !== "GET"
+        )
+      ).toEqual([]);
+    }
+  );
+
+  it.each([
+    ["admin", "docx"],
+    ["admin", "xlsx"],
+    ["viewer", "docx"],
+    ["viewer", "xlsx"],
+  ] as const)(
+    "hides downloads for %s reading a current %s draft despite a previous submission",
+    async (role, kind) => {
+      sessionRole = role;
+      resultDocumentKind = kind;
+      await mount(`/admin/results/${responseId}`);
+      await screen.findByRole("heading", { name: "Other owner draft" });
+      expect(screen.getByText("ฉบับร่าง", { exact: true })).toBeVisible();
+      expect(
+        screen.queryByRole("button", { name: /^ดาวน์โหลด/u })
+      ).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole("tab", { name: "Fields" }));
+      expect(
+        screen.queryByRole("button", { name: /^ดาวน์โหลด/u })
+      ).not.toBeInTheDocument();
+      expect(
+        fetchMock.mock.calls.some(([input]) =>
+          String(input).includes(`/responses/${responseId}/corrections`)
+        )
+      ).toBe(false);
+    }
+  );
+
+  it("prevents export while revision history is pending and after it fails", async () => {
+    resultState = "submitted";
+    const pending = Promise.withResolvers<Response>();
+    historyResponse = pending.promise;
+    await mount(`/admin/results/${responseId}`);
+    const native = await screen.findByRole("button", { name: "ดาวน์โหลด DOCX" });
+    const pdf = screen.getByRole("button", { name: "ดาวน์โหลด PDF" });
+    expect(native).toBeDisabled();
+    expect(pdf).toBeDisabled();
+    await userEvent.click(native);
+    await userEvent.click(pdf);
+    await act(async () => {
+      pending.resolve(
+        Response.json({ error: "history_failed" }, { status: 500 })
+      );
+      await pending.promise;
+    });
+    expect(
+      await screen.findByText("โหลดประวัติ Correction ไม่สำเร็จ กรุณาลองใหม่")
+    ).toBeVisible();
+    expect(native).toBeDisabled();
+    expect(pdf).toBeDisabled();
+    await userEvent.click(pdf);
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        /\/submission\/(?:docx|pdf)\?/u.test(String(input))
+      )
+    ).toBe(false);
+  });
+
+  it("prevents export when the selected revision is absent from history", async () => {
+    resultState = "submitted";
+    historyResponse = Promise.resolve(
+      Response.json({ latestRevision: 3, revisions: [] })
+    );
+    await mount(`/admin/results/${responseId}`);
+    const selector = await screen.findByRole("combobox", {
+      name: "เลือก Revision",
+    });
+    await waitFor(() => expect(selector).toBeEnabled());
+    expect(
+      screen.getByRole("button", { name: "ดาวน์โหลด DOCX" })
+    ).toBeDisabled();
+    expect(screen.getByRole("button", { name: "ดาวน์โหลด PDF" })).toBeDisabled();
+  });
+
+  it("blocks duplicate exports while busy and retries a failed PDF without changing the submission", async () => {
+    resultState = "submitted";
+    const saved = stubDownloads();
+    const pending = Promise.withResolvers<Response>();
+    exportResponse = pending.promise;
+    await mount(`/admin/results/${responseId}`);
+    const pdf = await screen.findByRole("button", { name: "ดาวน์โหลด PDF" });
+    const native = screen.getByRole("button", { name: "ดาวน์โหลด DOCX" });
+    await waitFor(() => expect(pdf).toBeEnabled());
+    await userEvent.click(screen.getByRole("tab", { name: "Fields" }));
+    expect(await screen.findByText("Corrected value")).toBeVisible();
+    await userEvent.click(pdf);
+    expect(pdf).toBeDisabled();
+    expect(native).toBeDisabled();
+    await userEvent.click(pdf);
+    await userEvent.click(native);
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        /\/submission\/(?:docx|pdf)\?/u.test(String(input))
+      )
+    ).toHaveLength(1);
+    await act(async () => {
+      pending.resolve(
+        Response.json({ error: "conversion_failed" }, { status: 500 })
+      );
+      await pending.promise;
+    });
+    expect(
+      await screen.findByText("ส่งออกไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง")
+    ).toBeVisible();
+    expect(saved).not.toHaveBeenCalled();
+    expect(pdf).toBeEnabled();
+    expect(native).toBeEnabled();
+    expect(screen.getByText("ส่งแล้ว", { exact: true })).toBeVisible();
+    expect(screen.getByText("Corrected value")).toBeVisible();
+    expect(screen.getByRole("combobox", { name: "เลือก Revision" })).toHaveValue(
+      "1"
+    );
+    exportResponse = null;
+    await userEvent.click(pdf);
+    await waitFor(() =>
+      expect(saved).toHaveBeenCalledWith("submission-submission-1.pdf")
+    );
+    expect(
+      screen.queryByText("ส่งออกไฟล์ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง")
+    ).not.toBeInTheDocument();
+    expect(pdf).toBeEnabled();
+    expect(native).toBeEnabled();
+    expect(
+      fetchMock.mock.calls.filter(([input]) =>
+        String(input).endsWith("/submission/pdf?revision=1")
+      )
+    ).toHaveLength(2);
+    expect(
+      fetchMock.mock.calls.filter(
+        ([, init]) => init?.method && init.method !== "GET"
+      )
+    ).toEqual([]);
   });
 
   it("reads correction history and downloads a saved submission without Correction controls", async () => {
