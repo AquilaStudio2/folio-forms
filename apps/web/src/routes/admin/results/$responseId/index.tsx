@@ -466,7 +466,7 @@ const AdminResultDetailRoute = () => {
                 type="button"
                 variant="danger"
                 onClick={(event) => requestDelete(event.currentTarget)}
-                disabled={deleting}
+                disabled={deleting || downloading !== null}
               >
                 <Trash2 size={16} />
                 ลบคำตอบถาวร
