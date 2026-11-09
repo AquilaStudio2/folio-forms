@@ -780,13 +780,28 @@ describe("VIEWER existing results access", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Fields" }));
     expect(await screen.findByText("Corrected value")).toBeVisible();
     await userEvent.click(
-      screen.getByRole("button", { exact: true, name: "PDF" })
+      screen.getByRole("button", { exact: true, name: "ดาวน์โหลด PDF" })
     );
     await waitFor(() => expect(createObjectURL).toHaveBeenCalled());
     const downloadRequest = fetchMock.mock.calls.find(([input]) =>
       String(input).includes("/submissions/submission/pdf")
     );
     expect(String(downloadRequest?.[0])).toContain("?revision=1");
+    await userEvent.selectOptions(
+      screen.getByRole("combobox", { name: "เลือก Revision" }),
+      "0"
+    );
+    expect(await screen.findByText("Original value")).toBeVisible();
+    await userEvent.click(
+      screen.getByRole("button", { exact: true, name: "ดาวน์โหลด PDF" })
+    );
+    await waitFor(() =>
+      expect(
+        fetchMock.mock.calls.some(([input]) =>
+          String(input).includes("/submissions/submission/pdf?revision=0")
+        )
+      ).toBe(true)
+    );
     expect(screen.getByRole("link", { name: "กลับไปรายการ" })).toHaveAttribute(
       "href",
       "/admin/results"
