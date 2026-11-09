@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `a292d78800977a86d5d7296a1de7940da6223c3a`
+Commit: `235dfea1a49ca424d45d9bec46520895fd0650ed`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -21,7 +21,7 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `/admin/forms/new` | `apps/web/src/routes/admin/forms/new.tsx:367` |
 | `/admin/` | `apps/web/src/routes/admin/index.tsx:5` |
 | `/admin/results/$responseId/correction` | `apps/web/src/routes/admin/results/$responseId/correction.tsx:147` |
-| `/admin/results/$responseId/` | `apps/web/src/routes/admin/results/$responseId/index.tsx:524` |
+| `/admin/results/$responseId/` | `apps/web/src/routes/admin/results/$responseId/index.tsx:534` |
 | `/admin/results/` | `apps/web/src/routes/admin/results/index.tsx:465` |
 | `/admin/results` | `apps/web/src/routes/admin/results.tsx:5` |
 | `/admin/users` | `apps/web/src/routes/admin/users.tsx:749` |
