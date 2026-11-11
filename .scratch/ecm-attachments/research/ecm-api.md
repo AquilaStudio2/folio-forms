@@ -1,7 +1,7 @@
 # ผลวิจัย ECM API สำหรับไฟล์แนบ Excel ของ Folio
 
 วันที่สำรวจ: 2026-11-11  
-ขอบเขต: ตอบคำถามใน ticket `01-ecm-api-capabilities.md` จาก public documentation และ source เท่านั้น ไม่ใช่ implementation หรือผลทดสอบระบบจริง  
+ขอบเขต: ตอบคำถามใน “ข้อเท็จจริง ECM: login และความสามารถจัดการไฟล์” จาก public documentation และ source เท่านั้น ไม่ใช่ implementation หรือผลทดสอบระบบจริง
 Branch: `research/folio-ecm-api-20261111`  
 ฐาน Folio HEAD: `318d0d89a0f57f06dc0317304646e03f97ab6a35`  
 Backend HEAD ขณะอ่าน: `e51f2245fab13d55676de46ceb4781903ec41470` — อ่าน working-tree source ตามตำแหน่งด้านล่าง ไม่ได้ตรวจความสะอาดของ working tree
