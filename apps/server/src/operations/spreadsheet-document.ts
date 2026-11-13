@@ -2,7 +2,10 @@ import { prisma } from "@onlyoffice/db";
 
 import { reconcileSpreadsheetColumns } from "../documents/spreadsheets/columns";
 import { spreadsheetColumnName } from "../documents/spreadsheets/contract";
-import type { SpreadsheetRange } from "../documents/spreadsheets/contract";
+import type {
+  SpreadsheetRange,
+  SpreadsheetContract,
+} from "../documents/spreadsheets/contract";
 import { validatePreservedSpreadsheetEditorSave } from "../documents/spreadsheets/editor-save-proof";
 import { processSpreadsheet } from "../documents/spreadsheets/engine";
 import { compactSpreadsheetDraftOptions } from "../documents/spreadsheets/helper-storage";
@@ -40,6 +43,10 @@ import {
 import { spreadsheetPictureFramesForTemplate } from "../forms/spreadsheet-picture-frames";
 import { fail } from "../http/errors";
 import { pdmsSelectionValue } from "../pdms/selection";
+import {
+  canonicalAttachment,
+  checkAttachmentJsonBytes,
+} from "../responses/attachment-data";
 import { readObject } from "../storage";
 import type { OperationMetadata } from "./model";
 
@@ -55,11 +62,18 @@ export class SpreadsheetValidationError extends Error {
 const rangeAddress = (range: SpreadsheetRange): string =>
   `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}:${spreadsheetColumnName(range.lastColumn)}${range.lastRow + 1}`;
 
+export type PrepareAttachments = (
+  contract: SpreadsheetContract,
+  data: Record<string, unknown>,
+  savedData: Record<string, unknown>
+) => Promise<Record<string, unknown>>;
+
 // oxlint-disable-next-line complexity -- Actions share the trusted-workbook processing boundary.
 export const prepareSpreadsheetOperation = async (
   metadata: OperationMetadata,
   snapshot: Uint8Array,
-  heartbeat: () => Promise<unknown>
+  heartbeat: () => Promise<unknown>,
+  prepareAttachments?: PrepareAttachments
 ): Promise<Uint8Array> => {
   const form = await prisma.form.findUnique({
     include: { templateDraft: true },
@@ -228,6 +242,58 @@ export const prepareSpreadsheetOperation = async (
     ? await spreadsheetPictureFramesForTemplate(response.publishedTemplateId)
     : [];
   const inputs = spreadsheetInputRanges(contract, locked);
+  const savedData =
+    response.draftData &&
+    typeof response.draftData === "object" &&
+    !Array.isArray(response.draftData)
+      ? (response.draftData as Record<string, unknown>)
+      : {};
+  if (contract.fields.some((field) => field.attachment)) {
+    validateSpreadsheetAttachmentButtons(
+      baseBytes,
+      storedSpreadsheetBindings(contract)
+    );
+    validateSpreadsheetAttachmentButtons(
+      snapshot,
+      storedSpreadsheetBindings(contract)
+    );
+  }
+  let attachmentData = savedData;
+  if (prepareAttachments) {
+    const native = extractSpreadsheetData(
+      current,
+      contract,
+      metadata.action === "submit",
+      savedData
+    );
+    const ordinaryErrors = native.errors.filter(
+      (error) =>
+        !contract.fields.some(
+          (field) =>
+            field.attachment &&
+            error.message === `Required attachment: ${field.label}`
+        )
+    );
+    if (ordinaryErrors.length && metadata.action === "submit") {
+      throw new SpreadsheetValidationError(ordinaryErrors);
+    }
+    attachmentData = await prepareAttachments(contract, native.data, savedData);
+  }
+  const attachmentAddresses = new Set(
+    contract.fields
+      .filter((field) => field.attachment)
+      .map((field) => {
+        const range = contract.locations[field.anchor];
+        if (!range) {
+          fail(
+            422,
+            "invalid_attachment",
+            `ตำแหน่งช่อง ${field.key} ไม่ตรงกับเอกสาร`
+          );
+        }
+        return `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`;
+      })
+  );
   const values = [...current.cells.values()]
     .filter(
       (cell) =>
@@ -238,6 +304,7 @@ export const prepareSpreadsheetOperation = async (
             cell.column >= range.firstColumn &&
             cell.column <= range.lastColumn
         ) &&
+        !attachmentAddresses.has(cell.address) &&
         // Native/canonical XLSX may include empty cells inside a merged input.
         // Writing a subordinate cell after its anchor clears the whole merge.
         !current.merges.some(
@@ -304,6 +371,19 @@ export const prepareSpreadsheetOperation = async (
       throw new Error("Upload POC supports appending table rows only");
     }
   }
+  for (const field of contract.fields.filter(
+    (candidate) => candidate.attachment
+  )) {
+    const range = contract.locations[field.anchor];
+    if (!range) {
+      fail(422, "invalid_attachment", `ตำแหน่งช่อง ${field.key} ไม่ตรงกับเอกสาร`);
+    }
+    const attachment = canonicalAttachment(attachmentData[field.key]);
+    values.push({
+      address: `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`,
+      value: attachment?.file_link ?? "",
+    });
+  }
   const result = await processSpreadsheet(unprotectSpreadsheet(baseBytes), {
     bindings: storedSpreadsheetBindings(contract),
     clearRanges: inputs.map(rangeAddress),
@@ -336,7 +416,8 @@ export const prepareSpreadsheetOperation = async (
   const extracted = extractSpreadsheetData(
     readSpreadsheetWorkbook(withPictures),
     nextContract,
-    metadata.action === "submit" || metadata.action === "save-correction"
+    metadata.action === "submit" || metadata.action === "save-correction",
+    attachmentData
   );
   if (
     extracted.errors.length &&
@@ -344,6 +425,9 @@ export const prepareSpreadsheetOperation = async (
     metadata.action !== "save-correction-workspace"
   ) {
     throw new SpreadsheetValidationError(extracted.errors);
+  }
+  if (contract.fields.some((field) => field.attachment)) {
+    checkAttachmentJsonBytes(extracted.data);
   }
   metadata.data = extracted.data;
   metadata.spreadsheetErrors = extracted.errors;

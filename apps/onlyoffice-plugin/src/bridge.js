@@ -289,7 +289,14 @@ export function createBridge(options, office, callbacks) {
     );
   }
 
-  function notifyParent(action, status, operationId, payload, error) {
+  function notifyParent(
+    action,
+    status,
+    operationId,
+    payload,
+    error,
+    requestedAction
+  ) {
     if (!bridgeAcknowledged) {
       return;
     }
@@ -300,6 +307,7 @@ export function createBridge(options, office, callbacks) {
         error: error || undefined,
         operation: isRecord(payload?.operation) ? payload.operation : undefined,
         operationId: operationId || undefined,
+        ...(requestedAction ? { requestedAction } : {}),
         source: BRIDGE_MESSAGE_SOURCE,
         status,
         type: OPERATION_MESSAGE_TYPE,

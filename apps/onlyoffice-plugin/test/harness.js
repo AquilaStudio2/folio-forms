@@ -32,6 +32,7 @@ export const createHarness = ({
   holdEditorSave = false,
   initialEditorRestriction = "none",
   prefill,
+  nativeWorkbookCaptureUrl,
   responses = [],
   scopeIdentity,
   selection,
@@ -245,6 +246,10 @@ export const createHarness = ({
       if (typeof done !== "function") {
         return;
       }
+      if (method === "GetFileToDownload" && nativeWorkbookCaptureUrl) {
+        done(nativeWorkbookCaptureUrl);
+        return;
+      }
       if (selection !== undefined) {
         if (method === "GetCurrentContentControl") {
           done(selectionState.currentControl);
@@ -384,6 +389,14 @@ export const createHarness = ({
   const nativeValidationModel = createNativeValidationModel(
     spreadsheetValidations
   );
+  if (nativeWorkbookCaptureUrl) {
+    nativeValidationModel.worksheet.workbook = {
+      oApi: {
+        asc_closeCellEditor: () => true,
+        asc_getCellEditMode: () => false,
+      },
+    };
+  }
   Object.assign(window.Asc, nativeValidationModel.constructors);
   const normalizedAddress = (address) =>
     address.split("!").at(-1).replaceAll("$", "");

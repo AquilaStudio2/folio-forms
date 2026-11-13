@@ -57,6 +57,7 @@ export interface PdmsProjectCatalog {
 }
 
 export interface EditorConfig {
+  attachmentNotice?: string | null;
   pdmsProjectCatalog?: PdmsProjectCatalog;
   apiScriptUrl?: string;
   apiUrl?: string;
@@ -200,6 +201,7 @@ const isValidOperationResult = (value: Record<string, unknown>): boolean =>
   (value.editorSessionPreserved === undefined ||
     typeof value.editorSessionPreserved === "boolean");
 
+// oxlint-disable-next-line complexity -- Validate original/requested action correlation and terminal payload together at the untrusted bridge boundary.
 export const parseOperationMessage = (
   value: unknown,
   bridgeId: string
@@ -214,7 +216,10 @@ export const parseOperationMessage = (
     !isOperationStatus(value.status) ||
     (value.operationId !== undefined && !isNonEmptyString(value.operationId)) ||
     (value.status !== "failed" && !isNonEmptyString(value.operationId)) ||
-    (value.error !== undefined && typeof value.error !== "string")
+    (value.error !== undefined && typeof value.error !== "string") ||
+    (value.requestedAction !== undefined &&
+      (typeof value.requestedAction !== "string" ||
+        !isEditorOperationAction(value.requestedAction)))
   ) {
     return null;
   }
@@ -240,6 +245,8 @@ interface EditorOperationBridgeMessage {
   action: EditorOperationAction;
   bridgeId: string;
   error?: string;
+  requestedAction?: EditorOperationAction;
+  hasPendingAttachments?: boolean;
   operation?: {
     result?: {
       documentKey?: string;

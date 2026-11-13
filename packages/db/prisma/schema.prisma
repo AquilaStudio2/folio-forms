@@ -677,3 +677,57 @@ model EcmCategoryCatalog {
 
   @@map("ecm_category_catalogs")
 }
+
+/// No cascading relations: external write evidence must survive Response deletion.
+model EcmAttachmentBatch {
+  operationId   String   @id @map("operation_id") @db.Uuid
+  checkpoint    String   @map("checkpoint") @db.Uuid
+  responseId    String   @map("response_id") @db.Uuid
+  actorId       String   @map("actor_id")
+  leaseId       String   @map("lease_id") @db.Uuid
+  authSessionId String   @map("auth_session_id")
+  formId        String   @map("form_id") @db.Uuid
+  documentKey   String   @map("document_key")
+  state         String   @default("prepared")
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([responseId, actorId, checkpoint])
+  @@index([responseId, state])
+  @@map("ecm_attachment_batches")
+}
+
+model EcmAttachmentVersion {
+  id             String    @id @db.Uuid
+  operationId    String    @map("operation_id") @db.Uuid
+  responseId     String    @map("response_id") @db.Uuid
+  accountKey     String    @map("account_key")
+  bindingId      String    @map("binding_id")
+  tag            String
+  filename       String
+  originalName   String    @map("original_name")
+  sizeBytes      Int       @map("size_bytes")
+  fiscalYear     String    @map("fiscal_year")
+  documentNumber String    @map("document_number")
+  category       String
+  state          String    @default("prepared")
+  fileLink       String?   @map("file_link")
+  fileToken      String?   @unique @map("file_token")
+  sentAt         DateTime? @map("sent_at") @db.Timestamptz(3)
+  receivedAt     DateTime? @map("received_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([operationId, state])
+  @@index([responseId])
+  @@map("ecm_attachment_versions")
+}
+
+model EcmAttachmentReference {
+  versionId  String @map("version_id") @db.Uuid
+  snapshotId String @map("snapshot_id")
+  responseId String @map("response_id") @db.Uuid
+
+  @@id([versionId, snapshotId])
+  @@index([responseId])
+  @@map("ecm_attachment_references")
+}

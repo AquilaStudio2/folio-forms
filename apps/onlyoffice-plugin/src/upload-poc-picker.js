@@ -46,6 +46,9 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
   const filesize = document.querySelector("#filesize");
   const retry = document.querySelector("#retry");
   const selection = document.querySelector("#selection");
+  const savedFile = document.querySelector("#saved-file");
+  const savedLink = document.querySelector("#saved-link");
+  const savedSize = document.querySelector("#saved-size");
   let options;
   let target;
   let pending = null;
@@ -83,6 +86,32 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
       },
       options.parentOrigin
     );
+  };
+  const renderSavedAttachment = (message) => {
+    if (!savedFile || !savedLink || !savedSize) {
+      return;
+    }
+    const { saved } = message;
+    const url =
+      isRecord(saved) && typeof saved.file_link === "string"
+        ? new URL(saved.file_link)
+        : null;
+    const valid =
+      url &&
+      ["http:", "https:"].includes(url.protocol) &&
+      !url.username &&
+      !url.password;
+    savedFile.hidden = !valid;
+    if (valid) {
+      savedLink.href = url.href;
+      savedLink.textContent =
+        typeof saved.original_name === "string"
+          ? saved.original_name
+          : "เปิดไฟล์ที่บันทึกแล้ว";
+      savedSize.textContent = Number.isSafeInteger(saved.size_bytes)
+        ? `${saved.size_bytes} ไบต์`
+        : "";
+    }
   };
   hostWindow.addEventListener("message", (event) => {
     const message = event.data;
@@ -142,6 +171,7 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
       message.size >= 0
         ? `${message.size} ไบต์`
         : "";
+    renderSavedAttachment(message);
     selected = null;
     input.disabled = false;
     notify(

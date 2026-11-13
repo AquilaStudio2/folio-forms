@@ -448,6 +448,25 @@ export async function userEditorConfig(
   };
   return {
     ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
+    attachmentNotice:
+      form.documentKind === "xlsx" &&
+      (await prisma.ecmAttachmentBatch.findFirst({
+        select: { operationId: true },
+        where: {
+          responseId: response.id,
+          state: {
+            in: [
+              "prepared",
+              "sending",
+              "unknown",
+              "canceling",
+              "cleanup-pending",
+            ],
+          },
+        },
+      }))
+        ? "ยังยืนยันผลไฟล์แนบรอบเดิมไม่ได้ ข้อมูลที่บันทึกเดิมยังอยู่ กรุณาติดต่อผู้ดูแลก่อนบันทึก ส่ง หรือลบคำตอบ"
+        : null,
     ...editorConfig(
       {
         ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
@@ -457,6 +476,7 @@ export async function userEditorConfig(
             : requestedAction === "fill"
               ? "fill"
               : "draft",
+        attachmentSavedData: response.draftData,
         capabilities: {
           ...(form.documentKind === "xlsx" && requestedAction !== "submit"
             ? {

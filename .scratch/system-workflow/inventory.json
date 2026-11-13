@@ -1,8 +1,8 @@
 {
-  "commit": "6a87d0004dccba530401531777c9de42162d00c6",
-  "branch": "feat/ecm-attachments-legacy",
-  "source_fingerprint": "979a51bcb9e10391f17c29a5c938741156cfe1fece03647777c3bdd87a07a0ad",
-  "source_files": 299,
+  "commit": "f6e856af865ceeb9cc6acaa02414673f4e97aa42",
+  "branch": "feat/ecm-attachments-scalar",
+  "source_fingerprint": "1972655c1db223a11ac7820b00de9a3cc1cc4e887b57e179152036384880f46a",
+  "source_files": 305,
   "pages": [
     {
       "route": "__root",
@@ -97,7 +97,7 @@
     {
       "route": "/forms/$publicId/fill",
       "file": "apps/web/src/routes/forms/$publicId/fill.tsx",
-      "line": 1365
+      "line": 1395
     },
     {
       "route": "/forms/$publicId/submissions",
@@ -546,16 +546,28 @@
       "line": 130
     },
     {
+      "method": "GET",
+      "path": "/api/responses/:id/attachment-operations/:checkpoint",
+      "file": "apps/server/src/routes/response-actions.ts",
+      "line": 69
+    },
+    {
+      "method": "POST",
+      "path": "/api/responses/:id/attachment-operations/:checkpoint/recover",
+      "file": "apps/server/src/routes/response-actions.ts",
+      "line": 113
+    },
+    {
       "method": "POST",
       "path": "/api/forms/:publicId/draft",
       "file": "apps/server/src/routes/response-actions.ts",
-      "line": 62
+      "line": 125
     },
     {
       "method": "POST",
       "path": "/api/forms/:publicId/submit",
       "file": "apps/server/src/routes/response-actions.ts",
-      "line": 240
+      "line": 340
     },
     {
       "method": "GET",
@@ -870,6 +882,24 @@
       "table": "ecm_category_catalogs",
       "file": "packages/db/prisma/schema.prisma",
       "line": 673
+    },
+    {
+      "model": "EcmAttachmentBatch",
+      "table": "ecm_attachment_batches",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 682
+    },
+    {
+      "model": "EcmAttachmentVersion",
+      "table": "ecm_attachment_versions",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 700
+    },
+    {
+      "model": "EcmAttachmentReference",
+      "table": "ecm_attachment_references",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 725
     }
   ],
   "relations": [

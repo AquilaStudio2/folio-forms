@@ -1,7 +1,8 @@
 // oxlint-disable sort-keys -- Fixtures group protocol and binding fields in message order.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { UploadPocPendingFiles } from "@/features/onlyoffice/upload-poc-pending";
+import * as api from "@/lib/api";
 
 const options = {
   action: "draft",
@@ -46,6 +47,304 @@ const message = (extra: Record<string, unknown> = {}) => ({
 });
 
 describe("local POC pending files", () => {
+  it("retains the File until explicit negative-admission proof and never resends on lookup absence alone", async () => {
+    sessionStorage.clear();
+    const store = new UploadPocPendingFiles();
+    const selected = new File(["private"], "private.bin");
+    store.handle(
+      message({
+        bindingId: "folio_scalar",
+        file: selected,
+        rowIndex: null,
+        tag: "document",
+        type: "pending-file-set",
+      }),
+      options
+    );
+    const host = { ...options, publicId: "form", responseId: "response" };
+    const save = message({
+      action: "save-draft",
+      body: {},
+      capability: "old-capability",
+      snapshotUrl: "http://office.test/snapshot.xlsx",
+      type: "pending-file-save",
+    });
+    const post = vi
+      .spyOn(api, "apiPostFormData")
+      .mockRejectedValueOnce(new TypeError("transport interrupted"))
+      .mockResolvedValue({
+        action: "save-draft",
+        operationId: "accepted",
+        operationCapability: "operation-capability",
+        status: "pending",
+      });
+    const lookup = vi
+      .spyOn(api, "apiGet")
+      .mockRejectedValue(
+        new api.ApiError(404, "not_found", "not admitted yet")
+      );
+    const lease = {
+      expiresAt: "2099-01-01T00:00:00.000Z",
+      id: "new-lease",
+      releaseUrl: "/release/new",
+      renewUrl: "/renew/new",
+    };
+    const recover = vi
+      .spyOn(api, "apiPost")
+      .mockRejectedValueOnce(new TypeError("recovery response lost"))
+      .mockResolvedValue({
+        admission: "not-admitted",
+        lease,
+        revokedLeaseId: "old-lease",
+      });
+    try {
+      await expect(store.save(save, host)).rejects.toThrow(
+        "recovery response lost"
+      );
+      const key = `folio-attachment-checkpoint:${options.scopeIdentity}`;
+      const originalCheckpoint = sessionStorage.getItem(key);
+      expect(originalCheckpoint).toBeTruthy();
+      expect([...store.snapshot().values()]).toEqual([selected]);
+      expect(post).toHaveBeenCalledTimes(1);
+      await expect(store.save(save, host)).rejects.toMatchObject({
+        recoveredLease: lease,
+      });
+      expect(sessionStorage.getItem(key)).toBeNull();
+      expect(post).toHaveBeenCalledTimes(1);
+      expect(lookup).toHaveBeenCalledTimes(2);
+      expect(recover).toHaveBeenLastCalledWith(
+        `/api/responses/response/attachment-operations/${originalCheckpoint}/recover`,
+        { action: "save-draft", documentKey: options.documentKey },
+        "old-capability"
+      );
+      expect(store.hasPending()).toBe(true);
+      const accepted = await store.save(
+        { ...save, capability: "new-capability" },
+        host
+      );
+      expect(accepted.operationId).toBe("accepted");
+      expect(post).toHaveBeenCalledTimes(2);
+      const body = post.mock.calls[1]?.[1];
+      expect(body).toBeInstanceOf(FormData);
+      const part = body?.get("attachment:folio_scalar");
+      expect(part).toBeInstanceOf(File);
+      if (!(part instanceof File)) {
+        throw new Error(
+          "The multipart attachment must retain its original filename"
+        );
+      }
+      expect(part.name).toBe(selected.name);
+      expect(part.type).toBe(selected.type);
+      const reader = new FileReader();
+      const read = Promise.withResolvers<undefined>();
+      reader.addEventListener("load", () => {
+        read.resolve();
+      });
+      reader.addEventListener("error", () => {
+        read.reject(reader.error);
+      });
+      // oxlint-disable-next-line prefer-blob-reading-methods -- JSDOM File does not implement Blob.text().
+      reader.readAsText(part);
+      await read.promise;
+      expect(reader.result).toBe("private");
+      expect([...store.snapshot().values()]).toEqual([selected]);
+      store.complete("accepted");
+      expect(store.hasPending()).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+      sessionStorage.clear();
+    }
+  });
+  it("joins a late original admission without clearing a newer File selection", async () => {
+    sessionStorage.clear();
+    const store = new UploadPocPendingFiles();
+    const first = new File(["first"], "first.bin");
+    const replacement = new File(["new"], "new.bin");
+    const scalar = {
+      bindingId: "folio_scalar",
+      rowIndex: null,
+      tag: "document",
+      type: "pending-file-set",
+    };
+    store.handle(message({ ...scalar, file: first }), options);
+    const host = { ...options, publicId: "form", responseId: "response" };
+    const save = message({
+      action: "save-draft",
+      body: {},
+      capability: "capability",
+      snapshotUrl: "http://office.test/snapshot.xlsx",
+      type: "pending-file-save",
+    });
+    const original = {
+      action: "save-draft",
+      operationId: "original",
+      operationCapability: "operation-capability",
+      status: "pending",
+    };
+    const post = vi
+      .spyOn(api, "apiPostFormData")
+      .mockRejectedValue(new TypeError("transport interrupted"));
+    vi.spyOn(api, "apiGet")
+      .mockRejectedValueOnce(
+        new api.ApiError(404, "not_found", "not admitted yet")
+      )
+      .mockResolvedValue(original);
+    vi.spyOn(api, "apiPost").mockRejectedValue(
+      new TypeError("recovery unavailable")
+    );
+    try {
+      await expect(store.save(save, host)).rejects.toThrow(
+        "recovery unavailable"
+      );
+      store.handle(message({ ...scalar, file: replacement }), options);
+      expect(await store.save(save, host)).toMatchObject(original);
+      expect(post).toHaveBeenCalledTimes(1);
+      store.complete("original");
+      expect(store.hasPending()).toBe(true);
+      expect([...store.snapshot().values()]).toEqual([replacement]);
+    } finally {
+      vi.restoreAllMocks();
+      sessionStorage.clear();
+    }
+  });
+  it("never treats an old completed receipt as acceptance of a current native snapshot or a newly selected File", async () => {
+    sessionStorage.clear();
+    const store = new UploadPocPendingFiles();
+    const selected = new File(["new"], "new.bin");
+    store.handle(
+      message({
+        bindingId: "folio_scalar",
+        file: selected,
+        rowIndex: null,
+        tag: "document",
+        type: "pending-file-set",
+      }),
+      options
+    );
+    const previous = crypto.randomUUID();
+    const key = `folio-attachment-checkpoint:${options.scopeIdentity}`;
+    sessionStorage.setItem(key, previous);
+    const host = { ...options, publicId: "form", responseId: "response" };
+    const save = message({
+      action: "save-draft",
+      body: {},
+      capability: "capability",
+      snapshotUrl: "http://office.test/current-native-edits.xlsx",
+      type: "pending-file-save",
+    });
+    const original = {
+      action: "save-draft",
+      operationId: "old-completed",
+      operationCapability: "old-cap",
+      status: "completed",
+    };
+    vi.spyOn(api, "apiGet").mockResolvedValue(original);
+    const post = vi.spyOn(api, "apiPostFormData").mockResolvedValue({
+      action: "save-draft",
+      operationId: "new-snapshot",
+      operationCapability: "new-cap",
+      status: "pending",
+    });
+    try {
+      await expect(store.save(save, host)).rejects.toThrow(
+        /ไม่ใช่ผลของข้อมูลปัจจุบัน/u
+      );
+      expect(post).not.toHaveBeenCalled();
+      expect(sessionStorage.getItem(key)).toBe(previous);
+      expect([...store.snapshot().values()]).toEqual([selected]);
+      expect(await store.pendingOperation(host)).toMatchObject(original);
+      store.complete("old-completed");
+      expect([...store.snapshot().values()]).toEqual([selected]);
+      const nextOptions = { ...host, documentKey: "draft-2" };
+      const accepted = await store.save(
+        { ...save, documentKey: "draft-2" },
+        nextOptions
+      );
+      expect(accepted.operationId).toBe("new-snapshot");
+      expect(post).toHaveBeenCalledTimes(1);
+      const body = post.mock.calls[0]?.[1];
+      if (!(body instanceof FormData)) {
+        throw new Error(
+          "Current native edits must be sent in their own multipart snapshot"
+        );
+      }
+      expect(JSON.parse(String(body.get("payload")))).toMatchObject({
+        documentKey: "draft-2",
+        snapshotUrl: "http://office.test/current-native-edits.xlsx",
+      });
+      expect(JSON.parse(String(body.get("payload"))).checkpoint).not.toBe(
+        previous
+      );
+      store.complete("new-snapshot");
+      expect(store.hasPending()).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+      sessionStorage.clear();
+    }
+  });
+  it("permits a new explicit snapshot only after a failed batch is proven canceled, retaining its unaccepted File", async () => {
+    sessionStorage.clear();
+    const store = new UploadPocPendingFiles();
+    const selected = new File(["retry"], "retry.bin");
+    store.handle(
+      message({
+        bindingId: "folio_scalar",
+        file: selected,
+        rowIndex: null,
+        tag: "document",
+        type: "pending-file-set",
+      }),
+      options
+    );
+    const host = { ...options, publicId: "form", responseId: "response" };
+    const save = message({
+      action: "save-draft",
+      body: {},
+      capability: "capability",
+      snapshotUrl: "http://office.test/current.xlsx",
+      type: "pending-file-save",
+    });
+    const post = vi
+      .spyOn(api, "apiPostFormData")
+      .mockResolvedValueOnce({
+        action: "save-draft",
+        operationId: "known-failed",
+        operationCapability: "old-cap",
+        status: "pending",
+      })
+      .mockResolvedValue({
+        action: "save-draft",
+        operationId: "new-explicit-save",
+        operationCapability: "new-cap",
+        status: "pending",
+      });
+    vi.spyOn(api, "apiGet").mockResolvedValue({
+      action: "save-draft",
+      batchState: "canceled",
+      operationId: "known-failed",
+      operationCapability: "old-cap",
+      status: "failed",
+    });
+    try {
+      await store.save(save, host);
+      const key = `folio-attachment-checkpoint:${options.scopeIdentity}`;
+      const original = sessionStorage.getItem(key);
+      expect(await store.pendingOperation(host)).toBeNull();
+      expect(sessionStorage.getItem(key)).toBeNull();
+      expect([...store.snapshot().values()]).toEqual([selected]);
+      expect(store.hasUnresolvedCommit()).toBe(false);
+      const accepted = await store.save(save, host);
+      expect(accepted.operationId).toBe("new-explicit-save");
+      expect(post).toHaveBeenCalledTimes(2);
+      expect(sessionStorage.getItem(key)).not.toBe(original);
+      store.complete("new-explicit-save");
+      expect(store.hasPending()).toBe(false);
+    } finally {
+      vi.restoreAllMocks();
+      sessionStorage.clear();
+    }
+  });
+
   it("does not infer attachment authority from an old Tag or retain legacy Files", () => {
     const store = new UploadPocPendingFiles();
     const legacy = {
@@ -161,7 +460,7 @@ describe("local POC pending files", () => {
       new UploadPocPendingFiles().handle(message(change), options)
     ).toThrow();
   });
-  it("accepts scalar null identity and blocks every explicit save and row deletion with pending files", () => {
+  it("accepts scalar null identity for explicit Save/Submit while retaining internal mutation guards", () => {
     const store = new UploadPocPendingFiles();
     store.handle(
       message({
@@ -173,9 +472,12 @@ describe("local POC pending files", () => {
       }),
       options
     );
+    for (const action of ["save-draft", "submit"]) {
+      expect(
+        store.handle(message({ type: "pending-file-check", action }), options)
+      ).toMatchObject({ allowed: true, hasPending: true });
+    }
     for (const action of [
-      "save-draft",
-      "submit",
       "publish",
       "save-template",
       "save-correction",
@@ -208,17 +510,18 @@ describe("local POC pending files", () => {
         message({ file: { name: "fake" }, type: "pending-file-set" }),
         options
       )
-    ).toThrow(/10 MB/u);
+    ).toThrow(/10,000,000/u);
     expect(() =>
       store.handle(
         message({
-          file: new File([new Uint8Array(10 * 1024 * 1024 + 1)], "large.bin"),
+          file: new File([new Uint8Array(10_000_001)], "large.bin"),
           type: "pending-file-set",
         }),
         options
       )
-    ).toThrow(/10 MB/u);
+    ).toThrow(/10,000,000/u);
     expect(store.handle(message(), options).filename).toBe("ok.txt");
+    expect(() => store.snapshot()).toThrow(/10,000,000/u);
   });
   it("keeps deferred correction editing unavailable but existing correction saves work with no pending file", () => {
     const store = new UploadPocPendingFiles();
@@ -264,5 +567,33 @@ describe("local POC pending files", () => {
         correction
       )
     ).toThrow(/ยังอยู่เฉพาะหน้านี้/u);
+  });
+  it("clears only accepted File objects and preserves a newer selection across document-key transition", () => {
+    const store = new UploadPocPendingFiles();
+    const first = new File([], "empty");
+    const scalar = {
+      bindingId: "folio_scalar",
+      rowIndex: null,
+      tag: "document",
+      type: "pending-file-set",
+    };
+    store.handle(message({ ...scalar, file: first }), options);
+    const accepted = store.snapshot();
+    const replacement = new File(["new"], "new.bin");
+    store.handle(message({ ...scalar, file: replacement }), options);
+    store.accept(accepted);
+    expect(store.hasPending()).toBe(true);
+    expect([...store.snapshot().values()]).toEqual([replacement]);
+    store.handle(
+      message({
+        type: "pending-file-check",
+        action: "save-draft",
+        documentKey: "draft-2",
+      }),
+      { ...options, documentKey: "draft-2" }
+    );
+    expect([...store.snapshot().values()]).toEqual([replacement]);
+    store.accept(store.snapshot());
+    expect(store.hasPending()).toBe(false);
   });
 });

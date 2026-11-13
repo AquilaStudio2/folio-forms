@@ -449,6 +449,18 @@ const FillRoute = () => {
     if (message.type !== "operation") {
       return;
     }
+    const recoveredCheckpoint = message.requestedAction !== undefined;
+    if (recoveredCheckpoint) {
+      exportSaveResolverRef.current?.reject(new DraftSaveError());
+      exportSaveResolverRef.current = null;
+      setSaveBeforeExit(false);
+      setExportAfterSave(null);
+      if (exitIntent === "reauth") {
+        resolveReauthentication(false);
+      }
+      setExitIntent(null);
+      setSuccess(null);
+    }
     const { status } = message;
     setOperation(
       message.operationId
@@ -484,9 +496,17 @@ const FillRoute = () => {
       return;
     }
 
-    setDirty(false);
+    setDirty(message.hasPendingAttachments === true);
     if (message.action === "save-draft") {
       setEditorRevision((value) => value + 1);
+    }
+    if (message.hasPendingAttachments) {
+      setSaveBeforeExit(false);
+      setExportAfterSave(null);
+      setOperationError(
+        "บันทึกรอบก่อนสำเร็จแล้ว แต่มีไฟล์ที่เลือกใหม่ยังไม่อยู่ในรอบนั้น กรุณารักษาหน้านี้ไว้ก่อน"
+      );
+      return;
     }
     if (message.action === "submit") {
       const submissionId = message.operation?.result?.submissionId;
@@ -494,7 +514,11 @@ const FillRoute = () => {
         await reopenOnlyOfficeResponseForNewEntry();
         setError(null);
         setOperationError(null);
-        setSuccess("ส่งแบบฟอร์มเรียบร้อยแล้ว คุณสามารถกรอกคำตอบใหม่ได้ทันที");
+        setSuccess(
+          recoveredCheckpoint
+            ? "ตรวจพบว่ารอบก่อนส่งแบบฟอร์มสำเร็จแล้ว คุณสามารถกรอกคำตอบใหม่ได้ทันที"
+            : "ส่งแบบฟอร์มเรียบร้อยแล้ว คุณสามารถกรอกคำตอบใหม่ได้ทันที"
+        );
         return;
       }
     }
@@ -507,12 +531,20 @@ const FillRoute = () => {
     }
     setError(null);
     setOperationError(null);
-    setSuccess(
-      message.action === "save-draft"
-        ? "บันทึกฉบับร่างคำตอบแล้ว"
-        : "ดำเนินการกับเอกสารเรียบร้อยแล้ว"
-    );
-    if (message.action === "save-draft" && saveBeforeExit) {
+    let successMessage = "ดำเนินการกับเอกสารเรียบร้อยแล้ว";
+    if (message.action === "save-draft") {
+      successMessage = "บันทึกฉบับร่างคำตอบแล้ว";
+    }
+    if (recoveredCheckpoint) {
+      successMessage =
+        "ตรวจผลการบันทึกฉบับร่างรอบก่อนสำเร็จแล้ว หากต้องการส่งคำตอบ กรุณากดส่งอีกครั้ง";
+    }
+    setSuccess(successMessage);
+    if (
+      message.action === "save-draft" &&
+      saveBeforeExit &&
+      !recoveredCheckpoint
+    ) {
       const intent = exitIntent;
       setSaveBeforeExit(false);
       if (intent === "reauth") {
@@ -1110,9 +1142,7 @@ const FillRoute = () => {
         ) : null}
         {operationError ? (
           <div className="mb-4">
-            <Notice tone="danger">
-              {operationError} คุณสามารถแก้ไขข้อมูลแล้วลองใหม่ได้
-            </Notice>
+            <Notice tone="danger">{operationError}</Notice>
           </div>
         ) : null}
         {workbookDownloadError ? (

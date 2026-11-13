@@ -1,28 +1,39 @@
 // oxlint-disable max-classes-per-file -- Each native-editor lifecycle fixture implements the SDK constructor.
 import { act, render, screen, waitFor } from "@testing-library/react";
-import { createRef } from "react";
+import { createRef, useState } from "react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import { OnlyOfficeEditor } from "@/components/onlyoffice-editor";
 import type { CaptureWorkbook } from "@/features/onlyoffice/editor-protocol";
 import type * as ApiModule from "@/lib/api";
+import { ApiError } from "@/lib/api";
 import { createDeferred } from "@/lib/form-lifecycle";
 
 const transport = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
+  postForm: vi.fn(),
   remove: vi.fn(),
+  wait: vi.fn(),
 }));
 vi.mock("@/lib/api", async (original) => ({
   ...(await original<typeof ApiModule>()),
   apiDelete: transport.remove,
   apiGet: transport.get,
   apiPost: transport.post,
+  apiPostFormData: transport.postForm,
+  waitForOperation: transport.wait,
 }));
 const config = () => ({
   bridge: {
     capabilities: { "configure-fields": "initial-cap" },
     id: "editor-bridge",
+    lease: {
+      expiresAt: new Date(Date.now() + 90_000).toISOString(),
+      id: "editor-lease",
+      releaseUrl: "/api/editor-leases/editor-lease",
+      renewUrl: "/api/editor-leases/editor-lease/renew",
+    },
     pluginOrigin: window.location.origin,
   },
   config: { document: { key: "document" }, editorConfig: { mode: "edit" } },
@@ -43,9 +54,12 @@ const exportConfig = (documentKey: string, leaseId: string) => ({
 });
 let documentStateChanged: ((event: { data: boolean }) => void) | undefined;
 beforeEach(() => {
+  sessionStorage.clear();
   transport.get.mockReset().mockResolvedValue(config());
   transport.post.mockReset();
+  transport.postForm.mockReset();
   transport.remove.mockReset();
+  transport.wait.mockReset();
   vi.stubGlobal("DocsAPI", {
     DocEditor: class {
       constructor(
@@ -549,6 +563,418 @@ const uploadOptions = (documentKey: string, bridgeId: string) => ({
   },
 });
 
+it("settles a persisted completed checkpoint before opening an editable workbook and saves the next ordinary snapshot as a new operation", async () => {
+  sessionStorage.clear();
+  const key = "folio-attachment-checkpoint:actor/response";
+  const previous = crypto.randomUUID();
+  sessionStorage.setItem(key, previous);
+  const initial = {
+    ...exportConfig("document-1", "lease"),
+    bridge: {
+      ...exportConfig("document-1", "lease").bridge,
+      uploadPoc: {
+        ...uploadOptions("document-1", "editor-bridge"),
+        publicId: "form",
+        responseId: "response",
+      },
+    },
+  };
+  const fresh = {
+    ...initial,
+    bridge: {
+      ...initial.bridge,
+      uploadPoc: { ...initial.bridge.uploadPoc, documentKey: "document-2" },
+    },
+    config: { ...initial.config, document: { key: "document-2" } },
+  };
+  const checkpoint = createDeferred<{
+    operationId: string;
+    operationCapability: string;
+    status: string;
+  }>();
+  const original = {
+    action: "save-draft",
+    operationCapability: "old-operation-capability",
+    operationId: "original-completed",
+    status: "completed",
+  };
+  transport.get
+    .mockReset()
+    .mockResolvedValueOnce(initial)
+    .mockReturnValueOnce(checkpoint.promise)
+    .mockResolvedValue(fresh);
+  transport.postForm.mockResolvedValue({
+    action: "save-draft",
+    operationCapability: "current-operation-capability",
+    operationId: "current-save",
+    status: "pending",
+  });
+  const onBridge = vi.fn();
+  const dirty = vi.fn();
+  const view = render(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      onBridgeMessage={onBridge}
+      onDirtyChange={dirty}
+      title="Recovered draft"
+    />
+  );
+  try {
+    await waitFor(() =>
+      expect(
+        transport.get.mock.calls.some(
+          ([path]) =>
+            path === `/api/responses/response/attachment-operations/${previous}`
+        )
+      ).toBe(true)
+    );
+    expect(screen.queryByTitle("Office sandbox")).toBeNull();
+    expect(sessionStorage.getItem(key)).toBe(previous);
+    checkpoint.resolve(original);
+    const office = (await screen.findByTitle(
+      "Office sandbox"
+    )) as HTMLIFrameElement;
+    expect(sessionStorage.getItem(key)).toBeNull();
+    const plugin = pluginFrame(office);
+    send(plugin.source, { type: "bridge-ready" });
+    send(plugin.source, { dirty: true, type: "dirty-state" });
+    send(plugin.source, {
+      action: "save-draft",
+      body: {},
+      capability: "current-capability",
+      documentKey: "document-2",
+      requestId: "save-current",
+      scopeIdentity: "actor/response",
+      snapshotUrl: "http://office.test/current-newer-ordinary-snapshot.xlsx",
+      source: "folio-upload-poc",
+      type: "pending-file-save",
+    });
+    await waitFor(() => expect(transport.postForm).toHaveBeenCalledTimes(1));
+    const multipart = transport.postForm.mock.calls[0]?.[1];
+    expect(multipart).toBeInstanceOf(FormData);
+    if (!(multipart instanceof FormData)) {
+      throw new Error(
+        "The current ordinary snapshot needs its own native multipart operation"
+      );
+    }
+    expect(JSON.parse(String(multipart.get("payload")))).toMatchObject({
+      documentKey: "document-2",
+      snapshotUrl: "http://office.test/current-newer-ordinary-snapshot.xlsx",
+    });
+    expect(JSON.parse(String(multipart.get("payload"))).checkpoint).not.toBe(
+      previous
+    );
+    expect(
+      onBridge.mock.calls.some(
+        ([reply]) => reply.operationId === original.operationId
+      )
+    ).toBe(false);
+    expect(dirty).toHaveBeenLastCalledWith(true);
+    expect(screen.getByTitle("Office sandbox")).toBe(office);
+  } finally {
+    checkpoint.resolve(original);
+    view.unmount();
+    sessionStorage.clear();
+  }
+});
+
+it("keeps pending checkpoint recovery bounded and retryable without opening editable native content or clearing its identity", async () => {
+  const key = "folio-attachment-checkpoint:actor/response";
+  const previous = crypto.randomUUID();
+  sessionStorage.setItem(key, previous);
+  const base = exportConfig("document-1", "lease");
+  const initial = {
+    ...base,
+    bridge: {
+      ...base.bridge,
+      uploadPoc: {
+        ...uploadOptions("document-1", "editor-bridge"),
+        publicId: "form",
+        responseId: "response",
+      },
+    },
+  };
+  const pending = {
+    action: "save-draft",
+    operationCapability: "original-cap",
+    operationId: "original",
+    status: "processing",
+  };
+  transport.get
+    .mockReset()
+    .mockResolvedValueOnce(initial)
+    .mockResolvedValue(pending);
+  transport.wait.mockRejectedValue(
+    new ApiError(408, "operation_timeout", "bounded wait exhausted")
+  );
+  const view = render(
+    <OnlyOfficeEditor configUrl="/editor-config" title="Pending recovery" />
+  );
+  try {
+    await screen.findByText(/ยังตรวจผลบันทึกรอบก่อนไม่ได้/u);
+    expect(screen.queryByTitle("Office sandbox")).toBeNull();
+    expect(sessionStorage.getItem(key)).toBe(previous);
+    expect(transport.postForm).not.toHaveBeenCalled();
+    transport.get
+      .mockReset()
+      .mockResolvedValueOnce(initial)
+      .mockResolvedValueOnce({ ...pending, status: "completed" })
+      .mockResolvedValue(initial);
+    act(() => screen.getByRole("button", { name: "ลองใหม่" }).click());
+    await screen.findByTitle("Office sandbox");
+    expect(sessionStorage.getItem(key)).toBeNull();
+    expect(transport.postForm).not.toHaveBeenCalled();
+  } finally {
+    view.unmount();
+    sessionStorage.clear();
+  }
+});
+
+it("recovers an already committed Submit before its closed editor config and uses the original submission transition without another write", async () => {
+  const originalScope = JSON.stringify(["actor", "form", "old-response"]);
+  const key = `folio-attachment-checkpoint:${originalScope}`;
+  const checkpoint = crypto.randomUUID();
+  sessionStorage.setItem(key, checkpoint);
+  const oldConfig = "/api/forms/form/editor-config?responseId=old-response";
+  const newConfig = "/api/forms/form/editor-config?responseId=new-response";
+  const base = exportConfig("new-document", "new-lease");
+  const fresh = {
+    ...base,
+    bridge: {
+      ...base.bridge,
+      uploadPoc: {
+        ...uploadOptions("new-document", "editor-bridge"),
+        publicId: "form",
+        responseId: "new-response",
+        scopeIdentity: JSON.stringify(["actor", "form", "new-response"]),
+      },
+    },
+  };
+  transport.get.mockImplementation((path: string) => {
+    if (
+      path === `/api/responses/old-response/attachment-operations/${checkpoint}`
+    ) {
+      return Promise.resolve({
+        action: "submit",
+        operationCapability: "original-cap",
+        operationId: "original-submit",
+        status: "completed",
+      });
+    }
+    if (path.startsWith(oldConfig)) {
+      return Promise.reject(
+        new ApiError(409, "already_submitted", "The old editor is closed")
+      );
+    }
+    return Promise.resolve(fresh);
+  });
+  transport.wait.mockResolvedValue({
+    id: "original-submit",
+    result: {
+      publicId: "form",
+      responseId: "old-response",
+      submissionId: "original-submission",
+    },
+    status: "completed",
+  });
+  const transition = createDeferred<undefined>();
+  const recovered = vi.fn();
+  const Consumer = () => {
+    const [url, setUrl] = useState(oldConfig);
+    return (
+      <OnlyOfficeEditor
+        configUrl={url}
+        title="Recovered Submit"
+        onBridgeMessage={async (message) => {
+          recovered(message);
+          await transition.promise;
+          setUrl(newConfig);
+        }}
+      />
+    );
+  };
+  const view = render(<Consumer />);
+  try {
+    await waitFor(() =>
+      expect(recovered).toHaveBeenCalledWith(
+        expect.objectContaining({
+          action: "submit",
+          operation: {
+            result: {
+              submissionId: "original-submission",
+            },
+          },
+          operationId: "original-submit",
+          requestedAction: "submit",
+          status: "completed",
+        })
+      )
+    );
+    expect(screen.queryByTitle("Office sandbox")).toBeNull();
+    expect(sessionStorage.getItem(key)).toBe(checkpoint);
+    expect(
+      transport.get.mock.calls.some(([path]) =>
+        String(path).startsWith(oldConfig)
+      )
+    ).toBe(false);
+    transition.resolve();
+    await screen.findByTitle("Office sandbox");
+    expect(sessionStorage.getItem(key)).toBeNull();
+    expect(transport.postForm).not.toHaveBeenCalled();
+  } finally {
+    transition.resolve();
+    view.unmount();
+    sessionStorage.clear();
+  }
+});
+
+it("adopts only the fenced recovery lease and ignores a stale capability reply without losing native edits or the pending File", async () => {
+  sessionStorage.clear();
+  const old = exportConfig("document-1", "old-lease");
+  const initial = {
+    ...old,
+    bridge: {
+      ...old.bridge,
+      capabilities: {
+        ...old.bridge.capabilities,
+        "save-draft": "old-capability",
+      },
+      uploadPoc: {
+        ...uploadOptions("document-1", "editor-bridge"),
+        publicId: "form",
+        responseId: "response",
+      },
+    },
+  };
+  const newLease = {
+    ...old.bridge.lease,
+    id: "new-lease",
+    releaseUrl: "/release/new",
+    renewUrl: "/renew/new",
+  };
+  const fresh = {
+    ...initial,
+    bridge: {
+      ...initial.bridge,
+      capabilities: { "save-draft": "new-capability" },
+      lease: newLease,
+    },
+  };
+  const stale = createDeferred<typeof initial>();
+  transport.get
+    .mockReset()
+    .mockResolvedValueOnce(initial)
+    .mockReturnValueOnce(stale.promise)
+    .mockRejectedValueOnce(new ApiError(404, "not_found", "not admitted yet"))
+    .mockResolvedValue(fresh);
+  transport.postForm.mockRejectedValue(new TypeError("transport interrupted"));
+  transport.post.mockResolvedValue({
+    admission: "not-admitted",
+    lease: newLease,
+    revokedLeaseId: "old-lease",
+  });
+  const dirty = vi.fn();
+  const view = render(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      onDirtyChange={dirty}
+      title="Recovery"
+    />
+  );
+  try {
+    const office = (await screen.findByTitle(
+      "Office sandbox"
+    )) as HTMLIFrameElement;
+    const plugin = pluginFrame(office);
+    send(plugin.source, { type: "bridge-ready" });
+    send(plugin.source, {
+      action: "save-draft",
+      requestId: "old-cap",
+      type: "capability-request",
+    });
+    const fileRequest = {
+      bindingId: "folio_file",
+      documentKey: "document-1",
+      requestId: "choose",
+      rowIndex: null,
+      scopeIdentity: "actor/response",
+      source: "folio-upload-poc",
+      tag: "file",
+    };
+    send(plugin.source, {
+      ...fileRequest,
+      file: new File(["proof"], "proof.bin"),
+      type: "pending-file-set",
+    });
+    send(plugin.source, {
+      ...fileRequest,
+      action: "save-draft",
+      body: {},
+      capability: "old-capability",
+      requestId: "save",
+      snapshotUrl: "http://office.test/snapshot.xlsx",
+      type: "pending-file-save",
+    });
+    await waitFor(() =>
+      expect(plugin.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.any(String),
+          requestId: "save",
+          type: "pending-file-result",
+        }),
+        window.location.origin
+      )
+    );
+    stale.resolve(initial);
+    await waitFor(() =>
+      expect(plugin.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: expect.any(String),
+          requestId: "old-cap",
+          type: "capability-response",
+        }),
+        window.location.origin
+      )
+    );
+    expect(
+      plugin.send.mock.calls.some(
+        ([reply]) => reply.requestId === "old-cap" && "capability" in reply
+      )
+    ).toBe(false);
+    send(plugin.source, {
+      action: "save-draft",
+      requestId: "new-cap",
+      type: "capability-request",
+    });
+    await waitFor(() =>
+      expect(plugin.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          capability: "new-capability",
+          requestId: "new-cap",
+          type: "capability-response",
+        }),
+        window.location.origin
+      )
+    );
+    send(plugin.source, {
+      ...fileRequest,
+      requestId: "retained",
+      type: "pending-file-get",
+    });
+    expect(plugin.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ filename: "proof.bin", requestId: "retained" }),
+      window.location.origin
+    );
+    expect(dirty).toHaveBeenLastCalledWith(true);
+    expect(transport.postForm).toHaveBeenCalledTimes(1);
+    expect(screen.getByTitle("Office sandbox")).toBe(office);
+  } finally {
+    stale.resolve(initial);
+    view.unmount();
+    sessionStorage.clear();
+  }
+});
+
 it("keeps POC Files in the host across native remount and rejects messages outside the current trusted editor", async () => {
   const firstConfig = {
     ...config(),
@@ -694,9 +1120,11 @@ it.each(["draft", "correction"])(
       action: action === "correction" ? "save-correction" : "save-draft",
       type: "pending-file-check",
     });
-    expect(picker.send).toHaveBeenLastCalledWith(
-      expect.objectContaining({ allowed: true, hasPending: false }),
-      window.location.origin
+    await waitFor(() =>
+      expect(picker.send).toHaveBeenLastCalledWith(
+        expect.objectContaining({ allowed: true, hasPending: false }),
+        window.location.origin
+      )
     );
     expect(dirty).not.toHaveBeenCalledWith(true);
     expect(transport.post).not.toHaveBeenCalled();
@@ -1043,4 +1471,55 @@ it("rejects renewal into another document while preserving the live editor", asy
     )
   ).toBe(false);
   expect(screen.getByTitle("Office sandbox")).toBe(office);
+});
+
+const SaveHost = () => {
+  const [status, setStatus] = useState("ready");
+  return (
+    <>
+      <output aria-label="Draft save status">{status}</output>
+      <OnlyOfficeEditor
+        configUrl="/editor-config"
+        title="Editor"
+        onBridgeMessage={(message) => {
+          if (message.type === "operation") {
+            setStatus(message.status);
+          }
+        }}
+      />
+    </>
+  );
+};
+it("leaves pending state when the same failed attachment operation is replayed", async () => {
+  render(<SaveHost />);
+  const office = (await screen.findByTitle(
+    "Office sandbox"
+  )) as HTMLIFrameElement;
+  const plugin = pluginFrame(office);
+  send(plugin.source, { type: "bridge-ready" });
+  const operation = {
+    action: "save-draft",
+    operationId: "unresolved-attachment",
+    type: "operation",
+  };
+  send(plugin.source, { ...operation, status: "pending" });
+  expect(screen.getByLabelText("Draft save status").textContent).toBe(
+    "pending"
+  );
+  send(plugin.source, {
+    ...operation,
+    error: "Contact Admin",
+    status: "failed",
+  });
+  expect(screen.getByLabelText("Draft save status").textContent).toBe("failed");
+  send(plugin.source, { ...operation, status: "pending" });
+  expect(screen.getByLabelText("Draft save status").textContent).toBe(
+    "pending"
+  );
+  send(plugin.source, {
+    ...operation,
+    error: "Contact Admin",
+    status: "failed",
+  });
+  expect(screen.getByLabelText("Draft save status").textContent).toBe("failed");
 });

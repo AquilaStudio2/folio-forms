@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `6a87d0004dccba530401531777c9de42162d00c6`
+Commit: `f6e856af865ceeb9cc6acaa02414673f4e97aa42`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -28,7 +28,7 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `/admin` | `apps/web/src/routes/admin.tsx:35` |
 | `/change-password` | `apps/web/src/routes/change-password.tsx:229` |
 | `/dashboard` | `apps/web/src/routes/dashboard.tsx:367` |
-| `/forms/$publicId/fill` | `apps/web/src/routes/forms/$publicId/fill.tsx:1365` |
+| `/forms/$publicId/fill` | `apps/web/src/routes/forms/$publicId/fill.tsx:1395` |
 | `/forms/$publicId/submissions` | `apps/web/src/routes/forms/$publicId/submissions.tsx:243` |
 | `/handoff` | `apps/web/src/routes/handoff.tsx:59` |
 | `/` | `apps/web/src/routes/index.tsx:26` |
@@ -109,8 +109,10 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | GET | `/api/forms/:publicId/my-submissions` | `apps/server/src/routes/public-forms.ts:102` |
 | GET | `/api/forms/:publicId/my-submissions/export` | `apps/server/src/routes/public-forms.ts:112` |
 | POST | `/api/forms/:publicId/start` | `apps/server/src/routes/public-forms.ts:130` |
-| POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:62` |
-| POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:240` |
+| GET | `/api/responses/:id/attachment-operations/:checkpoint` | `apps/server/src/routes/response-actions.ts:69` |
+| POST | `/api/responses/:id/attachment-operations/:checkpoint/recover` | `apps/server/src/routes/response-actions.ts:113` |
+| POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:125` |
+| POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:340` |
 | GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:61` |
 | GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:95` |
 | POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:227` |
@@ -177,6 +179,9 @@ Separate private HTTP listener in `apps/server/src/document-worker-server.ts:170
 | PdmsProjectCatalogSession | `pdms_project_catalog_sessions` | `packages/db/prisma/schema.prisma:637` |
 | EcmAuthState | `ecm_auth_states` | `packages/db/prisma/schema.prisma:660` |
 | EcmCategoryCatalog | `ecm_category_catalogs` | `packages/db/prisma/schema.prisma:673` |
+| EcmAttachmentBatch | `ecm_attachment_batches` | `packages/db/prisma/schema.prisma:682` |
+| EcmAttachmentVersion | `ecm_attachment_versions` | `packages/db/prisma/schema.prisma:700` |
+| EcmAttachmentReference | `ecm_attachment_references` | `packages/db/prisma/schema.prisma:725` |
 
 ## Status enums
 

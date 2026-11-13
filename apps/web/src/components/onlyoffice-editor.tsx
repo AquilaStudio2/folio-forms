@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 
+import { recoveredAttachmentLease } from "@/features/onlyoffice/attachment-admission-recovery";
 import {
   acknowledgeBridge,
   editorConfigPath,
@@ -152,7 +153,9 @@ export const OnlyOfficeEditor = ({
   } | null>(null);
   const loadedConfigUrlRef = useRef<string | null>(null);
   const [config, setConfig] = useState<EditorConfig | null>(null);
+  const [checkpointPending, setCheckpointPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
   const [editorState, setEditorState] =
     useState<OnlyOfficeEditorState>("loading");
   const [expanded, setExpanded] = useState(false);
@@ -163,6 +166,9 @@ export const OnlyOfficeEditor = ({
     const bridge = config?.bridge;
     const documentKey = recordOrEmpty(config?.config?.document).key;
     return async () => {
+      if (uploadPocFilesRef.current?.hasPending()) {
+        throw new Error("มีไฟล์แนบที่ยังไม่บันทึก กรุณากดบันทึกฉบับร่างหรือส่งก่อนดาวน์โหลด");
+      }
       const source = pinnedSourceRef.current;
       const scope = exportScopeRef.current;
       if (
@@ -433,21 +439,81 @@ export const OnlyOfficeEditor = ({
       };
     }
 
+    const checkpointController = new AbortController();
     const path = editorConfigPath(configUrl, pdmsOpeningId);
     onCommandReadyChangeRef.current?.(false);
     loadedConfigUrlRef.current = null;
     setConfig(null);
+    setCheckpointPending(true);
     setError(null);
     reportState("loading");
 
+    // oxlint-disable-next-line complexity -- Resolve actor-scoped checkpoints and cancellation before constructing any editable native frame.
     const loadConfig = async () => {
       try {
         const sessionToken = getToken();
-        const nextConfig = await apiGet<EditorConfig>(path);
+        const pendingFiles = uploadPocFilesRef.current;
+        const recoveredSubmit =
+          pendingFiles && onBridgeMessageRef.current
+            ? await pendingFiles.submittedBeforeConfig(
+                path,
+                checkpointController.signal
+              )
+            : null;
+        if (recoveredSubmit) {
+          checkpointController.signal.throwIfAborted();
+          pendingFiles?.prepareSubmittedRecovery(recoveredSubmit);
+          await onBridgeMessageRef.current?.(recoveredSubmit.message);
+          if (recoveredSubmit.message.hasPendingAttachments) {
+            throw new ApiError(
+              409,
+              "attachment_checkpoint_unresolved",
+              "รอบก่อนส่งสำเร็จแล้ว แต่ยังมีไฟล์ที่เลือกใหม่ค้างอยู่ กรุณารักษาหน้านี้ไว้ก่อน"
+            );
+          }
+          pendingFiles?.confirmSubmittedRecovery(recoveredSubmit);
+          return;
+        }
+        let nextConfig = await apiGet<EditorConfig>(path);
+        checkpointController.signal.throwIfAborted();
+        // Renew the existing lease while reconciliation waits, without constructing an editable native frame.
+        loadedConfigUrlRef.current = configUrl;
+        setConfig(nextConfig);
+        const attachmentOptions = nextConfig.bridge?.uploadPoc;
+        const reconciliation =
+          attachmentOptions && pendingFiles
+            ? await pendingFiles.reconcileBeforeEdit(
+                attachmentOptions,
+                nextConfig.bridge?.capabilities,
+                checkpointController.signal
+              )
+            : false;
+        if (typeof reconciliation === "object") {
+          if (!onBridgeMessageRef.current) {
+            throw new ApiError(
+              409,
+              "attachment_checkpoint_unresolved",
+              "ตรวจพบผลการส่งรอบก่อนแล้ว กรุณากลับไปหน้ากรอกเพื่อตรวจผลเดิม"
+            );
+          }
+          pendingFiles?.prepareSubmittedRecovery(reconciliation);
+          await onBridgeMessageRef.current(reconciliation.message);
+          if (reconciliation.message.hasPendingAttachments) {
+            throw new ApiError(
+              409,
+              "attachment_checkpoint_unresolved",
+              "รอบก่อนส่งสำเร็จแล้ว แต่ยังมีไฟล์ที่เลือกใหม่ค้างอยู่ กรุณารักษาหน้านี้ไว้ก่อน"
+            );
+          }
+          pendingFiles?.confirmSubmittedRecovery(reconciliation);
+          return;
+        }
+        if (reconciliation) {
+          nextConfig = await apiGet<EditorConfig>(path);
+        }
         if (cancelled) {
           return;
         }
-        loadedConfigUrlRef.current = configUrl;
         const capability = nextConfig.bridge?.capabilities?.["export-workbook"];
         if (isNonEmptyString(capability)) {
           exportScopeRef.current = {
@@ -457,6 +523,7 @@ export const OnlyOfficeEditor = ({
           };
         }
         setConfig(nextConfig);
+        setCheckpointPending(false);
         if (nextConfig.editorUrl) {
           reportState("ready");
         }
@@ -472,7 +539,12 @@ export const OnlyOfficeEditor = ({
           reportState("blocked");
           return;
         }
-        setError("ไม่สามารถโหลดตัวแก้ไขเอกสารได้ กรุณาลองใหม่อีกครั้ง");
+        setError(
+          caughtError instanceof ApiError &&
+            caughtError.code === "attachment_checkpoint_unresolved"
+            ? caughtError.message
+            : "ไม่สามารถโหลดตัวแก้ไขเอกสารได้ กรุณาลองใหม่อีกครั้ง"
+        );
         reportState("error");
       }
     };
@@ -480,6 +552,7 @@ export const OnlyOfficeEditor = ({
     void loadConfig();
     return () => {
       cancelled = true;
+      checkpointController.abort();
     };
   }, [configUrl, pdmsOpeningId, reportState, retryToken, revision]);
 
@@ -491,7 +564,11 @@ export const OnlyOfficeEditor = ({
 
   // oxlint-disable-next-line complexity -- Guard and coordinate one native editor generation, its bridge and save acknowledgements.
   useEffect(() => {
-    if (!config || loadedConfigUrlRef.current !== configUrl) {
+    if (
+      !config ||
+      checkpointPending ||
+      loadedConfigUrlRef.current !== configUrl
+    ) {
       return;
     }
 
@@ -624,12 +701,18 @@ export const OnlyOfficeEditor = ({
         }
         const freshLease = fresh.bridge?.lease;
         if (
-          freshLease &&
-          requestedLeaseId &&
-          leaseRef.current?.id === requestedLeaseId
+          !freshLease ||
+          !requestedLeaseId ||
+          leaseRef.current?.id !== requestedLeaseId
         ) {
-          leaseRef.current = freshLease;
+          respondToCapabilityRequest(
+            request,
+            { error: "สิทธิ์ตัวแก้ไขเปลี่ยนระหว่างยืนยัน กรุณากดอีกครั้ง" },
+            requestedSource
+          );
+          return;
         }
+        leaseRef.current = freshLease;
 
         const capability = fresh.bridge?.capabilities?.[request.action];
         if (typeof capability !== "string" || !capability) {
@@ -693,14 +776,17 @@ export const OnlyOfficeEditor = ({
       };
     };
 
+    // oxlint-disable-next-line complexity -- Keep scope, lease adoption and File identity checks in this asynchronous bridge boundary.
     const respondToUploadPoc = async (
       event: MessageEvent<unknown>,
       data: Record<string, unknown>
     ) => {
       const options = config.bridge?.uploadPoc;
-      if (!options || !event.source) {
+      const holder = uploadPocFilesRef.current;
+      if (!options || !event.source || !holder) {
         return;
       }
+      const requestedLeaseId = leaseRef.current?.id;
       let result: Record<string, unknown>;
       try {
         const currentOptions =
@@ -713,22 +799,42 @@ export const OnlyOfficeEditor = ({
         ) {
           return;
         }
-        result = uploadPocFilesRef.current?.handle(data, currentOptions) ?? {
-          error: "ยังเชื่อมต่อไฟล์ในหน้านี้ไม่ได้",
-        };
+        result =
+          data.type === "pending-file-save"
+            ? await holder.save(data, currentOptions)
+            : holder.handle(data, currentOptions);
+        if (
+          data.type === "pending-file-check" &&
+          ["save-draft", "submit"].includes(String(data.action))
+        ) {
+          result.checkpointOperation =
+            await holder.pendingOperation(currentOptions);
+        }
         if (typeof result.hasPending === "boolean") {
           onDirtyChangeRef.current?.(
-            documentDirtyRef.current ||
-              uploadPocFilesRef.current?.hasPending() === true
+            documentDirtyRef.current || holder.hasPending()
           );
         }
       } catch (caughtError) {
+        const recoveredLease = recoveredAttachmentLease(
+          caughtError,
+          requestedLeaseId,
+          leaseRef.current
+        );
+        if (
+          recoveredLease &&
+          !cancelled &&
+          isEditorWindowSource(event.source, surfaceRef.current)
+        ) {
+          leaseRef.current = recoveredLease;
+        }
         result = {
           error:
             caughtError instanceof Error
               ? caughtError.message
               : "เลือกไฟล์ไม่ได้ กรุณาลองใหม่",
         };
+        setAttachmentNotice(String(result.error));
       }
       if (
         cancelled ||
@@ -736,6 +842,7 @@ export const OnlyOfficeEditor = ({
       ) {
         return;
       }
+      result.attachmentCommitUnresolved = holder.hasUnresolvedCommit();
       event.source.postMessage(
         {
           ...result,
@@ -747,6 +854,18 @@ export const OnlyOfficeEditor = ({
         },
         pluginOrigin
       );
+      const hasPending = holder.hasPending();
+      if (hasPending) {
+        onDirtyChangeRef.current?.(true);
+      }
+      if (!result.error) {
+        const slot = typeof data.tag === "string" ? ` ในช่อง ${data.tag}` : "";
+        setAttachmentNotice(
+          hasPending
+            ? `มีไฟล์แนบที่เลือกค้างไว้${slot} ยังไม่อัปโหลด กรุณากดบันทึกฉบับร่างหรือส่ง ไฟล์จะหายหากปิดหรือรีเฟรชหน้า`
+            : null
+        );
+      }
     };
 
     // oxlint-disable-next-line complexity -- Dispatches the trusted bridge protocol and capability renewal in one handler.
@@ -904,9 +1023,16 @@ export const OnlyOfficeEditor = ({
           };
         }
       }
-      if (pendingCommandRef.current?.action === message.action) {
+      if (
+        pendingCommandRef.current?.action === message.action ||
+        (message.requestedAction !== undefined &&
+          pendingCommandRef.current?.action === message.requestedAction)
+      ) {
         clearTimeout(pendingCommandRef.current.timer);
         pendingCommandRef.current = null;
+      }
+      if (message.status === "pending" && message.operationId) {
+        terminalOperationIdsRef.current.delete(message.operationId);
       }
       const isTerminal =
         message.status === "completed" || message.status === "failed";
@@ -920,6 +1046,18 @@ export const OnlyOfficeEditor = ({
       if (isTerminal && message.operationId) {
         terminalOperationIdsRef.current.add(message.operationId);
       }
+      if (message.status === "completed" && message.operationId) {
+        uploadPocFilesRef.current?.complete(message.operationId);
+        setAttachmentNotice(
+          uploadPocFilesRef.current?.hasPending()
+            ? "มีไฟล์ที่เลือกใหม่ยังไม่อยู่ในรอบบันทึกที่สำเร็จ กรุณารักษาหน้านี้ไว้"
+            : null
+        );
+      }
+      message = {
+        ...message,
+        hasPendingAttachments: uploadPocFilesRef.current?.hasPending() ?? false,
+      };
       onBridgeMessageRef.current?.(message);
     };
 
@@ -1050,6 +1188,7 @@ export const OnlyOfficeEditor = ({
     };
   }, [
     config,
+    checkpointPending,
     configUrl,
     pdmsOpeningId,
     editorId,
@@ -1067,20 +1206,31 @@ export const OnlyOfficeEditor = ({
   };
 
   return (
-    <EditorSurface
-      config={config}
-      editorState={editorState}
-      error={error}
-      title={title}
-      expanded={expanded}
-      hostRef={hostRef}
-      surfaceRef={surfaceRef}
-      feedbackRef={feedbackRef}
-      surfaceId={surfaceId}
-      keyboardHelpId={keyboardHelpId}
-      onRetry={retry}
-      onToggleExpanded={() => setExpanded((value) => !value)}
-      onRestore={restore}
-    />
+    <>
+      {attachmentNotice || config?.attachmentNotice ? (
+        <p
+          className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
+          role="status"
+          aria-live="polite"
+        >
+          {attachmentNotice ?? config?.attachmentNotice}
+        </p>
+      ) : null}
+      <EditorSurface
+        config={checkpointPending ? null : config}
+        editorState={editorState}
+        error={error}
+        title={title}
+        expanded={expanded}
+        hostRef={hostRef}
+        surfaceRef={surfaceRef}
+        feedbackRef={feedbackRef}
+        surfaceId={surfaceId}
+        keyboardHelpId={keyboardHelpId}
+        onRetry={retry}
+        onToggleExpanded={() => setExpanded((value) => !value)}
+        onRestore={restore}
+      />
+    </>
   );
 };
