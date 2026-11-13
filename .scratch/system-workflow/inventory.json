@@ -1,7 +1,7 @@
 {
-  "commit": "0ccd5c6b90f32babb1bc5a8e09f00a3ce50a2082",
-  "branch": "feat/ecm-attachments-config",
-  "source_fingerprint": "7e9da0e2317a8e736ce2f144db28ae0238ee7964711d54fb873324b0238906e7",
+  "commit": "6a87d0004dccba530401531777c9de42162d00c6",
+  "branch": "feat/ecm-attachments-legacy",
+  "source_fingerprint": "979a51bcb9e10391f17c29a5c938741156cfe1fece03647777c3bdd87a07a0ad",
   "source_files": 299,
   "pages": [
     {
@@ -633,25 +633,25 @@
       "method": "GET",
       "path": "/api/admin/forms/:publicId/attachment-categories",
       "file": "apps/server/src/routes/spreadsheet-authoring.ts",
-      "line": 232
+      "line": 234
     },
     {
       "method": "GET",
       "path": "/api/admin/forms/:publicId/spreadsheet-bindings",
       "file": "apps/server/src/routes/spreadsheet-authoring.ts",
-      "line": 242
+      "line": 244
     },
     {
       "method": "PATCH",
       "path": "/api/admin/forms/:publicId/spreadsheet-bindings",
       "file": "apps/server/src/routes/spreadsheet-authoring.ts",
-      "line": 259
+      "line": 261
     },
     {
       "method": "POST",
       "path": "/api/admin/forms/:publicId/spreadsheet-bindings/recover",
       "file": "apps/server/src/routes/spreadsheet-authoring.ts",
-      "line": 391
+      "line": 458
     },
     {
       "method": "GET",

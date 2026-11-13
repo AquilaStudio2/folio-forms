@@ -4,6 +4,8 @@
 
 ทบทวนส่วนตั้งค่าช่องแนบ Excel และ ECM authentication วันที่ 13 พฤศจิกายน 2026 บน `feat/ecm-attachments-config` จากฐาน implementation `b627865` ส่วนอื่นคงผลทบทวนเดิม ขอบเขตนี้เพิ่มการตั้งค่าจากปุ่มเดิมและ shared auth ไม่ได้ยืนยันวงจรอัปโหลดคำตอบ การตรวจ native browser หรือบริการ ECM จริง
 
+ทบทวน cutover ของ PoC เดิม วันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments-legacy` จาก source commit `6a87d0004dccba530401531777c9de42162d00c6` ครอบคลุม explicit Draft conversion, Published ordinary contract, Duplicate และ pending dirty guards ผล HTTP/UI/native/browser ผ่านการตรวจส่วนกลางตามขอบเขต legacy แล้ว ไม่ใช่หลักฐาน live ECM หรือการ deploy และยังไม่ยืนยันวงจร scalar upload/export ทั้งหมด
+
 เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
 รายการ source ครอบคลุมหน้าและ layout ฝั่งเว็บ, HTTP routes ของเซิร์ฟเวอร์หลัก, private document worker และ Prisma models
@@ -171,6 +173,12 @@ Production จะเปิดความสามารถนี้เมื่
 
 ก่อนเผยแพร่ทุก managed PoC OLE ต้องมีหลักฐาน saved-button ที่ตรวจจริงตรงกับ marker, binding, Tag และตำแหน่ง/แถว ไม่มี orphan หรือปุ่มซ้ำ และทุก declared attachment ต้องมีปุ่มจริงครบช่อง scalar หรือทุกแถวของ column การมี marker อย่างเดียวไม่พอ ระบบปฏิเสธก่อน engine เปลี่ยน workbook ไม่ strip ปุ่มที่ยังไม่ได้ตั้งค่าเพื่อทำให้ Publish ผ่าน และไม่เพิ่มการลบ foreign objects หรือบังคับให้ Template Draft ตั้งค่าครบ
 
+การเปลี่ยน Field/column เดิมจาก ordinary เป็น attachment ต้องเป็นคำสั่ง Admin ใน Template Draft และตรวจ canonical XLSX ที่บันทึกแล้วด้วย saved-button proof เดียวกัน โดยใช้ binding/Tag/ตำแหน่งก่อน PATCH ไม่เดาจาก `attachment_N`, label หรือ URL หากไม่มี marker/OLE ตรงกัน มี mapping ขัดแย้ง หรือ rules ปัจจุบันไม่ตรงต้นแบบที่บันทึก ให้หยุดโดยไม่เปลี่ยน revision/ข้อมูล และให้ Admin บันทึกต้นแบบเดิมให้สำเร็จก่อนตั้งค่าใหม่ การ rename Tag ใน PATCH ที่มีหลักฐานเดิมถูกต้องยังใช้ machinery เดิมและคง stable binding/placement
+
+Published PoC เก่าคง manifest/type/required และคำตอบ text/URL ตามเดิม รวม Save Draft, Submit และประวัติ ไม่สร้าง attachment object, receipt หรือสิทธิ์ลบจาก string ปุ่มเดิมคืนข้อความถาวรให้ประสาน Admin ทำสำเนา/ตั้งค่า Form ใหม่ โดย popup ปิด choose/retry และไม่รับ File เข้า memory เป็น fallback พร้อมซ่อนคำอธิบาย memory-only และส่วนเลือกไฟล์ที่ใช้ไม่ได้ เพื่อให้ข้อความแนะนำอ่านได้ชัดเจนภายใน dialog โดยไม่ถูก footer บัง หน้า Template Draft ใช้ตั้งค่าเท่านั้น ไม่รับไฟล์ตัวอย่าง ปุ่ม Duplicate เดิมคัด template/การตั้งค่า ไม่คัด Responses, answers หรือไฟล์ User และไม่ archive/delete/redirect/หา successor ให้ต้นฉบับ
+
+pending Files ของช่องที่ตั้งค่าจริงรวมกับ native/editor dirty ผ่าน `onDirtyChange` เดิม เพื่อให้ navigation, session-change และ before-unload guards ที่มีอยู่เตือนก่อนเสีย selection การส่ง dirty=false จาก native bridge ไม่ล้าง pending Files และไม่ถือชื่อไฟล์เป็น bytes ที่กู้คืนได้ ไม่มีการ persist pending bytes/filename เพื่อหลบ guard
+
 Native OOXML อาจแทนปุ่มเดียวด้วย anchored `Choice` และ empty `Fallback` ภายใน `AlternateContent` เดียวกัน ระบบนับ alias เป็นปุ่มเดียวเฉพาะเมื่อ shape ID/relationship ตรงกันและแต่ละด้านมีหนึ่งรายการเท่านั้น ปุ่มซ้ำหรือ orphan นอกโครงสร้างที่พิสูจน์นี้ยังต้องถูกปฏิเสธ
 
 Template Draft เก็บหมวดที่ยังไม่ครบได้ ก่อน Publish ต้องมีหมวดทุกช่อง มี root scalar `fiscal_year` และ `docs_number` อย่างละหนึ่ง Field และไม่มีปุ่มเก่าที่ไม่ได้ตั้งค่า หรือช่องแนบที่ไม่มี marker ตำแหน่งเดิม ไม่ต้องกรอกค่าคำตอบของ User ในต้นแบบ Tag เปลี่ยนก่อนเผยแพร่ได้โดยใช้ binding เดิม หลังเผยแพร่แก้ contract ไม่ได้ ต้อง Duplicate Form
@@ -190,6 +198,8 @@ Bearer ใน PostgreSQL เข้ารหัสและแยก key ออ�
 อ้างอิง [spreadsheet bindings](../../apps/server/src/routes/spreadsheet-authoring.ts), [shared fields](../../apps/server/src/forms/spreadsheet-fields.ts), [PDMS loader](../../apps/server/src/pdms/projects.ts#L27), [catalog scope](../../apps/server/src/pdms/catalog.ts#L136), [selection target](../../apps/server/src/pdms/selection.ts#L26) และ [Upload POC / publication verification](../../apps/server/src/documents/spreadsheets/upload-poc.ts)
 
 อ้างอิงเพิ่ม [ECM client และ auth coordination](../../apps/server/src/ecm/client.ts), [category provenance](../../apps/server/src/ecm/categories.ts), [native Field settings](../../apps/onlyoffice-plugin/src/spreadsheet.js), [HTTP authoring regressions](../../apps/server/test/http/ecm-attachment-authoring.test.ts) และ [HTTP shared-auth regressions](../../apps/server/test/http/ecm-auth.test.ts) Tests อยู่ใน `test:http` ปกติ ไม่มี opt-in flag; ผลตรวจต้องดู handoff ของ implementation ไม่ถือแผนภาพนี้เป็นหลักฐานว่ารันผ่านแล้ว
+
+Cutover อ้างอิง [legacy HTTP lifecycle](../../apps/server/test/http/ecm-legacy-poc.test.ts), [host pending/authority gate](../../apps/web/src/features/onlyoffice/upload-poc-pending.ts), [existing dirty integration](../../apps/web/src/components/onlyoffice-editor.tsx), [trusted popup](../../apps/onlyoffice-plugin/src/upload-poc-picker.js) และ [duplicate flow](../../apps/server/src/routes/form-catalog.ts) หลักฐาน native/browser และผลตรวจจริงให้ดู handoff ของผู้ตรวจส่วนกลาง ไม่ถือการเพิ่ม regression เป็นผลผ่าน
 
 ## 09 Results, ประวัติ, Correction และการดาวน์โหลด
 

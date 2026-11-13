@@ -8,6 +8,7 @@ import {
   spreadsheetDuplicateTagMessage,
 } from "../documents/spreadsheets/contract";
 import type { SpreadsheetBindings } from "../documents/spreadsheets/contract";
+import { savedSpreadsheetUploadPocBindingComplete } from "../documents/spreadsheets/upload-poc";
 import {
   loadAttachmentCategories,
   validateAttachmentCategoryChanges,
@@ -25,6 +26,7 @@ import {
 import { fail } from "../http/errors";
 import { readJsonRecord } from "../http/input";
 import { activeOperationForForm } from "../operations/lifecycle";
+import { readObject } from "../storage";
 
 const changeSchema = z
   .object({
@@ -276,6 +278,76 @@ export const registerSpreadsheetAuthoringRoutes = (
         }
         const input = parsed.data;
         await activeOperationForForm(form.id);
+        if (
+          templateDraft.documentKey !== input.documentKey ||
+          templateDraft.bindingRevision !== input.revision
+        ) {
+          fail(
+            409,
+            "stale_document",
+            "การตั้งค่าช่องเปลี่ยนไปแล้ว กรุณาเปิดต้นแบบใหม่ก่อนบันทึก"
+          );
+        }
+        const previousBindings = await spreadsheetDraftBindings(
+          templateDraft.id
+        );
+        const bindings = applySpreadsheetBindingChange(
+          previousBindings,
+          input.change,
+          input.spreadsheetColumnOffsets
+        );
+        const previousFields = [
+          ...previousBindings.fields,
+          ...(previousBindings.table?.columns ?? []),
+        ];
+        const conversions = [
+          ...bindings.fields,
+          ...(bindings.table?.columns ?? []),
+        ].filter(
+          (field) =>
+            field.attachment &&
+            previousFields.some(
+              (previous) => previous.id === field.id && !previous.attachment
+            )
+        );
+        if (conversions.length > 0) {
+          let verified = false;
+          try {
+            const bytes = await readObject(templateDraft.objectKey);
+            verified = conversions.every((field) => {
+              const previous = previousFields.find(
+                (candidate) => candidate.id === field.id
+              );
+              if (
+                !previous ||
+                ("anchor" in previous &&
+                  (!("anchor" in field) || field.anchor !== previous.anchor)) ||
+                ("offset" in previous &&
+                  (!("offset" in field) ||
+                    field.offset !== previous.offset ||
+                    bindings.table?.id !== previousBindings.table?.id ||
+                    bindings.table?.anchor !== previousBindings.table?.anchor))
+              ) {
+                return false;
+              }
+              // Prove the saved pre-PATCH identity; a requested Tag is not evidence.
+              return savedSpreadsheetUploadPocBindingComplete(
+                bytes,
+                previousBindings,
+                field.id
+              );
+            });
+          } catch {
+            // A missing or unreadable canonical artifact cannot authorize conversion.
+          }
+          if (!verified) {
+            fail(
+              422,
+              "attachment_mapping_unproved",
+              "ยืนยัน marker, binding, Tag และตำแหน่งปุ่มเดิมไม่ได้ กรุณาบันทึกต้นแบบเดิมให้สำเร็จและแก้ mapping ที่ขัดแย้งก่อนตั้งค่าช่องแนบ"
+            );
+          }
+        }
         return await prisma.$transaction(async (tx) => {
           await tx.$queryRaw(
             Prisma.sql`SELECT "id" FROM "forms" WHERE "id" = ${form.id}::uuid FOR UPDATE`
@@ -301,6 +373,7 @@ export const registerSpreadsheetAuthoringRoutes = (
             !draft ||
             draft.id !== templateDraft.id ||
             draft.documentKey !== input.documentKey ||
+            draft.objectKey !== templateDraft.objectKey ||
             draft.bindingRevision !== input.revision
           ) {
             fail(
@@ -325,12 +398,6 @@ export const registerSpreadsheetAuthoringRoutes = (
               "กำลังบันทึกเอกสาร กรุณารอให้เสร็จแล้วลองอีกครั้ง"
             );
           }
-          const previousBindings = await spreadsheetDraftBindings(draft.id, tx);
-          const bindings = applySpreadsheetBindingChange(
-            previousBindings,
-            input.change,
-            input.spreadsheetColumnOffsets
-          );
           await validateAttachmentCategoryChanges(
             tx,
             ecm,

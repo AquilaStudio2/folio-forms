@@ -70,6 +70,8 @@ A mapped input in a Form. For DOCX, it is a tagged content control: its Title/Al
 
 An explicitly configured XLSX Field or table column associated with the existing attachment button and stable binding. Its Title, editable pre-publication Tag and requiredness use the existing Field settings. Attachment intent is never inferred from an `attachment_N` Tag, filename or URL string. A table column shares one Document Category across all its rows. A published attachment contract is immutable; changing it requires duplicating the Form.
 
+An old Published PoC remains an ordinary text/URL contract, including its required rules and immutable history. Its old button explains that durable attachments need a newly configured Form; it cannot retain a File as a memory-only fallback. Duplicating the Form copies only its template and configuration, never User Responses, answers or files. An Admin must explicitly configure verified old PoC slots in the new Template Draft; the application never chooses a successor or archives, deletes, redirects or migrates the original Form.
+
 ## Document Category
 
 An ECM-provided destination name selected by an Admin for an Attachment Field or column. Folio saves the exact `type` string, not the category ID, and does not follow upstream renames or substitute a fallback. Users cannot select or change the destination.

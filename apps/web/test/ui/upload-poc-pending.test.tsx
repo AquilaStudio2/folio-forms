@@ -9,11 +9,25 @@ const options = {
   documentKey: "draft-1",
   scopeIdentity: "actor/response",
   spreadsheetBindings: {
-    fields: [{ id: "folio_scalar", key: "document", type: "text" }],
+    fields: [
+      {
+        attachment: { category: "หลักฐาน" },
+        id: "folio_scalar",
+        key: "document",
+        type: "text",
+      },
+    ],
     locations: { folio_body: { firstRow: 6, lastRow: 8 } },
     table: {
       anchor: "folio_body",
-      columns: [{ id: "folio_file", key: "file", type: "text" }],
+      columns: [
+        {
+          attachment: { category: "หลักฐาน" },
+          id: "folio_file",
+          key: "file",
+          type: "text",
+        },
+      ],
       key: "items",
     },
   },
@@ -32,6 +46,38 @@ const message = (extra: Record<string, unknown> = {}) => ({
 });
 
 describe("local POC pending files", () => {
+  it("does not infer attachment authority from an old Tag or retain legacy Files", () => {
+    const store = new UploadPocPendingFiles();
+    const legacy = {
+      ...options,
+      spreadsheetBindings: {
+        ...options.spreadsheetBindings,
+        fields: [{ id: "folio_scalar", key: "attachment_1", type: "text" }],
+      },
+    };
+    expect(
+      store.handle(
+        message({
+          bindingId: "folio_scalar",
+          rowIndex: null,
+          tag: "attachment_1",
+          file: new File(["private"], "private.txt"),
+          type: "pending-file-set",
+        }),
+        legacy
+      )
+    ).toMatchObject({
+      unavailable: true,
+      error: expect.stringContaining("Admin"),
+    });
+    expect(store.hasPending()).toBe(false);
+    expect(
+      store.handle(
+        message({ action: "submit", type: "pending-file-check" }),
+        legacy
+      )
+    ).toMatchObject({ allowed: true, hasPending: false });
+  });
   it("keeps rows isolated, replaces locally, and retains selections across append/document remount", () => {
     const store = new UploadPocPendingFiles();
     const first = new File(["one"], "one.txt");

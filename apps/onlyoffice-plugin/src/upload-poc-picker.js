@@ -45,17 +45,19 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
   const filename = document.querySelector("#filename");
   const filesize = document.querySelector("#filesize");
   const retry = document.querySelector("#retry");
+  const selection = document.querySelector("#selection");
   let options;
   let target;
   let pending = null;
   let selected = null;
+  let unavailable = false;
   let sequence = 0;
   const notify = (text, error = false) => {
     status.textContent = text;
     status.dataset.error = String(error);
   };
   const request = (type, file) => {
-    if (pending) {
+    if (pending || unavailable) {
       return;
     }
     sequence += 1;
@@ -90,6 +92,23 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
     hostWindow.clearTimeout(pending.timeout);
     const requestType = pending.type;
     pending = null;
+    if (message.unavailable === true) {
+      unavailable = true;
+      selected = null;
+      input.value = "";
+      input.disabled = true;
+      retry.disabled = true;
+      retry.hidden = true;
+      selection.hidden = true;
+      status.className = "notice";
+      notify(
+        String(
+          message.error || "ฟอร์มนี้ไม่รองรับแนบไฟล์ กรุณาประสาน Admin ใช้ Form ใหม่"
+        ),
+        true
+      );
+      return;
+    }
     if (message.error || message.allowed === false) {
       if (requestType === "pending-file-set") {
         // A rejected replacement leaves the host's accepted file untouched.
@@ -133,7 +152,7 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
   });
   input.addEventListener("change", () => {
     const [file] = input.files;
-    if (!file || pending || !target || !options) {
+    if (!file || pending || unavailable || !target || !options) {
       return;
     }
     selected = file;
