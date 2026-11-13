@@ -13,6 +13,7 @@ import type { ParsedTemplateField } from "../documents/fields";
 import { parseTemplateFields } from "../documents/fields";
 import { reconcileSpreadsheetColumns } from "../documents/spreadsheets/columns";
 import { validatePreservedSpreadsheetEditorSave } from "../documents/spreadsheets/editor-save-proof";
+import { validateSpreadsheetAttachmentButtons } from "../documents/spreadsheets/upload-poc";
 import { readSpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
 import { excelBindingSchema } from "../forms/excel-binding";
 import { validateFieldRulePointer } from "../forms/field-rules";
@@ -20,6 +21,7 @@ import {
   spreadsheetDraftBindings,
   spreadsheetScalarManifestFields,
   spreadsheetManifestFieldData,
+  validateSpreadsheetPublication,
 } from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
@@ -367,6 +369,8 @@ export async function completePublishOperation(
         });
       }
       if (bindings) {
+        validateSpreadsheetPublication(bindings);
+        validateSpreadsheetAttachmentButtons(bytes, bindings);
         draftRules = bindings.fields.map((field) => ({
           prefillPointer: field.prefillPointer,
           prefillPolicy: field.prefillPolicy,

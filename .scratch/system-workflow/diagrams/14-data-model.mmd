@@ -37,6 +37,8 @@ erDiagram
         uuid templateDraftId FK
         string tag
         json binding
+        boolean attachment
+        string attachmentCategory
     }
     PublishedTemplate {
         uuid id PK
@@ -54,6 +56,8 @@ erDiagram
         string tag
         string type
         json binding
+        boolean attachment
+        string attachmentCategory
     }
     PrefillConfiguration {
         uuid id PK

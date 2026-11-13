@@ -109,12 +109,13 @@ const click = async (harness) => {
   await flushPlugin();
 };
 
-test("one click creates a normal text mapping and repeat reuses it without another write", async () => {
+test("one click creates an explicit incomplete attachment mapping and repeat reuses it without another write", async () => {
   const { harness, projections, state } = await setup();
   await click(harness);
   expect(state().fields).toHaveLength(1);
   const [field] = state().fields;
   expect(field).toMatchObject({
+    attachment: { category: null },
     key: "attachment_1",
     label: "ไฟล์แนบ 1",
     required: false,
@@ -554,23 +555,13 @@ test.each([0, 1])(
       expect(input(harness, label).disabled).toBe(false);
     }
     await click(harness);
-    for (const label of [
-      "Title · ชื่อช่อง",
-      "Tag · รหัสช่อง",
-      "ชนิดข้อมูล",
-      "ช่องที่บันทึกแล้ว",
-    ]) {
+    for (const label of ["Title · ชื่อช่อง", "Tag · รหัสช่อง", "ช่องที่บันทึกแล้ว"]) {
       expect(input(harness, label).disabled).toBe(false);
     }
     // Existing binding kind cannot change; restoring controls must preserve that rule.
     expect(input(harness, "กำหนดช่วงที่เลือกเป็น").disabled).toBe(true);
     await click(harness);
-    for (const label of [
-      "Title · ชื่อช่อง",
-      "Tag · รหัสช่อง",
-      "ชนิดข้อมูล",
-      "ช่องที่บันทึกแล้ว",
-    ]) {
+    for (const label of ["Title · ชื่อช่อง", "Tag · รหัสช่อง", "ช่องที่บันทึกแล้ว"]) {
       expect(input(harness, label).disabled).toBe(false);
     }
     expect(input(harness, "กำหนดช่วงที่เลือกเป็น").disabled).toBe(true);

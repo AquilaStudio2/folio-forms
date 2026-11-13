@@ -246,23 +246,25 @@ model TemplateDraft {
 }
 
 model DraftFieldRule {
-  id              String        @id @default(uuid()) @db.Uuid
-  templateDraftId String        @map("template_draft_id") @db.Uuid
-  tag             String
+  id                 String        @id @default(uuid()) @db.Uuid
+  templateDraftId    String        @map("template_draft_id") @db.Uuid
+  tag                String
   /// XLSX display/type metadata; DOCX metadata continues to come from content controls.
-  label           String?
-  type            FieldType?
-  source          String?
-  options         Json?
-  position        Int?
+  label              String?
+  type               FieldType?
+  source             String?
+  attachment         Boolean       @default(false)
+  attachmentCategory String?       @map("attachment_category")
+  options            Json?
+  position           Int?
   /// ExcelBinding JSON: scalar, table or column placement; shared with ManifestField.binding.
   /// Types and validation: apps/server/src/forms/excel-binding.ts. DOCX uses null.
-  binding         Json?
-  required        Boolean       @default(false)
-  prefillPointer  String?       @map("prefill_pointer")
-  prefillPolicy   PrefillPolicy @default(editable) @map("prefill_policy")
-  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  binding            Json?
+  required           Boolean       @default(false)
+  prefillPointer     String?       @map("prefill_pointer")
+  prefillPolicy      PrefillPolicy @default(editable) @map("prefill_policy")
+  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   templateDraft TemplateDraft @relation(fields: [templateDraftId], references: [id], onDelete: Cascade)
 
@@ -303,23 +305,25 @@ model FieldManifest {
 }
 
 model ManifestField {
-  id               String        @id @default(uuid()) @db.Uuid
-  manifestId       String        @map("manifest_id") @db.Uuid
-  tag              String
-  label            String
-  placeholder      String?
-  position         Int
-  type             FieldType
-  required         Boolean       @default(false)
-  prefillPolicy    PrefillPolicy @default(editable) @map("prefill_policy")
-  source           String?
-  options          Json?
+  id                 String        @id @default(uuid()) @db.Uuid
+  manifestId         String        @map("manifest_id") @db.Uuid
+  tag                String
+  label              String
+  placeholder        String?
+  position           Int
+  type               FieldType
+  required           Boolean       @default(false)
+  prefillPolicy      PrefillPolicy @default(editable) @map("prefill_policy")
+  source             String?
+  attachment         Boolean       @default(false)
+  attachmentCategory String?       @map("attachment_category")
+  options            Json?
   /// ExcelBinding JSON: scalar, table or column placement; shared with DraftFieldRule.binding.
   /// Types and validation: apps/server/src/forms/excel-binding.ts. DOCX uses null.
-  binding          Json?
-  pictureMaxBytes  Int?          @map("picture_max_bytes")
-  pictureMaxWidth  Int?          @map("picture_max_width")
-  pictureMaxHeight Int?          @map("picture_max_height")
+  binding            Json?
+  pictureMaxBytes    Int?          @map("picture_max_bytes")
+  pictureMaxWidth    Int?          @map("picture_max_width")
+  pictureMaxHeight   Int?          @map("picture_max_height")
 
   manifest FieldManifest @relation(fields: [manifestId], references: [id], onDelete: Restrict)
 
@@ -631,24 +635,45 @@ model DeletionTombstone {
 
 /// An immutable successful catalog belongs to one authorized editor opening.
 model PdmsProjectCatalogSession {
-  id            String   @id @default(uuid()) @db.Uuid
-  openingId     String   @map("opening_id") @db.Uuid
-  leaseId       String   @map("lease_id") @db.Uuid
-  actorId       String   @map("actor_id")
-  authSessionId String   @map("auth_session_id")
-  formId        String   @map("form_id") @db.Uuid
-  targetType    String   @map("target_type")
-  targetId      String   @map("target_id") @db.Uuid
-  documentKey   String   @map("document_key")
-  status        String   @default("pending")
+  id            String    @id @default(uuid()) @db.Uuid
+  openingId     String    @map("opening_id") @db.Uuid
+  leaseId       String    @map("lease_id") @db.Uuid
+  actorId       String    @map("actor_id")
+  authSessionId String    @map("auth_session_id")
+  formId        String    @map("form_id") @db.Uuid
+  targetType    String    @map("target_type")
+  targetId      String    @map("target_id") @db.Uuid
+  documentKey   String    @map("document_key")
+  status        String    @default("pending")
   names         Json?
-  loadToken     String?  @map("load_token") @db.Uuid
+  loadToken     String?   @map("load_token") @db.Uuid
   loadExpiresAt DateTime? @map("load_expires_at") @db.Timestamptz(3)
-  expiresAt     DateTime @map("expires_at") @db.Timestamptz(3)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@unique([openingId, leaseId])
   @@index([expiresAt])
   @@index([targetId])
   @@map("pdms_project_catalog_sessions")
+}
+
+model EcmAuthState {
+  accountKey     String    @id @map("account_key")
+  generation     BigInt    @default(0)
+  status         String    @default("idle")
+  owner          String?   @db.Uuid
+  deadline       DateTime? @db.Timestamptz(3)
+  leaseUntil     DateTime? @map("lease_until") @db.Timestamptz(3)
+  encryptedToken String?   @map("encrypted_token")
+  expiresAt      DateTime? @map("expires_at") @db.Timestamptz(3)
+
+  @@map("ecm_auth_states")
+}
+
+model EcmCategoryCatalog {
+  scopeKey  String   @id @map("scope_key")
+  names     Json
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@map("ecm_category_catalogs")
 }

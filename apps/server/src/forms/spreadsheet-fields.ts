@@ -38,6 +38,32 @@ export const storedSpreadsheetBindings = (
 export const validateSpreadsheetPublication = (
   bindings: SpreadsheetBindings
 ): void => {
+  const attachments = [
+    ...bindings.fields,
+    ...(bindings.table?.columns ?? []),
+  ].filter((field) => field.attachment);
+  if (attachments.some((field) => !field.attachment?.category)) {
+    fail(
+      422,
+      "attachment_category_required",
+      "เลือก Document Category ให้ครบทุกช่องแนบก่อนเผยแพร่"
+    );
+  }
+  if (
+    attachments.length &&
+    ["fiscal_year", "docs_number"].some(
+      (key) =>
+        bindings.fields.filter(
+          (field) => field.key === key && !field.attachment && !field.computed
+        ).length !== 1
+    )
+  ) {
+    fail(
+      422,
+      "attachment_metadata_required",
+      "เพิ่มช่องเดี่ยว fiscal_year และ docs_number อย่างละหนึ่งช่องก่อนเผยแพร่ โดยไม่ต้องกรอกค่าคำตอบ"
+    );
+  }
   if (bindings.fields.length === 0 && !bindings.table) {
     fail(
       422,
@@ -59,6 +85,8 @@ export const validateSpreadsheetPublication = (
 
 interface SpreadsheetStoredField {
   binding: unknown;
+  attachment?: boolean;
+  attachmentCategory?: string | null;
   label: string | null;
   options: unknown;
   position: number | null;
@@ -138,6 +166,9 @@ export const spreadsheetBindingsFromFields = (
       continue;
     }
     const base = {
+      ...(row.attachment
+        ? { attachment: { category: row.attachmentCategory ?? null } }
+        : {}),
       key: row.tag,
       label: row.label,
       options:
@@ -204,6 +235,8 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
     throw new Error("Options are only supported for spreadsheet dropdowns");
   }
   const rows = bindings.fields.map((field) => ({
+    attachment: Boolean(field.attachment),
+    attachmentCategory: field.attachment?.category ?? null,
     binding: excelBindingSchema.parse({
       anchor: field.anchor,
       computed: field.computed,
@@ -224,6 +257,8 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
   }));
   if (bindings.table) {
     rows.push({
+      attachment: false,
+      attachmentCategory: null,
       binding: excelBindingSchema.parse({
         anchor: bindings.table.anchor,
         id: bindings.table.id,
@@ -239,6 +274,8 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
     });
     for (const column of bindings.table.columns) {
       rows.push({
+        attachment: Boolean(column.attachment),
+        attachmentCategory: column.attachment?.category ?? null,
         binding: excelBindingSchema.parse({
           computed: column.computed,
           id: column.id,

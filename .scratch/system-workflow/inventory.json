@@ -1,8 +1,8 @@
 {
-  "commit": "95534c922b92c40c356798f3543bd8d97e1b9d23",
-  "branch": "codex/admin-result-downloads",
-  "source_fingerprint": "3d3b1925dc1bba984d17a9565293c790d2cf2380db49def44933738183059867",
-  "source_files": 296,
+  "commit": "0ccd5c6b90f32babb1bc5a8e09f00a3ce50a2082",
+  "branch": "feat/ecm-attachments-config",
+  "source_fingerprint": "7e9da0e2317a8e736ce2f144db28ae0238ee7964711d54fb873324b0238906e7",
+  "source_files": 299,
   "pages": [
     {
       "route": "__root",
@@ -631,21 +631,27 @@
     },
     {
       "method": "GET",
+      "path": "/api/admin/forms/:publicId/attachment-categories",
+      "file": "apps/server/src/routes/spreadsheet-authoring.ts",
+      "line": 232
+    },
+    {
+      "method": "GET",
       "path": "/api/admin/forms/:publicId/spreadsheet-bindings",
       "file": "apps/server/src/routes/spreadsheet-authoring.ts",
-      "line": 224
+      "line": 242
     },
     {
       "method": "PATCH",
       "path": "/api/admin/forms/:publicId/spreadsheet-bindings",
       "file": "apps/server/src/routes/spreadsheet-authoring.ts",
-      "line": 241
+      "line": 259
     },
     {
       "method": "POST",
       "path": "/api/admin/forms/:publicId/spreadsheet-bindings/recover",
       "file": "apps/server/src/routes/spreadsheet-authoring.ts",
-      "line": 365
+      "line": 391
     },
     {
       "method": "GET",
@@ -681,13 +687,13 @@
       "method": "GET",
       "path": "/health",
       "file": "apps/server/src/app.ts",
-      "line": 189
+      "line": 197
     },
     {
       "method": "GET",
       "path": "/ready",
       "file": "apps/server/src/app.ts",
-      "line": 190
+      "line": 198
     }
   ],
   "models": [
@@ -743,115 +749,127 @@
       "model": "PublishedTemplate",
       "table": "published_templates",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 274
+      "line": 276
     },
     {
       "model": "FieldManifest",
       "table": "field_manifests",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 292
+      "line": 294
     },
     {
       "model": "ManifestField",
       "table": "manifest_fields",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 305
+      "line": 307
     },
     {
       "model": "PrefillConfiguration",
       "table": "prefill_configurations",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 332
+      "line": 336
     },
     {
       "model": "PrefillField",
       "table": "prefill_fields",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 347
+      "line": 351
     },
     {
       "model": "Response",
       "table": "responses",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 362
+      "line": 366
     },
     {
       "model": "PrefillSnapshot",
       "table": "prefill_snapshots",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 393
+      "line": 397
     },
     {
       "model": "Submission",
       "table": "submissions",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 410
+      "line": 414
     },
     {
       "model": "Correction",
       "table": "corrections",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 432
+      "line": 436
     },
     {
       "model": "Handoff",
       "table": "handoffs",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 455
+      "line": 459
     },
     {
       "model": "PendingClaim",
       "table": "pending_claims",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 484
+      "line": 488
     },
     {
       "model": "Operation",
       "table": "operations",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 498
+      "line": 502
     },
     {
       "model": "CallbackClaim",
       "table": "callback_claims",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 535
+      "line": 539
     },
     {
       "model": "EditorLease",
       "table": "editor_leases",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 549
+      "line": 553
     },
     {
       "model": "ObjectCleanupIntent",
       "table": "object_cleanup_intents",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 574
+      "line": 578
     },
     {
       "model": "AuditEvent",
       "table": "audit_events",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 588
+      "line": 592
     },
     {
       "model": "LoginFailure",
       "table": "login_failures",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 606
+      "line": 610
     },
     {
       "model": "DeletionTombstone",
       "table": "deletion_tombstones",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 620
+      "line": 624
     },
     {
       "model": "PdmsProjectCatalogSession",
       "table": "pdms_project_catalog_sessions",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 633
+      "line": 637
+    },
+    {
+      "model": "EcmAuthState",
+      "table": "ecm_auth_states",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 660
+    },
+    {
+      "model": "EcmCategoryCatalog",
+      "table": "ecm_category_catalogs",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 673
     }
   ],
   "relations": [

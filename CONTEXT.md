@@ -54,6 +54,8 @@ The editable document an Admin is currently preparing. Saving it does not change
 
 An XLSX Template Draft may contain unfinished field or table configuration so an Admin can save work in progress. Its configuration uses the shared Draft Field Rules, with optional label/type/options/order and placement-only binding metadata. DOCX draft metadata remains in content controls and uses its existing rules. Publication requires a complete, valid Spreadsheet Contract.
 
+Attachment configuration may also remain incomplete in a Template Draft. Publication requires a saved Document Category for each declared attachment Field or table column, exactly one scalar root Field each for `fiscal_year` and `docs_number`, and configured existing attachment buttons. These metadata Fields need no User-entered values in the template. Saved category names remain valid for publication when the category provider is unavailable or has renamed a category; changing a category requires a successful actual category list, not a guessed destination.
+
 Unapplied field-panel edits remain local drafts and must be resolved before saving or publishing the Template Draft. An uncertain field-settings write blocks further mutations until the current document, revision, and complete bindings establish its outcome. Safe rollback additionally requires settlement of any delayed write and a matching native editor snapshot; dismissing an error notice does not settle the write.
 
 ## Published Template
@@ -63,6 +65,18 @@ The immutable document and field contract used to start new Responses. A publish
 ## Field
 
 A mapped input in a Form. For DOCX, it is a tagged content control: its Title/Alias is the user-facing label, its Tag is the stable identity in prefill and extracted data, and its Placeholder guides entry. If the Title/Alias is blank, use the Tag as the label. For XLSX, a Field maps a cell or complete merged cell to a key, label, type, and rules through a named range. Keys must be unique within their containing object and may be reused by different Forms.
+
+## Attachment Field
+
+An explicitly configured XLSX Field or table column associated with the existing attachment button and stable binding. Its Title, editable pre-publication Tag and requiredness use the existing Field settings. Attachment intent is never inferred from an `attachment_N` Tag, filename or URL string. A table column shares one Document Category across all its rows. A published attachment contract is immutable; changing it requires duplicating the Form.
+
+## Document Category
+
+An ECM-provided destination name selected by an Admin for an Attachment Field or column. Folio saves the exact `type` string, not the category ID, and does not follow upstream renames or substitute a fallback. Users cannot select or change the destination.
+
+## ECM Service Account
+
+The dedicated Folio-only server identity used to read categories and perform authorized document integration. It is independent of every person's Folio session and of Ongoing credentials. Shared PostgreSQL coordination governs its bounded login jobs and encrypted token generations; integration failure never signs a person out of Folio. Credentials and the token-encryption key remain server-managed secrets, never answer data or browser state.
 
 ## Result Filter Field
 
