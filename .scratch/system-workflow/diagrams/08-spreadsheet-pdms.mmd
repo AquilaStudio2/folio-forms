@@ -27,6 +27,11 @@ flowchart TD
     complete -->|"ครบ"| publish
     complete -->|"ไม่ครบ"| draftOnly["บันทึก Template Draft ได้ แต่เผยแพร่ไม่ได้"]
     rules -->|"ordinary Fields ไม่มีปุ่มแนบ"| publish
+    oldPublished["Published PoC เดิม: ordinary text/URL และประวัติ"] --> oldNotice["ปุ่มเก่าอธิบายข้อจำกัด ไม่มี choose/retry"]
+    oldPublished --> duplicate["Admin Duplicate: เฉพาะ template/config ไม่มีคำตอบหรือไฟล์ User"]
+    duplicate --> oldProof{"Admin เปลี่ยนช่องเดิม: saved marker/binding/Tag/placement พิสูจน์ได้"}
+    oldProof -->|"ได้"| attachment
+    oldProof -->|"ไม่ได้"| unproved["หยุดโดยไม่เปลี่ยนข้อมูล ให้บันทึก/แก้ mapping ก่อน"]
     publish --> fill --> source
     source -->|"ไม่มี"| operation
     source -->|"มี"| catalog

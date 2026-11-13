@@ -29,7 +29,7 @@ export interface UploadPocHostOptions {
   savedButtons?: unknown;
 }
 
-/** Browser-memory-only POC state. No serialization, storage API, object URL or network. */
+/** Pending Files remain browser-local until an explicit authorized save. */
 export class UploadPocPendingFiles {
   private scopeIdentity = "";
   private readonly files = new Map<string, { file: File; tag: unknown }>();
@@ -39,6 +39,9 @@ export class UploadPocPendingFiles {
       this.files.clear();
       this.scopeIdentity = scopeIdentity;
     }
+  }
+  hasPending(): boolean {
+    return this.files.size > 0;
   }
 
   // oxlint-disable-next-line complexity -- Validate every scope, binding, row and File at this browser-only message boundary.
@@ -116,9 +119,6 @@ export class UploadPocPendingFiles {
       }
       return { allowed: true, hasPending };
     }
-    if (options.action === "correction") {
-      throw new Error("POC ยังไม่รองรับการเปลี่ยนไฟล์ระหว่างแก้ไขข้อมูลที่ส่งแล้ว");
-    }
     const fields = Array.isArray(bindings.fields) ? bindings.fields : [];
     const scalar = fields.find(
       (field) => record(field) && field.id === value.bindingId
@@ -147,18 +147,22 @@ export class UploadPocPendingFiles {
     ) {
       throw new Error("ตำแหน่งเลือกไฟล์ไม่ตรงกับช่องหรือแถวปัจจุบัน กรุณาเปิดแบบฟอร์มใหม่");
     }
-    if (
-      options.action === "template-edit" &&
-      (!Array.isArray(options.savedButtons) ||
-        !options.savedButtons.some(
-          (button) =>
-            record(button) &&
-            button.bindingId === value.bindingId &&
-            button.tag === value.tag &&
-            button.rowIndex === value.rowIndex
-        ))
-    ) {
-      throw new Error("ปุ่มนี้ยังไม่บันทึกในต้นแบบ กรุณาบันทึกต้นแบบให้สำเร็จก่อนเลือกไฟล์");
+    if (!record(field.attachment)) {
+      return {
+        error:
+          "ฟอร์ม PoC เดิมไม่รองรับการแนบไฟล์ถาวร คำตอบข้อความและ URL เดิมยังใช้ตามกติกาเดิม กรุณาประสาน Admin ทำสำเนาและตั้งค่า Form ใหม่",
+        unavailable: true,
+      };
+    }
+    if (options.action === "template-edit") {
+      return {
+        error:
+          "เลือกไฟล์ได้เฉพาะหน้ากรอก Form เท่านั้น ต้นแบบใช้สำหรับตั้งค่าช่องแนบและ Document Category ไม่อัปโหลดไฟล์",
+        unavailable: true,
+      };
+    }
+    if (options.action === "correction") {
+      throw new Error("POC ยังไม่รองรับการเปลี่ยนไฟล์ระหว่างแก้ไขข้อมูลที่ส่งแล้ว");
     }
     const key = JSON.stringify([value.bindingId, value.rowIndex]);
     if (value.type === "pending-file-set") {

@@ -41,21 +41,23 @@ const harness = () => {
     top,
   };
   const elements = new Map(
-    ["attachment", "status", "filename", "filesize", "retry"].map((id) => {
-      const callbacks = new Map();
-      return [
-        id,
-        {
-          addEventListener: (type, callback) => callbacks.set(type, callback),
-          dataset: {},
-          disabled: true,
-          files: [],
-          hidden: true,
-          textContent: "",
-          trigger: (type) => callbacks.get(type)?.(),
-        },
-      ];
-    })
+    ["attachment", "status", "filename", "filesize", "retry", "selection"].map(
+      (id) => {
+        const callbacks = new Map();
+        return [
+          id,
+          {
+            addEventListener: (type, callback) => callbacks.set(type, callback),
+            dataset: {},
+            disabled: true,
+            files: [],
+            hidden: id !== "selection",
+            textContent: "",
+            trigger: (type) => callbacks.get(type)?.(),
+          },
+        ];
+      }
+    )
   );
   const plugin = {
     executeCommand: () => messages.push({ close: true }),
@@ -110,6 +112,23 @@ test("picker validates OLE metadata and refuses ambiguous legacy table row", () 
   expect(h.messages).toHaveLength(0);
   expect(h.elements.get("attachment").disabled).toBe(true);
   expect(h.elements.get("status").textContent).toContain("รหัสแถว");
+});
+
+test("legacy unavailable notice permanently disables choosing and retrying without sending a File", () => {
+  const h = harness();
+  h.plugin.init(JSON.stringify(data));
+  const explanation = "ฟอร์ม PoC เดิมไม่รองรับแนบไฟล์ กรุณาประสาน Admin ใช้ Form ใหม่";
+  h.ack({ error: explanation, unavailable: true });
+  expect(h.elements.get("status").textContent).toBe(explanation);
+  expect(h.elements.get("attachment").disabled).toBe(true);
+  expect(h.elements.get("retry").disabled).toBe(true);
+  const requests = h.messages.length;
+  h.elements.get("attachment").files = [new File(["private"], "private.txt")];
+  h.elements.get("attachment").trigger("change");
+  h.elements.get("retry").trigger("click");
+  expect(h.messages).toHaveLength(requests);
+  h.plugin.button();
+  expect(h.messages.at(-1).close).toBe(true);
 });
 
 test("picker sends a real File through structured clone only, replaces it and preserves cancellation", async () => {

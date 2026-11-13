@@ -308,6 +308,143 @@ const operationResult = async (operationId: string) => {
   throw new Error("Publish operation did not settle through HTTP");
 };
 
+test("ordinary Draft slot cannot convert without saved native marker binding and placement proof", async () => {
+  const ordinary = {
+    ...proof,
+    anchor: "folio_unproved",
+    attachment: undefined,
+    id: "folio_unproved",
+    key: "attachment_99",
+  };
+  expect((await upsert(ordinary)).status).toBe(200);
+  const before = await (await authoringRequest("spreadsheet-bindings")).json();
+  const rejected = await upsert({
+    ...ordinary,
+    attachment: { category: null },
+  });
+  expect(rejected.status).toBe(422);
+  expect(await rejected.json()).toMatchObject({
+    error: "attachment_mapping_unproved",
+  });
+  expect(await (await authoringRequest("spreadsheet-bindings")).json()).toEqual(
+    before
+  );
+  const current = before as { revision: number };
+  expect(
+    (
+      await authoringRequest("spreadsheet-bindings", "PATCH", {
+        change: { action: "delete", id: ordinary.id, kind: "field" },
+        documentKey,
+        revision: current.revision,
+      })
+    ).status
+  ).toBe(200);
+});
+
+test("explicit verified old Draft conversion preserves binding placement and allows a deliberate Tag rename", async () => {
+  expect((await upsert({ ...proof, attachment: undefined })).status).toBe(200);
+  expect(
+    (
+      await upsert({
+        ...proof,
+        attachment: { category: null },
+        key: "renamed_attachment",
+      })
+    ).status
+  ).toBe(200);
+  const configured = (await (
+    await authoringRequest("spreadsheet-bindings")
+  ).json()) as { bindings: { fields: unknown[] } };
+  expect(configured.bindings.fields).toContainEqual(
+    expect.objectContaining({
+      anchor: proof.anchor,
+      attachment: { category: null },
+      id: proof.id,
+      key: "renamed_attachment",
+    })
+  );
+  // Unsaved renamed rules are not proof that the canonical old button changed.
+  expect(
+    (
+      await upsert({
+        ...proof,
+        attachment: undefined,
+        key: "renamed_attachment",
+      })
+    ).status
+  ).toBe(200);
+  const before = await (await authoringRequest("spreadsheet-bindings")).json();
+  expect(
+    (
+      await upsert({
+        ...proof,
+        attachment: { category: null },
+        key: "renamed_attachment",
+      })
+    ).status
+  ).toBe(422);
+  expect(await (await authoringRequest("spreadsheet-bindings")).json()).toEqual(
+    before
+  );
+  expect((await upsert({ ...proof, attachment: undefined })).status).toBe(200);
+  expect((await upsert(proof)).status).toBe(200);
+});
+
+test.each(["marker-only", "misplaced", "duplicate"] as const)(
+  "old Draft conversion rejects %s native mapping without mutation",
+  async (mapping) => {
+    expect((await upsert({ ...proof, attachment: undefined })).status).toBe(
+      200
+    );
+    let unproved = snapshot;
+    if (mapping === "marker-only") {
+      unproved = fixtureWorkbook({
+        cells: [],
+        merges: [],
+        names: {
+          _folio_upload_poc_folio_proof: "'Form'!$B$3",
+          folio_proof: "'Form'!$B$3",
+        },
+      });
+    } else if (mapping === "misplaced") {
+      unproved = mutatePart(snapshot, "xl/workbook.xml", (xml) =>
+        xml.replace(
+          /(?<opening><definedName\b[^>]*name="_folio_upload_poc_folio_proof"[^>]*>)[^<]+/u,
+          "$<opening>'Form'!$B$4"
+        )
+      );
+    } else {
+      unproved = mutatePart(snapshot, "xl/worksheets/sheet1.xml", (xml) =>
+        xml.replace(
+          /<oleObject\b[^>]*>[\s\S]*?<\/oleObject>/u,
+          (object) => object + object
+        )
+      );
+    }
+    await putObject(
+      `tests/${fixtureId}/template.xlsx`,
+      unproved,
+      XLSX_CONTENT_TYPE
+    );
+    try {
+      const before = await (
+        await authoringRequest("spreadsheet-bindings")
+      ).json();
+      expect((await upsert(proof)).status).toBe(422);
+      expect(
+        await (await authoringRequest("spreadsheet-bindings")).json()
+      ).toEqual(before);
+    } finally {
+      await putObject(
+        `tests/${fixtureId}/template.xlsx`,
+        snapshot,
+        XLSX_CONTENT_TYPE
+      );
+    }
+    expect((await upsert(proof)).status).toBe(200);
+  }
+);
+
 test("incomplete attachment Draft settings save; publication requires category and both scalar metadata Fields", async () => {
   expect((await upsert(proof)).status).toBe(200);
   const publish = await authoringRequest(

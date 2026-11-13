@@ -537,7 +537,14 @@ const uploadOptions = (documentKey: string, bridgeId: string) => ({
   documentKey,
   scopeIdentity: "actor/response",
   spreadsheetBindings: {
-    fields: [{ id: "folio_file", key: "file", type: "text" }],
+    fields: [
+      {
+        attachment: { category: "หลักฐาน" },
+        id: "folio_file",
+        key: "file",
+        type: "text",
+      },
+    ],
     table: null,
   },
 });
@@ -635,47 +642,122 @@ it("keeps POC Files in the host across native remount and rejects messages outsi
   expect(transport.post).not.toHaveBeenCalled();
 });
 
-it("refreshes trusted Admin bindings without remount so new scalar/table pickers work and obsolete metadata fails closed", async () => {
-  const options = {
-    ...uploadOptions("document-1", "editor-bridge"),
-    action: "template-edit",
-    spreadsheetBindings: { fields: [], table: null },
-  };
+it.each(["draft", "correction"])(
+  "old Published PoC %s picker explains unavailable upload without retaining Files or blocking ordinary saves",
+  async (action) => {
+    const options = {
+      ...uploadOptions("document", "editor-bridge"),
+      action,
+      spreadsheetBindings: {
+        fields: [{ id: "folio_file", key: "file", type: "text" }],
+        table: null,
+      },
+    };
+    transport.get.mockResolvedValue({
+      ...config(),
+      bridge: { ...config().bridge, uploadPoc: options },
+    });
+    const dirty = vi.fn();
+    render(
+      <OnlyOfficeEditor
+        configUrl="/editor-config"
+        title="Old PoC"
+        onDirtyChange={dirty}
+      />
+    );
+    const picker = pluginFrame(
+      (await screen.findByTitle("Office sandbox")) as HTMLIFrameElement
+    );
+    const message = {
+      bindingId: "folio_file",
+      documentKey: "document",
+      requestId: "old-picker",
+      rowIndex: null,
+      scopeIdentity: "actor/response",
+      source: "folio-upload-poc",
+      tag: "file",
+    };
+    send(picker.source, {
+      ...message,
+      file: new File(["private"], "private.txt"),
+      type: "pending-file-set",
+    });
+    expect(picker.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        error: expect.stringContaining("Admin"),
+        unavailable: true,
+      }),
+      window.location.origin
+    );
+    send(picker.source, {
+      ...message,
+      action: action === "correction" ? "save-correction" : "save-draft",
+      type: "pending-file-check",
+    });
+    expect(picker.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ allowed: true, hasPending: false }),
+      window.location.origin
+    );
+    expect(dirty).not.toHaveBeenCalledWith(true);
+    expect(transport.post).not.toHaveBeenCalled();
+  }
+);
+
+it("keeps existing navigation dirty guard active for pending Files after native dirty clears", async () => {
+  transport.get.mockResolvedValue({
+    ...config(),
+    bridge: {
+      ...config().bridge,
+      uploadPoc: uploadOptions("document", "editor-bridge"),
+    },
+  });
+  const dirty = vi.fn();
+  render(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Pending files"
+      onDirtyChange={dirty}
+    />
+  );
+  const office = (await screen.findByTitle(
+    "Office sandbox"
+  )) as HTMLIFrameElement;
+  const plugin = pluginFrame(office);
+  send(plugin.source, { type: "bridge-ready" });
+  send(plugin.source, {
+    bindingId: "folio_file",
+    documentKey: "document",
+    file: new File(["pending"], "pending.txt"),
+    requestId: "choose",
+    rowIndex: null,
+    scopeIdentity: "actor/response",
+    source: "folio-upload-poc",
+    tag: "file",
+    type: "pending-file-set",
+  });
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  send(plugin.source, { dirty: false, type: "dirty-state" });
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  act(() => documentStateChanged?.({ data: false }));
+  expect(dirty).toHaveBeenLastCalledWith(true);
+});
+
+it("refreshes trusted Admin configuration but never accepts Files in Template Draft authoring", async () => {
   const lease = {
     expiresAt: "2099-01-01",
     id: "same-lease",
     releaseUrl: "/release",
     renewUrl: "/renew",
   };
+  const options = {
+    ...uploadOptions("document-1", "editor-bridge"),
+    action: "template-edit",
+  };
   const initial = {
     ...config(),
     bridge: { ...config().bridge, lease, uploadPoc: options },
   };
-  let fresh = {
-    ...initial,
-    bridge: {
-      ...initial.bridge,
-      id: "refreshed-bridge",
-      uploadPoc: {
-        ...options,
-        bridgeId: "refreshed-bridge",
-        savedButtons: [] as {
-          bindingId: string;
-          tag: string;
-          rowIndex: number | null;
-        }[],
-        spreadsheetBindings: {
-          fields: [{ id: "folio_new", key: "new_file", type: "text" }],
-          table: {
-            anchor: "folio_body",
-            columns: [{ id: "folio_column", key: "evidence", type: "text" }],
-            id: "folio_table",
-            key: "items",
-          },
-        },
-      },
-    },
-  };
+  let fresh = initial;
   transport.get
     .mockResolvedValueOnce(initial)
     .mockImplementation(() => Promise.resolve(fresh));
@@ -687,14 +769,14 @@ it("refreshes trusted Admin bindings without remount so new scalar/table pickers
   )) as HTMLIFrameElement;
   const picker = pluginFrame(office);
   const message = {
-    bindingId: "folio_new",
+    bindingId: "folio_file",
     documentKey: "document-1",
     file: new File(["local"], "new.txt"),
-    requestId: "fresh-scalar",
+    requestId: "authoring",
     rowIndex: null,
     scopeIdentity: "actor/response",
     source: "folio-upload-poc",
-    tag: "new_file",
+    tag: "file",
     type: "pending-file-set",
   };
   const request = async (data: Record<string, unknown>) => {
@@ -704,99 +786,22 @@ it("refreshes trusted Admin bindings without remount so new scalar/table pickers
     return picker.send.mock.calls.at(-1)?.[0];
   };
   expect(await request({})).toMatchObject({
-    error: expect.stringContaining("ยังไม่บันทึก"),
+    error: expect.stringContaining("ต้นแบบ"),
+    unavailable: true,
   });
   expect(
     await request({ action: "save-template", type: "pending-file-check" })
   ).toMatchObject({ allowed: true, hasPending: false });
-  fresh.bridge.uploadPoc.savedButtons = [
-    { bindingId: "folio_new", rowIndex: null, tag: "new_file" },
-    { bindingId: "folio_column", rowIndex: 0, tag: "items.evidence" },
-  ];
-  expect(await request({})).toMatchObject({
-    bridgeId: "editor-bridge",
-    filename: "new.txt",
-  });
-  expect(
-    await request({
-      bindingId: "folio_column",
-      file: undefined,
-      rowIndex: 1,
-      tag: "items.evidence",
-      type: "pending-file-get",
-    })
-  ).toMatchObject({ error: expect.stringContaining("ยังไม่บันทึก") });
-  expect(
-    await request({
-      bindingId: "folio_column",
-      file: new File(["row"], "row.txt"),
-      rowIndex: 0,
-      tag: "items.evidence",
-    })
-  ).toMatchObject({ filename: "row.txt" });
-  expect(
-    await request({
-      bindingId: "folio_column",
-      rowIndex: -1,
-      tag: "items.evidence",
-    })
-  ).toMatchObject({ error: expect.any(String) });
   expect(await request({ bindingId: "folio_unknown" })).toMatchObject({
     error: expect.any(String),
   });
   fresh = {
-    ...fresh,
-    bridge: {
-      ...fresh.bridge,
-      uploadPoc: {
-        ...fresh.bridge.uploadPoc,
-        spreadsheetBindings: {
-          ...fresh.bridge.uploadPoc.spreadsheetBindings,
-          fields: [{ id: "folio_new", key: "renamed", type: "text" }],
-        },
-      },
-    },
+    ...initial,
+    bridge: { ...initial.bridge, lease: { ...lease, id: "other-lease" } },
   };
-  expect(
-    await request({ file: undefined, type: "pending-file-get" })
-  ).toMatchObject({ error: expect.any(String) });
-  expect(
-    await request({ file: undefined, tag: "renamed", type: "pending-file-get" })
-  ).toMatchObject({ error: expect.stringContaining("ยังไม่บันทึก") });
-  fresh.bridge.uploadPoc.savedButtons = [
-    { bindingId: "folio_new", rowIndex: null, tag: "renamed" },
-  ];
-  expect(
-    await request({ file: undefined, tag: "renamed", type: "pending-file-get" })
-  ).toMatchObject({ filename: null });
-  fresh = {
-    ...fresh,
-    bridge: {
-      ...fresh.bridge,
-      uploadPoc: {
-        ...fresh.bridge.uploadPoc,
-        spreadsheetBindings: {
-          ...fresh.bridge.uploadPoc.spreadsheetBindings,
-          fields: [],
-        },
-      },
-    },
-  };
-  expect(
-    await request({ tag: "renamed", type: "pending-file-get" })
-  ).toMatchObject({ error: expect.any(String) });
-  fresh = {
-    ...fresh,
-    bridge: { ...fresh.bridge, lease: { ...lease, id: "other-lease" } },
-  };
-  expect(
-    await request({
-      bindingId: "folio_column",
-      rowIndex: 0,
-      tag: "items.evidence",
-      type: "pending-file-get",
-    })
-  ).toMatchObject({ error: expect.any(String) });
+  expect(await request({ type: "pending-file-get" })).toMatchObject({
+    error: expect.any(String),
+  });
   expect(screen.getByTitle("Office sandbox")).toBe(office);
   expect(transport.post).not.toHaveBeenCalled();
 });

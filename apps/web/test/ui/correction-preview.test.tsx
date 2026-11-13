@@ -167,7 +167,8 @@ it("Correction workspace completion reloads the document while preserving the re
   await waitFor(() =>
     expect(parentReplies).toHaveBeenCalledWith(
       expect.objectContaining({
-        error: expect.stringMatching(/POC ยังไม่รองรับ/u),
+        error: expect.stringContaining("Admin"),
+        unavailable: true,
       }),
       window.location.origin
     )

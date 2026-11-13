@@ -137,6 +137,7 @@ export const OnlyOfficeEditor = ({
     reject: (error: Error) => void;
   } | null>(null);
   const lastClearDirtyRequestRef = useRef(0);
+  const documentDirtyRef = useRef(false);
   const lastSaveRequestRef = useRef(0);
   const terminalOperationIdsRef = useRef(new Set<string>());
   const mountGenerationRef = useRef(0);
@@ -715,6 +716,12 @@ export const OnlyOfficeEditor = ({
         result = uploadPocFilesRef.current?.handle(data, currentOptions) ?? {
           error: "ยังเชื่อมต่อไฟล์ในหน้านี้ไม่ได้",
         };
+        if (typeof result.hasPending === "boolean") {
+          onDirtyChangeRef.current?.(
+            documentDirtyRef.current ||
+              uploadPocFilesRef.current?.hasPending() === true
+          );
+        }
       } catch (caughtError) {
         result = {
           error:
@@ -861,7 +868,10 @@ export const OnlyOfficeEditor = ({
       }
       const dirtyMessage = parseDirtyStateMessage(data, bridgeId);
       if (dirtyMessage) {
-        onDirtyChangeRef.current?.(dirtyMessage.dirty);
+        documentDirtyRef.current = dirtyMessage.dirty;
+        onDirtyChangeRef.current?.(
+          dirtyMessage.dirty || uploadPocFilesRef.current?.hasPending() === true
+        );
         return;
       }
       let message = parseOperationMessage(data, bridgeId);
@@ -968,6 +978,7 @@ export const OnlyOfficeEditor = ({
             nativeDocumentDirty
           ) {
             // Office autosave is separate from Folio's saved draft/submission.
+            documentDirtyRef.current = true;
             onDirtyChangeRef.current?.(true);
           }
           if (!nativeDocumentDirty) {
