@@ -1,6 +1,7 @@
 // oxlint-disable sort-keys -- Target descriptors follow their binding identity; validation branches are explicit.
 import { strToU8, zipSync } from "fflate";
 
+import { fail } from "../../http/errors";
 import { templateRelationshipPartPath, templateArchiveText } from "../package";
 import { responsePictureRelationships } from "../pictures";
 import {
@@ -249,6 +250,110 @@ export const savedSpreadsheetUploadPocButtons = (
           candidate.rowIndex === entry.rowIndex
       ).length === 1
   );
+};
+
+const managedOleObject = (
+  node: string | SpreadsheetXmlNode
+): node is SpreadsheetXmlNode =>
+  typeof node !== "string" &&
+  local(node) === "oleObject" &&
+  node.attributes.progId === uploadPocGuid;
+
+const oleReference = (node: SpreadsheetXmlNode): string | null => {
+  const relationship = Object.entries(node.attributes).find(
+    ([key]) => key.split(":").at(-1) === "id"
+  )?.[1];
+  return node.attributes.shapeId && relationship
+    ? JSON.stringify([node.attributes.shapeId, relationship])
+    : null;
+};
+
+const managedControlCount = (sheet: SpreadsheetXmlNode): number => {
+  let count = nodes(sheet, "oleObject").filter(managedOleObject).length;
+  for (const alternate of nodes(sheet, "AlternateContent")) {
+    const branches = alternate.children.filter(
+      (child): child is SpreadsheetXmlNode => typeof child !== "string"
+    );
+    const choices = branches
+      .filter((branch) => local(branch) === "Choice")
+      .flatMap((branch) => branch.children)
+      .filter(managedOleObject);
+    const fallbacks = branches
+      .filter((branch) => local(branch) === "Fallback")
+      .flatMap((branch) => branch.children)
+      .filter(managedOleObject);
+    const choiceReferences = choices.map(oleReference);
+    const fallbackReferences = fallbacks.map(oleReference);
+    for (const fallback of fallbacks) {
+      const reference = oleReference(fallback);
+      if (
+        !reference ||
+        fallback.children.some(
+          (child) => typeof child !== "string" || child.trim().length > 0
+        )
+      ) {
+        continue;
+      }
+      // Native OOXML emits one anchored Choice and one empty Fallback alias for the same physical button.
+      if (
+        choiceReferences.filter((value) => value === reference).length === 1 &&
+        fallbackReferences.filter((value) => value === reference).length === 1
+      ) {
+        count -= 1;
+      }
+    }
+  }
+  return count;
+};
+
+export const validateSpreadsheetAttachmentButtons = (
+  bytes: Uint8Array,
+  bindings: SpreadsheetBindings
+): void => {
+  const workbook = readSpreadsheetWorkbook(bytes);
+  const targets = spreadsheetUploadPocTargets(bytes, bindings);
+  const configured = new Set(
+    [...bindings.fields, ...(bindings.table?.columns ?? [])]
+      .filter((field) => field.attachment)
+      .map((field) => field.id)
+  );
+  const managedCount = managedControlCount(
+    spreadsheetXmlTree(
+      templateArchiveText(workbook.archive, workbook.sheetPath)
+    )
+  );
+  const verified =
+    managedCount > 0 ? savedSpreadsheetUploadPocButtons(bytes, bindings) : [];
+  const counts = new Map<string, number>();
+  for (const button of verified) {
+    counts.set(button.bindingId, (counts.get(button.bindingId) ?? 0) + 1);
+  }
+  const incomplete = [...configured].some((id) => {
+    const target = targets.find((entry) => entry.bindingId === id);
+    if (!target) {
+      return true;
+    }
+    let expected = 1;
+    if (target.kind === "column") {
+      const body = workbook.names.get(target.bodyAnchor ?? "");
+      if (!body) {
+        return true;
+      }
+      expected = body.lastRow - body.firstRow + 1;
+    }
+    return counts.get(id) !== expected;
+  });
+  if (
+    managedCount !== verified.length ||
+    incomplete ||
+    targets.some((target) => !configured.has(target.bindingId))
+  ) {
+    fail(
+      422,
+      "invalid_template",
+      "ตั้งค่าช่องแนบและปุ่มเดิมให้ครบ ตำแหน่งและ Tag ต้องตรงกัน หรือนำปุ่มที่ไม่ใช้ออกก่อนเผยแพร่"
+    );
+  }
 };
 
 /** A placement ACK proves this exact binding, including every canonical table row. */

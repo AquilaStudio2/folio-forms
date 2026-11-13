@@ -3,6 +3,7 @@ const cloneValue = (value) => JSON.parse(JSON.stringify(value));
 const parsedNativeState = (value) =>
   typeof value === "string" ? JSON.parse(value) : value;
 const fieldValue = (field, scalar) => ({
+  attachment: field.attachment ?? null,
   computed: field.computed ?? false,
   id: field.id,
   key: field.key,

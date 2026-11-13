@@ -24,6 +24,7 @@ import {
   normalizeSpreadsheetUploadPocAnchors,
   spreadsheetUploadPocTargets,
   stripSpreadsheetUploadPoc,
+  validateSpreadsheetAttachmentButtons,
 } from "../documents/spreadsheets/upload-poc";
 import {
   extractSpreadsheetData,
@@ -119,6 +120,7 @@ export const prepareSpreadsheetOperation = async (
       );
     }
     validateSpreadsheetPublication(bindings);
+    validateSpreadsheetAttachmentButtons(snapshot, bindings);
     let synchronized: Uint8Array;
     try {
       synchronized = synchronizeSpreadsheetPictureAnchors(snapshot, bindings);

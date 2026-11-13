@@ -8,6 +8,11 @@ import {
   spreadsheetDuplicateTagMessage,
 } from "../documents/spreadsheets/contract";
 import type { SpreadsheetBindings } from "../documents/spreadsheets/contract";
+import {
+  loadAttachmentCategories,
+  validateAttachmentCategoryChanges,
+} from "../ecm/categories";
+import type { EcmClient } from "../ecm/client";
 import { lockActiveEditorLease } from "../editor/leases";
 import {
   requireFieldRuleContext,
@@ -219,8 +224,21 @@ export const applySpreadsheetBindingChange = (
   return parsed.data;
 };
 
-export const registerSpreadsheetAuthoringRoutes = (app: Elysia): void => {
+export const registerSpreadsheetAuthoringRoutes = (
+  app: Elysia,
+  ecm: EcmClient
+): void => {
   app
+    .get(
+      "/api/admin/forms/:publicId/attachment-categories",
+      async ({ request, params }) => {
+        const context = await requireFieldRuleContext(request, params.publicId);
+        if (context.form.documentKind !== "xlsx") {
+          fail(409, "invalid_field_config", "แบบฟอร์มนี้ไม่รองรับช่องแนบ Excel");
+        }
+        return { categories: await loadAttachmentCategories(ecm, context) };
+      }
+    )
     .get(
       "/api/admin/forms/:publicId/spreadsheet-bindings",
       async ({ request, params }) => {
@@ -241,8 +259,8 @@ export const registerSpreadsheetAuthoringRoutes = (app: Elysia): void => {
     .patch(
       "/api/admin/forms/:publicId/spreadsheet-bindings",
       async ({ request, params }) => {
-        const { authorization, capabilityScope, form, templateDraft } =
-          await requireFieldRuleContext(request, params.publicId);
+        const context = await requireFieldRuleContext(request, params.publicId);
+        const { authorization, capabilityScope, form, templateDraft } = context;
         if (form.documentKind !== "xlsx") {
           fail(409, "invalid_field_config", "แบบฟอร์มนี้ไม่รองรับการตั้งค่าช่อง Excel");
         }
@@ -307,10 +325,18 @@ export const registerSpreadsheetAuthoringRoutes = (app: Elysia): void => {
               "กำลังบันทึกเอกสาร กรุณารอให้เสร็จแล้วลองอีกครั้ง"
             );
           }
+          const previousBindings = await spreadsheetDraftBindings(draft.id, tx);
           const bindings = applySpreadsheetBindingChange(
-            await spreadsheetDraftBindings(draft.id, tx),
+            previousBindings,
             input.change,
             input.spreadsheetColumnOffsets
+          );
+          await validateAttachmentCategoryChanges(
+            tx,
+            ecm,
+            context,
+            previousBindings,
+            bindings
           );
           const updated = await tx.templateDraft.updateMany({
             data: {

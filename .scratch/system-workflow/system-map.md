@@ -2,6 +2,8 @@
 
 ทบทวนวันที่ 9 พฤศจิกายน 2026 จากฐาน `codex/admin-result-downloads` ที่ `95534c9` รวมการย้ายปุ่มดาวน์โหลดในแถว Document / Fields ของหน้ารายละเอียด Results และการคง guard ห้ามลบคำตอบระหว่างส่งออก
 
+ทบทวนส่วนตั้งค่าช่องแนบ Excel และ ECM authentication วันที่ 13 พฤศจิกายน 2026 บน `feat/ecm-attachments-config` จากฐาน implementation `b627865` ส่วนอื่นคงผลทบทวนเดิม ขอบเขตนี้เพิ่มการตั้งค่าจากปุ่มเดิมและ shared auth ไม่ได้ยืนยันวงจรอัปโหลดคำตอบ การตรวจ native browser หรือบริการ ECM จริง
+
 เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
 รายการ source ครอบคลุมหน้าและ layout ฝั่งเว็บ, HTTP routes ของเซิร์ฟเวอร์หลัก, private document worker และ Prisma models
@@ -415,7 +417,7 @@ Callback มีการตรวจ JWT, document key, claim, operation แล�
 
 อ้างอิง [plugin operations](../../apps/onlyoffice-plugin/src/operations.js#L393), [createOperation](../../apps/server/src/operations/create.ts#L20), [force-save](../../apps/server/src/operations/force-save.ts#L147), [finalizeCallback](../../apps/server/src/operations/callback.ts#L155) และ [native processing](../../apps/server/src/operations/response-completion.ts#L192)
 
-## 08 Excel, field mapping และตัวเลือกโครงการ PDMS
+## 08 Excel, field mapping, ช่องแนบ ECM และตัวเลือกโครงการ PDMS
 
 ```mermaid
 flowchart TD
@@ -442,13 +444,35 @@ flowchart TD
     author --> select --> settings --> native --> patch --> known
     known -->|"ได้"| rules
     known -->|"ไม่ได้"| block --> recover --> known
-    rules --> publish --> fill --> source
+    rules --> attachment["ช่องแนบ: category ต่อ scalar หรือ column"]
+    attachment --> complete{"category ครบ และมี root fiscal_year/docs_number"}
+    complete -->|"ครบ"| publish
+    complete -->|"ไม่ครบ"| draftOnly["บันทึก Template Draft ได้ แต่เผยแพร่ไม่ได้"]
+    rules -->|"ordinary Fields ไม่มีปุ่มแนบ"| publish
+    publish --> fill --> source
     source -->|"ไม่มี"| operation
     source -->|"มี"| catalog
     catalog -.-> ongoing
     ongoing -.-> snapshot
     snapshot --> picker --> target --> operation
     operation --> extract --> result
+    settings -->|"โหลด Document Category สำหรับช่องแนบ"| ecmAdmin
+    subgraph ecmFlow ["ECM: หมวดเอกสารและ shared authentication"]
+        ecmAdmin["Admin โหลดหมวดจาก Field settings เดิม"] --> ecmScope["ตรวจ Admin capability / lease / XLSX Draft"]
+        ecmScope --> ecmConfigured{"มี Folio-only ECM config และ encryption key"}
+        ecmConfigured -->|"ไม่มี"| ecmUnavailable["integration error เท่านั้น Folio session คงเดิม"]
+        ecmConfigured -->|"มี"| ecmCache["อ่าน PostgreSQL token generation"]
+        ecmCache --> ecmValid{"verified expiry ครอบคลุม request budget + skew"}
+        ecmValid -->|"พอ"| ecmCategory["GET category ครั้งเดียว ไม่ resend หลัง 401"]
+        ecmValid -->|"ไม่พอ"| ecmShared["claim shared auth job; waiters ร่วม generation"]
+        ecmShared --> ecmLogin["POST login: สูงสุด 3 ครั้งรวมแรก / 15s ต่อครั้ง / 30s รวม"]
+        ecmLogin --> ecmEncrypted["เข้ารหัส AES-GCM และ persist ด้วย owner/generation fence"]
+        ecmLogin -->|"permanent error หรือหมด deadline"| ecmUnavailable
+        ecmEncrypted --> ecmCategory
+        ecmCategory --> ecmSelected["คืนเฉพาะ category names และเก็บ scoped list"]
+        ecmCategory -->|"401"| ecmInvalidate["invalidate เฉพาะ generation ที่ใช้ คืน integration error"]
+    end
+    ecmSelected -->|"เลือกหมวดแล้วบันทึก Field settings"| native
 ```
 
 Contract รองรับ scalar fields และหนึ่ง repeating table ในหนึ่ง worksheet ที่แก้ได้ Key ของคอลัมน์ใน metadata ใช้ `tableKey.columnKey` แต่คำตอบเก็บเป็น array ของ object Named ranges ช่วยติดตามตำแหน่งเมื่อแทรกหรือย้ายคอลัมน์ หากระบุตำแหน่งไม่ชัด ระบบหยุดบันทึก
@@ -461,9 +485,29 @@ Catalog ที่โหลดสำเร็จเป็น snapshot ของ�
 
 Production จะเปิดความสามารถนี้เมื่อ `PDMS_PROJECT_NAME_SOURCE_ENABLED` เป็นจริงและมี configuration ที่ใช้ได้ แผนผังนี้ไม่ได้ยืนยันว่าระบบปลายทางเปิด flag แล้ว
 
-Upload POC เก็บ marker และปุ่มใน XLSX สำหรับทดลองการเลือกไฟล์ เป็น metadata ที่แสดงผล ไม่ใช่ระบบอัปโหลดไฟล์แนบถาวร ไม่มี API upload/download attachment ใน route inventory ปัจจุบัน ส่วน HTTP หรือ HTTPS hyperlink ที่ผูกกับเซลล์เป็นอีกความสามารถหนึ่ง และไม่ได้เปิดให้โหลด external workbook หรือ resource ทั่วไป
+ปุ่ม Upload POC เดิมใช้ตำแหน่ง stable binding และ automatic `attachment_N` เดิม Admin ตั้งเป็นช่องแนบอย่างชัดเจนใน Field settings เดิม พร้อม Title, Tag, required และ Document Category ต่อ scalar หรือ column ทุกแถวใน column ใช้หมวดเดียวกัน ค่า type ยังคงเป็น text สำหรับ placement เดิม แต่สัญญาแนบระบุด้วย `attachment` แยกชัดเจน ไม่เดาจาก Tag หรือข้อความ ค่าตั้งจริงอยู่ในคอลัมน์ร่วมของ DraftFieldRule/ManifestField ไม่ทำสำเนา config ใน binding JSON
 
-อ้างอิง [spreadsheet bindings](../../apps/server/src/routes/spreadsheet-authoring.ts#L222), [shared fields](../../apps/server/src/forms/spreadsheet-fields.ts#L99), [PDMS loader](../../apps/server/src/pdms/projects.ts#L27), [catalog scope](../../apps/server/src/pdms/catalog.ts#L136), [selection target](../../apps/server/src/pdms/selection.ts#L26) และ [Upload POC](../../apps/server/src/documents/spreadsheets/upload-poc.ts#L61)
+ก่อนเผยแพร่ทุก managed PoC OLE ต้องมีหลักฐาน saved-button ที่ตรวจจริงตรงกับ marker, binding, Tag และตำแหน่ง/แถว ไม่มี orphan หรือปุ่มซ้ำ และทุก declared attachment ต้องมีปุ่มจริงครบช่อง scalar หรือทุกแถวของ column การมี marker อย่างเดียวไม่พอ ระบบปฏิเสธก่อน engine เปลี่ยน workbook ไม่ strip ปุ่มที่ยังไม่ได้ตั้งค่าเพื่อทำให้ Publish ผ่าน และไม่เพิ่มการลบ foreign objects หรือบังคับให้ Template Draft ตั้งค่าครบ
+
+Native OOXML อาจแทนปุ่มเดียวด้วย anchored `Choice` และ empty `Fallback` ภายใน `AlternateContent` เดียวกัน ระบบนับ alias เป็นปุ่มเดียวเฉพาะเมื่อ shape ID/relationship ตรงกันและแต่ละด้านมีหนึ่งรายการเท่านั้น ปุ่มซ้ำหรือ orphan นอกโครงสร้างที่พิสูจน์นี้ยังต้องถูกปฏิเสธ
+
+Template Draft เก็บหมวดที่ยังไม่ครบได้ ก่อน Publish ต้องมีหมวดทุกช่อง มี root scalar `fiscal_year` และ `docs_number` อย่างละหนึ่ง Field และไม่มีปุ่มเก่าที่ไม่ได้ตั้งค่า หรือช่องแนบที่ไม่มี marker ตำแหน่งเดิม ไม่ต้องกรอกค่าคำตอบของ User ในต้นแบบ Tag เปลี่ยนก่อนเผยแพร่ได้โดยใช้ binding เดิม หลังเผยแพร่แก้ contract ไม่ได้ ต้อง Duplicate Form
+
+Admin โหลดหมวดจริงด้วย `GET /api/admin/forms/:publicId/attachment-categories` ภายใต้ configure-fields capability และ active editor lease เซิร์ฟเวอร์เรียก `GET /api/beeecm/public/document/category` และคืนชื่อจาก `type` ไม่คืน numeric ID เป็นปลายทาง รายการสำเร็จถูกผูกกับบัญชี ECM, Form, actor, lease และ document เป็นเวลา 15 นาที การเลือกหมวดใหม่ต้องตรงรายการนี้ ส่วนชื่อที่บันทึกไว้คงเดิมเมื่อหมวดเปลี่ยนชื่อหรือ API ล่ม Publish ไม่เรียก API ซ้ำและไม่บังคับให้ User เลือกหมวด
+
+ECM ใช้เฉพาะ `ECM_API_URL`, `ECM_USERNAME`, `ECM_PASSWORD` ของ Folio และ `ECM_TOKEN_ENCRYPTION_KEY` ที่ส่งผ่าน secret management เป็น key 32 bytes แบบ Base64 ห้าม login บัญชีนี้นอก coordinator เดียวกัน HTTPS จำเป็นนอก loopback ห้ามตาม redirect พร้อม credentials และไม่ fallback ไป Ongoing Configuration ผิดกระทบเฉพาะงาน ECM ไม่ทำให้ Forms ปกติหรือ Folio login ใช้ไม่ได้
+
+`compose.yaml` ส่งตัวแปร ECM ทั้งสี่แบบ optional เฉพาะ container `server` ไม่ส่งไป web หรือ ONLYOFFICE ตัวอย่าง root/server `.env.example` ใช้ค่าว่างเท่านั้น การ provision/หมุน encryption key และบัญชีเฉพาะต้องทำผ่านช่องทาง secret ตาม [README](../../README.md) ไม่มีการ deploy หรือใส่ credential จริงใน change นี้
+
+Bearer ใน PostgreSQL เข้ารหัสและแยก key ออกจาก cache row แยก cache ตาม endpoint/account ตรวจ expiry แบบมี timezone ไม่เดาอายุ ขณะใช้งานต้องเหลือ request timeout บวก clock skew 30 วินาที Login ใช้ shared job deadline 30 วินาที lease เผื่อ persistence 5 วินาที มี backoff 1/2 วินาทีและเคารพ valid Retry-After ภายใน deadline เฉพาะ transient network/timeout/408/429/5xx เท่านั้นที่ retry ผลช้าและ late 401 ของ generation เก่าแก้ state ใหม่ไม่ได้ ไม่มี transaction ค้างระหว่าง HTTP และ waiter ที่ยกเลิกไม่ปล่อย claim งานเดิม เมื่อ job ถูกทิ้งและ lease หมด คำขอที่พบจบด้วย error ก่อนให้คำขอใหม่เริ่ม job ใหม่
+
+การเปลี่ยน cache เป็น ready ต้อง lock แถว job ที่ owner/generation ตรงกันผ่าน materialized CTE ก่อน แล้วตรวจ deadline ของแถวที่ lock ได้กับทั้ง policy clock และ `clock_timestamp()` ของ PostgreSQL ภายในคำสั่งเดียว UPDATE ที่รอ row lock จนเลย deadline จึงไม่ทำให้ token กลับมาใช้งานได้
+
+ไม่มี ECM login UI หรือ public token endpoint และไม่มี credentials/Bearer ใน browser, answers หรือ workbook การเรียก category/upload/delete ที่ถูกปฏิเสธไม่ถูกส่งซ้ำหลัง refresh โดยอัตโนมัติ HTTP/HTTPS hyperlink ของเซลล์ยังเป็นอีกความสามารถหนึ่ง ขอบเขตตั๋วนี้ยังไม่เพิ่ม endpoint บันทึกไฟล์คำตอบ ไม่ยืนยัน provider จริงรองรับไฟล์ 0 bytes/เข้ารหัส/10 MB หรือ native editor/protection smoke
+
+อ้างอิง [spreadsheet bindings](../../apps/server/src/routes/spreadsheet-authoring.ts), [shared fields](../../apps/server/src/forms/spreadsheet-fields.ts), [PDMS loader](../../apps/server/src/pdms/projects.ts#L27), [catalog scope](../../apps/server/src/pdms/catalog.ts#L136), [selection target](../../apps/server/src/pdms/selection.ts#L26) และ [Upload POC / publication verification](../../apps/server/src/documents/spreadsheets/upload-poc.ts)
+
+อ้างอิงเพิ่ม [ECM client และ auth coordination](../../apps/server/src/ecm/client.ts), [category provenance](../../apps/server/src/ecm/categories.ts), [native Field settings](../../apps/onlyoffice-plugin/src/spreadsheet.js), [HTTP authoring regressions](../../apps/server/test/http/ecm-attachment-authoring.test.ts) และ [HTTP shared-auth regressions](../../apps/server/test/http/ecm-auth.test.ts) Tests อยู่ใน `test:http` ปกติ ไม่มี opt-in flag; ผลตรวจต้องดู handoff ของ implementation ไม่ถือแผนภาพนี้เป็นหลักฐานว่ารันผ่านแล้ว
 
 ## 09 Results, ประวัติ, Correction และการดาวน์โหลด
 
@@ -745,6 +789,8 @@ erDiagram
         uuid templateDraftId FK
         string tag
         json binding
+        boolean attachment
+        string attachmentCategory
     }
     PublishedTemplate {
         uuid id PK
@@ -762,6 +808,8 @@ erDiagram
         string tag
         string type
         json binding
+        boolean attachment
+        string attachmentCategory
     }
     PrefillConfiguration {
         uuid id PK
@@ -812,11 +860,12 @@ ER แสดงความสัมพันธ์หลักสำหรั�
 | การนำข้อมูลเข้า | `Handoff` และ `PendingClaim` ควบคุมการนำ Prefill เข้าใช้ครั้งเดียว |
 | การแก้เอกสาร | `EditorLease` กันหลาย session แก้ target เดียวกัน, `Operation` เก็บงาน asynchronous, `CallbackClaim` กัน callback ใช้ซ้ำ |
 | Catalog ต่อการเปิด editor | `PdmsProjectCatalogSession` ผูกรายชื่อโครงการกับผู้ใช้ auth session, lease, target และ document |
+| ECM auth และ Document Category | `EcmAuthState` เก็บ encrypted token, expiry, generation และ shared claim; `EcmCategoryCatalog` เก็บรายชื่อจริงที่มีอายุและผูก authoring scope ไม่เก็บ service credentials |
 | การตรวจย้อนหลังและ cleanup | `AuditEvent` เก็บเหตุการณ์, `ObjectCleanupIntent` เก็บไฟล์ที่ต้องลบต่อ, `DeletionTombstone` กันข้อมูลที่ลบแล้วกลับมาจาก handoff เดิม |
 
 AI authoring sessions อยู่ใน workspace ชั่วคราวของบริการ ไม่ได้มี Prisma model ชื่อ AI session ใน schema นี้
 
-อ้างอิง [Prisma schema](../../packages/db/prisma/schema.prisma#L95) และ [รายการครบ 27 models](inventory.md#database-models)
+อ้างอิง [Prisma schema](../../packages/db/prisma/schema.prisma#L95) และ [รายการ models ครบ](inventory.md#database-models)
 
 ## 15 เริ่มระบบ งานค้าง และการกู้สถานะ
 
@@ -1274,7 +1323,7 @@ flowchart TD
 | Accounts | `routes/accounts.ts`: users CRUD, role/status/email, password reset และ review account links |
 | Form catalog | `routes/form-catalog.ts`: list, create, detail, metadata/archive/fill method, duplicate, delete และ template export |
 | Form authoring | `routes/form-authoring.ts`: editor-config, external schema search, DOCX rules, save, publish และ per-form submissions |
-| Spreadsheet authoring | `routes/spreadsheet-authoring.ts`: get/patch/recover bindings |
+| Spreadsheet authoring | `routes/spreadsheet-authoring.ts`: get/patch/recover bindings และ scoped attachment-categories; ECM auth/category อยู่ใน `ecm/` |
 | Form fill | `routes/public-forms.ts`: published metadata, start/resume/reopen, editor-config และประวัติการส่งของเจ้าของ |
 | Response actions | `routes/response-actions.ts`: save Draft และ Submit ทั้ง native กับ ONLYOFFICE |
 | Response read/delete | `routes/responses.ts`: my responses, current correction history, saved Draft export, owner discard และ Admin erase |

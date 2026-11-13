@@ -22,10 +22,32 @@ flowchart TD
     author --> select --> settings --> native --> patch --> known
     known -->|"ได้"| rules
     known -->|"ไม่ได้"| block --> recover --> known
-    rules --> publish --> fill --> source
+    rules --> attachment["ช่องแนบ: category ต่อ scalar หรือ column"]
+    attachment --> complete{"category ครบ และมี root fiscal_year/docs_number"}
+    complete -->|"ครบ"| publish
+    complete -->|"ไม่ครบ"| draftOnly["บันทึก Template Draft ได้ แต่เผยแพร่ไม่ได้"]
+    rules -->|"ordinary Fields ไม่มีปุ่มแนบ"| publish
+    publish --> fill --> source
     source -->|"ไม่มี"| operation
     source -->|"มี"| catalog
     catalog -.-> ongoing
     ongoing -.-> snapshot
     snapshot --> picker --> target --> operation
     operation --> extract --> result
+    settings -->|"โหลด Document Category สำหรับช่องแนบ"| ecmAdmin
+    subgraph ecmFlow ["ECM: หมวดเอกสารและ shared authentication"]
+        ecmAdmin["Admin โหลดหมวดจาก Field settings เดิม"] --> ecmScope["ตรวจ Admin capability / lease / XLSX Draft"]
+        ecmScope --> ecmConfigured{"มี Folio-only ECM config และ encryption key"}
+        ecmConfigured -->|"ไม่มี"| ecmUnavailable["integration error เท่านั้น Folio session คงเดิม"]
+        ecmConfigured -->|"มี"| ecmCache["อ่าน PostgreSQL token generation"]
+        ecmCache --> ecmValid{"verified expiry ครอบคลุม request budget + skew"}
+        ecmValid -->|"พอ"| ecmCategory["GET category ครั้งเดียว ไม่ resend หลัง 401"]
+        ecmValid -->|"ไม่พอ"| ecmShared["claim shared auth job; waiters ร่วม generation"]
+        ecmShared --> ecmLogin["POST login: สูงสุด 3 ครั้งรวมแรก / 15s ต่อครั้ง / 30s รวม"]
+        ecmLogin --> ecmEncrypted["เข้ารหัส AES-GCM และ persist ด้วย owner/generation fence"]
+        ecmLogin -->|"permanent error หรือหมด deadline"| ecmUnavailable
+        ecmEncrypted --> ecmCategory
+        ecmCategory --> ecmSelected["คืนเฉพาะ category names และเก็บ scoped list"]
+        ecmCategory -->|"401"| ecmInvalidate["invalidate เฉพาะ generation ที่ใช้ คืน integration error"]
+    end
+    ecmSelected -->|"เลือกหมวดแล้วบันทึก Field settings"| native

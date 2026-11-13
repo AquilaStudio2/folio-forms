@@ -7,6 +7,8 @@ import { AiAuthoringSessions } from "./ai-authoring";
 import { AiAuthoringError } from "./ai-authoring-error";
 import type { OmniRouteConfig } from "./ai-authoring/agent";
 import { databaseErrorCode } from "./db-errors";
+import { EcmClient, ecmConfigurationFromEnv } from "./ecm/client";
+import type { EcmConfiguration, EcmRuntime } from "./ecm/client";
 import { HttpError } from "./http/errors";
 import type { LegacySsoConfig } from "./legacy-sso/config";
 import {
@@ -52,6 +54,8 @@ import { registerSubmissionRoutes } from "./routes/submissions";
 import { putObject, deleteObject } from "./storage";
 
 export interface AppOptions {
+  ecm?: EcmConfiguration | null;
+  ecmRuntime?: Partial<EcmRuntime>;
   pdmsProjects?: PdmsProjectsConfiguration | null;
   clock?: () => Date;
   deleteObject?: (key: string) => Promise<void>;
@@ -111,6 +115,10 @@ export function createApp(options: AppOptions = {}) {
     aiAuthoring,
     allowedCallbackOrigins,
     callbackMaximumBytes,
+    ecm: new EcmClient(
+      options.ecm === undefined ? ecmConfigurationFromEnv() : options.ecm,
+      options.ecmRuntime
+    ),
     handoffClock,
     legacySso,
     onlyOffice,
@@ -196,7 +204,7 @@ export function createApp(options: AppOptions = {}) {
     });
   registerFormCatalogRoutes(app, dependencies);
   registerFormAuthoringRoutes(app, dependencies);
-  registerSpreadsheetAuthoringRoutes(app);
+  registerSpreadsheetAuthoringRoutes(app, dependencies.ecm);
   registerAuditRoutes(app, dependencies);
   registerResultRoutes(app, dependencies);
   registerPublicFormRoutes(app, dependencies);

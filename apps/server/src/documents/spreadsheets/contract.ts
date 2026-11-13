@@ -11,6 +11,10 @@ const keySchema = z
   );
 const fieldSchema = z
   .object({
+    attachment: z
+      .object({ category: z.string().min(1).max(255).nullable() })
+      .strict()
+      .optional(),
     computed: z.boolean().default(false),
     id: z.string().regex(/^folio_[A-Za-z0-9_]+$/u),
     key: keySchema,
@@ -118,6 +122,22 @@ export const spreadsheetBindingSchema = z
       ...bindings.fields,
       ...(bindings.table?.columns ?? []),
     ]) {
+      if (
+        field.attachment &&
+        (field.type !== "text" ||
+          field.source ||
+          field.computed ||
+          field.options.length > 0 ||
+          ("prefillPointer" in field &&
+            (field.prefillPointer !== null ||
+              field.prefillPolicy !== "editable")))
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Attachment fields cannot use formulas, choices, sources or Prefill",
+        });
+      }
       if (
         field.source &&
         (field.type !== "dropdown" ||

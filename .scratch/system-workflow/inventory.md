@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `95534c922b92c40c356798f3543bd8d97e1b9d23`
+Commit: `b6278656be2614354cdcc968fe6ac9c0dc9c3268`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -123,16 +123,17 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | GET | `/api/admin/results/:id/correction/editor-config` | `apps/server/src/routes/results.ts:574` |
 | POST | `/api/admin/results/:id/correction` | `apps/server/src/routes/results.ts:587` |
 | POST | `/api/admin/results/:id/correction/workspace` | `apps/server/src/routes/results.ts:588` |
-| GET | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:224` |
-| PATCH | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:241` |
-| POST | `/api/admin/forms/:publicId/spreadsheet-bindings/recover` | `apps/server/src/routes/spreadsheet-authoring.ts:365` |
+| GET | `/api/admin/forms/:publicId/attachment-categories` | `apps/server/src/routes/spreadsheet-authoring.ts:232` |
+| GET | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:242` |
+| PATCH | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:259` |
+| POST | `/api/admin/forms/:publicId/spreadsheet-bindings/recover` | `apps/server/src/routes/spreadsheet-authoring.ts:391` |
 | GET | `/api/submissions/:id/data` | `apps/server/src/routes/submissions.ts:40` |
 | GET | `/api/submissions/:id/corrections` | `apps/server/src/routes/submissions.ts:96` |
 | GET | `/api/submissions/:id/json` | `apps/server/src/routes/submissions.ts:205` |
 | GET | `/api/submissions/:id/:format` | `apps/server/src/routes/submissions.ts:238` |
 | GET | `/api/submissions/:id/pdf` | `apps/server/src/routes/submissions.ts:283` |
-| GET | `/health` | `apps/server/src/app.ts:189` |
-| GET | `/ready` | `apps/server/src/app.ts:190` |
+| GET | `/health` | `apps/server/src/app.ts:197` |
+| GET | `/ready` | `apps/server/src/app.ts:198` |
 
 ## Private document worker
 
@@ -155,25 +156,27 @@ Separate private HTTP listener in `apps/server/src/document-worker-server.ts:170
 | Form | `forms` | `packages/db/prisma/schema.prisma:203` |
 | TemplateDraft | `template_drafts` | `packages/db/prisma/schema.prisma:231` |
 | DraftFieldRule | `draft_field_rules` | `packages/db/prisma/schema.prisma:248` |
-| PublishedTemplate | `published_templates` | `packages/db/prisma/schema.prisma:274` |
-| FieldManifest | `field_manifests` | `packages/db/prisma/schema.prisma:292` |
-| ManifestField | `manifest_fields` | `packages/db/prisma/schema.prisma:305` |
-| PrefillConfiguration | `prefill_configurations` | `packages/db/prisma/schema.prisma:332` |
-| PrefillField | `prefill_fields` | `packages/db/prisma/schema.prisma:347` |
-| Response | `responses` | `packages/db/prisma/schema.prisma:362` |
-| PrefillSnapshot | `prefill_snapshots` | `packages/db/prisma/schema.prisma:393` |
-| Submission | `submissions` | `packages/db/prisma/schema.prisma:410` |
-| Correction | `corrections` | `packages/db/prisma/schema.prisma:432` |
-| Handoff | `handoffs` | `packages/db/prisma/schema.prisma:455` |
-| PendingClaim | `pending_claims` | `packages/db/prisma/schema.prisma:484` |
-| Operation | `operations` | `packages/db/prisma/schema.prisma:498` |
-| CallbackClaim | `callback_claims` | `packages/db/prisma/schema.prisma:535` |
-| EditorLease | `editor_leases` | `packages/db/prisma/schema.prisma:549` |
-| ObjectCleanupIntent | `object_cleanup_intents` | `packages/db/prisma/schema.prisma:574` |
-| AuditEvent | `audit_events` | `packages/db/prisma/schema.prisma:588` |
-| LoginFailure | `login_failures` | `packages/db/prisma/schema.prisma:606` |
-| DeletionTombstone | `deletion_tombstones` | `packages/db/prisma/schema.prisma:620` |
-| PdmsProjectCatalogSession | `pdms_project_catalog_sessions` | `packages/db/prisma/schema.prisma:633` |
+| PublishedTemplate | `published_templates` | `packages/db/prisma/schema.prisma:276` |
+| FieldManifest | `field_manifests` | `packages/db/prisma/schema.prisma:294` |
+| ManifestField | `manifest_fields` | `packages/db/prisma/schema.prisma:307` |
+| PrefillConfiguration | `prefill_configurations` | `packages/db/prisma/schema.prisma:336` |
+| PrefillField | `prefill_fields` | `packages/db/prisma/schema.prisma:351` |
+| Response | `responses` | `packages/db/prisma/schema.prisma:366` |
+| PrefillSnapshot | `prefill_snapshots` | `packages/db/prisma/schema.prisma:397` |
+| Submission | `submissions` | `packages/db/prisma/schema.prisma:414` |
+| Correction | `corrections` | `packages/db/prisma/schema.prisma:436` |
+| Handoff | `handoffs` | `packages/db/prisma/schema.prisma:459` |
+| PendingClaim | `pending_claims` | `packages/db/prisma/schema.prisma:488` |
+| Operation | `operations` | `packages/db/prisma/schema.prisma:502` |
+| CallbackClaim | `callback_claims` | `packages/db/prisma/schema.prisma:539` |
+| EditorLease | `editor_leases` | `packages/db/prisma/schema.prisma:553` |
+| ObjectCleanupIntent | `object_cleanup_intents` | `packages/db/prisma/schema.prisma:578` |
+| AuditEvent | `audit_events` | `packages/db/prisma/schema.prisma:592` |
+| LoginFailure | `login_failures` | `packages/db/prisma/schema.prisma:610` |
+| DeletionTombstone | `deletion_tombstones` | `packages/db/prisma/schema.prisma:624` |
+| PdmsProjectCatalogSession | `pdms_project_catalog_sessions` | `packages/db/prisma/schema.prisma:637` |
+| EcmAuthState | `ecm_auth_states` | `packages/db/prisma/schema.prisma:660` |
+| EcmCategoryCatalog | `ecm_category_catalogs` | `packages/db/prisma/schema.prisma:673` |
 
 ## Status enums
 

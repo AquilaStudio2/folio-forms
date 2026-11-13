@@ -119,6 +119,7 @@ export const automaticUploadPocField = (bindings, bindingId) => {
   }
   return {
     anchor: bindingId,
+    attachment: { category: null },
     computed: false,
     id: bindingId,
     key: `attachment_${index}`,

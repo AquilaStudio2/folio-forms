@@ -1453,6 +1453,41 @@ export function initializeSpreadsheet(options, setStatus) {
       ["picture", "รูปภาพ (JPEG / PNG)"],
     ]);
     const required = input("บังคับกรอก", "checkbox");
+    const attachment = input("ช่องแนบไฟล์จากปุ่มเดิม", "checkbox");
+    const category = select("Document Category", [["", "ยังไม่ได้เลือกหมวด"]]);
+    let categoryNames = [];
+    const renderCategories = (saved = category.value) => {
+      category.replaceChildren();
+      for (const name of [
+        "",
+        ...new Set([...categoryNames, ...(saved ? [saved] : [])]),
+      ]) {
+        const option = document.createElement("option");
+        option.value = name;
+        option.textContent = name || "ยังไม่ได้เลือกหมวด";
+        category.append(option);
+      }
+      category.value = saved;
+    };
+    const loadCategories = button("โหลด Document Category", async () => {
+      const capability = await bridge.requestActionCapability(
+        ACTIONS.CONFIGURE_FIELDS
+      );
+      const result = await api.requestJson(
+        api.adminFormPath("attachment-categories"),
+        { method: "GET" },
+        capability
+      );
+      if (
+        !Array.isArray(result?.categories) ||
+        result.categories.some((name) => typeof name !== "string")
+      ) {
+        throw new Error("อ่านรายการ Document Category ไม่ได้ ค่าที่บันทึกไว้ยังคงเดิม");
+      }
+      categoryNames = result.categories;
+      renderCategories();
+      setStatus("โหลด Document Category แล้ว เลือกหมวดและบันทึกการแก้ไข", "success");
+    });
     const placeholder = input("คำแนะนำในเซลล์ · Placeholder (ไม่บังคับ)");
     let panelChanged = () => {};
     const optionsField = createOptionsField(() => panelChanged());
@@ -1477,6 +1512,8 @@ export function initializeSpreadsheet(options, setStatus) {
       key: key.value,
       type: type.value,
       required: required.checked,
+      attachment: attachment.checked,
+      category: category.value,
       placeholder: placeholder.value,
       choices: optionsField.getOptions(),
       optionEntry: optionsField.getEntry(),
@@ -1513,6 +1550,8 @@ export function initializeSpreadsheet(options, setStatus) {
       key,
       type,
       required,
+      attachment,
+      category,
       placeholder,
       headers,
       kind,
@@ -1557,6 +1596,10 @@ export function initializeSpreadsheet(options, setStatus) {
       }
       show(type, !table);
       show(required, !table);
+      show(attachment, !table);
+      show(category, !table && attachment.checked);
+      loadCategories.hidden = table || !attachment.checked;
+      type.disabled = !table && attachment.checked;
       show(placeholder, !table);
       optionsField.element.hidden = table || type.value !== "dropdown";
       show(headers, table && !editing);
@@ -1606,6 +1649,8 @@ export function initializeSpreadsheet(options, setStatus) {
           ? "pdms-project-name"
           : editing?.type || "text";
       required.checked = Boolean(editing?.required);
+      attachment.checked = Boolean(editing?.attachment);
+      renderCategories(editing?.attachment?.category || "");
       placeholder.value = editing?.placeholder || "";
       optionsField.setOptions(editing?.options || []);
       headers.checked = false;
@@ -1618,6 +1663,8 @@ export function initializeSpreadsheet(options, setStatus) {
         key.value = draft.key;
         type.value = draft.type;
         required.checked = draft.required;
+        attachment.checked = draft.attachment;
+        renderCategories(draft.category);
         placeholder.value = draft.placeholder;
         optionsField.setOptions(draft.choices);
         optionsField.setEditorState(
@@ -1628,6 +1675,12 @@ export function initializeSpreadsheet(options, setStatus) {
       updateControls();
     };
     type.addEventListener("change", updateControls);
+    attachment.addEventListener("change", () => {
+      if (attachment.checked) {
+        type.value = "text";
+      }
+      updateControls();
+    });
     headers.addEventListener("change", updateControls);
     kind.addEventListener("change", () => {
       if (editing) {
@@ -1861,6 +1914,20 @@ export function initializeSpreadsheet(options, setStatus) {
         computed: false,
         options: type.value === "dropdown" ? optionsField.getOptions() : [],
       };
+      if (attachment.checked && kind.value !== "table") {
+        if (
+          value.type !== "text" ||
+          editing?.prefillPointer ||
+          (editing?.prefillPolicy && editing.prefillPolicy !== "editable")
+        ) {
+          throw new Error(
+            "ช่องแนบต้องเป็นข้อความที่ไม่ใช้ข้อมูลเริ่มต้นหรือสูตร กรุณาแก้กฎเดิมก่อน"
+          );
+        }
+        value.attachment = { category: category.value || null };
+      } else {
+        delete value.attachment;
+      }
       if (type.value === "pdms-project-name") {
         value.source = "pdms-project-name";
       } else {
