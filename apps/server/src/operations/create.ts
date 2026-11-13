@@ -6,6 +6,7 @@ import type {
 import { prisma, Prisma, OperationStatus } from "@onlyoffice/db";
 
 import { databaseErrorCode } from "../db-errors";
+import { requireAttachmentMutationReady } from "../ecm/attachments";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type {
   ActionEditorAuthorization,
@@ -19,6 +20,7 @@ import type { OperationMetadata } from "./model";
 
 export async function createOperation(input: {
   actorId: string;
+  attachmentCheckpoint?: string;
   authorization: ActionEditorAuthorization;
   capabilityScope: Omit<EditorCapabilityScope, "action" | "operationId">;
   documentKey: string;
@@ -147,7 +149,10 @@ export async function createOperation(input: {
           "Another document operation is already in progress"
         );
       }
-      return tx.operation.create({
+      if (input.responseId) {
+        await requireAttachmentMutationReady(input.responseId, tx);
+      }
+      const operation = await tx.operation.create({
         data: {
           actorId: input.actorId,
           documentKey: input.documentKey,
@@ -164,6 +169,47 @@ export async function createOperation(input: {
           type: input.type,
         },
       });
+      if (input.attachmentCheckpoint && input.responseId) {
+        const response = await tx.response.findUnique({
+          where: { id: input.responseId },
+        });
+        const lease = await tx.editorLease.findUnique({
+          where: {
+            targetType_targetId: {
+              targetId: input.responseId,
+              targetType: "response",
+            },
+          },
+        });
+        if (
+          !response ||
+          response.userId !== input.actorId ||
+          response.status !== "draft" ||
+          response.draftDocumentKey !== input.documentKey ||
+          !lease
+        ) {
+          fail(409, "stale_response", "คำตอบหรือสิทธิ์ตัวแก้ไขเปลี่ยนแล้ว");
+        }
+        await tx.ecmAttachmentBatch.create({
+          data: {
+            actorId: input.actorId,
+            authSessionId: lease.holderSessionId,
+            checkpoint: input.attachmentCheckpoint,
+            documentKey: input.documentKey,
+            formId: input.formId,
+            leaseId: lease.id,
+            operationId: operation.id,
+            responseId: input.responseId,
+          },
+        });
+        if (input.metadata.action === "submit") {
+          await tx.response.update({
+            data: { status: "submitting" },
+            where: { id: input.responseId },
+          });
+        }
+      }
+      return operation;
     });
   } catch (error) {
     if (databaseErrorCode(error) === "P2002") {

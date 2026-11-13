@@ -41,7 +41,7 @@ export const checkUploadPocPending = (
           )
         );
       } else {
-        resolve();
+        resolve(message);
       }
     };
     hostWindow.addEventListener("message", receive);

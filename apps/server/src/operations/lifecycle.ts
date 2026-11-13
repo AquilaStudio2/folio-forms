@@ -215,7 +215,7 @@ export async function operationDocumentKey(
 ): Promise<string | null> {
   const pending = await prisma.operation.findMany({
     orderBy: { updatedAt: "desc" },
-    select: { metadata: true },
+    select: { id: true, metadata: true },
     take: 10,
     where: {
       documentKey,
@@ -223,6 +223,13 @@ export async function operationDocumentKey(
     },
   });
   for (const operation of pending) {
+    if (
+      await prisma.ecmAttachmentBatch.findUnique({
+        where: { operationId: operation.id },
+      })
+    ) {
+      continue;
+    }
     const metadata = operationMetadata(operation.metadata);
     if (await objectExists(metadata.stagedObjectKey)) {
       return metadata.stagedObjectKey;

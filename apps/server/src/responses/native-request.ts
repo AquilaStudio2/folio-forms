@@ -8,6 +8,7 @@ import {
   invalidResponsePicture,
   validateResponsePictureMediaBytes,
 } from "../documents/pictures";
+import type { SpreadsheetBindings } from "../documents/spreadsheets/contract";
 import { fail } from "../http/errors";
 import {
   maxTemplateMultipartOverheadBytes,
@@ -36,15 +37,18 @@ type NativeResponseMultipartEntry = string | NativeResponseUploadedFile;
 interface NativeResponseRequest {
   input: JsonRecord;
   pictures: Map<string, NativePictureUpload>;
+  attachments: Map<string, File>;
 }
 
 export async function nativeResponseRequest(
   request: Request,
-  pictureFields: readonly ResponsePictureManifestField[]
+  pictureFields: readonly ResponsePictureManifestField[],
+  bindings?: SpreadsheetBindings
 ): Promise<NativeResponseRequest> {
   const contentType = request.headers.get("content-type");
   if (!contentType || !/^multipart\/form-data(?:\s*;|$)/iu.test(contentType)) {
     return {
+      attachments: new Map(),
       input: await readJsonRecord(
         request,
         maxNativePictureMultipartOverheadBytes
@@ -56,10 +60,17 @@ export async function nativeResponseRequest(
     (total, field) => total + (field.pictureMaxBytes ?? 0),
     0
   );
-  const maximumBodyBytes = Math.min(
-    maxTemplateArchiveExpandedBytes + maxNativePictureMultipartOverheadBytes,
-    imageByteLimit + maxNativePictureMultipartOverheadBytes
-  );
+  const attachmentFields =
+    bindings?.fields.filter((field) => field.attachment) ?? [];
+  const maximumBodyBytes = attachmentFields.length
+    ? imageByteLimit +
+      attachmentFields.length * 10_000_000 +
+      maxNativePictureMultipartOverheadBytes
+    : Math.min(
+        maxTemplateArchiveExpandedBytes +
+          maxNativePictureMultipartOverheadBytes,
+        imageByteLimit + maxNativePictureMultipartOverheadBytes
+      );
   const requestBytes = await readRequestBytes(
     request,
     maximumBodyBytes,
@@ -79,6 +90,7 @@ export async function nativeResponseRequest(
   }
   const fieldsByTag = new Map(pictureFields.map((field) => [field.tag, field]));
   const pictures = new Map<string, NativePictureUpload>();
+  const attachments = new Map<string, File>();
   let input: JsonRecord | null = null;
   for (const [key, value] of entries) {
     if (key === "payload") {
@@ -90,6 +102,23 @@ export async function nativeResponseRequest(
       } catch {
         fail(400, "invalid_request", "payload must be a valid JSON object");
       }
+      continue;
+    }
+    if (key.startsWith("attachment:")) {
+      const id = key.slice("attachment:".length);
+      const field = attachmentFields.find((candidate) => candidate.id === id);
+      if (!field || attachments.has(id) || !(value instanceof File)) {
+        fail(400, "invalid_attachment", "ช่องแนบไม่ตรงกับสัญญาฟอร์มหรือซ้ำ");
+      }
+      const bytes = await value.arrayBuffer();
+      if (bytes.byteLength > 10_000_000) {
+        fail(
+          413,
+          "invalid_attachment",
+          `${field.label}: ${bytes.byteLength} bytes เกิน 10,000,000 bytes`
+        );
+      }
+      attachments.set(id, value);
       continue;
     }
     if (!key.startsWith("picture:") || typeof value === "string") {
@@ -133,5 +162,12 @@ export async function nativeResponseRequest(
   if (!input) {
     fail(400, "invalid_request", "payload is required");
   }
-  return { input, pictures };
+  if (attachments.size && input.rowChange !== undefined) {
+    fail(
+      400,
+      "invalid_attachment",
+      "คำสั่งภายในตารางไม่ใช่การบันทึกไฟล์แนบ กรุณากดบันทึกฉบับร่างหรือส่งโดยตรง"
+    );
+  }
+  return { attachments, input, pictures };
 }

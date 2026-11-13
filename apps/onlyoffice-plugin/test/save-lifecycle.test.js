@@ -8,6 +8,112 @@ import {
   flushPlugin,
 } from "./harness.js";
 
+test("scalar uncertain Save keeps ordinary editing frozen while recovery remains usable and waits for the canonical remount after completion", async () => {
+  const harness = createHarness({
+    action: "draft",
+    capabilityResponses: ["first-capability", "retry-capability"],
+    documentKind: "xlsx",
+    nativeWorkbookCaptureUrl: "http://office.test/old-ordinary-snapshot.xlsx",
+    responses: [
+      completedOperation({
+        documentKey: "saved-document-key",
+        submissionId: "original-submission",
+      }),
+    ],
+    scopeIdentity: "actor/response",
+    serializeCommands: true,
+    spreadsheetBindings: {
+      fields: [
+        {
+          anchor: "folio_file",
+          attachment: { category: "หลักฐาน" },
+          id: "folio_file",
+          key: "file",
+          label: "File",
+          type: "text",
+        },
+      ],
+      table: null,
+      version: 1,
+    },
+    spreadsheetSelection: { names: { folio_file: "'Form'!$B$10" } },
+  });
+  const post = harness.parentWindow.postMessage.bind(harness.parentWindow);
+  let attempts = 0;
+  harness.parentWindow.postMessage = (message, origin) => {
+    post(message, origin);
+    if (!["pending-file-check", "pending-file-save"].includes(message.type)) {
+      return;
+    }
+    let result = {
+      allowed: true,
+      attachmentCommitUnresolved: false,
+      hasPending: false,
+    };
+    if (message.type === "pending-file-save") {
+      attempts += 1;
+      result = { attachmentCommitUnresolved: true, error: "ผลรอบเดิมยังไม่ยืนยัน" };
+    } else if (attempts > 0) {
+      result = {
+        ...result,
+        attachmentCommitUnresolved: true,
+        checkpointOperation: {
+          action: "submit",
+          operationCapability: "original-operation-capability",
+          operationId: "original-operation",
+          status: "completed",
+        },
+      };
+    }
+    queueMicrotask(() =>
+      harness.dispatch({
+        data: {
+          ...message,
+          ...result,
+          source: "folio-upload-poc-host",
+          type: "pending-file-result",
+        },
+        origin: harness.parentOrigin,
+        source: harness.parentWindow,
+      })
+    );
+  };
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  const first = await harness.window.FormBridge.runAction("submit");
+  expect(attempts, JSON.stringify(first)).toBe(1);
+  expect(first).toMatchObject({ ok: false });
+  expect(harness.editorRestriction).toBe("readOnly");
+  expect(
+    harness.messages
+      .filter(({ message }) => message.type === "operation")
+      .at(-1).message.status
+  ).toBe("failed");
+  const recovered = await harness.window.FormBridge.runAction("save-draft");
+  expect(recovered).toMatchObject({
+    ok: true,
+    operationId: "original-operation",
+  });
+  expect(attempts).toBe(1);
+  expect(
+    harness.messages.filter(
+      ({ message }) => message.type === "capability-request"
+    )
+  ).toHaveLength(1);
+  expect(harness.requests.map(({ method }) => method)).toEqual(["GET"]);
+  expect(harness.editorRestriction).toBe("readOnly");
+  expect(
+    harness.messages
+      .filter(({ message }) => message.type === "operation")
+      .at(-1).message
+  ).toMatchObject({
+    action: "submit",
+    operationId: "original-operation",
+    requestedAction: "save-draft",
+    status: "completed",
+  });
+});
+
 for (const action of ["save-template", "publish"]) {
   test(`DOCX ${action} ignores new parent commands and preserves the existing toolbar contract`, async () => {
     const harness = createHarness({

@@ -345,7 +345,7 @@ export function initializeSpreadsheet(options, setStatus) {
       }
       await ensureAuthoringReady();
       validatePanelDrafts();
-      await checkUploadPocPending(window, options, action, rowChange);
+      return checkUploadPocPending(window, options, action, rowChange);
     },
     setActionBusy: (value) => {
       busy = value;
@@ -2555,8 +2555,35 @@ export function initializeSpreadsheet(options, setStatus) {
     message.hidden = true;
     busy = true;
     let initializationError = null;
-    const responseReady = office
-      .executeMethodResult("SetEditingRestrictions", ["none"])
+    const configuredScalarAttachments =
+      ["fill", "draft", "submit"].includes(options.action) &&
+      bindings?.fields?.some((field) => field.attachment);
+    const responseReady = (
+      configuredScalarAttachments
+        ? office.freezeEditor().then(async () => {
+            let pending;
+            try {
+              pending = await checkUploadPocPending(
+                window,
+                options,
+                ACTIONS.SAVE_DRAFT
+              );
+            } catch (error) {
+              // Remain read-only after uncertain recovery, but keep the normal Save retry usable.
+              setStatus(
+                `ยังตรวจผลรอบเดิมไม่ได้ กรุณากดบันทึกเพื่อตรวจผลเดิม: ${error.message}`,
+                "error"
+              );
+              return;
+            }
+            if (pending?.attachmentCommitUnresolved !== true) {
+              await office.executeMethodResult("SetEditingRestrictions", [
+                "none",
+              ]);
+            }
+          })
+        : office.executeMethodResult("SetEditingRestrictions", ["none"])
+    )
       .catch((error) => {
         initializationError = error;
         setStatus(error.message, "error");
@@ -2587,7 +2614,9 @@ export function initializeSpreadsheet(options, setStatus) {
             }
             if (result.count > 0) {
               setStatus(
-                "พร้อมเลือกไฟล์ POC ไฟล์อยู่ในหน้านี้เท่านั้น ยังไม่อัปโหลดหรือบันทึกถาวร",
+                configuredScalarAttachments
+                  ? "พร้อมเปิดช่องแนบไฟล์ ดูไฟล์ที่บันทึกแล้วหรือเลือกไฟล์ใหม่ แล้วกดบันทึกฉบับร่างหรือส่งเพื่อบันทึกการเลือก"
+                  : "ปุ่ม POC เดิมแสดงคำแนะนำติดต่อ Admin เพื่อตั้งค่าฟอร์มใหม่ ไม่รับการเลือกไฟล์",
                 "success"
               );
             }

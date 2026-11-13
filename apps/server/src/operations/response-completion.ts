@@ -8,6 +8,7 @@ import {
 } from "@onlyoffice/db";
 
 import { validateResponseDocument } from "../documents/native-eligibility";
+import { commitAttachmentBatch } from "../ecm/attachments";
 import { fail, HttpError } from "../http/errors";
 import { jsonRecord } from "../http/input";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
@@ -34,6 +35,7 @@ export async function completeDraftOperation(
   if (!metadata.responseId || !metadata.data) {
     fail(500, "invalid_operation", "Draft metadata is incomplete");
   }
+  const data = metadata.data;
   const response = await prisma.response.findUnique({
     where: { id: metadata.responseId },
   });
@@ -59,6 +61,7 @@ export async function completeDraftOperation(
   ];
   await prisma.$transaction(
     async (tx) => {
+      await commitAttachmentBatch(tx, operation, data, nextDocumentKey);
       const updated = await tx.response.updateMany({
         data: {
           draftData: jsonValue(metadata.data),
@@ -148,6 +151,7 @@ export async function completeSubmitOperation(
           "The submission operation is no longer active"
         );
       }
+      await commitAttachmentBatch(tx, operation, data, submissionDocumentKey);
       await tx.submission.create({
         data: {
           data: jsonValue(data),

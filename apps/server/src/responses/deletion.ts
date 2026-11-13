@@ -14,6 +14,7 @@ import { createResponseDeletionAudit } from "../audit/events";
 import type { Identity } from "../auth/identity";
 import { endAiAuthoringSessions } from "../auth/password-session";
 import { tokenDigest } from "../digests";
+import { requireAttachmentMutationReady } from "../ecm/attachments";
 import { fail } from "../http/errors";
 import { operationMetadata } from "../operations/model";
 import {
@@ -125,6 +126,7 @@ export async function deleteResponseData({
       if (actor.role !== "admin" && response.status !== ResponseStatus.draft) {
         fail(409, "draft_unavailable", "Only a Draft can be discarded");
       }
+      await requireAttachmentMutationReady(response.id, tx);
       const [lockedForm] = await tx.$queryRaw<{ id: string }[]>(
         Prisma.sql`
           SELECT "id"

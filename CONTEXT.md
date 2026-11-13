@@ -71,6 +71,11 @@ A mapped input in a Form. For DOCX, it is a tagged content control: its Title/Al
 An explicitly configured XLSX Field or table column associated with the existing attachment button and stable binding. Its Title, editable pre-publication Tag and requiredness use the existing Field settings. Attachment intent is never inferred from an `attachment_N` Tag, filename or URL string. A table column shares one Document Category across all its rows. A published attachment contract is immutable; changing it requires duplicating the Form.
 
 An old Published PoC remains an ordinary text/URL contract, including its required rules and immutable history. Its old button explains that durable attachments need a newly configured Form; it cannot retain a File as a memory-only fallback. Duplicating the Form copies only its template and configuration, never User Responses, answers or files. An Admin must explicitly configure verified old PoC slots in the new Template Draft; the application never chooses a successor or archives, deletes, redirects or migrates the original Form.
+Scalar attachment selection is a pending browser File, not a saved answer. Explicit User Save Draft or Submit persists its original bytes to ECM and commits the document, canonical receipt and Operation together. A saved attachment may contain zero bytes. Unknown upload or canceled-batch cleanup outcomes keep the previous canonical Draft readable but prevent further response mutations until settled. A saved public URL is a projection, not ownership or deletion authority.
+
+A missing attachment checkpoint lookup is not proof that an earlier sender cannot start. Explicit recovery shares the existing Form/lease admission locks: it returns the original Operation if admitted, or atomically rotates the old lease UUID before reporting non-admission. The host retains the File and native edits, then uses normal capability renewal for a new user-triggered save; absence or elapsed time alone never permits resend.
+
+A recovered completion is evidence for the earlier snapshot, not acceptance of newly captured ordinary answers. Persisted checkpoints reconcile before editing opens; an own unresolved commit keeps the native editor read-only while bounded recovery stays usable. Recovery reads the original Operation before requesting a mutation capability, preserves its Draft/Submit action, and opens the latest canonical document before accepting new edits.
 
 ## Document Category
 
@@ -102,7 +107,7 @@ Dropdown helper ranges are internal workbook storage. Identical lists can share 
 
 ## Response
 
-A User's single attempt to fill a Form. A User can have at most one Response for a Form. A Response may hold a Draft and may produce one or more Submissions over time: submitting again after a Submission reopens the Response as a Draft seeded from that Submission's data and document, so the User can edit and submit again without starting a new Response.
+A User's single attempt to fill a Form. A User can have at most one Response for a Form. A Response may hold a Draft and produce multiple immutable Submissions over time. Reopening a DOCX Response seeds its prior Submission's document and data; an XLSX new round instead starts blank from Published Template, without copying old answers or files. Resuming an already saved XLSX Draft preserves its canonical document and attachments.
 
 ## Draft
 

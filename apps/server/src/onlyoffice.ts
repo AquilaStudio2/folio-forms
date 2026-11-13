@@ -129,6 +129,7 @@ export interface CallbackClaimInput {
 export interface EditorOptions {
   documentKind?: "docx" | "xlsx";
   spreadsheetBindings?: unknown;
+  attachmentSavedData?: unknown;
   pdmsProjectCatalog?: PdmsProjectCatalog;
   pdmsProjectEnabled?: boolean;
   uploadPocSavedButtons?: {
@@ -512,6 +513,9 @@ export function editorConfig(
           bridgeId,
           documentKey: options.documentKey,
           parentOrigin: exactOrigin(env.CORS_ORIGIN),
+          publicId: options.publicId,
+          responseId: options.responseId,
+          savedData: options.attachmentSavedData,
           scopeIdentity: JSON.stringify([
             user.id,
             options.publicId,

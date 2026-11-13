@@ -237,7 +237,7 @@ test("pending guard blocks explicit saves, allows trusted append and removes lis
   expect(h.messages.at(-1).message.action).toBe("append-row");
   expect(h.messages.at(-1).message.rowIndex).toBe(3);
   h.ack({ allowed: true });
-  await expect(append).resolves.toBeUndefined();
+  await append;
   expect(h.listeners.size).toBe(before);
 });
 

@@ -86,7 +86,9 @@ function nextEditorLeaseExpiry(identity: Identity, now: Date): Date {
   return expiresAt;
 }
 
-export function editorLeaseBridge(lease: ClaimedEditorLease) {
+export function editorLeaseBridge(
+  lease: Pick<ClaimedEditorLease, "expiresAt" | "id">
+) {
   return {
     expiresAt: lease.expiresAt.toISOString(),
     id: lease.id,

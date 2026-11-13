@@ -5,6 +5,7 @@ import {
   MAX_OPERATION_POLLS,
   OPERATION_POLL_INTERVAL_MS,
 } from "./constants.js";
+import { saveUploadPocSnapshot } from "./upload-poc-save.js";
 import {
   requireOption,
   isRecord,
@@ -24,6 +25,11 @@ export function createOperations(
 ) {
   const { setStatus, isInitializationPending } = callbacks;
   let actionInFlight = false;
+  const scalarAttachments =
+    options.documentKind === "xlsx" &&
+    options.spreadsheetBindings?.fields?.some((field) => field.attachment);
+  let attachmentCommitUnresolved = false;
+  let attachmentOperationId = "";
 
   function actionRequest(action, data, reason, rowChange, requestContext) {
     const documentKey = requireOption(options.documentKey, "documentKey");
@@ -151,6 +157,32 @@ export function createOperations(
       rowChange,
       requestContext
     );
+    if (
+      scalarAttachments &&
+      !rowChange &&
+      [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT].includes(action)
+    ) {
+      const snapshotUrl = await office.captureWorkbook();
+      attachmentCommitUnresolved = true;
+      attachmentOperationId = "";
+      try {
+        const result = await saveUploadPocSnapshot(window, options, {
+          action,
+          body: request.body,
+          capability,
+          snapshotUrl,
+        });
+        if (result.status === "failed") {
+          attachmentCommitUnresolved = false;
+        }
+        return result;
+      } catch (error) {
+        if (error.attachmentCommitUnresolved === false) {
+          attachmentCommitUnresolved = false;
+        }
+        throw error;
+      }
+    }
     const result = await api.requestJson(
       request.path,
       {
@@ -261,6 +293,9 @@ export function createOperations(
         status === "success" ||
         status === "done"
       ) {
+        if (id === attachmentOperationId) {
+          attachmentCommitUnresolved = false;
+        }
         return payload;
       }
 
@@ -271,6 +306,9 @@ export function createOperations(
         status === "cancelled" ||
         status === "canceled"
       ) {
+        if (id === attachmentOperationId) {
+          attachmentCommitUnresolved = false;
+        }
         throw new Error(operationFailureMessage(payload, id));
       }
 
@@ -321,7 +359,13 @@ export function createOperations(
     let completedPayload;
     let editorFrozen = false;
     let waitForReload = false;
+    let resultAction = action;
+    let recoveredCheckpoint = false;
     const correctionReason = typeof reason === "string" ? reason.trim() : "";
+    const scalarSave =
+      scalarAttachments &&
+      !rowChange &&
+      [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT].includes(action);
 
     try {
       if (
@@ -353,71 +397,110 @@ export function createOperations(
       ) {
         throw new Error("ประเภทการบันทึกต้นแบบในตัวแก้ไขเดิมไม่ถูกต้อง");
       }
-      await callbacks.beforeAction?.(action, rowChange);
+      const pendingGuard = await callbacks.beforeAction?.(action, rowChange);
       const needsData =
         action === ACTIONS.SAVE_DRAFT ||
         action === ACTIONS.SAVE_CORRECTION ||
         action === ACTIONS.SAVE_CORRECTION_WORKSPACE ||
         action === ACTIONS.SUBMIT;
-      let data;
-
-      if (needsData) {
-        if (options.documentKind === "xlsx") {
-          data = { data: {} };
-        } else {
-          if (prefill.shouldApplyRuntimePrefill()) {
-            await prefill.ensurePrefill();
-          } else if (
-            options.action === ACTIONS.DRAFT ||
-            options.action === ACTIONS.CORRECTION
-          ) {
-            await office.restrictEditorToForms();
-          }
-          await office.freezeEditor();
-          editorFrozen = true;
-          setStatus(`กำลังอ่านข้อมูลของ ${actionLabel(action)}…`, "pending");
-          data = await office.extractFormDataPromise();
+      const recovery =
+        scalarSave && isRecord(pendingGuard?.checkpointOperation)
+          ? pendingGuard.checkpointOperation
+          : null;
+      let response;
+      if (recovery) {
+        // Read the original result before minting any capability against a possibly superseded native key.
+        attachmentCommitUnresolved = true;
+        if (![ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT].includes(recovery.action)) {
+          throw new Error(
+            "ยังยืนยันประเภทของการบันทึกรอบเดิมไม่ได้ กรุณาตรวจผลเดิมอีกครั้ง"
+          );
         }
-        if (options.documentKind === "xlsx") {
-          await office.freezeEditor();
-          editorFrozen = true;
-        }
-      }
-      if (!needsData) {
+        resultAction = recovery.action;
+        recoveredCheckpoint = true;
         await office.freezeEditor();
         editorFrozen = true;
-        if (options.documentKind === "xlsx") {
-          data = await callbacks.getTemplateSnapshot?.(saveContext);
+        setStatus("กำลังตรวจผลการบันทึกรอบเดิม…", "pending");
+        response = recovery;
+      } else {
+        let data;
+        if (needsData) {
+          if (options.documentKind === "xlsx") {
+            data = { data: {} };
+          } else {
+            if (prefill.shouldApplyRuntimePrefill()) {
+              await prefill.ensurePrefill();
+            } else if (
+              options.action === ACTIONS.DRAFT ||
+              options.action === ACTIONS.CORRECTION
+            ) {
+              await office.restrictEditorToForms();
+            }
+            await office.freezeEditor();
+            editorFrozen = true;
+            setStatus(`กำลังอ่านข้อมูลของ ${actionLabel(action)}…`, "pending");
+            data = await office.extractFormDataPromise();
+          }
+          if (options.documentKind === "xlsx") {
+            await office.freezeEditor();
+            editorFrozen = true;
+          }
         }
-      }
-      await bridge.flushEditorChanges();
-
-      setStatus(`${actionLabel(action)} กำลังรอดำเนินการ…`, "pending");
-      const capability = await bridge.requestActionCapability(action);
-      if (
-        saveContext?.pdmsSelection &&
-        saveContext.pdmsSelection.sessionId !==
-          options.pdmsProjectCatalog?.sessionId
-      ) {
-        throw new Error(
-          "สิทธิ์ตัวแก้ไขเปลี่ยนแล้ว กรุณาเลือกชื่อโครงการจากรายการปัจจุบันอีกครั้ง"
+        if (!needsData) {
+          await office.freezeEditor();
+          editorFrozen = true;
+          if (options.documentKind === "xlsx") {
+            data = await callbacks.getTemplateSnapshot?.(saveContext);
+          }
+        }
+        await bridge.flushEditorChanges();
+        setStatus(`${actionLabel(action)} กำลังรอดำเนินการ…`, "pending");
+        if (scalarSave && pendingGuard?.attachmentCommitUnresolved === true) {
+          attachmentCommitUnresolved = true;
+        }
+        const capability = await bridge.requestActionCapability(action);
+        if (
+          saveContext?.pdmsSelection &&
+          saveContext.pdmsSelection.sessionId !==
+            options.pdmsProjectCatalog?.sessionId
+        ) {
+          throw new Error(
+            "สิทธิ์ตัวแก้ไขเปลี่ยนแล้ว กรุณาเลือกชื่อโครงการจากรายการปัจจุบันอีกครั้ง"
+          );
+        }
+        response = await postAction(
+          action,
+          data,
+          correctionReason,
+          capability,
+          rowChange,
+          saveContext
         );
       }
-      const response = await postAction(
-        action,
-        data,
-        correctionReason,
-        capability,
-        rowChange,
-        saveContext
-      );
+      if (
+        scalarSave &&
+        [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT].includes(response?.action)
+      ) {
+        resultAction = response.action;
+        recoveredCheckpoint ||= resultAction !== action;
+      }
       operationId = operationIdFromResponse(response);
-      bridge.notifyParent(action, "pending", operationId, response);
+      if (scalarSave) {
+        attachmentOperationId = operationId || "";
+      }
+      bridge.notifyParent(
+        resultAction,
+        "pending",
+        operationId,
+        response,
+        undefined,
+        recoveredCheckpoint ? action : undefined
+      );
 
       if (operationId) {
         completedPayload = await pollOperation(
           operationId,
-          actionLabel(action),
+          actionLabel(resultAction),
           operationCapabilityFromResponse(response)
         );
       }
@@ -436,8 +519,8 @@ export function createOperations(
       }
       waitForReload =
         options.documentKind === "xlsx" &&
-        Boolean(options.pdmsProjectCatalog) &&
-        (action === ACTIONS.SUBMIT ||
+        (Boolean(options.pdmsProjectCatalog) || scalarSave) &&
+        (resultAction === ACTIONS.SUBMIT ||
           (typeof result?.documentKey === "string" &&
             result.documentKey !== options.documentKey));
       // Completion can remount the editor or leave the page, so restore editing first.
@@ -450,13 +533,29 @@ export function createOperations(
         ]);
         editorFrozen = false;
       }
-      setStatus(`${actionLabel(action)} สำเร็จ`, "success");
-      bridge.notifyParent(action, "completed", operationId, completion);
+      setStatus(
+        recoveredCheckpoint
+          ? `ตรวจผล${actionLabel(resultAction)}รอบก่อนสำเร็จ`
+          : `${actionLabel(resultAction)} สำเร็จ`,
+        "success"
+      );
+      bridge.notifyParent(
+        resultAction,
+        "completed",
+        operationId,
+        completion,
+        undefined,
+        recoveredCheckpoint ? action : undefined
+      );
 
       if (needsData || saveContext?.preserveEditorSession === true) {
         bridge.setDirtyState(false);
       }
-      await callbacks.onTemplateSaveCompleted?.(action, saveContext, result);
+      await callbacks.onTemplateSaveCompleted?.(
+        resultAction,
+        saveContext,
+        result
+      );
 
       return {
         ok: true,
@@ -466,14 +565,19 @@ export function createOperations(
         result,
       };
     } catch (error) {
-      const message = errorMessage(error);
-      setStatus(`${actionLabel(action)} ไม่สำเร็จ: ${message}`, "error");
+      let message = errorMessage(error);
+      if (attachmentCommitUnresolved) {
+        message +=
+          " ตัวแก้ไขยังอ่านอย่างเดียวเพื่อรักษาข้อมูล กรุณากดบันทึกเพื่อตรวจผลรอบเดิมก่อนแก้ไขต่อ";
+      }
+      setStatus(`${actionLabel(resultAction)} ไม่สำเร็จ: ${message}`, "error");
       bridge.notifyParent(
-        action,
+        resultAction,
         "failed",
         operationId,
         completedPayload,
-        message
+        message,
+        recoveredCheckpoint ? action : undefined
       );
 
       return {
@@ -482,7 +586,7 @@ export function createOperations(
         operationId: operationId || null,
       };
     } finally {
-      if (editorFrozen && !waitForReload) {
+      if (editorFrozen && !waitForReload && !attachmentCommitUnresolved) {
         try {
           await office.executeMethodResult("SetEditingRestrictions", [
             options.documentKind === "xlsx" ||

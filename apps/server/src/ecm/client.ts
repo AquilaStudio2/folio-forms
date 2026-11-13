@@ -447,9 +447,10 @@ export class EcmClient {
   }
 
   async request(
-    path: "document/category" | "file",
+    path: "document/category" | "file" | `file?token=${string}`,
     init: RequestInit = {},
-    budgetMs = 15_000
+    budgetMs = 15_000,
+    beforeSend?: () => Promise<void>
   ): Promise<Response> {
     if (!Number.isSafeInteger(budgetMs) || budgetMs <= 0) {
       return unavailable();
@@ -459,6 +460,7 @@ export class EcmClient {
       const bearer = await this.bearer(budgetMs);
       const headers = new Headers(init.headers);
       headers.set("Authorization", `Bearer ${bearer.token}`);
+      await beforeSend?.();
       const response = await this.runtime.fetch(
         `${configuration.baseUrl}/${path}`,
         {
@@ -485,6 +487,74 @@ export class EcmClient {
       return response;
     } catch {
       return unavailable();
+    }
+  }
+
+  accountKey(): string {
+    return this.configured().accountKey;
+  }
+
+  async upload(
+    body: FormData,
+    beforeSend: () => Promise<void>
+  ): Promise<{ file_link: string; file_token: string }> {
+    // Upload has its own 90-second transport budget, independent of the shared 30-second login job.
+    const response = await this.request(
+      "file",
+      { body, method: "POST" },
+      90_000,
+      beforeSend
+    );
+    const parsed = z
+      .object({
+        data: z
+          .array(
+            z.object({
+              file_link: z.url().refine((value) => {
+                const url = new URL(value);
+                return (
+                  !url.username &&
+                  !url.password &&
+                  !url.hash &&
+                  (url.protocol === "https:" ||
+                    (url.protocol === "http:" &&
+                      ["localhost", "127.0.0.1", "[::1]"].includes(
+                        url.hostname
+                      )))
+                );
+              }),
+              file_token: z
+                .string()
+                .min(1)
+                .max(16_384)
+                .regex(/^[!-~]+$/u),
+            })
+          )
+          .length(1),
+        status: z.literal(200),
+      })
+      .safeParse(await jsonBody(response));
+    if (!parsed.success) {
+      return unavailable();
+    }
+    const [receipt] = parsed.data.data;
+    if (!receipt) {
+      return unavailable();
+    }
+    return receipt;
+  }
+
+  async deleteFile(token: string): Promise<void> {
+    const response = await this.request(
+      `file?token=${encodeURIComponent(token)}`,
+      { method: "DELETE" },
+      30_000
+    );
+    const parsed = z
+      .object({ data: z.null(), status: z.literal(200) })
+      .safeParse(await jsonBody(response));
+    if (!parsed.success) {
+      unavailable();
     }
   }
 

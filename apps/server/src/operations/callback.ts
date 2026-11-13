@@ -41,6 +41,7 @@ import {
   completeSubmitOperation,
 } from "./response-completion";
 import { prepareSpreadsheetOperation } from "./spreadsheet-document";
+import type { PrepareAttachments } from "./spreadsheet-document";
 import {
   completeTemplateOperation,
   completePublishOperation,
@@ -157,7 +158,8 @@ export async function finalizeCallback(
   payload: CallbackPayload,
   snapshot: Uint8Array | undefined,
   allowedCallbackOrigins: ReadonlySet<string>,
-  maximumBytes = maxCallbackDocumentBytes
+  maximumBytes = maxCallbackDocumentBytes,
+  prepareAttachments?: PrepareAttachments
 ): Promise<void> {
   const operation = await prisma.operation.findUnique({
     where: { id: operationId },
@@ -239,11 +241,15 @@ export async function finalizeCallback(
           throw error;
         }
       }
-      bytes = await prepareSpreadsheetOperation(metadata, bytes, () =>
-        prisma.operation.updateMany({
-          data: { updatedAt: new Date() },
-          where: { id: operation.id, status: OperationStatus.processing },
-        })
+      bytes = await prepareSpreadsheetOperation(
+        metadata,
+        bytes,
+        () =>
+          prisma.operation.updateMany({
+            data: { updatedAt: new Date() },
+            where: { id: operation.id, status: OperationStatus.processing },
+          }),
+        prepareAttachments
       );
     }
     if (
