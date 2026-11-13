@@ -4,7 +4,7 @@
 
 ทบทวนส่วนตั้งค่าช่องแนบ Excel และ ECM authentication วันที่ 13 พฤศจิกายน 2026 บน `feat/ecm-attachments-config` จากฐาน implementation `b627865` ส่วนอื่นคงผลทบทวนเดิม ขอบเขตนี้เพิ่มการตั้งค่าจากปุ่มเดิมและ shared auth ไม่ได้ยืนยันวงจรอัปโหลดคำตอบ การตรวจ native browser หรือบริการ ECM จริง
 
-ทบทวน cutover ของ PoC เดิม วันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments-legacy` จากฐาน integration `dec092a` ครอบคลุม explicit Draft conversion, Published ordinary contract, Duplicate และ pending dirty guards ผล HTTP/UI/native/browser ยังให้ผู้ตรวจส่วนกลางยืนยัน ไม่ใช่หลักฐาน live ECM หรือการ deploy
+ทบทวน cutover ของ PoC เดิม วันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments-legacy` จาก source commit `6a87d0004dccba530401531777c9de42162d00c6` ครอบคลุม explicit Draft conversion, Published ordinary contract, Duplicate และ pending dirty guards ผล HTTP/UI/native/browser ผ่านการตรวจส่วนกลางตามขอบเขต legacy แล้ว ไม่ใช่หลักฐาน live ECM หรือการ deploy และยังไม่ยืนยันวงจร scalar upload/export ทั้งหมด
 
 เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
