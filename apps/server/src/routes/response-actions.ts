@@ -34,7 +34,12 @@ import {
 } from "../forms/query";
 import { spreadsheetBindingsForTemplate } from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
-import { jsonRecord, requiredString, validateId } from "../http/input";
+import {
+  legacyJsonBodyMaximumBytes,
+  readJsonRecord,
+  requiredString,
+  validateId,
+} from "../http/input";
 import type { Operation } from "../model-types";
 import { createOperation } from "../operations/create";
 import { launchForceSave } from "../operations/force-save";
@@ -155,9 +160,10 @@ export function registerResponseActionRoutes(
           authorization,
           validateId(params.id, "Response"),
           validateId(params.checkpoint, "Checkpoint"),
-          jsonRecord(await request.json())
+          await readJsonRecord(request, legacyJsonBodyMaximumBytes)
         );
-      }
+      },
+      { parse: "none" }
     )
     .post(
       "/api/forms/:publicId/draft",

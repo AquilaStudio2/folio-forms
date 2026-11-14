@@ -132,7 +132,10 @@ export function createApp(options: AppOptions = {}) {
     requestIp: options.requestIp,
     storeObject,
   };
-  const app = new Elysia();
+  const app = new Elysia({
+    // Application readers enforce trusted-slot/per-file or route-specific byte limits.
+    serve: { maxRequestBodySize: Number.MAX_SAFE_INTEGER },
+  });
   app
     .onError(({ code, error, set }) => {
       if (code === "NOT_FOUND") {

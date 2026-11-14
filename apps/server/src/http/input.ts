@@ -17,6 +17,8 @@ const maxAuthoringMultipartBodyBytes = 11 * 1024 * 1024;
 const correctionReasonMaximumLength = 2000;
 export const accountBodyMaximumBytes = 64 * 1024;
 export const documentActionBodyMaximumBytes = 8 * 1024;
+// Preserve Bun's former transport bound for JSON routes without a narrower contract.
+export const legacyJsonBodyMaximumBytes = 128 * 1024 * 1024;
 export const accountEmailMaximumLength = 254;
 export type FormSource = "blank" | "upload";
 

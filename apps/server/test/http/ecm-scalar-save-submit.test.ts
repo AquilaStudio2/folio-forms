@@ -526,6 +526,7 @@ const fixture = async (
     number?: string;
     table?: boolean;
     tableAttachments?: boolean;
+    tableRows?: number;
     tableItemRequired?: boolean;
     project?: boolean;
     admin?: boolean;
@@ -622,7 +623,7 @@ const fixture = async (
       xml.replace(
         "</definedNames>",
         values.tableAttachments
-          ? "<definedName name=\"folio_rows\">'Form'!$B$10:$D$13</definedName><definedName name=\"folio_columns_folio_rows\">'Form'!$B$10:$D$13</definedName><definedName name=\"folio_column_folio_item\">'Form'!$B$10:$B$13</definedName><definedName name=\"folio_column_folio_row_proof\">'Form'!$C$10:$C$13</definedName><definedName name=\"folio_column_folio_row_other\">'Form'!$D$10:$D$13</definedName><definedName name=\"_folio_upload_poc_folio_row_proof\">'Form'!$C$10:$C$13</definedName><definedName name=\"_folio_upload_poc_folio_row_other\">'Form'!$D$10:$D$13</definedName></definedNames>"
+          ? `<definedName name="folio_rows">'Form'!$B$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_columns_folio_rows">'Form'!$B$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_item">'Form'!$B$10:$B$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_row_proof">'Form'!$C$10:$C$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_row_other">'Form'!$D$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="_folio_upload_poc_folio_row_proof">'Form'!$C$10:$C$${9 + (values.tableRows ?? 4)}</definedName><definedName name="_folio_upload_poc_folio_row_other">'Form'!$D$10:$D$${9 + (values.tableRows ?? 4)}</definedName></definedNames>`
           : "<definedName name=\"folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_columns_folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_column_folio_item\">'Form'!$B$10:$B$11</definedName></definedNames>"
       )
     );
@@ -741,7 +742,8 @@ const send = (
   files: Record<string, File>,
   action: "draft" | "submit" = "draft",
   checkpoint = crypto.randomUUID(),
-  extra: Record<string, unknown> = {}
+  extra: Record<string, unknown> = {},
+  origin?: string
 ) => {
   const body = new FormData();
   body.set(
@@ -776,16 +778,18 @@ const send = (
     action === "submit" ? "submit" : "save-draft",
     f.lease
   );
-  return app.handle(
-    new Request(`http://test.local/api/forms/${f.form.publicId}/${action}`, {
+  const request = new Request(
+    `${origin ?? "http://test.local"}/api/forms/${f.form.publicId}/${action}`,
+    {
       body,
       headers: {
         Authorization: `Bearer ${f.bearer}`,
         "X-Editor-Capability": capability,
       },
       method: "POST",
-    })
+    }
   );
+  return origin ? fetch(request) : app.handle(request);
 };
 const recover = (f: Fixture, checkpoint: string) =>
   app.handle(
@@ -1628,6 +1632,100 @@ const operatorAction = (
       }
     )
   );
+
+test("TCP listener accepts fourteen valid 10,000,000-byte files in one atomic Draft", async () => {
+  const f = await fixture({ tableAttachments: true, tableRows: 7 });
+  const listenerUrl = new URL(fixtureValue(app.server).url);
+  listenerUrl.hostname = "127.0.0.1";
+  const { origin } = listenerUrl;
+  const start = received.length;
+  const bytes = new Uint8Array(10_000_000).fill(173);
+  const files: Record<string, File> = {};
+  for (let row = 0; row < 7; row += 1) {
+    files[JSON.stringify(["folio_row_proof", row])] = file(
+      bytes,
+      `proof-${row}.BIN`
+    );
+    files[JSON.stringify(["folio_row_other", row])] = file(
+      bytes,
+      `other-${row}.BIN`
+    );
+  }
+  const completed = await poll(
+    f,
+    await send(f, files, "draft", crypto.randomUUID(), {}, origin)
+  );
+  expect(completed.status).toBe("completed");
+  const savedDraft = await draft(f);
+  const rows = tableRowsSchema.parse(savedDraft.rows);
+  expect(rows).toHaveLength(7);
+  for (let row = 0; row < 7; row += 1) {
+    expect(rows[row]).toMatchObject({
+      other: {
+        original_name: `other-${row}.BIN`,
+        row_index: row,
+        size_bytes: 10_000_000,
+      },
+      proof: {
+        original_name: `proof-${row}.BIN`,
+        row_index: row,
+        size_bytes: 10_000_000,
+      },
+    });
+  }
+  expect(received.slice(start)).toHaveLength(14);
+  for (const upload of received.slice(start)) {
+    expect(upload.bytes).toEqual(bytes);
+  }
+}, 120_000);
+
+test("TCP chunked multipart cannot exceed its trusted slot budget or start provider writes", async () => {
+  const f = await fixture();
+  const listenerUrl = new URL(fixtureValue(app.server).url);
+  listenerUrl.hostname = "127.0.0.1";
+  const uploads = received.length;
+  const before = await draft(f);
+  let remaining = 21_000_000;
+  const chunk = new Uint8Array(1_000_000);
+  const body = new ReadableStream<Uint8Array>({
+    pull(controller) {
+      if (remaining === 0) {
+        controller.close();
+        return;
+      }
+      const size = Math.min(remaining, chunk.byteLength);
+      controller.enqueue(chunk.subarray(0, size));
+      remaining -= size;
+    },
+  });
+  const result = await fetch(
+    new URL(`/api/forms/${f.form.publicId}/draft`, listenerUrl),
+    {
+      body,
+      headers: {
+        Authorization: `Bearer ${f.bearer}`,
+        "Content-Type": "multipart/form-data; boundary=untrusted-chunked-body",
+        "X-Editor-Capability": actionEditorCapability(
+          f.identity,
+          {
+            documentKey: f.documentKey,
+            documentServerKey: f.documentServerKey,
+            formId: f.form.id,
+            targetId: f.response.id,
+            targetType: "response",
+          },
+          "save-draft",
+          f.lease
+        ),
+      },
+      method: "POST",
+    }
+  );
+  expect(result.status).toBe(413);
+  expect(await result.json()).toMatchObject({ error: "payload_too_large" });
+  expect(received.length).toBe(uploads);
+  expect(await draft(f)).toEqual(before);
+});
 
 test("table attachments retain physical gaps and attachment-only zero-byte rows across multiple columns", async () => {
   const f = await fixture({ tableAttachments: true });

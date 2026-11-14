@@ -3,7 +3,7 @@ import type { Elysia } from "elysia";
 
 import { createFormFailureAudit } from "../audit/events";
 import { HttpError, fail } from "../http/errors";
-import { asRecord } from "../http/input";
+import { legacyJsonBodyMaximumBytes, readJsonRecord } from "../http/input";
 import {
   createPrefillHandoff,
   launchPrefillHandoff,
@@ -26,60 +26,62 @@ export function registerPrefillEntryRoutes(
 ): void {
   const { prefillHandoffSecret, handoffClock } = dependencies;
   app
-    .post("/api/integrations/prefill/handoffs", async ({ body, request }) => {
-      if (
-        !prefillHandoffSecretMatches(
-          prefillHandoffSecret,
-          request.headers.get("x-prefill-handoff-secret")
-        )
-      ) {
-        try {
-          await createFormFailureAudit({
-            action: "create_handoff",
-            actorId: null,
-            error: new HttpError(
-              404,
-              "handoff_unavailable",
-              "The prefill handoff is unavailable"
-            ),
-            targetId: null,
-          });
-        } catch {
-          // Preserve the non-enumerating response if the audit cannot be written.
-        }
-        fail(404, "handoff_unavailable", "The prefill handoff is unavailable");
-      }
-      try {
-        return await createPrefillHandoff(handoffCreateInput(asRecord(body)));
-      } catch (error) {
-        if (error instanceof HttpError && error.code === "not_found") {
+    .post(
+      "/api/integrations/prefill/handoffs",
+      async ({ request }) => {
+        if (
+          !prefillHandoffSecretMatches(
+            prefillHandoffSecret,
+            request.headers.get("x-prefill-handoff-secret")
+          )
+        ) {
+          try {
+            await createFormFailureAudit({
+              action: "create_handoff",
+              actorId: null,
+              error: new HttpError(
+                404,
+                "handoff_unavailable",
+                "The prefill handoff is unavailable"
+              ),
+              targetId: null,
+            });
+          } catch {
+            // Preserve the non-enumerating response if the audit cannot be written.
+          }
           fail(
             404,
             "handoff_unavailable",
             "The prefill handoff is unavailable"
           );
         }
-        throw error;
-      }
-    })
-    .post("/api/integrations/prefill/status", async ({ body, request }) => {
-      if (
-        !prefillHandoffSecretMatches(
-          prefillHandoffSecret,
-          request.headers.get("x-prefill-handoff-secret")
-        )
-      ) {
-        fail(404, "handoff_unavailable", "The prefill handoff is unavailable");
-      }
-      try {
-        return await pollPrefillHandoffStatus(
-          handoffStatusInput(asRecord(body)).externalReference,
-          handoffClock
-        );
-      } catch (error) {
+        try {
+          return await createPrefillHandoff(
+            handoffCreateInput(
+              await readJsonRecord(request, legacyJsonBodyMaximumBytes)
+            )
+          );
+        } catch (error) {
+          if (error instanceof HttpError && error.code === "not_found") {
+            fail(
+              404,
+              "handoff_unavailable",
+              "The prefill handoff is unavailable"
+            );
+          }
+          throw error;
+        }
+      },
+      { parse: "none" }
+    )
+    .post(
+      "/api/integrations/prefill/status",
+      async ({ request }) => {
         if (
-          error instanceof HttpError &&
-          error.code === "handoff_unavailable"
+          !prefillHandoffSecretMatches(
+            prefillHandoffSecret,
+            request.headers.get("x-prefill-handoff-secret")
+          )
         ) {
           fail(
             404,
@@ -87,9 +89,29 @@ export function registerPrefillEntryRoutes(
             "The prefill handoff is unavailable"
           );
         }
-        throw error;
-      }
-    })
+        try {
+          return await pollPrefillHandoffStatus(
+            handoffStatusInput(
+              await readJsonRecord(request, legacyJsonBodyMaximumBytes)
+            ).externalReference,
+            handoffClock
+          );
+        } catch (error) {
+          if (
+            error instanceof HttpError &&
+            error.code === "handoff_unavailable"
+          ) {
+            fail(
+              404,
+              "handoff_unavailable",
+              "The prefill handoff is unavailable"
+            );
+          }
+          throw error;
+        }
+      },
+      { parse: "none" }
+    )
     .post(
       "/prefill/handoff",
       async ({ request }) => {

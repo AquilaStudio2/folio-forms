@@ -83,11 +83,17 @@ A table attachment belongs to one physical row and one published column binding.
 
 Supported append and existing delete-selected commands preserve file identity while updating current row positions. The original upload position remains audit evidence, not a permanent row identity. Internal row/project saves do not upload or delete ECM files. Pending Files and removals survive a remount only with verified old/new document and physical-row mapping; stale, ambiguous or loss-producing transitions stop without discarding selections. No per-row Tag or stable row ID is introduced.
 
+Final Correction completion accepts only its captured snapshot. If a newer File or pending removal remains, the route keeps the same editor and browser state instead of navigating or remounting. The completed server operation has retired that workspace, so another Save is disabled; navigation and session guards remain active until an explicit discard-and-exit decision. The notice separates the saved Correction from the newer unsaved changes. Continuing with another Correction requires opening the current revision and selecting files again after that decision; this is not an automatic transfer or a promise that browser Files survive reload.
+
 Old files become eligible for deletion only after the complete new snapshot commits and no Draft, immutable history, workspace or eligible Operation still references them. A failed or uncertain old-file cleanup does not undo the saved snapshot or prevent its use and export. Its persistent warning states that old public URLs may still work; later ordinary saves neither retry that deletion nor dismiss the warning. This differs from an unsettled canceled batch, which continues to block mutations.
 
 Admin follow-up is expandable inside the existing Results page. Tracking records remain separate from live Responses, including after Response deletion, and do not restore deleted answer rows. Admin and Viewer can read trusted operation, slot and destination evidence with date-and-time timestamps; only a current enabled Admin can fence an original batch or initiate authorized cleanup.
 
+The destructive follow-up confirmation uses the platform's modal dialog. Cancel or Escape leaves the operation unchanged; native modality contains keyboard focus and restores the invoking control when the dialog closes. While dispatch is in progress, cancellation cannot imply that the external request was canceled.
+
 A sender fence prevents future dispatch and canonical commit for the canceled batch; it does not prove an already dispatched request has finished at ECM. Only the validated receipt from that original request establishes its known received outcome. A late receipt remains canceled work for cleanup, never a new answer. Admin may initiate the first deletion of a known received, unreferenced canceled file after rechecking its generation and sender fence. An unknown upload or a previously dispatched uncertain deletion remains held: elapsed time, restart, an empty search or an operator note is not settlement proof.
+
+Receiptless unknown uploads and uncertain dispatched deletions have no confirmed external settlement-proof contract. Real PM/ECM request-settlement and cleanup evidence is an external release prerequisite, not an available manual unlock. The original-receipt, sender-fence and verified first-DELETE paths remain the available trusted evidence chain; a note, checkbox, arbitrary token/URL or elapsed time cannot replace it.
 
 The picker, fill page and dashboard Response-deletion dialog retain actionable unknown-outcome instructions. A rejected action does not replace these instructions with an invitation to resend. When original-checkpoint recovery cannot open an editable document, the saved canonical Excel copy remains separately readable without clearing the checkpoint or uploading pending files.
 
@@ -107,6 +113,8 @@ An ECM-provided destination name selected by an Admin for an Attachment Field or
 ## ECM Service Account
 
 The dedicated Folio-only server identity used to read categories and perform authorized document integration. It is independent of every person's Folio session and of Ongoing credentials. Shared PostgreSQL coordination governs its bounded login jobs and encrypted token generations; integration failure never signs a person out of Folio. Credentials and the token-encryption key remain server-managed secrets, never answer data or browser state.
+
+The shared HTTP listener does not impose Bun's default 128 MiB aggregate ceiling on attachment batches. The native request reader still counts actual streamed bytes against the trusted current slot budget, enforces each 10,000,000-byte file limit and retains the 262,144-byte canonical JSON limit. Other request readers retain their existing narrower limits, or the former 128 MiB transport bound where no narrower contract existed. This is not an unlimited multipart parser or a verified real-provider capacity guarantee.
 
 ## Result Filter Field
 

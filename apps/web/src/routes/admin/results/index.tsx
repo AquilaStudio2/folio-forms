@@ -6,7 +6,7 @@ import {
 // oxlint-disable no-nested-ternary -- Keeps the three explicit loading, empty, and populated table states local to the route.
 import { Link, createFileRoute, useSearch } from "@tanstack/react-router";
 import { Search } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
 import { DocumentKindBadge } from "@/components/document-kind-badge";
@@ -92,12 +92,22 @@ const AdminResultsRoute = () => {
     versionId?: string;
     filename?: string;
   } | null>(null);
+  const followUpDialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
+    const dialog = followUpDialogRef.current;
+    if (!dialog) {
+      return;
+    }
     if (followUpConfirmation) {
-      document
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+      dialog
         .querySelector<HTMLButtonElement>("#attachment-follow-up-cancel")
         ?.focus();
+    } else if (dialog.open) {
+      dialog.close();
     }
   }, [followUpConfirmation]);
 
@@ -243,14 +253,19 @@ const AdminResultsRoute = () => {
   );
   return (
     <div className="space-y-6">
-      {followUpConfirmation ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-black/35 px-5">
-          <section
-            aria-labelledby="attachment-follow-up-confirmation"
-            aria-modal="true"
-            className="w-full max-w-lg rounded-xl bg-[var(--paper)] p-6 shadow-xl"
-            role="dialog"
-          >
+      <dialog
+        ref={followUpDialogRef}
+        aria-labelledby="attachment-follow-up-confirmation"
+        className="m-auto w-full max-w-lg rounded-xl border border-[var(--line)] bg-[var(--paper)] p-6 text-[var(--ink)] shadow-xl backdrop:bg-black/35"
+        onCancel={(event) => {
+          event.preventDefault();
+          if (!followUpBusy) {
+            setFollowUpConfirmation(null);
+          }
+        }}
+      >
+        {followUpConfirmation ? (
+          <>
             <h2
               id="attachment-follow-up-confirmation"
               className="text-lg font-bold"
@@ -284,9 +299,9 @@ const AdminResultsRoute = () => {
                 ยืนยัน
               </Button>
             </div>
-          </section>
-        </div>
-      ) : null}
+          </>
+        ) : null}
+      </dialog>
       <PageHeader
         title="ตรวจทานคำตอบ"
         description="เปิดดูฉบับร่างและคำตอบที่ส่งแล้วแบบอ่านอย่างเดียว"

@@ -26,10 +26,13 @@ const AdminCorrectionRoute = () => {
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [completedWithPendingAttachments, setCompletedWithPendingAttachments] =
+    useState(false);
   const feedbackRef = useRef<HTMLDivElement>(null);
   const exitDialogRef = useRef<HTMLDialogElement>(null);
   const allowNavigationRef = useRef(false);
-  const hasUnsavedChanges = saving || dirty || Boolean(reason);
+  const hasUnsavedChanges =
+    completedWithPendingAttachments || saving || dirty || Boolean(reason);
   const navigationBlocker = useBlocker({
     disabled: !hasUnsavedChanges,
     enableBeforeUnload: hasUnsavedChanges,
@@ -53,7 +56,11 @@ const AdminCorrectionRoute = () => {
     }
   }, [navigationBlocker.status]);
   useReauthenticationGuard(hasUnsavedChanges, () => {
-    setMessage("กรุณาบันทึก Correction ให้สำเร็จก่อนเปลี่ยนเซสชัน เพื่อเก็บการแก้ไขไว้");
+    setMessage(
+      completedWithPendingAttachments
+        ? "Correction รอบก่อนบันทึกแล้ว แต่ไฟล์หรือการนำออกที่เลือกภายหลังยังไม่บันทึก กรุณารักษาหน้านี้ไว้"
+        : "กรุณาบันทึก Correction ให้สำเร็จก่อนเปลี่ยนเซสชัน เพื่อเก็บการแก้ไขไว้"
+    );
   });
   useEffect(() => {
     if (message && !saving) {
@@ -84,6 +91,17 @@ const AdminCorrectionRoute = () => {
       return;
     }
     setSaving(false);
+    if (
+      bridgeMessage.action === "save-correction" &&
+      bridgeMessage.hasPendingAttachments
+    ) {
+      setCompletedWithPendingAttachments(true);
+      setDirty(true);
+      setMessage(
+        "Correction รอบก่อนบันทึกแล้ว แต่ไฟล์หรือการนำออกที่เลือกภายหลังยังไม่บันทึก ไฟล์ยังอยู่ในหน้านี้ ไม่สามารถบันทึกซ้ำด้วย workspace เดิมได้ หากออกจะทิ้งเฉพาะการเปลี่ยนแปลงที่ยังไม่บันทึก แล้วจึงเปิด Correction ฉบับปัจจุบันและเลือกไฟล์ใหม่"
+      );
+      return;
+    }
     if (bridgeMessage.action === "save-correction-workspace") {
       setMessage(null);
       setRevision((value) => value + 1);
@@ -100,6 +118,9 @@ const AdminCorrectionRoute = () => {
 
   const submitCorrection = () => {
     const trimmedReason = reason.trim();
+    if (completedWithPendingAttachments) {
+      return;
+    }
     if (!trimmedReason || saving) {
       setMessage("กรุณาระบุเหตุผลการแก้ไข");
       return;
@@ -107,6 +128,15 @@ const AdminCorrectionRoute = () => {
     setMessage(null);
     setSaveRequest((request) => request + 1);
   };
+
+  let exitDescription =
+    "การออกจากหน้านี้จะทิ้งการแก้ไข เหตุผล และไฟล์ที่ยังไม่บันทึก โดยไม่เปลี่ยนฉบับที่บันทึกแล้ว";
+  if (saving) {
+    exitDescription = "กำลังบันทึก Correction กรุณารอผลก่อนออกจากหน้านี้";
+  } else if (completedWithPendingAttachments) {
+    exitDescription =
+      "Correction รอบก่อนบันทึกแล้ว การออกจะทิ้งไฟล์ การนำออก และการแก้ไขที่เลือกภายหลังซึ่งยังไม่บันทึก ต้องเปิด Correction ฉบับปัจจุบันแล้วเลือกไฟล์ใหม่ หากต้องการรักษาไฟล์ในหน้านี้ ให้เลือกอยู่ต่อ";
+  }
 
   return (
     <div className="space-y-6">
@@ -122,11 +152,7 @@ const AdminCorrectionRoute = () => {
         <h2 id="correction-exit-title" className="text-lg font-semibold">
           มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก
         </h2>
-        <p className="mt-2 text-sm text-[var(--ink-soft)]">
-          {saving
-            ? "กำลังบันทึก Correction กรุณารอผลก่อนออกจากหน้านี้"
-            : "การออกจากหน้านี้จะทิ้งการแก้ไข เหตุผล และไฟล์ที่ยังไม่บันทึก โดยไม่เปลี่ยนฉบับที่บันทึกแล้ว"}
-        </p>
+        <p className="mt-2 text-sm text-[var(--ink-soft)]">{exitDescription}</p>
         <div className="mt-6 flex flex-wrap justify-end gap-2">
           <Button
             variant="secondary"
@@ -185,7 +211,11 @@ const AdminCorrectionRoute = () => {
         </div>
         <div>
           <Button
-            disabled={saving || reason.trim().length === 0}
+            disabled={
+              saving ||
+              completedWithPendingAttachments ||
+              reason.trim().length === 0
+            }
             onClick={submitCorrection}
           >
             บันทึก Correction

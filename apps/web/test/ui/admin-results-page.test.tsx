@@ -932,6 +932,16 @@ it.each(["admin", "viewer"] as const)(
     ];
     const user = userEvent.setup();
     await mount();
+    // JSDOM has no native modality; real-browser acceptance covers focus containment and restoration.
+    const nativeDialog = document.querySelector("dialog");
+    if (nativeDialog) {
+      nativeDialog.showModal = () => {
+        nativeDialog.open = true;
+      };
+      nativeDialog.close = () => {
+        nativeDialog.open = false;
+      };
+    }
     const caseSearch = screen.getByRole("textbox", {
       name: "รหัสติดตามการลบหรือ Operation",
     });
@@ -951,12 +961,24 @@ it.each(["admin", "viewer"] as const)(
       screen.queryByRole("link", { exact: true, name: "เปิดอ่าน" })
     ).not.toBeInTheDocument();
     if (role === "admin") {
-      await user.click(
-        screen.getByRole("button", { name: "เริ่มลบไฟล์ค้างครั้งแรก" })
+      const deleteTrigger = screen.getByRole("button", {
+        name: "เริ่มลบไฟล์ค้างครั้งแรก",
+      });
+      await user.click(deleteTrigger);
+      const confirmation = screen.getByRole("dialog", {
+        name: "ยืนยันการลบไฟล์ค้างครั้งแรก",
+      });
+      expect(confirmation).toBeVisible();
+      fireEvent(confirmation, new Event("cancel", { cancelable: true }));
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
       );
       expect(
-        screen.getByRole("dialog", { name: "ยืนยันการลบไฟล์ค้างครั้งแรก" })
-      ).toBeVisible();
+        fetchMock.mock.calls.filter(([input]) =>
+          new URL(String(input)).pathname.endsWith("/settle")
+        )
+      ).toHaveLength(0);
+      await user.click(deleteTrigger);
       expect(screen.getByText(/ไฟล์ลบแล้วกู้คืนไม่ได้/u)).toBeVisible();
       await user.click(screen.getByRole("button", { name: "ยกเลิก" }));
     } else {

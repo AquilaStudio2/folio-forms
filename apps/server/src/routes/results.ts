@@ -44,6 +44,8 @@ import {
 import { spreadsheetBindingsForTemplate } from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 import {
+  legacyJsonBodyMaximumBytes,
+  readJsonRecord,
   validateId,
   queryString,
   publicIdPattern,
@@ -366,26 +368,27 @@ export function registerResultRoutes(
     )
     .post(
       "/api/admin/results/attachment-follow-up/:operationId/settle",
-      async ({ request, params, body }) => {
+      async ({ request, params }) => {
         const identity = await requireIdentity(request);
         requireAdmin(identity);
         validateId(params.operationId, "Operation");
         await settleAttachmentFollowUp(
           params.operationId,
-          body,
+          await readJsonRecord(request, legacyJsonBodyMaximumBytes),
           identity.id,
           dependencies.ecm
         );
         return { followUps: await attachmentFollowUps() };
-      }
+      },
+      { parse: "none" }
     )
     .post(
       "/api/admin/results/attachment-follow-up/:operationId/cancel",
-      async ({ request, params, body }) => {
+      async ({ request, params }) => {
         const identity = await requireIdentity(request);
         requireAdmin(identity);
         validateId(params.operationId, "Operation");
-        const input = jsonRecord(body);
+        const input = await readJsonRecord(request, legacyJsonBodyMaximumBytes);
         if (Object.keys(input).some((key) => key !== "generation")) {
           fail(
             400,
@@ -399,7 +402,8 @@ export function registerResultRoutes(
           identity.id
         );
         return { followUps: await attachmentFollowUps() };
-      }
+      },
+      { parse: "none" }
     )
     .get("/api/admin/results", async ({ request, query }) => {
       const identity = await requireIdentity(request);
