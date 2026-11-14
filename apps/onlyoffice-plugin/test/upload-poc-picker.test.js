@@ -41,23 +41,35 @@ const harness = () => {
     top,
   };
   const elements = new Map(
-    ["attachment", "status", "filename", "filesize", "retry", "selection"].map(
-      (id) => {
-        const callbacks = new Map();
-        return [
-          id,
-          {
-            addEventListener: (type, callback) => callbacks.set(type, callback),
-            dataset: {},
-            disabled: true,
-            files: [],
-            hidden: id !== "selection",
-            textContent: "",
-            trigger: (type) => callbacks.get(type)?.(),
-          },
-        ];
-      }
-    )
+    [
+      "attachment",
+      "status",
+      "filename",
+      "filesize",
+      "retry",
+      "selection",
+      "saved-file",
+      "saved-link",
+      "saved-size",
+      "cancel",
+      "remove",
+      "removal",
+      "cleanup-warning",
+    ].map((id) => {
+      const callbacks = new Map();
+      return [
+        id,
+        {
+          addEventListener: (type, callback) => callbacks.set(type, callback),
+          dataset: {},
+          disabled: true,
+          files: [],
+          hidden: id !== "selection",
+          textContent: "",
+          trigger: (type) => callbacks.get(type)?.(),
+        },
+      ];
+    })
   );
   const plugin = {
     executeCommand: () => messages.push({ close: true }),
@@ -253,4 +265,59 @@ test("pending guard ignores forged acknowledgements and fails closed on timeout"
   }
   await expect(check).rejects.toThrow("ยังตรวจสอบไฟล์");
   expect(h.listeners.size).toBe(before);
+});
+
+test("original popup keeps saved links separate from replacement/removal and cancels only local changes", () => {
+  const h = harness();
+  h.plugin.init(JSON.stringify({ ...data, rowIndex: null, tag: "file" }));
+  const saved = {
+    file_link: "https://files.test/original.bin",
+    original_name: "original.bin",
+    size_bytes: 0,
+  };
+  const warning = "ข้อมูลใหม่บันทึกแล้ว แต่ URL เก่าอาจยังเปิดได้ กรุณาประสาน Admin";
+  h.ack({ cleanupWarning: warning, saved });
+  expect(h.elements.get("saved-link").href).toBe(saved.file_link);
+  expect(h.elements.get("saved-size").textContent).toBe("0 ไบต์");
+  expect(h.elements.get("cleanup-warning").textContent).toBe(warning);
+  expect(h.elements.get("cancel").disabled).toBe(true);
+  h.elements.get("remove").trigger("click");
+  expect(h.messages.at(-1).message.type).toBe("pending-file-remove");
+  expect(h.messages.at(-1).message.file).toBeUndefined();
+  h.ack({ cleanupWarning: warning, removal: true, saved });
+  expect(h.elements.get("removal").hidden).toBe(false);
+  expect(h.elements.get("saved-link").href).toBe(saved.file_link);
+  h.elements.get("cancel").trigger("click");
+  expect(h.messages.at(-1).message.type).toBe("pending-file-cancel");
+  h.ack({ cleanupWarning: warning, removal: false, saved });
+  expect(h.elements.get("removal").hidden).toBe(true);
+  expect(h.elements.get("cleanup-warning").hidden).toBe(false);
+  const oversized = new File([new Uint8Array(10_000_001)], "too-large.bin");
+  h.elements.get("attachment").files = [oversized];
+  h.elements.get("attachment").trigger("change");
+  h.ack({ error: "ไฟล์เกินขนาด กรุณาเลือกใหม่หรือยกเลิก" });
+  expect(h.elements.get("cancel").disabled).toBe(false);
+  expect(h.elements.get("saved-link").href).toBe(saved.file_link);
+  h.elements.get("cancel").trigger("click");
+  h.ack({ cleanupWarning: warning, removal: false, saved });
+  expect(h.elements.get("filename").textContent).toBe("ยังไม่ได้เลือกไฟล์");
+  expect(h.elements.get("status").dataset.error).toBe("false");
+});
+
+test("reopened popup keeps an invalid replacement visibly blocking and retains committed cleanup warning", () => {
+  const h = harness();
+  h.plugin.init(JSON.stringify({ ...data, rowIndex: null, tag: "file" }));
+  h.ack({
+    cleanupWarning: "URL เก่าอาจยังเปิดได้",
+    saved: {
+      file_link: "https://files.test/old",
+      original_name: "old.bin",
+      size_bytes: 4,
+    },
+    validationError: "ช่อง file: กรุณาเลือกไฟล์ใหม่ก่อนบันทึก",
+  });
+  expect(h.elements.get("status").dataset.error).toBe("true");
+  expect(h.elements.get("status").textContent).toContain("เลือกไฟล์ใหม่");
+  expect(h.elements.get("cancel").disabled).toBe(false);
+  expect(h.elements.get("cleanup-warning").hidden).toBe(false);
 });

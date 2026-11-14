@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `1362d403580ae0f0f027f19791db35a663feea2f`
+Commit: `eaa95e8c91b040f397be151fe5b3ccf2a4dd8c99`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -63,12 +63,12 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | POST | `/api/editor-leases/:id/renew` | `apps/server/src/routes/editor-leases.ts:14` |
 | DELETE | `/api/editor-leases/:id` | `apps/server/src/routes/editor-leases.ts:23` |
 | GET | `/api/admin/forms/:publicId/editor-config` | `apps/server/src/routes/form-authoring.ts:118` |
-| GET | `/api/admin/forms/:publicId/schema` | `apps/server/src/routes/form-authoring.ts:227` |
-| GET | `/api/admin/forms/:publicId/field-rules` | `apps/server/src/routes/form-authoring.ts:235` |
-| PATCH | `/api/admin/forms/:publicId/field-rules` | `apps/server/src/routes/form-authoring.ts:262` |
-| POST | `/api/admin/forms/:publicId/save` | `apps/server/src/routes/form-authoring.ts:443` |
-| POST | `/api/admin/forms/:publicId/publish` | `apps/server/src/routes/form-authoring.ts:575` |
-| GET | `/api/admin/forms/:publicId/submissions` | `apps/server/src/routes/form-authoring.ts:699` |
+| GET | `/api/admin/forms/:publicId/schema` | `apps/server/src/routes/form-authoring.ts:236` |
+| GET | `/api/admin/forms/:publicId/field-rules` | `apps/server/src/routes/form-authoring.ts:244` |
+| PATCH | `/api/admin/forms/:publicId/field-rules` | `apps/server/src/routes/form-authoring.ts:271` |
+| POST | `/api/admin/forms/:publicId/save` | `apps/server/src/routes/form-authoring.ts:452` |
+| POST | `/api/admin/forms/:publicId/publish` | `apps/server/src/routes/form-authoring.ts:584` |
+| GET | `/api/admin/forms/:publicId/submissions` | `apps/server/src/routes/form-authoring.ts:708` |
 | GET | `/api/admin/forms` | `apps/server/src/routes/form-catalog.ts:69` |
 | PATCH | `/api/admin/forms/:publicId` | `apps/server/src/routes/form-catalog.ts:74` |
 | POST | `/api/admin/forms/:publicId/duplicate` | `apps/server/src/routes/form-catalog.ts:236` |
@@ -83,21 +83,21 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | POST | `/api/legacy-sso/switch/confirm` | `apps/server/src/routes/legacy-sso.ts:58` |
 | POST | `/api/legacy-sso/switch/cancel` | `apps/server/src/routes/legacy-sso.ts:70` |
 | POST | `/api/legacy-sso/session` | `apps/server/src/routes/legacy-sso.ts:82` |
-| GET | `/onlyoffice/document/:key` | `apps/server/src/routes/onlyoffice.ts:52` |
-| GET | `/onlyoffice-plugin/config.json` | `apps/server/src/routes/onlyoffice.ts:93` |
-| GET | `/onlyoffice-plugin/pdms-project/config.json` | `apps/server/src/routes/onlyoffice.ts:133` |
-| GET | `/onlyoffice-plugin/pdms-project/index.html` | `apps/server/src/routes/onlyoffice.ts:161` |
-| GET | `/onlyoffice-plugin/pdms-project/popup.js` | `apps/server/src/routes/onlyoffice.ts:162` |
-| GET | `/onlyoffice-plugin/upload-poc/config.json` | `apps/server/src/routes/onlyoffice.ts:163` |
-| GET | `/onlyoffice-plugin/upload-poc/index.html` | `apps/server/src/routes/onlyoffice.ts:192` |
-| GET | `/onlyoffice-plugin/upload-poc/picker.js` | `apps/server/src/routes/onlyoffice.ts:193` |
-| GET | `/onlyoffice-plugin` | `apps/server/src/routes/onlyoffice.ts:194` |
-| GET | `/onlyoffice-plugin/` | `apps/server/src/routes/onlyoffice.ts:195` |
-| GET | `/onlyoffice-plugin/index.html` | `apps/server/src/routes/onlyoffice.ts:196` |
-| GET | `/onlyoffice-plugin/plugin.js` | `apps/server/src/routes/onlyoffice.ts:197` |
-| GET | `/onlyoffice-plugin/resources/light/settings.svg` | `apps/server/src/routes/onlyoffice.ts:198` |
-| GET | `/onlyoffice-plugin/resources/dark/settings.svg` | `apps/server/src/routes/onlyoffice.ts:201` |
-| POST | `/onlyoffice/callback` | `apps/server/src/routes/onlyoffice.ts:204` |
+| GET | `/onlyoffice/document/:key` | `apps/server/src/routes/onlyoffice.ts:53` |
+| GET | `/onlyoffice-plugin/config.json` | `apps/server/src/routes/onlyoffice.ts:94` |
+| GET | `/onlyoffice-plugin/pdms-project/config.json` | `apps/server/src/routes/onlyoffice.ts:134` |
+| GET | `/onlyoffice-plugin/pdms-project/index.html` | `apps/server/src/routes/onlyoffice.ts:162` |
+| GET | `/onlyoffice-plugin/pdms-project/popup.js` | `apps/server/src/routes/onlyoffice.ts:163` |
+| GET | `/onlyoffice-plugin/upload-poc/config.json` | `apps/server/src/routes/onlyoffice.ts:164` |
+| GET | `/onlyoffice-plugin/upload-poc/index.html` | `apps/server/src/routes/onlyoffice.ts:193` |
+| GET | `/onlyoffice-plugin/upload-poc/picker.js` | `apps/server/src/routes/onlyoffice.ts:194` |
+| GET | `/onlyoffice-plugin` | `apps/server/src/routes/onlyoffice.ts:195` |
+| GET | `/onlyoffice-plugin/` | `apps/server/src/routes/onlyoffice.ts:196` |
+| GET | `/onlyoffice-plugin/index.html` | `apps/server/src/routes/onlyoffice.ts:197` |
+| GET | `/onlyoffice-plugin/plugin.js` | `apps/server/src/routes/onlyoffice.ts:198` |
+| GET | `/onlyoffice-plugin/resources/light/settings.svg` | `apps/server/src/routes/onlyoffice.ts:199` |
+| GET | `/onlyoffice-plugin/resources/dark/settings.svg` | `apps/server/src/routes/onlyoffice.ts:202` |
+| POST | `/onlyoffice/callback` | `apps/server/src/routes/onlyoffice.ts:205` |
 | GET | `/api/operations/:id` | `apps/server/src/routes/operations.ts:19` |
 | POST | `/api/editor/pdms-project-catalog/retry` | `apps/server/src/routes/pdms-project-catalog.ts:101` |
 | POST | `/api/integrations/prefill/handoffs` | `apps/server/src/routes/prefill.ts:29` |
@@ -106,19 +106,19 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | GET | `/prefill/handoff` | `apps/server/src/routes/prefill.ts:140` |
 | GET | `/api/forms/:publicId` | `apps/server/src/routes/public-forms.ts:44` |
 | GET | `/api/forms/:publicId/editor-config` | `apps/server/src/routes/public-forms.ts:81` |
-| GET | `/api/forms/:publicId/my-submissions` | `apps/server/src/routes/public-forms.ts:102` |
-| GET | `/api/forms/:publicId/my-submissions/export` | `apps/server/src/routes/public-forms.ts:112` |
-| POST | `/api/forms/:publicId/start` | `apps/server/src/routes/public-forms.ts:130` |
-| GET | `/api/responses/:id/attachment-operations/:checkpoint` | `apps/server/src/routes/response-actions.ts:69` |
-| POST | `/api/responses/:id/attachment-operations/:checkpoint/recover` | `apps/server/src/routes/response-actions.ts:113` |
-| POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:125` |
-| POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:340` |
-| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:61` |
-| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:95` |
-| POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:227` |
-| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:336` |
-| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:404` |
-| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:448` |
+| GET | `/api/forms/:publicId/my-submissions` | `apps/server/src/routes/public-forms.ts:100` |
+| GET | `/api/forms/:publicId/my-submissions/export` | `apps/server/src/routes/public-forms.ts:110` |
+| POST | `/api/forms/:publicId/start` | `apps/server/src/routes/public-forms.ts:128` |
+| GET | `/api/responses/:id/attachment-operations/:checkpoint` | `apps/server/src/routes/response-actions.ts:70` |
+| POST | `/api/responses/:id/attachment-operations/:checkpoint/recover` | `apps/server/src/routes/response-actions.ts:114` |
+| POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:126` |
+| POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:342` |
+| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:62` |
+| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:96` |
+| POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:228` |
+| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:337` |
+| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:405` |
+| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:449` |
 | GET | `/api/admin/results` | `apps/server/src/routes/results.ts:271` |
 | GET | `/api/admin/results/:id` | `apps/server/src/routes/results.ts:349` |
 | GET | `/api/admin/results/:id/viewer-config` | `apps/server/src/routes/results.ts:499` |
@@ -182,6 +182,7 @@ Separate private HTTP listener in `apps/server/src/document-worker-server.ts:170
 | EcmAttachmentBatch | `ecm_attachment_batches` | `packages/db/prisma/schema.prisma:682` |
 | EcmAttachmentVersion | `ecm_attachment_versions` | `packages/db/prisma/schema.prisma:700` |
 | EcmAttachmentReference | `ecm_attachment_references` | `packages/db/prisma/schema.prisma:725` |
+| EcmAttachmentCleanup | `ecm_attachment_cleanups` | `packages/db/prisma/schema.prisma:736` |
 
 ## Status enums
 

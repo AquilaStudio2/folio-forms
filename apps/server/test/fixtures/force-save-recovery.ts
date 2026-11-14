@@ -108,6 +108,7 @@ const postCallback = () => {
     status: 6,
     userdata: createCallbackUserdata({
       documentKey: operation.documentKey,
+      documentServerKey: operation.documentKey,
       operationId: operation.id,
       operationType: "submit_response",
     }),

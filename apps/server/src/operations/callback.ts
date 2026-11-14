@@ -27,7 +27,7 @@ import { jsonValue, manifestFieldValueMatches } from "../responses/data";
 import { readObject, putObject, DOCX_CONTENT_TYPE } from "../storage";
 import { updateOperationFailed } from "./lifecycle";
 import type { CallbackPayload, OperationCompletion } from "./model";
-import { operationMetadata } from "./model";
+import { operationMetadata, operationDocumentServerKey } from "./model";
 import {
   cleanupTerminalOperationObjects,
   cleanupNativeCaptures,
@@ -181,7 +181,7 @@ export async function finalizeCallback(
   );
   if (
     typeof payload.key !== "string" ||
-    payload.key !== operation.documentKey
+    payload.key !== operationDocumentServerKey(operation)
   ) {
     await updateOperationFailed(operation.id, "callback_key_mismatch");
     return;

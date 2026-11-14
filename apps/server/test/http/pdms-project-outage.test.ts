@@ -77,7 +77,7 @@ afterAll(async () => {
 });
 interface Editor {
   config: { document: { key: string } };
-  bridge: { capabilities: Record<string, string> };
+  bridge: { documentKey: string; capabilities: Record<string, string> };
   pdmsProjectCatalog: { sessionId: string; status: string; names: string[] };
 }
 interface Job {
@@ -312,7 +312,7 @@ const fixture = async (
       `/api/admin/forms/${publicId}/publish`,
       author.bridge.capabilities.publish as string,
       {
-        documentKey: author.config.document.key,
+        documentKey: author.bridge.documentKey,
         spreadsheetAnchors: Object.entries(fixtureAnchors),
       },
       true
@@ -380,7 +380,7 @@ const fixture = async (
       ] as string,
       {
         responseId,
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         fillMethod: "onlyoffice",
         data: {},
         pdmsCatalogSessionId: editor.pdmsProjectCatalog.sessionId,
@@ -395,7 +395,7 @@ const fixture = async (
                   ? {
                       row: {
                         index: 1,
-                        documentKey: editor.config.document.key,
+                        documentKey: editor.bridge.documentKey,
                       },
                     }
                   : {}),
@@ -409,7 +409,7 @@ const fixture = async (
       "/api/editor/pdms-project-catalog/retry",
       editor.bridge.capabilities["save-draft"] as string,
       {
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         sessionId: editor.pdmsProjectCatalog.sessionId,
       },
       true
@@ -547,7 +547,7 @@ runtimeTest(
       (await complete(await f.act(editor, "draft", "โครงการหลังคืนบริการ"))).status
     ).toBe("completed");
     editor = await f.config();
-    const submittedKey = editor.config.document.key;
+    const submittedKey = editor.bridge.documentKey;
     const incomplete = await complete(await f.act(editor, "submit"));
     expect(incomplete.status).toBe("failed");
     expect(incomplete.result?.validationErrors).toContainEqual({
@@ -555,7 +555,7 @@ runtimeTest(
       message: expect.any(String),
     });
     editor = await f.config(crypto.randomUUID());
-    expect(editor.config.document.key).toBe(submittedKey);
+    expect(editor.bridge.documentKey).toBe(submittedKey);
     expect(
       (
         await complete(
@@ -586,6 +586,50 @@ runtimeTest(
         },
       },
     ]);
+  }
+);
+
+runtimeTest(
+  "a fresh native opening does not revive another opening's failed ordinary input capture",
+  async () => {
+    const f = await fixture(true);
+    let editor = await f.config();
+    snapshot = workbook("saved ordinary baseline", "saved second baseline");
+    const baseline = await complete(await f.act(editor, "draft"));
+    expect(baseline.status).toBe("completed");
+    editor = await f.config();
+    snapshot = workbook(
+      "discarded old opening input",
+      "discarded old second input"
+    );
+    const failed = await complete(await f.act(editor, "submit"));
+    expect(failed.status).toBe("failed");
+    expect(failed.result).toMatchObject({
+      validationErrors: expect.any(Array),
+    });
+    const savedBefore = await (await f.read("json")).json();
+    expect(savedBefore).toMatchObject({
+      notes: "saved ordinary baseline",
+      more_notes: "saved second baseline",
+    });
+    const reopened = await f.config(crypto.randomUUID());
+    expect(reopened.config.document.key).not.toBe(editor.config.document.key);
+    // A fresh native opening loads saved bytes, not the failed opening's unsaved capture.
+    snapshot = await f.bytes();
+    unchangedNative = true;
+    const saved = await complete(
+      await f.act(reopened, "draft", "โครงการหลังคืนบริการ")
+    );
+    expect(saved.status).toBe("completed");
+    const current = await (await f.read("json")).json();
+    expect(current).toEqual({
+      project_name: "โครงการหลังคืนบริการ",
+      notes: "saved ordinary baseline",
+      more_notes: "saved second baseline",
+    });
+    const persisted = readSpreadsheetWorkbook(await f.bytes());
+    expect(persisted.cells.get("D1")?.value).toBe("saved ordinary baseline");
+    expect(persisted.cells.get("D3")?.value).toBe("saved second baseline");
   }
 );
 
@@ -679,7 +723,7 @@ runtimeTest(
         data: {
           id,
           actorId: template ? f.adminId : f.userId,
-          documentKey: template ? `crashed-${id}` : editor.config.document.key,
+          documentKey: template ? `crashed-${id}` : editor.bridge.documentKey,
           errorCode: "force_save_failed",
           formId: template?.id ?? f.formId,
           metadata: {
@@ -918,7 +962,7 @@ runtimeTest(
           editor.bridge.capabilities["save-draft"] as string,
           {
             responseId: f.responseId,
-            documentKey: editor.config.document.key,
+            documentKey: editor.bridge.documentKey,
             data: {},
             fillMethod: "onlyoffice",
             pdmsCatalogSessionId: editor.pdmsProjectCatalog.sessionId,

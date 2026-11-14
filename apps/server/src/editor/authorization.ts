@@ -22,6 +22,7 @@ export type ActionEditorAuthorization = EditorAuthorization & {
 export interface EditorCapabilityScope {
   action: EditorCapabilityAction;
   documentKey: string;
+  documentServerKey?: string;
   formId: string;
   operationId?: string;
   pdmsCatalogSessionId?: string;
@@ -142,6 +143,20 @@ export async function requireActionEditorAuthorization(
   return { actor: authorization.actor, capability };
 }
 
+export function requireDocumentServerKey(
+  authorization: ActionEditorAuthorization
+): string {
+  const key = authorization.capability.documentServerKey;
+  if (!key) {
+    fail(
+      403,
+      "editor_capability_scope_mismatch",
+      "A signed native editor opening is required"
+    );
+  }
+  return key;
+}
+
 export function requireEditorScope(
   authorization: EditorAuthorization,
   scope: EditorCapabilityScope
@@ -153,6 +168,8 @@ export function requireEditorScope(
   if (
     capability.action !== scope.action ||
     capability.documentKey !== scope.documentKey ||
+    (scope.documentServerKey !== undefined &&
+      capability.documentServerKey !== scope.documentServerKey) ||
     capability.formId !== scope.formId ||
     capability.operationId !== scope.operationId ||
     capability.targetId !== scope.targetId ||

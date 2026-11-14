@@ -176,7 +176,7 @@ const waitFor = async (response: Response) => {
 };
 interface Config {
   config: { document: { key: string } };
-  bridge: { capabilities: Record<string, string> };
+  bridge: { documentKey: string; capabilities: Record<string, string> };
   pdmsProjectCatalog: { sessionId: string; status: string; names: string[] };
 }
 
@@ -393,7 +393,7 @@ const openTable = async () => {
       `/api/forms/${publicId}/${submit ? "submit" : "draft"}`,
       current.bridge.capabilities[submit ? "submit" : "save-draft"] as string,
       {
-        documentKey: current.config.document.key,
+        documentKey: current.bridge.documentKey,
         responseId: response.id,
         fillMethod: "onlyoffice",
         data: {},
@@ -427,7 +427,7 @@ workflowTest(
         sessionId: workflow.editor.pdmsProjectCatalog.sessionId,
         bindingId: "folio_column_1",
         name: "00123",
-        row: { index: 1, documentKey: workflow.editor.config.document.key },
+        row: { index: 1, documentKey: workflow.editor.bridge.documentKey },
       },
     });
     expect(selected.status).toBe(202);
@@ -467,7 +467,7 @@ workflowTest(
             name,
             ...(index === undefined
               ? {}
-              : { row: { index, documentKey: editor.config.document.key } }),
+              : { row: { index, documentKey: editor.bridge.documentKey } }),
           },
         })
       );
@@ -489,7 +489,7 @@ workflowTest(
         { column_1: "00123", column_2: null, note: "row two note" },
       ],
     });
-    const oldKey = editor.config.document.key;
+    const oldKey = editor.bridge.documentKey;
     snapshot = await workflow.getBytes();
     expect(
       (
@@ -570,7 +570,7 @@ workflowTest(
       sessionId: editor.pdmsProjectCatalog.sessionId,
       bindingId: "folio_column_1",
       name: "Project B",
-      row: { index: 1, documentKey: editor.config.document.key },
+      row: { index: 1, documentKey: editor.bridge.documentKey },
     };
     snapshot = await workflow.getBytes();
     const unchanged = snapshot;
@@ -628,7 +628,7 @@ workflowTest(
     expect(await workflow.getBytes()).toEqual(new Uint8Array(unchanged));
     expect(await workflow.getData()).toEqual({});
     const retained = await workflow.getConfig();
-    expect(retained.config.document.key).toBe(editor.config.document.key);
+    expect(retained.bridge.documentKey).toBe(editor.bridge.documentKey);
     expect(retained.pdmsProjectCatalog).toEqual(editor.pdmsProjectCatalog);
     // Failure retains the exact revision so a genuine picker action can retry.
     snapshot = callbackBytes(unchanged, { C5: "ordinary unsaved text" });

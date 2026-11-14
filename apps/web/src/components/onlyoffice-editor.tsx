@@ -50,16 +50,21 @@ declare global {
   }
 }
 
-const changedPdmsDocument = (
+const changedEditorDocument = (
   current: EditorConfig,
   fresh: EditorConfig
-): boolean =>
-  Boolean(
-    fresh.pdmsProjectCatalog &&
-    recordOrEmpty(fresh.config?.document).key !==
-      recordOrEmpty(current.config?.document).key
+): boolean => {
+  const canonicalKey = current.bridge?.documentKey;
+  const nativeKey = recordOrEmpty(current.config?.document).key;
+  return (
+    !isNonEmptyString(canonicalKey) ||
+    !isNonEmptyString(nativeKey) ||
+    fresh.bridge?.documentKey !== canonicalKey ||
+    recordOrEmpty(fresh.config?.document).key !== nativeKey
   );
+};
 
+// oxlint-disable-next-line complexity -- Coordinate native editor refs, lease scope and persistent notices without splitting their lifecycle ownership.
 export const OnlyOfficeEditor = ({
   captureWorkbookRef,
   clearDirtyRequest = 0,
@@ -98,23 +103,33 @@ export const OnlyOfficeEditor = ({
   trackNativeDirty?: boolean;
   title: string;
 }) => {
+  const [retryToken, setRetryToken] = useState(0);
   const editorOpeningRef = useRef<{
     url: string | undefined;
     id: string;
     revision: number;
+    openingRevision: number;
+    retryToken: number;
+    readOnly: boolean;
   } | null>(null);
   if (
     !editorOpeningRef.current ||
     editorOpeningRef.current.url !== configUrl ||
-    editorOpeningRef.current.revision !== openingRevision
+    editorOpeningRef.current.revision !== revision ||
+    editorOpeningRef.current.openingRevision !== openingRevision ||
+    editorOpeningRef.current.retryToken !== retryToken ||
+    editorOpeningRef.current.readOnly !== readOnly
   ) {
     editorOpeningRef.current = {
       id: crypto.randomUUID(),
-      revision: openingRevision,
+      openingRevision,
+      readOnly,
+      retryToken,
+      revision,
       url: configUrl,
     };
   }
-  const pdmsOpeningId = readOnly ? undefined : editorOpeningRef.current.id;
+  const pdmsOpeningId = editorOpeningRef.current.id;
   const uploadPocFilesRef = useRef<UploadPocPendingFiles | null>(null);
   if (!uploadPocFilesRef.current) {
     uploadPocFilesRef.current = new UploadPocPendingFiles();
@@ -159,15 +174,19 @@ export const OnlyOfficeEditor = ({
   const [editorState, setEditorState] =
     useState<OnlyOfficeEditorState>("loading");
   const [expanded, setExpanded] = useState(false);
-  const [retryToken, setRetryToken] = useState(0);
   const [bridgeReadyVersion, setBridgeReadyVersion] = useState(0);
 
   useImperativeHandle(captureWorkbookRef, () => {
     const bridge = config?.bridge;
-    const documentKey = recordOrEmpty(config?.config?.document).key;
+    const documentKey = bridge?.documentKey;
     return async () => {
       if (uploadPocFilesRef.current?.hasPending()) {
         throw new Error("มีไฟล์แนบที่ยังไม่บันทึก กรุณากดบันทึกฉบับร่างหรือส่งก่อนดาวน์โหลด");
+      }
+      if (uploadPocFilesRef.current?.hasUnresolvedCommit()) {
+        throw new Error(
+          "ยังยืนยันผลบันทึกไฟล์แนบรอบเดิมไม่ได้ กรุณาตรวจผลเดิมก่อนดาวน์โหลด"
+        );
       }
       const source = pinnedSourceRef.current;
       const scope = exportScopeRef.current;
@@ -241,7 +260,7 @@ export const OnlyOfficeEditor = ({
           !isCurrentScope() ||
           !freshLease ||
           !isNonEmptyString(capability) ||
-          recordOrEmpty(fresh.config?.document).key !== documentKey ||
+          changedEditorDocument(scope.config, fresh) ||
           (activeLeaseId !== requestedLeaseId &&
             activeLeaseId !== freshLease.id)
         ) {
@@ -691,7 +710,7 @@ export const OnlyOfficeEditor = ({
         if (cancelled || pinnedSourceRef.current !== requestedSource) {
           return;
         }
-        if (changedPdmsDocument(config, fresh)) {
+        if (changedEditorDocument(config, fresh)) {
           respondToCapabilityRequest(
             request,
             { error: "เอกสารเปลี่ยนแล้ว กรุณาเก็บข้อมูลในตัวแก้ไขก่อนเปิดใหม่" },
@@ -761,6 +780,7 @@ export const OnlyOfficeEditor = ({
       const refreshed = fresh.bridge?.uploadPoc;
       if (
         !refreshed ||
+        changedEditorDocument(config, fresh) ||
         refreshed.action !== options.action ||
         refreshed.documentKey !== options.documentKey ||
         refreshed.scopeIdentity !== options.scopeIdentity ||
@@ -859,12 +879,16 @@ export const OnlyOfficeEditor = ({
         onDirtyChangeRef.current?.(true);
       }
       if (!result.error) {
-        const slot = typeof data.tag === "string" ? ` ในช่อง ${data.tag}` : "";
-        setAttachmentNotice(
-          hasPending
-            ? `มีไฟล์แนบที่เลือกค้างไว้${slot} ยังไม่อัปโหลด กรุณากดบันทึกฉบับร่างหรือส่ง ไฟล์จะหายหากปิดหรือรีเฟรชหน้า`
-            : null
-        );
+        if (typeof result.validationError === "string") {
+          setAttachmentNotice(result.validationError);
+        } else if (hasPending) {
+          const slot = typeof data.tag === "string" ? ` ในช่อง ${data.tag}` : "";
+          setAttachmentNotice(
+            `มีการเปลี่ยนไฟล์แนบค้างไว้${slot} ยังไม่บันทึก กรุณากดบันทึกฉบับร่างหรือส่ง การปิดหรือรีเฟรชหน้าจะทิ้งการเปลี่ยนที่ยังไม่บันทึก`
+          );
+        } else {
+          setAttachmentNotice(null);
+        }
       }
     };
 
@@ -1000,9 +1024,7 @@ export const OnlyOfficeEditor = ({
       const result = message.operation?.result;
       if (result?.editorSessionPreserved === true) {
         const uploadPoc = config.bridge?.uploadPoc;
-        const nativeDocumentKey = recordOrEmpty(
-          recordOrEmpty(config.config).document
-        ).key;
+        const canonicalDocumentKey = config.bridge?.documentKey;
         // Keeping an iframe is valid only for the same editable Excel session.
         // A changed/missing key falls back to the normal save-and-remount flow.
         const preserved =
@@ -1011,7 +1033,7 @@ export const OnlyOfficeEditor = ({
           message.status === "completed" &&
           uploadPoc?.action === "template-edit" &&
           isNonEmptyString(result.documentKey) &&
-          result.documentKey === nativeDocumentKey &&
+          result.documentKey === canonicalDocumentKey &&
           result.documentKey === uploadPoc.documentKey;
         if (!preserved) {
           message = {
@@ -1214,6 +1236,16 @@ export const OnlyOfficeEditor = ({
           aria-live="polite"
         >
           {attachmentNotice ?? config?.attachmentNotice}
+        </p>
+      ) : null}
+      {typeof config?.bridge?.uploadPoc?.cleanupWarning === "string" &&
+      config.bridge.uploadPoc.cleanupWarning ? (
+        <p
+          className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
+          role="status"
+          aria-live="polite"
+        >
+          {config.bridge.uploadPoc.cleanupWarning}
         </p>
       ) : null}
       <EditorSurface

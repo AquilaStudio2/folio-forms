@@ -47,6 +47,229 @@ const message = (extra: Record<string, unknown> = {}) => ({
 });
 
 describe("local POC pending files", () => {
+  it("keeps scalar removal local until explicit save and preserves a newer removal across an older receipt", async () => {
+    sessionStorage.clear();
+    const store = new UploadPocPendingFiles();
+    const host = {
+      ...options,
+      publicId: "form",
+      responseId: "response",
+      savedData: {
+        document: {
+          file_link: "https://files.test/original.bin",
+          original_name: "original.bin",
+          size_bytes: 4,
+        },
+      },
+    };
+    const slot = { bindingId: "folio_scalar", rowIndex: null, tag: "document" };
+    const post = vi.spyOn(api, "apiPostFormData").mockResolvedValue({
+      action: "save-draft",
+      operationId: "removed",
+      operationCapability: "operation-capability",
+      status: "pending",
+    });
+    try {
+      expect(
+        store.handle(message({ ...slot, type: "pending-file-remove" }), host)
+      ).toMatchObject({
+        removal: true,
+        saved: { original_name: "original.bin", size_bytes: 4 },
+      });
+      expect(store.hasPending()).toBe(true);
+      expect(post).not.toHaveBeenCalled();
+      expect(
+        store.handle(message({ ...slot, type: "pending-file-cancel" }), host)
+      ).toMatchObject({
+        removal: false,
+        filename: null,
+      });
+      expect(store.hasPending()).toBe(false);
+      store.handle(message({ ...slot, type: "pending-file-remove" }), host);
+      await store.save(
+        message({
+          action: "save-draft",
+          body: {},
+          capability: "capability",
+          snapshotUrl: "http://office.test/snapshot.xlsx",
+          type: "pending-file-save",
+        }),
+        host
+      );
+      const multipart = post.mock.calls[0]?.[1];
+      expect(multipart).toBeInstanceOf(FormData);
+      expect(
+        JSON.parse(String(multipart?.get("payload"))).attachmentRemovals
+      ).toEqual([{ bindingId: "folio_scalar", rowIndex: null }]);
+      expect(multipart?.has("attachment:folio_scalar")).toBe(false);
+      store.handle(message({ ...slot, type: "pending-file-cancel" }), host);
+      store.handle(message({ ...slot, type: "pending-file-remove" }), host);
+      store.complete("removed");
+      expect(store.hasPending()).toBe(true);
+      expect(
+        store.handle(
+          message({
+            ...slot,
+            documentKey: "draft-2",
+            type: "pending-file-get",
+          }),
+          {
+            ...host,
+            documentKey: "draft-2",
+          }
+        )
+      ).toMatchObject({ removal: true, hasPending: true });
+      await store.save(
+        message({
+          action: "save-draft",
+          body: {},
+          capability: "capability",
+          snapshotUrl: "http://office.test/next.xlsx",
+          type: "pending-file-save",
+        }),
+        host
+      );
+      const newer = new File(["new"], "newer.bin");
+      store.handle(
+        message({ ...slot, type: "pending-file-set", file: newer }),
+        host
+      );
+      store.complete("removed");
+      expect([...store.snapshot().values()]).toEqual([newer]);
+      expect(
+        store.handle(message({ ...slot, type: "pending-file-get" }), host)
+      ).toMatchObject({
+        removal: false,
+        hasPending: true,
+        filename: "newer.bin",
+      });
+    } finally {
+      vi.restoreAllMocks();
+      sessionStorage.clear();
+    }
+  });
+  it("keeps invalid replacements blocking after reopen until a valid choice or cancel restores the saved attachment", async () => {
+    const store = new UploadPocPendingFiles();
+    const slot = { bindingId: "folio_scalar", rowIndex: null, tag: "document" };
+    const saved = {
+      file_link: "https://files.test/original",
+      original_name: "original.bin",
+      size_bytes: 0,
+    };
+    const host = {
+      ...options,
+      publicId: "form",
+      responseId: "response",
+      savedData: { document: saved },
+    };
+    const post = vi.spyOn(api, "apiPostFormData");
+    try {
+      store.handle(
+        message({
+          ...slot,
+          type: "pending-file-set",
+          file: new File(["valid"], "valid.bin"),
+        }),
+        host
+      );
+      expect(() =>
+        store.handle(
+          message({
+            ...slot,
+            type: "pending-file-set",
+            file: new File([new Uint8Array(10_000_001)], "large.bin"),
+          }),
+          host
+        )
+      ).toThrow(/10,000,000/u);
+      expect(
+        store.handle(message({ ...slot, type: "pending-file-get" }), host)
+      ).toMatchObject({
+        saved,
+        filename: "valid.bin",
+        validationError: expect.any(String),
+      });
+      await expect(
+        store.save(
+          message({
+            action: "save-draft",
+            body: {},
+            capability: "cap",
+            snapshotUrl: "http://office.test/snapshot.xlsx",
+          }),
+          host
+        )
+      ).rejects.toThrow(/10,000,000/u);
+      expect(post).not.toHaveBeenCalled();
+      expect(
+        store.handle(message({ ...slot, type: "pending-file-cancel" }), host)
+      ).toMatchObject({
+        saved,
+        filename: null,
+        validationError: null,
+        removal: false,
+        hasPending: false,
+      });
+      store.handle(message({ ...slot, type: "pending-file-remove" }), host);
+      expect(store.hasPending()).toBe(true);
+      expect(() =>
+        store.handle(
+          message({
+            ...slot,
+            type: "pending-file-check",
+            action: "change-project",
+          }),
+          host
+        )
+      ).toThrow();
+      const replacement = new File([], "empty");
+      store.handle(
+        message({ ...slot, type: "pending-file-set", file: replacement }),
+        host
+      );
+      expect(
+        store.handle(message({ ...slot, type: "pending-file-get" }), host)
+      ).toMatchObject({
+        saved,
+        filename: "empty",
+        size: 0,
+        removal: false,
+        validationError: null,
+      });
+      expect([...store.snapshot().values()]).toEqual([replacement]);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+  it.each(["pending-file-cancel", "pending-file-remove"])(
+    "rejects forged %s without discarding an existing File",
+    (type) => {
+      const store = new UploadPocPendingFiles();
+      const slot = {
+        bindingId: "folio_scalar",
+        rowIndex: null,
+        tag: "document",
+      };
+      const file = new File(["private"], "private.bin");
+      store.handle(
+        message({ ...slot, type: "pending-file-set", file }),
+        options
+      );
+      for (const change of [
+        { bridgeId: "wrong" },
+        { documentKey: "stale" },
+        { scopeIdentity: "other" },
+        { bindingId: "folio_unknown" },
+        { tag: "other" },
+        { rowIndex: 0 },
+      ]) {
+        expect(() =>
+          store.handle(message({ ...slot, type, ...change }), options)
+        ).toThrow();
+        expect([...store.snapshot().values()]).toEqual([file]);
+      }
+    }
+  );
   it("retains the File until explicit negative-admission proof and never resends on lookup absence alone", async () => {
     sessionStorage.clear();
     const store = new UploadPocPendingFiles();

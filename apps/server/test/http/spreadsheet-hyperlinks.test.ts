@@ -30,7 +30,10 @@ import {
 
 const enabled = process.env.RUN_XLSX_HYPERLINK_HTTP === "1";
 const editorSchema = z.object({
-  bridge: z.object({ capabilities: z.record(z.string(), z.string()) }),
+  bridge: z.object({
+    capabilities: z.record(z.string(), z.string()),
+    documentKey: z.string(),
+  }),
   config: z.object({
     document: z.object({ key: z.string(), url: z.string() }),
   }),
@@ -119,7 +122,7 @@ const action = async (
     path,
     token,
     {
-      documentKey: editor.config.document.key,
+      documentKey: editor.bridge.documentKey,
       ...(name === "save-template" || name === "publish" ? {} : { data: {} }),
       ...body,
     },
@@ -424,7 +427,7 @@ describe.skipIf(!enabled)("XLSX hyperlink HTTP lifecycle", () => {
       (await request(`/api/forms/${publicId}/start`, user, {})).status
     ).toBe(200);
     editor = await openEditor(userPath, user);
-    expect(editor.config.document.key).toBeTruthy();
+    expect(editor.bridge.documentKey).toBeTruthy();
     expectLink(await readObject(submission.objectKey));
   }, 120_000);
 });

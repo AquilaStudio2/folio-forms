@@ -27,6 +27,7 @@ vi.mock("@/lib/api", async (original) => ({
 const config = () => ({
   bridge: {
     capabilities: { "configure-fields": "initial-cap" },
+    documentKey: "document",
     id: "editor-bridge",
     lease: {
       expiresAt: new Date(Date.now() + 90_000).toISOString(),
@@ -36,13 +37,17 @@ const config = () => ({
     },
     pluginOrigin: window.location.origin,
   },
-  config: { document: { key: "document" }, editorConfig: { mode: "edit" } },
+  config: {
+    document: { key: "native-document" },
+    editorConfig: { mode: "edit" },
+  },
 });
 const exportConfig = (documentKey: string, leaseId: string) => ({
   ...config(),
   bridge: {
     ...config().bridge,
     capabilities: { "export-workbook": `capability-${leaseId}` },
+    documentKey,
     lease: {
       expiresAt: new Date(Date.now() + 90_000).toISOString(),
       id: leaseId,
@@ -50,7 +55,7 @@ const exportConfig = (documentKey: string, leaseId: string) => ({
       renewUrl: `/api/editor-leases/${leaseId}/renew`,
     },
   },
-  config: { document: { key: documentKey }, documentType: "cell" },
+  config: { document: { key: `native-${documentKey}` }, documentType: "cell" },
 });
 let documentStateChanged: ((event: { data: boolean }) => void) | undefined;
 beforeEach(() => {
@@ -177,6 +182,44 @@ describe("ONLYOFFICE plugin reconnect", () => {
       undefined,
       { keepalive: true }
     );
+  });
+  it("rejects export renewal against a different canonical revision even when the native cache key is unchanged", async () => {
+    const initial = {
+      ...exportConfig("opaque-native-opening", "lease"),
+      bridge: {
+        ...exportConfig("opaque-native-opening", "lease").bridge,
+        documentKey: "canonical-one",
+      },
+    };
+    const replaced = {
+      ...initial,
+      bridge: { ...initial.bridge, documentKey: "canonical-two" },
+    };
+    transport.get.mockResolvedValueOnce(initial).mockResolvedValue(replaced);
+    const capture = createRef<CaptureWorkbook>();
+    render(
+      <OnlyOfficeEditor
+        captureWorkbookRef={capture}
+        configUrl="/editor-config"
+        title="Canonical export"
+      />
+    );
+    const plugin = pluginFrame(
+      (await screen.findByTitle("Office sandbox")) as HTMLIFrameElement
+    );
+    send(plugin.source, { type: "bridge-ready" });
+    if (!capture.current) {
+      throw new Error("Workbook capture is unavailable");
+    }
+    const snapshot = await captureSnapshot(
+      capture.current,
+      plugin,
+      "https://office.test/snapshot"
+    );
+    await expect(
+      snapshot.refreshCapability(new AbortController().signal)
+    ).rejects.toThrow("session has changed");
+    expect(transport.postForm).not.toHaveBeenCalled();
   });
   it("marks Excel changes dirty until Folio confirms its saved document", async () => {
     transport.get.mockResolvedValue({
@@ -583,9 +626,10 @@ it("settles a persisted completed checkpoint before opening an editable workbook
     ...initial,
     bridge: {
       ...initial.bridge,
+      documentKey: "document-2",
       uploadPoc: { ...initial.bridge.uploadPoc, documentKey: "document-2" },
     },
-    config: { ...initial.config, document: { key: "document-2" } },
+    config: { ...initial.config, document: { key: "native-document-2" } },
   };
   const checkpoint = createDeferred<{
     operationId: string;
@@ -980,6 +1024,7 @@ it("keeps POC Files in the host across native remount and rejects messages outsi
     ...config(),
     bridge: {
       ...config().bridge,
+      documentKey: "document-1",
       uploadPoc: uploadOptions("document-1", "editor-bridge"),
     },
   };
@@ -987,6 +1032,7 @@ it("keeps POC Files in the host across native remount and rejects messages outsi
     ...config(),
     bridge: {
       ...config().bridge,
+      documentKey: "document-2",
       id: "next-bridge",
       uploadPoc: uploadOptions("document-2", "next-bridge"),
     },
@@ -1066,6 +1112,184 @@ it("keeps POC Files in the host across native remount and rejects messages outsi
     window.location.origin
   );
   expect(transport.post).not.toHaveBeenCalled();
+});
+
+it("keeps removal dirty and export-blocking, rejects forged cancellation, and retains cleanup warning after successful saves and reopen", async () => {
+  const warning = "ข้อมูลใหม่บันทึกแล้ว แต่ URL เก่าอาจยังเปิดได้ กรุณาประสาน Admin";
+  const initial = {
+    ...exportConfig("document", "lease"),
+    bridge: {
+      ...exportConfig("document", "lease").bridge,
+      uploadPoc: {
+        ...uploadOptions("document", "editor-bridge"),
+        cleanupWarning: warning,
+        publicId: "form",
+        responseId: "response",
+        savedData: {
+          file: {
+            file_link: "https://files.test/old",
+            original_name: "old.bin",
+            size_bytes: 0,
+          },
+        },
+      },
+    },
+  };
+  transport.get.mockResolvedValue(initial);
+  transport.postForm.mockResolvedValue({
+    action: "save-draft",
+    operationCapability: "cap",
+    operationId: "remove-op",
+    status: "pending",
+  });
+  const capture = createRef<CaptureWorkbook>();
+  const dirty = vi.fn();
+  const view = render(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Draft attachments"
+      captureWorkbookRef={capture}
+      onDirtyChange={dirty}
+    />
+  );
+  const office = (await screen.findByTitle(
+    "Office sandbox"
+  )) as HTMLIFrameElement;
+  const picker = pluginFrame(office);
+  send(picker.source, { type: "bridge-ready" });
+  const slot = {
+    bindingId: "folio_file",
+    documentKey: "document",
+    requestId: "remove",
+    rowIndex: null,
+    scopeIdentity: "actor/response",
+    source: "folio-upload-poc",
+    tag: "file",
+  };
+  send(picker.source, { ...slot, type: "pending-file-remove" });
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  send(picker.source, { dirty: false, type: "dirty-state" });
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  await expect(capture.current?.()).rejects.toThrow(/ยังไม่บันทึก/u);
+  send(picker.source, {
+    ...slot,
+    documentKey: "stale",
+    type: "pending-file-cancel",
+  });
+  send(
+    picker.source,
+    { ...slot, type: "pending-file-cancel" },
+    "https://forged.test"
+  );
+  send(picker.source, { ...slot, type: "pending-file-get" });
+  expect(picker.send).toHaveBeenLastCalledWith(
+    expect.objectContaining({ removal: true }),
+    window.location.origin
+  );
+  expect(screen.getByText(warning)).toBeVisible();
+  send(picker.source, {
+    ...slot,
+    action: "save-draft",
+    body: {},
+    capability: "capability",
+    snapshotUrl: "http://office.test/snapshot.xlsx",
+    type: "pending-file-save",
+  });
+  await waitFor(() => expect(transport.postForm).toHaveBeenCalledTimes(1));
+  send(picker.source, {
+    action: "save-draft",
+    operationId: "remove-op",
+    status: "completed",
+    type: "operation",
+  });
+  expect(screen.getByText(warning)).toBeVisible();
+  send(picker.source, { ...slot, type: "pending-file-get" });
+  expect(picker.send).toHaveBeenLastCalledWith(
+    expect.objectContaining({ hasPending: false, removal: false }),
+    window.location.origin
+  );
+  view.rerender(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Draft attachments"
+      revision={1}
+      captureWorkbookRef={capture}
+      onDirtyChange={dirty}
+    />
+  );
+  await waitFor(() =>
+    expect(screen.getByTitle("Office sandbox")).not.toBe(office)
+  );
+  expect(screen.getByText(warning)).toBeVisible();
+  const reopened = pluginFrame(
+    screen.getByTitle("Office sandbox") as HTMLIFrameElement
+  );
+  send(reopened.source, { type: "bridge-ready" });
+  if (!capture.current) {
+    throw new Error("Workbook capture is unavailable");
+  }
+  expect(
+    await captureSnapshot(
+      capture.current,
+      reopened,
+      "http://office.test/export.xlsx"
+    )
+  ).toMatchObject({
+    snapshotUrl: "http://office.test/export.xlsx",
+  });
+  expect(transport.postForm).toHaveBeenCalledTimes(1);
+});
+
+it("blocks export during its own uncertain commit even when no File remains in memory", async () => {
+  const initial = {
+    ...exportConfig("document", "lease"),
+    bridge: {
+      ...exportConfig("document", "lease").bridge,
+      uploadPoc: {
+        ...uploadOptions("document", "editor-bridge"),
+        publicId: "form",
+        responseId: "response",
+      },
+    },
+  };
+  transport.get.mockResolvedValue(initial);
+  const capture = createRef<CaptureWorkbook>();
+  render(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Uncertain commit"
+      captureWorkbookRef={capture}
+    />
+  );
+  const picker = pluginFrame(
+    (await screen.findByTitle("Office sandbox")) as HTMLIFrameElement
+  );
+  send(picker.source, { type: "bridge-ready" });
+  transport.postForm.mockRejectedValue(new TypeError("response lost"));
+  transport.get.mockRejectedValue(new TypeError("checkpoint unavailable"));
+  send(picker.source, {
+    action: "save-draft",
+    body: {},
+    capability: "capability",
+    documentKey: "document",
+    requestId: "save",
+    scopeIdentity: "actor/response",
+    snapshotUrl: "http://office.test/snapshot.xlsx",
+    source: "folio-upload-poc",
+    type: "pending-file-save",
+  });
+  await waitFor(() =>
+    expect(picker.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentCommitUnresolved: true,
+        error: "checkpoint unavailable",
+        requestId: "save",
+      }),
+      window.location.origin
+    )
+  );
+  await expect(capture.current?.()).rejects.toThrow(/ยังยืนยันผลบันทึก/u);
+  expect(transport.postForm).toHaveBeenCalledTimes(1);
 });
 
 it.each(["draft", "correction"])(
@@ -1183,7 +1407,12 @@ it("refreshes trusted Admin configuration but never accepts Files in Template Dr
   };
   const initial = {
     ...config(),
-    bridge: { ...config().bridge, lease, uploadPoc: options },
+    bridge: {
+      ...config().bridge,
+      documentKey: "document-1",
+      lease,
+      uploadPoc: options,
+    },
   };
   let fresh = initial;
   transport.get
@@ -1234,7 +1463,7 @@ it("refreshes trusted Admin configuration but never accepts Files in Template Dr
   expect(transport.post).not.toHaveBeenCalled();
 });
 
-it("accepts a preserved session only for a completed Excel save with matching native and POC document keys", async () => {
+it("accepts a preserved session only for a completed Excel save with matching canonical and POC document keys, not the native cache key", async () => {
   transport.get.mockResolvedValue({
     ...config(),
     bridge: {
@@ -1293,63 +1522,95 @@ it("accepts a preserved session only for a completed Excel save with matching na
   }
 });
 
-it("retains one logical PDMS opening across capability refresh and document reload, and renews it on reopen", async () => {
+it("renews the current workbook within one opening but rejects old captures after a native remount of the same canonical revision", async () => {
+  const initial = exportConfig("document", "lease");
+  const reopened = {
+    ...initial,
+    bridge: {
+      ...initial.bridge,
+      capabilities: { "export-workbook": "reopened-capability" },
+    },
+    config: { ...initial.config, document: { key: "native-reopened" } },
+  };
+  transport.get
+    .mockResolvedValueOnce(initial)
+    .mockResolvedValueOnce(initial)
+    .mockResolvedValue(reopened);
+  const capture = createRef<CaptureWorkbook>();
+  const configUrl = "/api/forms/source/editor-config?responseId=response";
   const view = render(
     <OnlyOfficeEditor
-      configUrl="/api/forms/source/editor-config?responseId=response"
-      title="PDMS editor"
+      captureWorkbookRef={capture}
+      configUrl={configUrl}
+      title="Opening export"
     />
   );
   const office = (await screen.findByTitle(
     "Office sandbox"
   )) as HTMLIFrameElement;
   const plugin = pluginFrame(office);
-  const firstPath = transport.get.mock.calls[0]?.[0] as string;
-  const opening = new URL(firstPath, window.location.origin).searchParams.get(
-    "pdmsOpeningId"
-  );
-  expect(opening).toMatch(/^[0-9a-f-]{36}$/u);
   send(plugin.source, { type: "bridge-ready" });
-  send(plugin.source, {
-    action: "configure-fields",
-    requestId: "pdms-refresh",
-    type: "capability-request",
-  });
-  await waitFor(() => expect(transport.get).toHaveBeenCalledTimes(2));
+  if (!capture.current) {
+    throw new Error("Workbook capture is unavailable");
+  }
+  const oldSnapshot = await captureSnapshot(
+    capture.current,
+    plugin,
+    "https://office.test/first"
+  );
+  expect(
+    await oldSnapshot.refreshCapability(new AbortController().signal)
+  ).toBe("capability-lease");
+  const firstOpening = new URL(
+    transport.get.mock.calls[0]?.[0] as string,
+    window.location.origin
+  ).searchParams.get("pdmsOpeningId");
   expect(
     new URL(
       transport.get.mock.calls[1]?.[0] as string,
       window.location.origin
     ).searchParams.get("pdmsOpeningId")
-  ).toBe(opening);
+  ).toBe(firstOpening);
   view.rerender(
     <OnlyOfficeEditor
-      configUrl="/api/forms/source/editor-config?responseId=response"
-      title="PDMS editor"
+      captureWorkbookRef={capture}
+      configUrl={configUrl}
+      title="Opening export"
       revision={1}
     />
   );
-  await waitFor(() => expect(transport.get).toHaveBeenCalledTimes(3));
-  expect(
-    new URL(
-      transport.get.mock.calls[2]?.[0] as string,
-      window.location.origin
-    ).searchParams.get("pdmsOpeningId")
-  ).toBe(opening);
-  view.unmount();
-  render(
-    <OnlyOfficeEditor
-      configUrl="/api/forms/source/editor-config?responseId=response"
-      title="Reopened PDMS editor"
-    />
+  await waitFor(() =>
+    expect(screen.getByTitle("Office sandbox")).not.toBe(office)
   );
-  await waitFor(() => expect(transport.get).toHaveBeenCalledTimes(4));
+  await expect(
+    oldSnapshot.refreshCapability(new AbortController().signal)
+  ).rejects.toThrow("session has changed");
+  const current = pluginFrame(
+    screen.getByTitle("Office sandbox") as HTMLIFrameElement
+  );
+  send(current.source, { type: "bridge-ready" });
+  if (!capture.current) {
+    throw new Error("Workbook capture is unavailable");
+  }
+  const currentSnapshot = await captureSnapshot(
+    capture.current,
+    current,
+    "https://office.test/reopened"
+  );
+  expect(
+    await currentSnapshot.refreshCapability(new AbortController().signal)
+  ).toBe("reopened-capability");
+  const nextOpening = new URL(
+    transport.get.mock.calls[2]?.[0] as string,
+    window.location.origin
+  ).searchParams.get("pdmsOpeningId");
+  expect(nextOpening).not.toBe(firstOpening);
   expect(
     new URL(
       transport.get.mock.calls[3]?.[0] as string,
       window.location.origin
     ).searchParams.get("pdmsOpeningId")
-  ).not.toBe(opening);
+  ).toBe(nextOpening);
 });
 
 it("creates a fresh catalog opening when an existing new-entry transition reuses the editor URL", async () => {
@@ -1437,7 +1698,11 @@ it("delivers the replacement opening catalog with its renewed capability without
 it("rejects renewal into another document while preserving the live editor", async () => {
   transport.get.mockResolvedValueOnce(config()).mockResolvedValue({
     ...config(),
-    config: { ...config().config, document: { key: "different-document" } },
+    bridge: { ...config().bridge, documentKey: "different-document" },
+    config: {
+      ...config().config,
+      document: { key: "native-different-document" },
+    },
     pdmsProjectCatalog: {
       names: [],
       sessionId: "different-document-catalog",

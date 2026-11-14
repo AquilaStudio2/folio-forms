@@ -23,7 +23,7 @@ import {
   updateOperationFailed,
   operationDocumentKey,
 } from "./lifecycle";
-import { operationMetadata } from "./model";
+import { operationMetadata, operationDocumentServerKey } from "./model";
 import { nativeCaptureKey } from "./object-cleanup";
 import { SpreadsheetValidationError } from "./spreadsheet-document";
 
@@ -154,10 +154,12 @@ export function launchForceSave(
       if (!operation.documentKey) {
         fail(500, "invalid_operation", "Operation has no document key");
       }
+      const documentServerKey = operationDocumentServerKey(operation);
       const expiresAtSeconds =
         Math.floor(Date.now() / 1000) + callbackClaimLifetimeSeconds;
       const userdata = createCallbackUserdata({
         documentKey: operation.documentKey,
+        documentServerKey,
         expiresAt: expiresAtSeconds,
         operationId: operation.id,
         operationType: operation.type,
@@ -183,7 +185,7 @@ export function launchForceSave(
         return;
       }
       const saveResult = await onlyOffice.forceSave(
-        operation.documentKey,
+        documentServerKey,
         userdata
       );
       if (saveResult !== true) {
@@ -213,6 +215,10 @@ export function launchForceSave(
                     createdAt: { lt: operation.createdAt },
                     documentKey: operation.documentKey,
                     formId: operation.formId,
+                    metadata: {
+                      equals: documentServerKey,
+                      path: ["documentServerKey"],
+                    },
                     status: {
                       in: [OperationStatus.completed, OperationStatus.failed],
                     },
@@ -267,7 +273,7 @@ export function launchForceSave(
         await finalizeCallback(
           operation.id,
           {
-            key: operation.documentKey,
+            key: documentServerKey,
             status: 6,
             ...(saveResult === false ? {} : { url: saveResult.url }),
           },

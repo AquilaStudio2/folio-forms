@@ -28,6 +28,7 @@ import {
   documentUrl,
   editorConfig,
   pluginGuid,
+  xlsxEditorOpening,
 } from "../../src/onlyoffice";
 import type { OperationMetadata } from "../../src/operations/model";
 import { completePublishOperation } from "../../src/operations/template-completion";
@@ -195,6 +196,8 @@ beforeAll(async () => {
   );
   const scope = {
     documentKey,
+    documentServerKey: xlsxEditorOpening(documentKey, identity.sessionId)
+      .documentServerKey,
     formId,
     targetId: templateId,
     targetType: "template-draft",
@@ -211,7 +214,7 @@ beforeAll(async () => {
   storedObjects.push(initialObjectKey);
   capability = actionEditorCapability(
     identity,
-    { documentKey, formId, targetId: templateId, targetType: "template-draft" },
+    scope,
     "configure-fields",
     lease
   );

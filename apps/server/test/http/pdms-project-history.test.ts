@@ -114,6 +114,7 @@ const workbook = (cells: { address: string; value: string }[] = []) =>
 interface Editor {
   config: { document: { key: string } };
   bridge: {
+    documentKey: string;
     capabilities: Record<string, string>;
     lease: { id: string; releaseUrl: string };
   };
@@ -271,7 +272,7 @@ const createFixture = async (prefillNotes?: string) => {
       `/api/forms/${publicId}/${kind === "submit" ? "submit" : "draft"}`,
       editor.bridge.capabilities[kind] as string,
       {
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         responseId,
         fillMethod: "onlyoffice",
         data: {},
@@ -494,7 +495,7 @@ historyTest(
             `/api/forms/${fixture.publicId}/draft`,
             otherEditor.bridge.capabilities["save-draft"] as string,
             {
-              documentKey: otherEditor.config.document.key,
+              documentKey: otherEditor.bridge.documentKey,
               responseId: otherResponse.id,
               fillMethod: "onlyoffice",
               data: { project_name: oldName },

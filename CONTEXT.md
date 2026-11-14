@@ -77,6 +77,11 @@ A missing attachment checkpoint lookup is not proof that an earlier sender canno
 
 A recovered completion is evidence for the earlier snapshot, not acceptance of newly captured ordinary answers. Persisted checkpoints reconcile before editing opens; an own unresolved commit keeps the native editor read-only while bounded recovery stays usable. Recovery reads the original Operation before requesting a mutation capability, preserves its Draft/Submit action, and opens the latest canonical document before accepting new edits.
 
+Replacing or removing a Draft attachment remains pending until an explicit save; canceling the pending change restores the saved file. Changing the year or document number reuses the saved original bytes as a distinct version on the next explicit save, unless a replacement was selected. Unchanged files and metadata reuse their saved references without a new upload or service login. Internal row and project saves preserve the canonical attachments without uploading.
+
+Old files become eligible for deletion only after the complete new snapshot commits and no Draft, immutable history, workspace or eligible Operation still references them. A failed or uncertain old-file cleanup does not undo the saved snapshot or prevent its use and export. Its persistent warning states that old public URLs may still work; later ordinary saves neither retry that deletion nor dismiss the warning. This differs from an unsettled canceled batch, which continues to block mutations.
+
+
 ## Document Category
 
 An ECM-provided destination name selected by an Admin for an Attachment Field or column. Folio saves the exact `type` string, not the category ID, and does not follow upstream renames or substitute a fallback. Users cannot select or change the destination.
@@ -124,6 +129,14 @@ An immutable completed result of a Response, recorded each time that Response is
 ## Correction
 
 An Admin-authored revision to a specific Submission. It records changed Field values, a reason, and a revised document while preserving the original Submission. A Correction can only be added while its Response is currently in the submitted state for that same Submission; once the User reopens the Response to submit again, new Corrections on the earlier Submission are blocked until it becomes submitted again, though its existing history remains viewable.
+
+## Editor Opening
+
+One mounted editor instance, identified by a validated opening UUID. The application document key remains the canonical identity of a saved document, capability scope, attachment checkpoint and Operation; opening a saved Draft does not create another revision. Mutable editor configurations expose this identity as `bridge.documentKey`.
+
+For XLSX, ONLYOFFICE receives a separate opaque `documentServerKey`, bound to the canonical document, actor, Folio session and opening. Capability or lease renewal within the same opening retains that native key; a different opening receives another native cache identity. Signed capabilities and durable Operation metadata carry the native key, and callbacks must match both canonical and native identities before consuming their claim. Read-only XLSX viewers receive independent fresh native cache identities. DOCX retains its existing native document-key behavior.
+
+An unchanged-native response may reuse a failed capture only from the same native opening. A freshly opened editor reads the saved canonical document and must not revive unsaved ordinary input captured by another opening's failed action.
 
 ## Operation
 

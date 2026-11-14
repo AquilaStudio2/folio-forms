@@ -78,6 +78,7 @@ const request = (
   );
 interface Editor {
   bridge: {
+    documentKey: string;
     capabilities: Record<string, string>;
     uploadPoc: { spreadsheetBindings: unknown };
   };
@@ -108,7 +109,7 @@ const action = async (
   const response = await request(
     path,
     bearer,
-    { data: {}, documentKey: editor.config.document.key, ...body },
+    { data: {}, documentKey: editor.bridge.documentKey, ...body },
     editor.bridge.capabilities[name]
   );
   expect(response.status).toBe(202);
