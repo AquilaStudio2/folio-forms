@@ -22,6 +22,12 @@ flowchart TD
     gate -->|"ผ่านเงื่อนไข"| workspace --> edit
     edit --> preview --> edit
     edit --> reason --> commit --> revision --> history
+    revision --> remaining{"มี File/removal ที่เลือกภายหลังหรือไม่"}
+    remaining -->|"ไม่มี"| results["กลับรายละเอียดฉบับที่บันทึกแล้ว"]
+    remaining -->|"มี"| held["คง editor และ File/removal; ไม่ remount ไม่ Save ซ้ำ"]
+    held --> safeExit{"explicit discard-and-exit"}
+    safeExit -->|"อยู่ต่อ / Escape"| held
+    safeExit -->|"ยืนยันทิ้งงานใหม่"| results
     edit --> abandon
     abandon -->|"อยู่ต่อ/ESC หรือกำลังบันทึก"| edit
     abandon -->|"ไม่มีงานค้าง หรือยืนยันออกเมื่อไม่ได้กำลังบันทึก"| cleanup

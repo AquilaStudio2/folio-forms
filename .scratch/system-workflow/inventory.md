@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `203245ec331106737040dfa02c42705a7836a0b0`
+Commit: `530410f7527bbe66d369a0359c57ec1c0898f600`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -20,9 +20,9 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `/admin/forms/$formId` | `apps/web/src/routes/admin/forms/$formId.tsx:6` |
 | `/admin/forms/new` | `apps/web/src/routes/admin/forms/new.tsx:367` |
 | `/admin/` | `apps/web/src/routes/admin/index.tsx:5` |
-| `/admin/results/$responseId/correction` | `apps/web/src/routes/admin/results/$responseId/correction.tsx:212` |
+| `/admin/results/$responseId/correction` | `apps/web/src/routes/admin/results/$responseId/correction.tsx:242` |
 | `/admin/results/$responseId/` | `apps/web/src/routes/admin/results/$responseId/index.tsx:546` |
-| `/admin/results/` | `apps/web/src/routes/admin/results/index.tsx:795` |
+| `/admin/results/` | `apps/web/src/routes/admin/results/index.tsx:810` |
 | `/admin/results` | `apps/web/src/routes/admin/results.tsx:5` |
 | `/admin/users` | `apps/web/src/routes/admin/users.tsx:749` |
 | `/admin` | `apps/web/src/routes/admin.tsx:35` |
@@ -55,11 +55,11 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | GET | `/api/admin/ai-authoring/sessions/:sessionId/docx` | `apps/server/src/routes/ai-authoring.ts:97` |
 | DELETE | `/api/admin/ai-authoring/sessions/:sessionId` | `apps/server/src/routes/ai-authoring.ts:117` |
 | GET | `/api/admin/audit-events` | `apps/server/src/routes/audit.ts:24` |
-| POST | `/api/auth/sign-in/email` | `apps/server/src/routes/auth.ts:23` |
-| GET | `/api/session` | `apps/server/src/routes/auth.ts:30` |
-| POST | `/api/account/password` | `apps/server/src/routes/auth.ts:53` |
-| POST | `/api/auth/sign-out` | `apps/server/src/routes/auth.ts:139` |
-| ALL | `/api/auth/*` | `apps/server/src/routes/auth.ts:167` |
+| POST | `/api/auth/sign-in/email` | `apps/server/src/routes/auth.ts:27` |
+| GET | `/api/session` | `apps/server/src/routes/auth.ts:46` |
+| POST | `/api/account/password` | `apps/server/src/routes/auth.ts:69` |
+| POST | `/api/auth/sign-out` | `apps/server/src/routes/auth.ts:159` |
+| ALL | `/api/auth/*` | `apps/server/src/routes/auth.ts:187` |
 | POST | `/api/editor-leases/:id/renew` | `apps/server/src/routes/editor-leases.ts:14` |
 | DELETE | `/api/editor-leases/:id` | `apps/server/src/routes/editor-leases.ts:23` |
 | GET | `/api/admin/forms/:publicId/editor-config` | `apps/server/src/routes/form-authoring.ts:118` |
@@ -101,18 +101,18 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | GET | `/api/operations/:id` | `apps/server/src/routes/operations.ts:19` |
 | POST | `/api/editor/pdms-project-catalog/retry` | `apps/server/src/routes/pdms-project-catalog.ts:101` |
 | POST | `/api/integrations/prefill/handoffs` | `apps/server/src/routes/prefill.ts:29` |
-| POST | `/api/integrations/prefill/status` | `apps/server/src/routes/prefill.ts:65` |
-| POST | `/prefill/handoff` | `apps/server/src/routes/prefill.ts:93` |
-| GET | `/prefill/handoff` | `apps/server/src/routes/prefill.ts:140` |
+| POST | `/api/integrations/prefill/status` | `apps/server/src/routes/prefill.ts:77` |
+| POST | `/prefill/handoff` | `apps/server/src/routes/prefill.ts:115` |
+| GET | `/prefill/handoff` | `apps/server/src/routes/prefill.ts:162` |
 | GET | `/api/forms/:publicId` | `apps/server/src/routes/public-forms.ts:44` |
 | GET | `/api/forms/:publicId/editor-config` | `apps/server/src/routes/public-forms.ts:81` |
 | GET | `/api/forms/:publicId/my-submissions` | `apps/server/src/routes/public-forms.ts:100` |
 | GET | `/api/forms/:publicId/my-submissions/export` | `apps/server/src/routes/public-forms.ts:110` |
 | POST | `/api/forms/:publicId/start` | `apps/server/src/routes/public-forms.ts:128` |
-| GET | `/api/responses/:id/attachment-operations/:checkpoint` | `apps/server/src/routes/response-actions.ts:103` |
-| POST | `/api/responses/:id/attachment-operations/:checkpoint/recover` | `apps/server/src/routes/response-actions.ts:150` |
-| POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:162` |
-| POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:382` |
+| GET | `/api/responses/:id/attachment-operations/:checkpoint` | `apps/server/src/routes/response-actions.ts:108` |
+| POST | `/api/responses/:id/attachment-operations/:checkpoint/recover` | `apps/server/src/routes/response-actions.ts:155` |
+| POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:168` |
+| POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:388` |
 | GET | `/api/responses/deletion-status` | `apps/server/src/routes/responses.ts:71` |
 | GET | `/api/responses/:id/attachment-status` | `apps/server/src/routes/responses.ts:75` |
 | GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:100` |
@@ -122,15 +122,15 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:419` |
 | DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:505` |
 | DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:548` |
-| GET | `/api/admin/results/attachment-follow-up` | `apps/server/src/routes/results.ts:355` |
-| POST | `/api/admin/results/attachment-follow-up/:operationId/settle` | `apps/server/src/routes/results.ts:367` |
-| POST | `/api/admin/results/attachment-follow-up/:operationId/cancel` | `apps/server/src/routes/results.ts:382` |
-| GET | `/api/admin/results` | `apps/server/src/routes/results.ts:404` |
-| GET | `/api/admin/results/:id` | `apps/server/src/routes/results.ts:482` |
-| GET | `/api/admin/results/:id/viewer-config` | `apps/server/src/routes/results.ts:632` |
-| GET | `/api/admin/results/:id/correction/editor-config` | `apps/server/src/routes/results.ts:707` |
-| POST | `/api/admin/results/:id/correction` | `apps/server/src/routes/results.ts:720` |
-| POST | `/api/admin/results/:id/correction/workspace` | `apps/server/src/routes/results.ts:723` |
+| GET | `/api/admin/results/attachment-follow-up` | `apps/server/src/routes/results.ts:357` |
+| POST | `/api/admin/results/attachment-follow-up/:operationId/settle` | `apps/server/src/routes/results.ts:369` |
+| POST | `/api/admin/results/attachment-follow-up/:operationId/cancel` | `apps/server/src/routes/results.ts:385` |
+| GET | `/api/admin/results` | `apps/server/src/routes/results.ts:408` |
+| GET | `/api/admin/results/:id` | `apps/server/src/routes/results.ts:486` |
+| GET | `/api/admin/results/:id/viewer-config` | `apps/server/src/routes/results.ts:636` |
+| GET | `/api/admin/results/:id/correction/editor-config` | `apps/server/src/routes/results.ts:711` |
+| POST | `/api/admin/results/:id/correction` | `apps/server/src/routes/results.ts:724` |
+| POST | `/api/admin/results/:id/correction/workspace` | `apps/server/src/routes/results.ts:727` |
 | GET | `/api/admin/forms/:publicId/attachment-categories` | `apps/server/src/routes/spreadsheet-authoring.ts:234` |
 | GET | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:244` |
 | PATCH | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:261` |
@@ -140,8 +140,8 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | GET | `/api/submissions/:id/json` | `apps/server/src/routes/submissions.ts:207` |
 | GET | `/api/submissions/:id/:format` | `apps/server/src/routes/submissions.ts:240` |
 | GET | `/api/submissions/:id/pdf` | `apps/server/src/routes/submissions.ts:293` |
-| GET | `/health` | `apps/server/src/app.ts:197` |
-| GET | `/ready` | `apps/server/src/app.ts:198` |
+| GET | `/health` | `apps/server/src/app.ts:200` |
+| GET | `/ready` | `apps/server/src/app.ts:201` |
 
 ## Private document worker
 

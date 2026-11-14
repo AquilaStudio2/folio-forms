@@ -1,7 +1,7 @@
 {
-  "commit": "203245ec331106737040dfa02c42705a7836a0b0",
+  "commit": "530410f7527bbe66d369a0359c57ec1c0898f600",
   "branch": "feat/ecm-attachments",
-  "source_fingerprint": "a83a1654ea039380e1cce111fbbc8253fbbfc332c4c6582dd6a9baa9c7fd4d58",
+  "source_fingerprint": "22c016288f5dd2a474e38ae24e95a2f61433485e12af24fd8a47e7b6dfde079a",
   "source_files": 310,
   "pages": [
     {
@@ -57,7 +57,7 @@
     {
       "route": "/admin/results/$responseId/correction",
       "file": "apps/web/src/routes/admin/results/$responseId/correction.tsx",
-      "line": 212
+      "line": 242
     },
     {
       "route": "/admin/results/$responseId/",
@@ -67,7 +67,7 @@
     {
       "route": "/admin/results/",
       "file": "apps/web/src/routes/admin/results/index.tsx",
-      "line": 795
+      "line": 810
     },
     {
       "route": "/admin/results",
@@ -225,31 +225,31 @@
       "method": "POST",
       "path": "/api/auth/sign-in/email",
       "file": "apps/server/src/routes/auth.ts",
-      "line": 23
+      "line": 27
     },
     {
       "method": "GET",
       "path": "/api/session",
       "file": "apps/server/src/routes/auth.ts",
-      "line": 30
+      "line": 46
     },
     {
       "method": "POST",
       "path": "/api/account/password",
       "file": "apps/server/src/routes/auth.ts",
-      "line": 53
+      "line": 69
     },
     {
       "method": "POST",
       "path": "/api/auth/sign-out",
       "file": "apps/server/src/routes/auth.ts",
-      "line": 139
+      "line": 159
     },
     {
       "method": "ALL",
       "path": "/api/auth/*",
       "file": "apps/server/src/routes/auth.ts",
-      "line": 167
+      "line": 187
     },
     {
       "method": "POST",
@@ -501,19 +501,19 @@
       "method": "POST",
       "path": "/api/integrations/prefill/status",
       "file": "apps/server/src/routes/prefill.ts",
-      "line": 65
+      "line": 77
     },
     {
       "method": "POST",
       "path": "/prefill/handoff",
       "file": "apps/server/src/routes/prefill.ts",
-      "line": 93
+      "line": 115
     },
     {
       "method": "GET",
       "path": "/prefill/handoff",
       "file": "apps/server/src/routes/prefill.ts",
-      "line": 140
+      "line": 162
     },
     {
       "method": "GET",
@@ -549,25 +549,25 @@
       "method": "GET",
       "path": "/api/responses/:id/attachment-operations/:checkpoint",
       "file": "apps/server/src/routes/response-actions.ts",
-      "line": 103
+      "line": 108
     },
     {
       "method": "POST",
       "path": "/api/responses/:id/attachment-operations/:checkpoint/recover",
       "file": "apps/server/src/routes/response-actions.ts",
-      "line": 150
+      "line": 155
     },
     {
       "method": "POST",
       "path": "/api/forms/:publicId/draft",
       "file": "apps/server/src/routes/response-actions.ts",
-      "line": 162
+      "line": 168
     },
     {
       "method": "POST",
       "path": "/api/forms/:publicId/submit",
       "file": "apps/server/src/routes/response-actions.ts",
-      "line": 382
+      "line": 388
     },
     {
       "method": "GET",
@@ -627,55 +627,55 @@
       "method": "GET",
       "path": "/api/admin/results/attachment-follow-up",
       "file": "apps/server/src/routes/results.ts",
-      "line": 355
+      "line": 357
     },
     {
       "method": "POST",
       "path": "/api/admin/results/attachment-follow-up/:operationId/settle",
       "file": "apps/server/src/routes/results.ts",
-      "line": 367
+      "line": 369
     },
     {
       "method": "POST",
       "path": "/api/admin/results/attachment-follow-up/:operationId/cancel",
       "file": "apps/server/src/routes/results.ts",
-      "line": 382
+      "line": 385
     },
     {
       "method": "GET",
       "path": "/api/admin/results",
       "file": "apps/server/src/routes/results.ts",
-      "line": 404
+      "line": 408
     },
     {
       "method": "GET",
       "path": "/api/admin/results/:id",
       "file": "apps/server/src/routes/results.ts",
-      "line": 482
+      "line": 486
     },
     {
       "method": "GET",
       "path": "/api/admin/results/:id/viewer-config",
       "file": "apps/server/src/routes/results.ts",
-      "line": 632
+      "line": 636
     },
     {
       "method": "GET",
       "path": "/api/admin/results/:id/correction/editor-config",
       "file": "apps/server/src/routes/results.ts",
-      "line": 707
+      "line": 711
     },
     {
       "method": "POST",
       "path": "/api/admin/results/:id/correction",
       "file": "apps/server/src/routes/results.ts",
-      "line": 720
+      "line": 724
     },
     {
       "method": "POST",
       "path": "/api/admin/results/:id/correction/workspace",
       "file": "apps/server/src/routes/results.ts",
-      "line": 723
+      "line": 727
     },
     {
       "method": "GET",
@@ -735,13 +735,13 @@
       "method": "GET",
       "path": "/health",
       "file": "apps/server/src/app.ts",
-      "line": 197
+      "line": 200
     },
     {
       "method": "GET",
       "path": "/ready",
       "file": "apps/server/src/app.ts",
-      "line": 198
+      "line": 201
     }
   ],
   "models": [

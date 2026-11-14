@@ -35,4 +35,10 @@ flowchart TD
     edit --> internal["internal project/workspace save:ไม่ upload; verified canonical/physical mapping คง pending Files"]
     internal --> edit
     append --> preserved --> revision
+    append --> remaining{"มี File/removal ใหม่ที่ไม่อยู่ใน snapshot หรือไม่"}
+    remaining -->|"ไม่มี"| returnResult["กลับหน้ารายละเอียด"]
+    remaining -->|"มี"| keepEditor["คง editor/File เดิม; ห้าม Save ซ้ำด้วย workspace เก่า"]
+    keepEditor --> decision{"ตัดสินใจออกอย่างชัดเจน"}
+    decision -->|"อยู่ต่อ / Escape"| keepEditor
+    decision -->|"ยืนยันทิ้งงานใหม่"| returnResult
     past -->|"อ่าน Submission เก่าได้แม้ Response กลับ draft"| revision
