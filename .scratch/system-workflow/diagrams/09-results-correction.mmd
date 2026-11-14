@@ -18,6 +18,14 @@ flowchart TD
     preserved["คง Original และ revision ก่อนหน้า"]
     past["Admin submissions หรือ receipt ตาม submissionId"]
     search --> filters --> response --> state
+    search --> tracking["อ่าน durable attachment tracking แยกจาก normal Response rows"]
+    tracking --> expanded["ขยายใน Results เดิม: รวม cleanup-only และ deleted Response"]
+    expanded --> evidence["แสดง trusted ids/name/year/category/send/receipt/delete/evidence; ไม่แสดง token"]
+    evidence --> operator{"current enabled Admin เท่านั้น"}
+    operator --> fence["หยุด batch เดิม:กัน dispatch/commit ใหม่ ไม่ยืนยัน remote absence"]
+    operator --> cleanup["first DELETE เฉพาะ receipt ที่ settled + sender fenced + no refs + generation ตรง"]
+    cleanup --> verified["verified DELETE response:บันทึก actor/proof; ครบทุก canceled intent จึงปลด hold"]
+    cleanup --> uncertain["timeout/unknown:คง hold ห้าม retry หรือใช้ free text ปลด"]
     state -->|"ไม่ใช่"| draft --> read
     state -->|"ใช่"| submission --> revision --> read
     read -->|"เฉพาะ submitted"| doc

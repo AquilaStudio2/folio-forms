@@ -56,7 +56,7 @@ flowchart TD
         ecmCategory -->|"401"| ecmInvalidate["invalidate เฉพาะ generation ที่ใช้ คืน integration error"]
     end
     ecmSelected -->|"เลือกหมวดแล้วบันทึก Field settings"| native
-    subgraph scalarFiles ["Scalar attachment: เลือกไม่เท่ากับบันทึก"]
+    subgraph scalarFiles ["Scalar และ physical table attachment: lifecycle เดียว"]
         scalarPick["PoC popup เดิม: saved URL แยก pending File 0–10,000,000 bytes"] --> scalarPending["File อยู่ใน host memory; เตือนก่อนออกหรือ reload"]
         scalarPending -->|"explicit Save Draft / Submit เท่านั้น"| scalarCapture["GetFileToDownload: snapshot native ที่ freeze"]
         scalarPending -->|"Download ขณะมี pending"| scalarBlocked["หยุด export ไม่ upload"]
@@ -87,7 +87,12 @@ flowchart TD
         scalarDelete -->|"ยืนยันแล้ว"| scalarResume
         scalarDelete -->|"failed / unknown"| scalarWarning["ข้อมูลใหม่ saved ใช้และ export ได้; durable warning ว่า URL เก่าอาจยังเปิดได้"]
         scalarWarning -->|"reopen / ordinary Save ไม่ retry หรือ clear"| scalarResume
-        scalarInternal["implicit Add row / project / workspace save"] --> scalarRefs["reconcile canonical references ใน transaction; ไม่ upload/delete"]
+        scalarInternal["implicit Add row / project / workspace save"]
+        scalarRefs["reconcile canonical references ใน transaction; ไม่ upload/delete"]
+        scalarInternal --> rowProof["ตรวจ trusted before/after workbook: document keys และ physical row mapping"]
+        rowProof -->|"พิสูจน์ได้"| rowKeep["ปรับ canonical row_index; คง immutable version และ original pending File/removal"]
+        rowProof -->|"stale / ambiguous / สูญเสีย pending"| rowStop["หยุดก่อนเปลี่ยนหน้า ไม่ discard หรือ force reload"]
+        rowKeep --> scalarRefs
         scalarRefs --> scalarResume
         scalarBoot["ก่อนเปิดแก้:ตรวจ checkpoint เดิมด้วย bounded poll พร้อม renew lease"] --> scalarCanonical["เปิด canonical ล่าสุดก่อนรับ ordinary edits ใหม่; ไม่อ้าง receipt เก่าว่าบันทึก snapshot ใหม่"]
         scalarCanonical --> scalarPick
@@ -100,4 +105,13 @@ flowchart TD
         scalarAdmission -->|"ไม่พบและไม่มี active mutation"| scalarLease["rotate lease UUID; old sender เริ่มไม่ได้; คง File และ native edits"]
         scalarLease -->|"renew capability แล้วผู้ใช้กดบันทึกใหม่"| scalarCapture
         scalarPoll -->|"completed"| scalarResume
+        scalarAdmin --> followUp["Results เดิม:ขยาย trusted operation/version/slot/destination/time"]
+        followUp --> senderFence["Admin ที่มีสิทธิ์:หยุด dispatch/commit ของ batch เดิมด้วย generation fence"]
+        senderFence --> remoteUnknown{"คำขอเดิมมี validated receipt หรือไม่"}
+        remoteUnknown -->|"ไม่มี: restart/timeout/empty search ไม่ใช่ proof"| scalarHold
+        remoteUnknown -->|"late receipt จาก request เดิม"| canceledReceipt["persist received/request-settled ของ intent เดิม; ห้าม adopt"]
+        canceledReceipt --> firstDelete{"Admin + generation ปัจจุบัน + ไม่มี refs + ไม่เคยส่ง DELETE"}
+        firstDelete -->|"ครบ"| operatorDelete["เริ่ม DELETE ครั้งแรก; บันทึก actor และ trusted evidence"]
+        operatorDelete -->|"verified response และ canceled files ครบ"| settled["batch canceled; ผู้ใช้เริ่มใหม่ด้วย identities ใหม่"]
+        operatorDelete -->|"ผลไม่ชัด"| scalarHold
     end
