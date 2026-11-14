@@ -2,6 +2,7 @@
 import {
   createFileRoute,
   Link,
+  useBlocker,
   useNavigate,
   useParams,
 } from "@tanstack/react-router";
@@ -11,6 +12,7 @@ import { PageHeader } from "@/components/app-shell";
 import { OnlyOfficeEditor } from "@/components/onlyoffice-editor";
 import { Button, Card, Input, Notice } from "@/components/ui";
 import type { EditorBridgeMessage } from "@/features/onlyoffice/editor-protocol";
+import { shouldBlockDirtyNavigation } from "@/lib/form-lifecycle";
 import { useReauthenticationGuard } from "@/lib/use-reauthentication-guard";
 
 const AdminCorrectionRoute = () => {
@@ -25,7 +27,32 @@ const AdminCorrectionRoute = () => {
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
   const feedbackRef = useRef<HTMLDivElement>(null);
-  useReauthenticationGuard(saving || dirty || Boolean(reason), () => {
+  const exitDialogRef = useRef<HTMLDialogElement>(null);
+  const allowNavigationRef = useRef(false);
+  const hasUnsavedChanges = saving || dirty || Boolean(reason);
+  const navigationBlocker = useBlocker({
+    disabled: !hasUnsavedChanges,
+    enableBeforeUnload: hasUnsavedChanges,
+    shouldBlockFn: () =>
+      shouldBlockDirtyNavigation(hasUnsavedChanges, allowNavigationRef.current),
+    withResolver: true,
+  });
+  useEffect(() => {
+    const dialog = exitDialogRef.current;
+    if (!dialog) {
+      return;
+    }
+    if (navigationBlocker.status === "blocked") {
+      if (!dialog.open) {
+        dialog.showModal();
+      }
+      return;
+    }
+    if (dialog.open) {
+      dialog.close();
+    }
+  }, [navigationBlocker.status]);
+  useReauthenticationGuard(hasUnsavedChanges, () => {
     setMessage("กรุณาบันทึก Correction ให้สำเร็จก่อนเปลี่ยนเซสชัน เพื่อเก็บการแก้ไขไว้");
   });
   useEffect(() => {
@@ -62,6 +89,8 @@ const AdminCorrectionRoute = () => {
       setRevision((value) => value + 1);
       return;
     }
+    allowNavigationRef.current = true;
+    navigationBlocker.reset?.();
     void navigate({
       params: { responseId },
       search: { form: undefined },
@@ -81,6 +110,42 @@ const AdminCorrectionRoute = () => {
 
   return (
     <div className="space-y-6">
+      <dialog
+        ref={exitDialogRef}
+        aria-labelledby="correction-exit-title"
+        className="m-auto w-full max-w-lg rounded-[var(--radius)] border border-[var(--line)] bg-[var(--paper)] p-6 text-[var(--ink)] shadow-xl backdrop:bg-black/35"
+        onCancel={(event) => {
+          event.preventDefault();
+          navigationBlocker.reset?.();
+        }}
+      >
+        <h2 id="correction-exit-title" className="text-lg font-semibold">
+          มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก
+        </h2>
+        <p className="mt-2 text-sm text-[var(--ink-soft)]">
+          {saving
+            ? "กำลังบันทึก Correction กรุณารอผลก่อนออกจากหน้านี้"
+            : "การออกจากหน้านี้จะทิ้งการแก้ไข เหตุผล และไฟล์ที่ยังไม่บันทึก โดยไม่เปลี่ยนฉบับที่บันทึกแล้ว"}
+        </p>
+        <div className="mt-6 flex flex-wrap justify-end gap-2">
+          <Button
+            variant="secondary"
+            onClick={() => navigationBlocker.reset?.()}
+          >
+            อยู่ต่อ
+          </Button>
+          <Button
+            disabled={saving}
+            variant="danger"
+            onClick={() => {
+              allowNavigationRef.current = true;
+              navigationBlocker.proceed?.();
+            }}
+          >
+            ออกโดยไม่บันทึก
+          </Button>
+        </div>
+      </dialog>
       <PageHeader
         title="แก้ไขคำตอบที่ส่งแล้ว"
         description="Correction จะสร้างฉบับใหม่โดยไม่แก้ไข Submission เดิม"

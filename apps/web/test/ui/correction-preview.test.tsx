@@ -123,6 +123,25 @@ it("Correction workspace completion opens a fresh native session while preservin
       )
     );
   send({ type: "bridge-ready" });
+  const exitDialog = document.querySelector("dialog");
+  if (!exitDialog) {
+    throw new Error("Correction exit dialog missing");
+  }
+  // JSDOM omits native dialog methods; browser acceptance verifies modality and keyboard behavior.
+  exitDialog.showModal = () => {
+    exitDialog.open = true;
+  };
+  exitDialog.close = () => {
+    exitDialog.open = false;
+  };
+  fireEvent.click(screen.getByRole("button", { exact: true, name: "ยกเลิก" }));
+  expect(await screen.findByRole("dialog")).toBeVisible();
+  fireEvent.click(screen.getByRole("button", { exact: true, name: "อยู่ต่อ" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  );
+  expect(router.state.location.pathname).toBe(path);
+  expect(screen.getByTitle("Correction native fixture")).toBe(office);
   const parentReplies = vi.spyOn(source, "postMessage");
   const check = {
     action: "save-correction-workspace",
@@ -180,6 +199,13 @@ it("Correction workspace completion opens a fresh native session while preservin
     status: "pending",
     type: "operation",
   });
+  fireEvent.click(screen.getByRole("button", { exact: true, name: "ยกเลิก" }));
+  expect(await screen.findByRole("dialog")).toBeVisible();
+  expect(screen.getByRole("button", { name: "ออกโดยไม่บันทึก" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { exact: true, name: "อยู่ต่อ" }));
+  await waitFor(() =>
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+  );
   documentRevision = 1;
   send({
     action: "save-correction-workspace",
@@ -245,4 +271,5 @@ it("Correction workspace completion opens a fresh native session while preservin
   await waitFor(() =>
     expect(router.state.location.pathname).toBe(`/admin/results/${responseId}`)
   );
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
 });

@@ -1311,13 +1311,13 @@ flowchart TD
     gate{"Admin เปิด Correction ได้หรือไม่"}
     block["Response เป็น draft หรือเป้าหมายเก่า จึงถูกกัน"]
     workspace["สร้าง workspace จาก revision ปัจจุบัน"]
-    edit["แก้เอกสารใน workspace"]
+    edit["แก้เอกสารใน workspace; XLSX เลือกไฟล์ผ่าน PoC เดิม"]
     preview["Save workspace ไม่ upload; verified transition คง pending Files/removals"]
     reason["final explicit Save Correction พร้อมเหตุผลและ required"]
     commit["ตรวจ latest Submission/base, Admin/session/lease/workspace ก่อน dispatch และ commit"]
     revision["เพิ่ม immutable document/JSON/file revision"]
     history["Original และ revision ก่อนหน้ายังอยู่"]
-    abandon["ยกเลิกหรือปล่อย lease หมด"]
+    abandon{"ขอออก: มีงานค้างหรือกำลังบันทึกหรือไม่"}
     cleanup["workspace ชั่วคราวอาจถูกเก็บกวาด"]
     submitted --> actor
     actor -->|"User"| user --> newDraft --> next
@@ -1326,7 +1326,10 @@ flowchart TD
     gate -->|"ผ่านเงื่อนไข"| workspace --> edit
     edit --> preview --> edit
     edit --> reason --> commit --> revision --> history
-    edit --> abandon --> cleanup
+    edit --> abandon
+    abandon -->|"อยู่ต่อ/ESC หรือกำลังบันทึก"| edit
+    abandon -->|"ไม่มีงานค้าง หรือยืนยันออกเมื่อไม่ได้กำลังบันทึก"| cleanup
+    workspace -->|"lease หมด"| cleanup
 ```
 
 | ต้องการทำอะไร | ทำได้อย่างไร | ข้อมูลที่เปลี่ยน |
@@ -1336,14 +1339,16 @@ flowchart TD
 | Admin อ่านฉบับก่อนแก้ | เลือก Original หรือ revision ที่ต้องการในประวัติ | เป็นการอ่าน ไม่เขียนทับข้อมูล |
 | Admin ต้องการแก้ Correction ที่สำเร็จแล้ว | เริ่มการแก้อีกรอบจาก revision ปัจจุบัน | เพิ่ม revision ใหม่ ไม่แก้ row Correction เก่า |
 | Admin ทำ Correction ค้างแล้วออก | งานที่ยังไม่ commit อยู่ใน workspace ที่ผูกกับ lease | ไม่ใช่ Draft ถาวรแบบ User Response การเปิดกลับขึ้นกับ workspace และ lease ที่ยังใช้ได้ |
-| Admin กดยกเลิก | กลับไปอ่านผล ไม่เท่ากับ Save Correction | ผลที่เผยแพร่ล่าสุดยังเป็นฉบับก่อนหน้า |
+| Admin กดยกเลิก | มีงานค้างต้องยืนยันก่อนทิ้ง; อยู่ต่อหรือ Escape คงไฟล์และเอกสาร ขณะกำลังบันทึกยังออกไม่ได้ | ผลที่เผยแพร่ล่าสุดยังเป็นฉบับก่อนหน้า การออกไม่เท่ากับ Save Correction |
 | User เปิดร่างรอบถัดไปขณะ Admin กำลังแก้ | การ commit ต้องตรวจสถานะและ base ใหม่ | ไม่ให้ Correction เก่าเขียนทับรอบใหม่ที่เปลี่ยนสถานะไปแล้ว |
 
 Correction ไม่มี `status` ของตนเองใน Prisma schema การมี workspace หรือการ Save workspace สำเร็จจึงไม่ใช่หลักฐานว่าเกิด Correction revision ที่ผู้ใช้คนอื่นอ่านแล้ว
 
+XLSX Correction เปิดปุ่ม PoC ที่ตรวจ binding/mapping แล้วด้วย activation เดิม รวมช่องแนบไฟล์รายแถว การตรวจผลค้างตอนเริ่ม editor ใช้ `save-correction` ของ workspace นี้ ไม่ใช้ `save-draft` ของ User
+
 ในโค้ดปัจจุบันหน้า fill เปิดร่างรอบถัดไปหลัง Submit สำเร็จทันที หากการเปิดนั้นสำเร็จ Response จะเป็น draft และ Admin จะสร้าง Correction บน Submission ก่อนหน้าไม่ได้ แม้ประวัติการส่งยังอยู่ นี่เป็นผลของสอง flow ที่เชื่อมกันจริง ไม่ใช่เพียงการซ่อนปุ่มใน UI
 
-อ้างอิง [Correction editor และ workspace](../../apps/server/src/responses/editor.ts#L57), [Save workspace](../../apps/server/src/operations/response-completion.ts#L327), [Save Correction](../../apps/server/src/operations/response-completion.ts#L421) และ [UI ยกเลิก/บันทึก](../../apps/web/src/routes/admin/results/$responseId/correction.tsx#L72)
+อ้างอิง [Correction editor และ workspace](../../apps/server/src/responses/editor.ts), [Save workspace และ Save Correction](../../apps/server/src/operations/response-completion.ts), [PoC activation และการตรวจผลค้าง](../../apps/onlyoffice-plugin/src/spreadsheet.js) และ [UI ยืนยันก่อนออก/บันทึก](../../apps/web/src/routes/admin/results/$responseId/correction.tsx)
 
 ## 22 สถานะทั้งหมดและสิ่งที่ไม่ใช่ status ของฟอร์ม
 

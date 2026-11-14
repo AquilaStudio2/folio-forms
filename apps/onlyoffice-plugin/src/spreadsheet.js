@@ -2560,18 +2560,23 @@ export function initializeSpreadsheet(options, setStatus) {
     message.hidden = true;
     busy = true;
     let initializationError = null;
-    const configuredScalarAttachments =
-      ["fill", "draft", "submit"].includes(options.action) &&
-      bindings?.fields?.some((field) => field.attachment);
+    const configuredAttachments =
+      ["fill", "draft", "submit", ACTIONS.CORRECTION].includes(
+        options.action
+      ) &&
+      (bindings?.fields?.some((field) => field.attachment) ||
+        bindings?.table?.columns?.some((column) => column.attachment));
     const responseReady = (
-      configuredScalarAttachments
+      configuredAttachments
         ? office.freezeEditor().then(async () => {
             let pending;
             try {
               pending = await checkUploadPocPending(
                 window,
                 options,
-                ACTIONS.SAVE_DRAFT
+                options.action === ACTIONS.CORRECTION
+                  ? ACTIONS.SAVE_CORRECTION
+                  : ACTIONS.SAVE_DRAFT
               );
             } catch (error) {
               // Remain read-only after uncertain recovery, but keep the normal Save retry usable.
@@ -2602,7 +2607,7 @@ export function initializeSpreadsheet(options, setStatus) {
         throw initializationError;
       }
     };
-    if (options.scopeIdentity && options.action !== ACTIONS.CORRECTION) {
+    if (options.scopeIdentity) {
       const activateUploadPoc = () => {
         window.Asc.scope.folioUploadPocActivation = {
           bindings,
@@ -2619,8 +2624,8 @@ export function initializeSpreadsheet(options, setStatus) {
             }
             if (result.count > 0) {
               setStatus(
-                configuredScalarAttachments
-                  ? "พร้อมเปิดช่องแนบไฟล์ ดูไฟล์ที่บันทึกแล้วหรือเลือกไฟล์ใหม่ แล้วกดบันทึกฉบับร่างหรือส่งเพื่อบันทึกการเลือก"
+                configuredAttachments
+                  ? "พร้อมเปิดช่องแนบไฟล์ ดูไฟล์ที่บันทึกแล้วหรือเลือกไฟล์ใหม่ การเลือกจะมีผลเมื่อบันทึกฟอร์มสำเร็จ"
                   : "ปุ่ม POC เดิมแสดงคำแนะนำติดต่อ Admin เพื่อตั้งค่าฟอร์มใหม่ ไม่รับการเลือกไฟล์",
                 "success"
               );
