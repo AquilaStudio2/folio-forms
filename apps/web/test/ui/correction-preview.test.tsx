@@ -17,7 +17,7 @@ import { routeTree } from "@/routeTree.gen";
 
 afterEach(() => window.history.replaceState(null, "", "/"));
 
-it("Correction workspace completion reloads the document while preserving the reason and opening; explicit final Save alone leaves the editor", async () => {
+it("Correction workspace completion opens a fresh native session while preserving the reason; explicit final Save alone leaves the editor", async () => {
   const responseId = "11111111-1111-4111-8111-111111111111";
   const path = `/admin/results/${responseId}/correction`;
   localStorage.setItem(SESSION_KEY, "synthetic-admin-session");
@@ -49,6 +49,7 @@ it("Correction workspace completion reloads the document while preserving the re
               "save-correction": "final-capability",
               "save-correction-workspace": "workspace-capability",
             },
+            documentKey: `workspace-${documentRevision}`,
             id: "correction-bridge",
             pluginOrigin: window.location.origin,
             uploadPoc: {
@@ -64,7 +65,7 @@ it("Correction workspace completion reloads the document while preserving the re
             },
           },
           config: {
-            document: { key: `workspace-${documentRevision}` },
+            document: { key: `native-workspace-${documentRevision}` },
             documentType: "cell",
             editorConfig: { mode: "edit" },
           },
@@ -189,7 +190,7 @@ it("Correction workspace completion reloads the document while preserving the re
   });
   await waitFor(() => expect(openings).toHaveLength(2));
   expect(openings[0]).not.toBe("");
-  expect(openings[1]).toBe(openings[0]);
+  expect(openings[1]).not.toBe(openings[0]);
   expect(screen.getByRole("textbox", { name: "เหตุผลการแก้ไข" })).toHaveValue(
     "Reason typed before selecting"
   );
