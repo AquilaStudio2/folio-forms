@@ -904,6 +904,9 @@ it.each(["admin", "viewer"] as const)(
     expect(
       screen.getByRole("heading", { name: "items.proof / แถว 3 (index 2)" })
     ).toBeVisible();
+    expect(screen.getByText(/^เริ่มส่ง:/u)).toHaveTextContent(
+      /เริ่มส่ง:.*\d{1,2}:\d{2}.*receipt:.*\d{1,2}:\d{2}/u
+    );
     expect(
       screen.queryByRole("link", { name: "เปิดอ่านคำตอบที่บันทึกไว้" })
     ).not.toBeInTheDocument();

@@ -12,7 +12,13 @@ import { PageHeader } from "@/components/app-shell";
 import { DocumentKindBadge } from "@/components/document-kind-badge";
 import { ListPagination } from "@/components/list-pagination";
 import { Badge, Button, Card, Input, Notice, Spinner } from "@/components/ui";
-import { ApiError, apiGet, apiPost, formatDate } from "@/lib/api";
+import {
+  ApiError,
+  apiGet,
+  apiPost,
+  formatDate,
+  formatDateTime,
+} from "@/lib/api";
 import type {
   AdminResult,
   AdminResultListQuery,
@@ -641,7 +647,8 @@ const AdminResultsRoute = () => {
                 {followUp.documentKey ?? "ไม่มี batch"}
               </div>
               <div>
-                สถานะ: {followUp.state} / เริ่ม: {formatDate(followUp.createdAt)}
+                สถานะ: {followUp.state} / เริ่ม:{" "}
+                {formatDateTime(followUp.createdAt)}
               </div>
             </div>
             {followUp.responseDeleted ? null : (
@@ -701,28 +708,30 @@ const AdminResultsRoute = () => {
                   </div>
                   <div>
                     เริ่มส่ง:{" "}
-                    {version.sentAt ? formatDate(version.sentAt) : "ยังไม่เริ่ม"} /
-                    receipt:{" "}
+                    {version.sentAt
+                      ? formatDateTime(version.sentAt)
+                      : "ยังไม่เริ่ม"}{" "}
+                    / receipt:{" "}
                     {version.receivedAt
-                      ? formatDate(version.receivedAt)
+                      ? formatDateTime(version.receivedAt)
                       : "ไม่มีหลักฐาน"}
                   </div>
                   <div>
                     คำขอ upload สิ้นสุดพร้อม receipt:{" "}
                     {version.requestSettledAt
-                      ? formatDate(version.requestSettledAt)
+                      ? formatDateTime(version.requestSettledAt)
                       : "ยังพิสูจน์ไม่ได้"}
                   </div>
                   <div>
                     เริ่ม DELETE:{" "}
                     {version.deleteAttemptedAt
-                      ? formatDate(version.deleteAttemptedAt)
+                      ? formatDateTime(version.deleteAttemptedAt)
                       : "ยังไม่เคยส่ง"}
                   </div>
                   <div>
                     ผู้ยืนยัน: {version.confirmedBy ?? "ยังไม่มี"} / ผลลบยืนยัน:{" "}
                     {version.confirmedAt
-                      ? formatDate(version.confirmedAt)
+                      ? formatDateTime(version.confirmedAt)
                       : "ยังไม่มี"}
                   </div>
                 </div>

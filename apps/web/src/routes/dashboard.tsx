@@ -132,11 +132,21 @@ const DashboardRoute = () => {
       setDiscardCandidateId(null);
       setDiscardSuccess("ทิ้งฉบับร่างแล้ว");
     } catch (caughtError) {
-      setDiscardError(
-        caughtError instanceof ApiError && caughtError.status === 401
-          ? "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่"
-          : "ทิ้งฉบับร่างไม่สำเร็จ กรุณาลองใหม่"
-      );
+      if (
+        caughtError instanceof ApiError &&
+        caughtError.code === "attachment_outcome_unresolved"
+      ) {
+        setDiscardError(
+          caughtError.userMessage ||
+            "ผลการอัปโหลดไฟล์ยังไม่ชัดเจน กรุณาติดต่อผู้ดูแลระบบก่อนดำเนินการต่อ และอย่าส่งไฟล์ซ้ำ"
+        );
+      } else {
+        setDiscardError(
+          caughtError instanceof ApiError && caughtError.status === 401
+            ? "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่"
+            : "ทิ้งฉบับร่างไม่สำเร็จ กรุณาลองใหม่"
+        );
+      }
     } finally {
       setDiscardingId(null);
     }

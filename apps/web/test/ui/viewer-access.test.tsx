@@ -293,6 +293,9 @@ beforeEach(() => {
         })
       );
     }
+    if (pathname === "/api/admin/results/attachment-follow-up") {
+      return Promise.resolve(Response.json({ followUps: [] }));
+    }
     return Promise.resolve(Response.json({ enabled: false }));
   });
   vi.stubGlobal("fetch", fetchMock);
@@ -1139,6 +1142,7 @@ describe("VIEWER existing results access", () => {
             ![
               "/api/session",
               "/api/admin/results",
+              "/api/admin/results/attachment-follow-up",
               "/api/legacy-sso/status",
             ].includes(requested)
         )

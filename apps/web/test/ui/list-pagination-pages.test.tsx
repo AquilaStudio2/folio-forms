@@ -14,6 +14,7 @@ import { routeTree } from "@/routeTree.gen";
 
 let role: Role;
 let rows: Submission[];
+let discardResponse: (() => Response) | null;
 const fetchMock = vi.fn<typeof fetch>();
 const accountLinkRequests = () =>
   fetchMock.mock.calls.filter(
@@ -46,6 +47,7 @@ const mount = async (path: string) => {
 beforeEach(() => {
   role = "user";
   rows = Array.from({ length: 11 }, (_, index) => response(index));
+  discardResponse = null;
   localStorage.setItem(SESSION_KEY, "pagination-test-session");
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (input, init) => {
@@ -63,6 +65,9 @@ beforeEach(() => {
       url.pathname.startsWith("/api/responses/") &&
       init?.method === "DELETE"
     ) {
+      if (discardResponse) {
+        return discardResponse();
+      }
       rows = rows.filter((row) => row.id !== url.pathname.split("/").at(-1));
       return Response.json({ discarded: true });
     }
@@ -140,6 +145,36 @@ it("paginates My responses without changing global statistics and returns to the
   ).toHaveTextContent("10");
   expect(within(nav).getByRole("button", { name: "หน้าถัดไป" })).toBeDisabled();
 });
+
+it.each([undefined, "ผลการอัปโหลดไฟล์ยังไม่ชัดเจน กรุณาติดต่อผู้ดูแลระบบก่อนดำเนินการต่อ"])(
+  "keeps a held Draft and actionable guidance after refused deletion (%s)",
+  async (message) => {
+    rows = [response(0)];
+    discardResponse = () =>
+      Response.json(
+        { error: "attachment_outcome_unresolved", message },
+        { status: 409 }
+      );
+    await mount("/dashboard");
+    await screen.findByText("Response 1");
+    const trigger = screen.getByRole("button", {
+      exact: true,
+      name: "ทิ้งฉบับร่าง",
+    });
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole("button", { name: "ยืนยันการทิ้ง" }));
+    expect(await screen.findByText(/ติดต่อผู้ดูแลระบบ/u)).toBeVisible();
+    expect(screen.getByText("Response 1")).toBeVisible();
+    expect(
+      screen.getByText("คำตอบทั้งหมด").previousElementSibling
+    ).toHaveTextContent("1");
+    expect(
+      fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE")
+    ).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "ยกเลิก" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+  }
+);
 
 it("keeps an empty My responses footer visible with disabled navigation", async () => {
   rows = [];
