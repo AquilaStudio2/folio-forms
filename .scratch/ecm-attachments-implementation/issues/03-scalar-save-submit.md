@@ -56,3 +56,5 @@
 แก้ full-unit follow-up โดยลบ assertion ที่เทียบ copied manifest/defaults และลบ editor mock-echo wrapper/harness ซึ่งแทน renderer ด้วยการคืน options เดิม ไม่เพิ่ม stub ของ ledger และไม่แก้ production เพื่อหลบ mock ที่ไม่ครบ คง round-trip/validation/picture-presence tests และตรวจ actual ONLYOFFICE Picture เพิ่ม ผล integration spreadsheet-unit 116 tests/301 assertions ผ่าน; native Picture 2 tests/16 assertions ผ่าน ครอบคลุม published/reopened geometry และ real protected-workbook insertion/replacement/removal/PDF export หลักฐาน `artifact://1125`
 
 Read-only CLI smoke บน integration ใช้ saved native XLSX จริงและ original completed Operation/Response ใน isolated browser DB ตรวจ exact canonical data/receipts, B10 URL, original size 49 bytes และ latest B6 note ผ่าน ไม่มี write และลบ throwaway script แล้ว
+
+Integration artifact correction commit `b90fcfb0840e22609f6d0b5e02001e04e00ba4e7`; obsolete test cleanup/evidence commit `1362d403580ae0f0f027f19791db35a663feea2f` ผลทดสอบข้างต้นตรวจบน integration ไม่ใช่การอนุมานจาก implementation worktree
