@@ -17,6 +17,8 @@
 
 ทบทวน source recovery/follow-up วันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments-recovery` จาก integration `402a8f0` พร้อม source changes ที่ยังไม่ commit: เพิ่ม durable sender fence, request-settlement receipt, first-delete operator action, trusted tracking ที่ขยายใน Results เดิม และข้อความ hold ใน popup/fill หลัง rejected action การเพิ่ม source/regressions ยังไม่ใช่ผลผ่าน automated/native/browser และไม่ใช่หลักฐานบริการ ECM จริง ส่วน generated workflow artifacts ให้ขั้นตรวจส่วนกลางสร้างหลังรวม source
 
+ทบทวน source Correction/history/export วันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments-revisions` จาก accepted integration `58227b7b3cd894b237e939733438a78c6006dddc`: final explicit Save Correction ใช้ shared durable attachment lifecycle โดยแยก Admin actor จากเจ้าของ Response, ตรวจ submitted/latest-base/workspace/lease/required ก่อน external write และรักษา immutable history; read-only และ XLSX/PDF ใช้ derived URL-only projection ไม่แก้ editable canonical workbook การเพิ่ม source/regressions นี้ยังไม่ใช่ผลผ่านส่วนกลางหรือ actual native/export acceptance และไม่ใช่หลักฐาน live ECM generated artifacts ให้ Parent สร้างหลังตรวจ source
+
 เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
 รายการ source ครอบคลุมหน้าและ layout ฝั่งเว็บ, HTTP routes ของเซิร์ฟเวอร์หลัก, private document worker และ Prisma models
@@ -139,6 +141,8 @@ Archive ปิดเริ่ม Response สำหรับผู้ที่�
 หนึ่งบัญชีมี Response ได้ไม่เกินหนึ่งตัวต่อ Form แต่ Response หนึ่งตัวส่งได้หลายครั้ง แต่ละครั้งสร้าง Submission แยก กดส่งซ้ำไม่ได้เขียนทับ Submission เดิม
 
 หน้า fill ปัจจุบันเปิด Draft รอบถัดไปให้หลังส่งสำเร็จ ถ้าเป็น DOCX จะเริ่มจากข้อมูลและไฟล์ของ Submission ล่าสุด ถ้าเป็น XLSX จะเริ่มจาก PublishedTemplate เพื่อกรอกชุดใหม่ สำหรับ DOCX เส้นทางนี้อ่าน `Submission.data` และ `Submission.objectKey` โดยตรง ไม่ได้เลือกไฟล์ Correction ล่าสุดมาเป็นต้นร่าง
+
+XLSX เป็นข้อยกเว้นที่ตั้งใจจาก generic seeded Response: ไม่คัดคำตอบ ordinary, `fiscal_year`, `docs_number`, URLs หรือ file references จาก Submission/Correction รอบก่อนเข้ารอบใหม่ แต่ Resume Draft ที่บันทึกแล้วใช้ canonical เดิม หน้า fill ยังคงเรียก start หลัง Submit ตามปกติ ไม่เปลี่ยนเป็น receipt navigation เพื่อให้เพิ่ม Correction ได้ ประวัติเดิมยังอ่านแยกด้วย submission/revision ที่เลือก
 
 Prefill ของร่างเดิมเป็น snapshot ตอนเริ่ม Resume ไม่ดึงข้อมูลต้นทางมาเติมซ้ำ Handoff ของ Response ที่ submitted อยู่แล้วพาไป receipt แทนการเปิดรอบใหม่
 
@@ -264,9 +268,23 @@ Results เป็นรายการสถานะปัจจุบันข
 
 Correction เริ่มจากเอกสาร revision ปัจจุบันใน workspace แยก การบันทึก workspace ระหว่างเลือกโครงการยังไม่สร้าง Correction ที่เผยแพร่จริง การบันทึก Correction ต้องมีเหตุผลและผ่านการตรวจ Response ยัง submitted, Submission ยังเป็นล่าสุด และ base revision ไม่เปลี่ยน
 
+สำหรับ declared attachment Fields การเลือก/นำออกยังเป็น pending ใน browser จนกด Save Correction สุดท้ายเท่านั้น ใช้ multipart original bytes กับ native snapshot และ original checkpoint ผ่าน lifecycle เดียวกับ User Save/Submit แต่ target เป็น Correction, actor เป็น current Admin และ owner ยังเป็น User เดิม ไม่มีสิทธิ์แก้ Draft ของคนอื่นเพิ่ม Validation ที่ตรวจได้รวม required scalar/table rows ทำก่อน external writes ตรวจ enabled Admin, session/lease, workspace, latest Submission/base และสถานะอีกครั้งก่อน dispatch และ canonical commit ไม่ blind resend เมื่อผลไม่ชัด
+
+Editor capability ไม่เปลี่ยนผู้ใช้หรือ session ที่ส่ง credential มาด้วย ถ้ามี Folio bearer หรือ cookie จะตรวจแต่ละ credential แยกด้วย session resolver เดิม แล้วให้ account/role ตรงกับ signed capability และให้ `editorLeaseProof` ตรง session เดิมเมื่อ capability มี lease proof; Viewer หรือ credential ขัดกัน/ใช้ไม่ได้ถูกปฏิเสธก่อนรับ Operation ไม่ fallback เป็น Admin จาก capability ส่วน native plugin ที่ `credentials:omit` ไม่มี Folio credential ยังใช้ signed capability พร้อม enabled-user/lease checks เดิม การตรวจ cookie นี้จำกัดใน editor authorization เพื่อปฏิเสธ credential ที่ขัดกัน ไม่เปิด ordinary API ให้ cookie-only: `identityFor`/`requireIdentity` ยังคง bearer-only ตาม ADR 0002 โดยไม่เปลี่ยนข้อสรุปของ ADR
+
+Workspace/project saves ไม่ส่งไฟล์ออก ไม่สร้าง Correction และไม่ล้าง pending Files/removals การย้าย document key ต้องมี verified canonical transition และ physical-row mapping จาก Operation เดิม ไม่ใช้ native opening key แทน canonical key หรือย้าย File ข้ามบัญชี/Response การเปลี่ยนที่พิสูจน์ไม่ได้หยุดก่อน discard การเปิด native XLSX แต่ละครั้งยังใช้ opaque opening-scoped key แยกจาก bridge documentKey และ same-opening callback/export/recovery fences เดิม
+
+แต่ละ Submission/Correction เก็บ document/JSON/file references ของตัวเอง Metadata change สร้างชื่อ version ใหม่และอ่าน original bytes ที่ server พิสูจน์ ownership; removal ของฉบับใหม่ไม่ลบ historical files ที่ยังอ้างอยู่ Reference-versus-delete fence ยังคงใช้ transaction เดียว ห้าม lookup latest มาแทน broken historical URL
+
 เมื่อ User เปิดร่างรอบถัดไปแล้ว จะเพิ่ม Correction บน Submission เก่าไม่ได้ ประวัติเดิมยังอ่านได้ Revision number ของ Correction นับต่อในระดับ Response แต่ข้อมูลและเอกสารผูกกับ Submission ที่แก้
 
 การดาวน์โหลดจากใบรับหรือรายละเอียด Submission ใช้ไฟล์ DOCX หรือ XLSX ที่บันทึกแล้ว PDF สร้างตามคำขอจาก revision ที่เลือก ถ้าแปลง PDF ไม่สำเร็จ Submission ที่ส่งสำเร็จแล้วไม่ได้ถูกย้อนกลับ หน้า receipt แสดงข้อมูลและดาวน์โหลดได้ แต่ไม่ได้มี editor สำหรับเปลี่ยน Submission
+
+Read-only Results/Draft/receipt/history และ saved XLSX/PDF ใช้ URL จาก selected revision และตัดเฉพาะ declared managed attachment OLE/VML/native preview ในสำเนาที่ derive ผ่าน helper เดิม `stripSpreadsheetUploadPoc` รูป ordinary, legacy controls และ protection คงอยู่ ไม่เปลี่ยน editable canonical, Template Draft หรือ published ordinary contracts PDF conversion ใช้ private immutable `withSpreadsheetExportSnapshot`; saved links ไม่ต้อง login ECM เพื่ออ่าน ไม่มี attachment preview/decryption หรือ proxy และ main Form viewer เดิมไม่ถูกแทนที่
+
+Excel Fill Download ยังคง capture workbook ปัจจุบัน รวม ordinary unsaved edits/active cell ก่อน Enter แล้วจึง derive URL-only copy ไม่เปลี่ยนเป็น saved-only Pending attachments ต้อง explicit Save/Submit ก่อน export; export ไม่ upload และไม่สร้าง filename/blob/fake URL Credentials/file-token metadata ไม่อยู่ใน workbook/export ทุก part ลิงก์ ECM ยังคง public/nonexpiring: ผู้ได้ URL อาจเปิดโดยไม่ login Folio และ Folio permissions ไม่ทำให้ origin เป็น private
+
+ADR 0003 ยังรักษาคำตอบ project-name ไม่ใช่ project identity จึงไม่อนุมาน docs_number จากชื่อ ส่วน ADR 0004 ยังคงกรอง current Response จาก scalar tags/latest Correction; การอ่าน/export historical revision ไม่เปลี่ยนตัวกรองให้ใช้ฉบับเก่า การทบทวนนี้ไม่เปลี่ยนข้อสรุปของ ADR ทั้งสอง
 
 หน้า Results ของ Admin และ Viewer ย้ายปุ่มดาวน์โหลดมาอยู่ด้านขวาของแถว Document / Fields เพียงชุดเดียว ใช้ได้จากทั้งสองแท็บและตัดบรรทัดบนจอแคบ โดยปุ่มอยู่นอก tablist จึงไม่เปลี่ยนการสลับแท็บด้วยปุ่มลูกศร XLSX แสดง “ดาวน์โหลด Excel” ส่วน DOCX แสดง “ดาวน์โหลด DOCX” และทั้งสองชนิดมี “ดาวน์โหลด PDF”
 
@@ -427,7 +445,7 @@ Form มี status จริงสามค่า การลบ Form เป็
 | หลังส่งครั้งก่อน | รอบใหม่เริ่มจากอะไร | สิ่งที่ยังคงอยู่ |
 | --- | --- | --- |
 | DOCX ทั้ง Native และ ONLYOFFICE | ไฟล์กับค่าของ Submission ล่าสุดโดยตรง | Submission ทุกครั้งก่อนหน้าและ Correction ของแต่ละครั้งยังอ่านแยกได้ |
-| XLSX | PublishedTemplate ที่เตรียมให้กรอกชุดใหม่ | ประวัติ Submission ที่ส่งแล้วไม่ถูกเขียนทับจากการเปิดร่างใหม่ |
+| XLSX | PublishedTemplate ชุดใหม่ ไม่ seed ordinary answers, ปี/เลขหนังสือ, URLs หรือไฟล์จากรอบก่อน; Resume saved Draft เป็นอีกกรณี | ประวัติ Submission/Correction พร้อม document/JSON/file references เดิมยังอ่านแยกได้ |
 | เข้าจาก Prefill handoff ขณะยัง submitted | เส้นทางนี้คืน receipt ของ Submission ล่าสุด | ไม่เปิดร่างใหม่ผ่าน handoff นั้น |
 
 หากเปิดร่างรอบถัดไปไม่สำเร็จ แต่ Operation ส่งสำเร็จแล้ว ต้องแยกสองผลลัพธ์นี้ การเปิดร่างใหม่ล้มเหลวไม่ได้ลบ Submission ที่ commit ไปแล้ว
@@ -627,8 +645,9 @@ Correction ไม่มี `status` ของตนเองใน Prisma schema
 | Response actions | `routes/response-actions.ts`: save Draft และ Submit ทั้ง native กับ ONLYOFFICE; scalar/table attachment multipart ใช้ trusted native snapshot, physical-slot validation และ original attachment checkpoint เดียว |
 | Response read/delete | `routes/responses.ts`: my responses, current correction history, saved Draft export/read-only inspection, authorized durable attachment-status, owner discard และ Admin erase |
 | Excel Fill Download | `POST /api/responses/:id/editor-export/:format`: เจ้าของ Response ใช้ editor lease ปัจจุบันดาวน์โหลดสำเนา XLSX หรือแปลงเป็น PDF |
-| Results/correction | `routes/results.ts`: list, detail, viewer-config, correction editor, final correction/workspace save และ independent inline attachment-follow-up reads/authorized cancel/first-delete settlement |
+| Results/correction | `routes/results.ts`: list/detail/viewer, final Correction multipart/native snapshot ผ่าน shared durable attachment lifecycle และ workspace-only save ที่ไม่ upload; inline attachment-follow-up reads/authorized cancel/first-delete settlement |
 | Submission | `routes/submissions.ts`: data/fields, correction history, JSON, DOCX หรือ XLSX และ PDF ตาม revision |
+| Derived response XLSX/PDF | `responses/spreadsheet-document.ts`: selective declared attachment-control projection; `routes/responses.ts`, `routes/submissions.ts`, signed read-only `routes/onlyoffice.ts` ใช้ selected canonical/live-capture bytes ตาม surface; ไม่แก้ต้นฉบับหรือ Template Draft |
 | Operation/lease | `routes/operations.ts`, `routes/editor-leases.ts`: poll, renew และ release |
 | PDMS catalog | `routes/pdms-project-catalog.ts`: retry catalog ภายใต้ editor scope |
 | Prefill | `routes/prefill.ts`: create handoff, integration status, top-level launch และ GET ที่ปฏิเสธวิธีเปิดผิด |

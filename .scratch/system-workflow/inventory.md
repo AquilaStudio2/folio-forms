@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `b68c59a25ef959a12b2218f39b5d90b3c6795b43`
+Commit: `2fe0b287bdf4b1a2f4aee55992e766dd9f63d14d`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -83,21 +83,21 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | POST | `/api/legacy-sso/switch/confirm` | `apps/server/src/routes/legacy-sso.ts:58` |
 | POST | `/api/legacy-sso/switch/cancel` | `apps/server/src/routes/legacy-sso.ts:70` |
 | POST | `/api/legacy-sso/session` | `apps/server/src/routes/legacy-sso.ts:82` |
-| GET | `/onlyoffice/document/:key` | `apps/server/src/routes/onlyoffice.ts:53` |
-| GET | `/onlyoffice-plugin/config.json` | `apps/server/src/routes/onlyoffice.ts:94` |
-| GET | `/onlyoffice-plugin/pdms-project/config.json` | `apps/server/src/routes/onlyoffice.ts:134` |
-| GET | `/onlyoffice-plugin/pdms-project/index.html` | `apps/server/src/routes/onlyoffice.ts:162` |
-| GET | `/onlyoffice-plugin/pdms-project/popup.js` | `apps/server/src/routes/onlyoffice.ts:163` |
-| GET | `/onlyoffice-plugin/upload-poc/config.json` | `apps/server/src/routes/onlyoffice.ts:164` |
-| GET | `/onlyoffice-plugin/upload-poc/index.html` | `apps/server/src/routes/onlyoffice.ts:193` |
-| GET | `/onlyoffice-plugin/upload-poc/picker.js` | `apps/server/src/routes/onlyoffice.ts:194` |
-| GET | `/onlyoffice-plugin` | `apps/server/src/routes/onlyoffice.ts:195` |
-| GET | `/onlyoffice-plugin/` | `apps/server/src/routes/onlyoffice.ts:196` |
-| GET | `/onlyoffice-plugin/index.html` | `apps/server/src/routes/onlyoffice.ts:197` |
-| GET | `/onlyoffice-plugin/plugin.js` | `apps/server/src/routes/onlyoffice.ts:198` |
-| GET | `/onlyoffice-plugin/resources/light/settings.svg` | `apps/server/src/routes/onlyoffice.ts:199` |
-| GET | `/onlyoffice-plugin/resources/dark/settings.svg` | `apps/server/src/routes/onlyoffice.ts:202` |
-| POST | `/onlyoffice/callback` | `apps/server/src/routes/onlyoffice.ts:205` |
+| GET | `/onlyoffice/document/:key` | `apps/server/src/routes/onlyoffice.ts:59` |
+| GET | `/onlyoffice-plugin/config.json` | `apps/server/src/routes/onlyoffice.ts:129` |
+| GET | `/onlyoffice-plugin/pdms-project/config.json` | `apps/server/src/routes/onlyoffice.ts:169` |
+| GET | `/onlyoffice-plugin/pdms-project/index.html` | `apps/server/src/routes/onlyoffice.ts:197` |
+| GET | `/onlyoffice-plugin/pdms-project/popup.js` | `apps/server/src/routes/onlyoffice.ts:198` |
+| GET | `/onlyoffice-plugin/upload-poc/config.json` | `apps/server/src/routes/onlyoffice.ts:199` |
+| GET | `/onlyoffice-plugin/upload-poc/index.html` | `apps/server/src/routes/onlyoffice.ts:228` |
+| GET | `/onlyoffice-plugin/upload-poc/picker.js` | `apps/server/src/routes/onlyoffice.ts:229` |
+| GET | `/onlyoffice-plugin` | `apps/server/src/routes/onlyoffice.ts:230` |
+| GET | `/onlyoffice-plugin/` | `apps/server/src/routes/onlyoffice.ts:231` |
+| GET | `/onlyoffice-plugin/index.html` | `apps/server/src/routes/onlyoffice.ts:232` |
+| GET | `/onlyoffice-plugin/plugin.js` | `apps/server/src/routes/onlyoffice.ts:233` |
+| GET | `/onlyoffice-plugin/resources/light/settings.svg` | `apps/server/src/routes/onlyoffice.ts:234` |
+| GET | `/onlyoffice-plugin/resources/dark/settings.svg` | `apps/server/src/routes/onlyoffice.ts:237` |
+| POST | `/onlyoffice/callback` | `apps/server/src/routes/onlyoffice.ts:240` |
 | GET | `/api/operations/:id` | `apps/server/src/routes/operations.ts:19` |
 | POST | `/api/editor/pdms-project-catalog/retry` | `apps/server/src/routes/pdms-project-catalog.ts:101` |
 | POST | `/api/integrations/prefill/handoffs` | `apps/server/src/routes/prefill.ts:29` |
@@ -110,35 +110,35 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | GET | `/api/forms/:publicId/my-submissions/export` | `apps/server/src/routes/public-forms.ts:110` |
 | POST | `/api/forms/:publicId/start` | `apps/server/src/routes/public-forms.ts:128` |
 | GET | `/api/responses/:id/attachment-operations/:checkpoint` | `apps/server/src/routes/response-actions.ts:103` |
-| POST | `/api/responses/:id/attachment-operations/:checkpoint/recover` | `apps/server/src/routes/response-actions.ts:147` |
-| POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:159` |
-| POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:379` |
-| GET | `/api/responses/:id/attachment-status` | `apps/server/src/routes/responses.ts:67` |
-| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:92` |
-| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:126` |
-| POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:258` |
-| GET | `/api/responses/:id/draft/viewer-config` | `apps/server/src/routes/responses.ts:367` |
-| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:406` |
-| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:474` |
-| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:518` |
-| GET | `/api/admin/results/attachment-follow-up` | `apps/server/src/routes/results.ts:276` |
-| POST | `/api/admin/results/attachment-follow-up/:operationId/settle` | `apps/server/src/routes/results.ts:288` |
-| POST | `/api/admin/results/attachment-follow-up/:operationId/cancel` | `apps/server/src/routes/results.ts:303` |
-| GET | `/api/admin/results` | `apps/server/src/routes/results.ts:325` |
-| GET | `/api/admin/results/:id` | `apps/server/src/routes/results.ts:403` |
-| GET | `/api/admin/results/:id/viewer-config` | `apps/server/src/routes/results.ts:553` |
-| GET | `/api/admin/results/:id/correction/editor-config` | `apps/server/src/routes/results.ts:628` |
-| POST | `/api/admin/results/:id/correction` | `apps/server/src/routes/results.ts:641` |
-| POST | `/api/admin/results/:id/correction/workspace` | `apps/server/src/routes/results.ts:642` |
+| POST | `/api/responses/:id/attachment-operations/:checkpoint/recover` | `apps/server/src/routes/response-actions.ts:150` |
+| POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:162` |
+| POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:382` |
+| GET | `/api/responses/:id/attachment-status` | `apps/server/src/routes/responses.ts:68` |
+| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:93` |
+| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:127` |
+| POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:259` |
+| GET | `/api/responses/:id/draft/viewer-config` | `apps/server/src/routes/responses.ts:373` |
+| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:412` |
+| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:498` |
+| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:542` |
+| GET | `/api/admin/results/attachment-follow-up` | `apps/server/src/routes/results.ts:355` |
+| POST | `/api/admin/results/attachment-follow-up/:operationId/settle` | `apps/server/src/routes/results.ts:367` |
+| POST | `/api/admin/results/attachment-follow-up/:operationId/cancel` | `apps/server/src/routes/results.ts:382` |
+| GET | `/api/admin/results` | `apps/server/src/routes/results.ts:404` |
+| GET | `/api/admin/results/:id` | `apps/server/src/routes/results.ts:482` |
+| GET | `/api/admin/results/:id/viewer-config` | `apps/server/src/routes/results.ts:632` |
+| GET | `/api/admin/results/:id/correction/editor-config` | `apps/server/src/routes/results.ts:707` |
+| POST | `/api/admin/results/:id/correction` | `apps/server/src/routes/results.ts:720` |
+| POST | `/api/admin/results/:id/correction/workspace` | `apps/server/src/routes/results.ts:723` |
 | GET | `/api/admin/forms/:publicId/attachment-categories` | `apps/server/src/routes/spreadsheet-authoring.ts:234` |
 | GET | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:244` |
 | PATCH | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:261` |
 | POST | `/api/admin/forms/:publicId/spreadsheet-bindings/recover` | `apps/server/src/routes/spreadsheet-authoring.ts:458` |
-| GET | `/api/submissions/:id/data` | `apps/server/src/routes/submissions.ts:40` |
-| GET | `/api/submissions/:id/corrections` | `apps/server/src/routes/submissions.ts:96` |
-| GET | `/api/submissions/:id/json` | `apps/server/src/routes/submissions.ts:205` |
-| GET | `/api/submissions/:id/:format` | `apps/server/src/routes/submissions.ts:238` |
-| GET | `/api/submissions/:id/pdf` | `apps/server/src/routes/submissions.ts:283` |
+| GET | `/api/submissions/:id/data` | `apps/server/src/routes/submissions.ts:42` |
+| GET | `/api/submissions/:id/corrections` | `apps/server/src/routes/submissions.ts:98` |
+| GET | `/api/submissions/:id/json` | `apps/server/src/routes/submissions.ts:207` |
+| GET | `/api/submissions/:id/:format` | `apps/server/src/routes/submissions.ts:240` |
+| GET | `/api/submissions/:id/pdf` | `apps/server/src/routes/submissions.ts:293` |
 | GET | `/health` | `apps/server/src/app.ts:197` |
 | GET | `/ready` | `apps/server/src/app.ts:198` |
 

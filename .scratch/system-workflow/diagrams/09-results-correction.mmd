@@ -11,11 +11,11 @@ flowchart TD
     pdf["submitted: ดาวน์โหลด PDF จากไฟล์ revision ที่เลือก"]
     canCorrect{"Admin และยังเป็น Submission ล่าสุด"}
     workspace["สร้าง Correction workspace แยก"]
-    edit["แก้ค่าและกรอกเหตุผล"]
-    operation["Save Correction ผ่าน Operation"]
-    compare["ตรวจ base revision และ lease อีกครั้ง"]
-    append["เพิ่ม Correction และ changedData"]
-    preserved["คง Original และ revision ก่อนหน้า"]
+    edit["แก้ค่า/เลือกไฟล์ใน browser และกรอกเหตุผล"]
+    operation["final explicit Save Correction: trusted native snapshot + shared durable batch"]
+    compare["ตรวจ submitted/latest base, Admin, lease/workspace และ required ก่อนส่งและก่อน commit"]
+    append["เพิ่ม JSON/document/file versions ของ Correction"]
+    preserved["คง Original และ revision/file references ก่อนหน้า"]
     past["Admin submissions หรือ receipt ตาม submissionId"]
     search --> filters --> response --> state
     search --> tracking["อ่าน durable attachment tracking แยกจาก normal Response rows"]
@@ -32,5 +32,7 @@ flowchart TD
     read -->|"เฉพาะ submitted"| pdf
     submission --> canCorrect
     canCorrect -->|"ผ่าน"| workspace --> edit --> operation --> compare --> append
+    edit --> internal["internal project/workspace save:ไม่ upload; verified canonical/physical mapping คง pending Files"]
+    internal --> edit
     append --> preserved --> revision
     past -->|"อ่าน Submission เก่าได้แม้ Response กลับ draft"| revision
