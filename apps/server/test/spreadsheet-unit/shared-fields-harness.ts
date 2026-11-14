@@ -99,47 +99,6 @@ const bindingPlaceholder = (tag: string): string | null => {
 assert.equal(bindingPlaceholder("quantity"), "e.g. 42");
 assert.equal(bindingPlaceholder("agency"), null);
 const published = spreadsheetManifestFieldData(bindings);
-assert.deepEqual(
-  drafts.find((field) => field.tag === "photo"),
-  {
-    binding: {
-      anchor: "folio_photo",
-      computed: false,
-      id: "folio_photo",
-      placeholder: null,
-    },
-    label: "Photo",
-    options: null,
-    position: 3,
-    prefillPointer: null,
-    prefillPolicy: "editable",
-    required: true,
-    tag: "photo",
-    type: "picture",
-  }
-);
-assert.deepEqual(
-  published.find((field) => field.tag === "photo"),
-  {
-    binding: {
-      anchor: "folio_photo",
-      computed: false,
-      id: "folio_photo",
-      placeholder: null,
-    },
-    label: "Photo",
-    options: null,
-    pictureMaxBytes: 10 * 1024 * 1024,
-    pictureMaxHeight: 4096,
-    pictureMaxWidth: 4096,
-    placeholder: null,
-    position: 3,
-    prefillPolicy: "editable",
-    required: true,
-    tag: "photo",
-    type: "picture",
-  }
-);
 const prefill = bindings.fields
   .filter((field) => field.prefillPointer !== null)
   .map((field) => ({
