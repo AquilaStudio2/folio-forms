@@ -1,3 +1,4 @@
+import { canonicalAttachment } from "../../responses/attachment-data";
 import {
   readTemplateArchive,
   templateArchiveText,
@@ -528,7 +529,8 @@ export const spreadsheetFieldValue = (
 export const extractSpreadsheetData = (
   workbook: SpreadsheetWorkbook,
   contract: SpreadsheetContract,
-  required: boolean
+  required: boolean,
+  attachments: Record<string, unknown> = {}
 ): {
   data: Record<string, unknown>;
   errors: { address: string; message: string }[];
@@ -560,6 +562,17 @@ export const extractSpreadsheetData = (
   };
   for (const field of contract.fields) {
     const range = contract.locations[field.anchor] as SpreadsheetRange;
+    if (field.attachment) {
+      const attachment = canonicalAttachment(attachments[field.key]);
+      data[field.key] = attachment;
+      if (required && field.required && attachment === null) {
+        errors.push({
+          address: `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`,
+          message: `Required attachment: ${field.label}`,
+        });
+      }
+      continue;
+    }
     if (field.type === "picture") {
       if (required && field.required && !pictures.has(field.id)) {
         errors.push({

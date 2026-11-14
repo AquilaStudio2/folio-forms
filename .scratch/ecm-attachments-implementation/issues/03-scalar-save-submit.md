@@ -46,3 +46,9 @@
 - Native newer-file race ยืนยัน File ใหม่ยัง pending หลัง receipt เก่ารับสำเร็จและ remount; native แสดง All changes saved แต่ host ยังเตือน pending/ป้องกันออก ข้อมูล File ที่ยังไม่ส่งไม่ถูกนับว่า saved
 - รายละเอียดและ artifact pointers ของงานรอบนี้: `/tmp/ecm-scalar-final-check-handoff.txt`, `/tmp/ecm-scalar-final-native-handoff.txt` และ `/tmp/ecm-scalar-source-complete-handoff.txt` เป็นหลักฐาน local ไม่ใช่เอกสารที่เผยแพร่หรือ deployment evidence
 - ยังไม่ตรวจ live ECM/DCM, production RustFS หรือ production deployment งาน replace/remove/metadata cleanup, follow-up, table rows, Correction/history/export projection และ Response deletion อยู่ในตั๋วถัดไปตามกราฟ ช่อง Choose file ที่ยังติดใน PDF ที่สังเกตจริงถูกบันทึกให้ตั๋ว Correction/history/exports แก้ ไม่อ้างว่า feature ทั้งสเปกเสร็จแล้ว
+
+### Integration artifact correction
+
+หลัง merge พบว่า explicit source manifest ตกหล่น shared `workbook.ts` แม้ source worktree ที่ตรวจ native มี attachment extraction ครบ ส่งผลให้ initial scalar Save ใน worktree ของตั๋วถัดไปล้มเหลวก่อนทดสอบ metadata change ตรวจ actual tracked delta พบไฟล์ตกหล่นเพียงไฟล์นี้ และไม่พบ untracked source ที่ตกหล่น จึงนำ implementation ที่ตรวจแล้วมารวมใน integration
+
+ตรวจบน integration โดยตรงหลังคืน extraction: native HTTP 39 tests/679 assertions ผ่าน, scoped formatter/lint ผ่าน, root types 5/5 และ build 3/3 ผ่าน Full spreadsheet-unit ที่รันเพิ่มได้ 115 ผ่าน/2 ล้มเหลวจาก picture-editor mock ที่ยังไม่มี ECM model และ assertion ที่เปรียบเทียบ copied field manifest/defaults ทั้ง object บันทึกเป็นงานต้องแก้ก่อน final acceptance ไม่ถือเป็นผลผ่านทั้ง suite หลักฐาน `artifact://1104`, ผล types/build จาก parent job bg70 และ context pointer `local://ecm-integration-artifact-followup.md`

@@ -7,6 +7,8 @@
 ทบทวน cutover ของ PoC เดิม วันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments-legacy` จาก source commit `6a87d0004dccba530401531777c9de42162d00c6` ครอบคลุม explicit Draft conversion, Published ordinary contract, Duplicate และ pending dirty guards ผล HTTP/UI/native/browser ผ่านการตรวจส่วนกลางตามขอบเขต legacy แล้ว ไม่ใช่หลักฐาน live ECM หรือการ deploy และยังไม่ยืนยันวงจร scalar upload/export ทั้งหมด
 ทบทวนวงจร scalar attachment วันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments-scalar` จาก source-containing commit `22dbd6f9f6c8b055cc0ae50f960bb55e1eebac25` ซึ่งต่อจาก integration `f6e856af865ceeb9cc6acaa02414673f4e97aa42`: เพิ่ม explicit Save Draft/Submit, durable intent/receipt, atomic commit, after-send unknown hold และ checkpoint recovery ที่ fence sender เดิมด้วย lease rotation รวมการตรวจ original checkpoint ก่อนเปิด editor และการกู้ original Submit ตามผลจริง ผลตรวจ automated และ native/browser ใช้ระบบทดสอบแยกตามขอบเขตที่ระบุ ไม่ใช่หลักฐานบริการ ECM จริงหรือการ deploy; exported PDF control-overlap ยังอยู่ในขอบเขตตั๋ว 07 และไม่อ้างว่าแก้แล้ว
 
+ตรวจ integration artifact เพิ่มหลัง merge: พบว่า manifest สำหรับ commit scalar ตกหล่น shared workbook attachment extraction แม้ implementation worktree ผ่านการตรวจ จึงนำ extraction ที่ตรวจ native แล้วมารวมใน integration และตรวจ native HTTP 39 tests/679 assertions, root type checks 5/5 และ build 3/3 บน integration โดยตรง ผล spreadsheet-unit เพิ่มเติม 115 ผ่าน/2 ล้มเหลวจาก mock editor dependency และ incidental copied-manifest assertion ยังต้องแก้ก่อนตรวจรับทั้งสเปก ไม่อ้างว่าชุดทดสอบทั้งหมดผ่าน
+
 เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
 รายการ source ครอบคลุมหน้าและ layout ฝั่งเว็บ, HTTP routes ของเซิร์ฟเวอร์หลัก, private document worker และ Prisma models
