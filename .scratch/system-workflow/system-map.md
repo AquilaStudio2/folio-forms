@@ -13,6 +13,8 @@
 
 การแก้ source ต่อในรอบ Draft นี้แยก canonical document key ของ Folio ออกจาก native cache key ต่อ editor opening ของ XLSX เพื่อไม่ให้การเปิดไฟล์ที่บันทึกแล้วสืบทอดสถานะ editor เก่า ส่วนนี้เป็นคำอธิบาย source ที่ยังไม่ commit ไม่ใช่ผลยืนยันการเปิดกลับผ่าน native browser
 
+ทบทวน source ช่องแนบรายแถววันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments-rows` จาก integration `402a8f0` พร้อม source changes ที่ยังไม่ commit: ขยาย lifecycle เดียวสู่ physical table slots, nested canonical objects, required active rows, reference reconciliation และ verified document/row transition สำหรับ pending Files เดิม ยังไม่ได้รัน HTTP/UI/build/type checks หรือ native/browser/export acceptance ของส่วนนี้ ผล RED ของ tracer ก่อนแก้ production ตรวจโดย Parent แล้ว ไม่ใช่ผลยืนยัน implementation หรือ live ECM
+
 เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
 รายการ source ครอบคลุมหน้าและ layout ฝั่งเว็บ, HTTP routes ของเซิร์ฟเวอร์หลัก, private document worker และ Prisma models
@@ -493,7 +495,7 @@ flowchart TD
         ecmCategory -->|"401"| ecmInvalidate["invalidate เฉพาะ generation ที่ใช้ คืน integration error"]
     end
     ecmSelected -->|"เลือกหมวดแล้วบันทึก Field settings"| native
-    subgraph scalarFiles ["Scalar attachment: เลือกไม่เท่ากับบันทึก"]
+    subgraph scalarFiles ["Scalar และ physical table attachment: lifecycle เดียว"]
         scalarPick["PoC popup เดิม: saved URL แยก pending File 0–10,000,000 bytes"] --> scalarPending["File อยู่ใน host memory; เตือนก่อนออกหรือ reload"]
         scalarPending -->|"explicit Save Draft / Submit เท่านั้น"| scalarCapture["GetFileToDownload: snapshot native ที่ freeze"]
         scalarPending -->|"Download ขณะมี pending"| scalarBlocked["หยุด export ไม่ upload"]
@@ -524,7 +526,12 @@ flowchart TD
         scalarDelete -->|"ยืนยันแล้ว"| scalarResume
         scalarDelete -->|"failed / unknown"| scalarWarning["ข้อมูลใหม่ saved ใช้และ export ได้; durable warning ว่า URL เก่าอาจยังเปิดได้"]
         scalarWarning -->|"reopen / ordinary Save ไม่ retry หรือ clear"| scalarResume
-        scalarInternal["implicit Add row / project / workspace save"] --> scalarRefs["reconcile canonical references ใน transaction; ไม่ upload/delete"]
+        scalarInternal["implicit Add row / project / workspace save"]
+        scalarRefs["reconcile canonical references ใน transaction; ไม่ upload/delete"]
+        scalarInternal --> rowProof["ตรวจ trusted before/after workbook: document keys และ physical row mapping"]
+        rowProof -->|"พิสูจน์ได้"| rowKeep["ปรับ canonical row_index; คง immutable version และ original pending File/removal"]
+        rowProof -->|"stale / ambiguous / สูญเสีย pending"| rowStop["หยุดก่อนเปลี่ยนหน้า ไม่ discard หรือ force reload"]
+        rowKeep --> scalarRefs
         scalarRefs --> scalarResume
         scalarBoot["ก่อนเปิดแก้:ตรวจ checkpoint เดิมด้วย bounded poll พร้อม renew lease"] --> scalarCanonical["เปิด canonical ล่าสุดก่อนรับ ordinary edits ใหม่; ไม่อ้าง receipt เก่าว่าบันทึก snapshot ใหม่"]
         scalarCanonical --> scalarPick
@@ -542,7 +549,7 @@ flowchart TD
 
 Contract รองรับ scalar fields และหนึ่ง repeating table ในหนึ่ง worksheet ที่แก้ได้ Key ของคอลัมน์ใน metadata ใช้ `tableKey.columnKey` แต่คำตอบเก็บเป็น array ของ object Named ranges ช่วยติดตามตำแหน่งเมื่อแทรกหรือย้ายคอลัมน์ หากระบุตำแหน่งไม่ชัด ระบบหยุดบันทึก
 
-Table ข้ามแถวที่ input ว่างทั้งหมด แต่ `0` และ `false` เป็นข้อมูล แถวที่มีแต่สูตรไม่กลายเป็น record สูตรและ computed fields ไม่ใช่ช่องให้ผู้ใช้เปลี่ยนเอง รูปภาพเป็นชนิดข้อมูลที่จัดการในเอกสาร ส่วนปุ่มแนบไฟล์ Upload POC เป็นอีกเส้นทางหนึ่ง
+Table ข้ามแถวที่ input ว่างทั้งหมดและไม่มีไฟล์ แต่ `0`, `false` และไฟล์ 0 bytes เป็นข้อมูล แถวที่มีแต่สูตรไม่กลายเป็น record ช่องแนบใช้ column Tag เดิมและ category/required ร่วมทุกแถว ไม่สร้าง Tag หรือ ID รายแถว แถวที่มี input, saved attachment หรือ selected File ต้องคงอยู่และ Submit ตรวจ required columns ทุกชนิด ไม่ใช่เฉพาะ attachment Workbook cells เป็น URL projection เท่านั้น ไม่ถือ URL ที่พิมพ์เองเป็น ownership
 
 PDMS Ongoing ถูกเรียกที่ `/api/pages/projects/names-and-doc-numbers` ฝั่ง server เลือกเฉพาะชื่อไม่ว่างและรวมชื่อซ้ำเป็นตัวเลือกเดียว คำตอบเก็บชื่อที่เลือก ไม่ได้เก็บ project ID สำหรับไปอ้างความเป็นโครงการเดียวกัน
 
@@ -576,19 +583,23 @@ Bearer ใน PostgreSQL เข้ารหัสและแยก key ออ�
 
 ไม่มี ECM login UI หรือ public token endpoint และไม่มี credentials/Bearer ใน browser, answers หรือ workbook การเรียก category/upload/delete ที่ถูกปฏิเสธไม่ถูกส่งซ้ำหลัง refresh โดยอัตโนมัติ ไม่ยืนยัน provider จริงรองรับไฟล์ 0 bytes/เข้ารหัส/10 MB การตรวจ HTTP double กับ native browser เป็นหลักฐานคนละประเภท
 
-Scalar ใช้ File จริงใน host เดิมจน explicit User Save Draft/Submit เท่านั้น Server ตรวจ actual bytes ไม่เชื่อ MIME หรือ Content-Length รับ encrypted/extensionless และ 0 bytes รวมถึง 10,000,000 bytes ไม่เขียน attachment binary ลง RustFS/JSON/XLSX ก่อน external write ตรวจ root scalar `fiscal_year`/`docs_number` ตาม native Field rules และชื่อไฟล์รวม หากผิดหยุดพร้อมระบุ Field และคง selection ไม่แก้ unsafe characters หรือแทน category เอง
+Scalar และ table-row slots ใช้ File จริงใน host เดิมจน explicit User Save Draft/Submit เท่านั้น Server ตรวจ actual bytes ไม่เชื่อ MIME หรือ Content-Length รับ encrypted/extensionless และ 0 bytes รวมถึง 10,000,000 bytes ไม่เขียน attachment binary ลง RustFS/JSON/XLSX ก่อน external write ตรวจ root scalar `fiscal_year`/`docs_number` ตาม native Field rules และชื่อไฟล์รวม หากผิดหยุดพร้อมระบุ Field/physical row และคง selection ไม่แก้ unsafe characters หรือแทน category เอง
 
-`POST /api/forms/:publicId/draft` และ `/submit` รับ multipart `payload` กับ `attachment:<bindingId>` โดยมี trusted native `snapshotUrl` และ checkpoint ของรอบนั้น Host สร้าง multipart Blob part จาก original File พร้อมชื่อเดิมเพื่อผ่าน renderer disk-file grant โดยไม่ eager-copy bytes หรือเปลี่ยน File identity ที่รอรับผล ใช้ shared ECM client ส่ง `documentFile` original bytes, `template="0"`, ปี/เลขจาก snapshot, หมวด frozen string และ filename ที่มี UUID version เฉพาะไฟล์ Login มี budget เดิม ส่วน upload มี transport budget 90 วินาทีต่อไฟล์และ Operation heartbeat ไม่ยืม 15/30 วินาทีของ auth เป็น upload timeout
+`POST /api/forms/:publicId/draft` และ `/submit` รับ multipart `payload` กับ `attachment:<bindingId>` สำหรับ scalar หรือ `attachment:<encodeURIComponent(JSON.stringify([bindingId,rowIndex]))>` สำหรับ table โดยมี trusted native `snapshotUrl` และ checkpoint ของรอบนั้น Encode เฉพาะ multipart boundary เพื่อไม่ให้ Content-Disposition เปลี่ยน JSON quotes; server decode/validate หนึ่งครั้ง Host store ยังคง JSON slot key เดิม Client rowIndex เป็นเพียง slot request; server ตรวจ binding/button/physical bounds จาก canonical workbook และตรวจ native edits ก่อนเริ่มส่ง Multipart limit คำนวณจากจำนวน slot จริงของ trusted table ปัจจุบัน Host สร้าง Blob part จาก original File พร้อมชื่อเดิมเพื่อผ่าน renderer disk-file grant โดยไม่เปลี่ยน File identity ใช้ shared ECM client ส่ง original bytes ทีละไฟล์, `template="0"`, root ปี/เลขของ snapshot, หมวด frozen ต่อช่อง/column และ filename UUID version เดิม ไม่มี table upload flow แยก
 
-Canonical scalar เป็น `null` หรือ strict object สี่ค่า `file_link`, `file_token`, `original_name`, `size_bytes` ทั้งคำตอบไม่เกิน 262,144 UTF-8 bytes Workbook รับเฉพาะ URL projection ไม่รับ token จาก cell หรือ client object เป็น ownership ก่อน upload และก่อน commit ตรวจสิทธิ์/lease/current document อีกครั้ง Commit document pointer, JSON, references และ Operation result ใน transaction เดียว Draft ขาด required attachment ได้ แต่ Submit ต้องมี saved receipt รวมไฟล์ 0 bytes
+Canonical scalar เป็น `null` หรือ strict object สี่ค่า `file_link`, `file_token`, `original_name`, `size_bytes`; table object อยู่ใต้ column key ใน nested row และเพิ่ม `row_index` แบบ zero-based physical body index ไม่ใช่ compact array index หลาย attachment columns ของแถวเดียวกันต้องตรง physical index และไม่ซ้ำ slot การ extract รับ canonical attachments เป็น argument ที่สี่เดิม แล้วรวม ordinary physical rows กับ saved/selected attachment rows ก่อน compact จึงรักษา gaps และ attachment-only/zero-byte rows ทั้งคำตอบไม่เกิน 262,144 UTF-8 bytes Workbook รับเฉพาะ URL projection ไม่รับ token จาก cell/client เป็น ownership ก่อน upload และก่อน commit ตรวจสิทธิ์/lease/current document อีกครั้ง Commit document pointer, JSON, references และ Operation result ใน transaction เดียว Draft ขาด required attachment ได้ แต่ Submit ต้องได้ receipt ครบและผ่าน required columns ของ active rows ก่อน external write
 
 Batch/version intent ไม่มี cascading relation กับ Response จึงไม่เสียหลักฐานเมื่อ Operation failed/expired หรือ Response ถูกลบ Started ที่ไม่มี verified receipt รวม provider HTTP4xx หลังส่ง bytes ไม่มีหลักฐานว่าไม่เขียน และ canceled batch ที่ cleanup ไม่ครบ block mutation ต่อโดยอิสระจากสถานะ Operation การ cleanup claim lock version ร่วมกับ reference creation ก่อน HTTP DELETE และไม่ reuse canceled receipts คำตอบ canonical เดิมยังอ่านได้ หาก Folio response หาย host ตรวจ `GET /api/responses/:id/attachment-operations/:checkpoint` และ poll Operation เดิม ไม่ส่ง bytes ซ้ำ Session storage เก็บเฉพาะ checkpoint ไม่เก็บ File หรือชื่อไฟล์เพื่ออ้างว่ากู้ bytes ได้
 
-Draft ใช้ `attachmentRemovals: [{bindingId, rowIndex: null}]` ใน `payload` เดิม ต้องเป็น scalar slot ที่พิสูจน์จาก saved native button และ published binding แล้ว ไม่รับแถวตารางในขั้นนี้ ไม่รับ binding แปลก/ซ้ำ หรือ File กับ removal ของช่องเดียวกัน ทั้ง removals และ Files ถูกปฏิเสธใน internal row/project action การไม่ส่ง removal หมายถึงคงไฟล์เดิม การ cancel เกิดใน pending host state ไม่เปลี่ยน canonical หรือส่ง DELETE
+Draft ใช้ `attachmentRemovals: [{bindingId, rowIndex}]` ใน `payload` เดิม โดย scalar ใช้ null และ table ใช้ physical index ที่ server ตรวจซ้ำจาก trusted current workbook ไม่รับ binding/slot แปลก ซ้ำ หรือ File กับ removal ของช่องเดียวกัน ทั้ง removals และ Files ถูกปฏิเสธใน internal row/project request การไม่ส่ง removal หมายถึงคงไฟล์เดิม การ cancel เกิดใน pending host state ไม่เปลี่ยน canonical หรือส่ง DELETE Removal ที่ทำให้แถวว่างทั้งหมดนำแถวนั้นออกจาก compact JSON โดยไม่สลับไฟล์ใน column อื่น
 
 เมื่อปีหรือเลขเปลี่ยน server ใช้ paired receipt ของ Folio ที่ committed และเป็นของ Response/binding/category นั้นเท่านั้นอ่าน bytes เดิม Pending replacement ชนะ original refetch และ removal ไม่ refetch ช่องนั้น ใช้ `original_name` รักษานามสกุล ไม่เดาจาก URL Client ชั้นเดิม fetch เฉพาะ exact origin ของ `ECM_API_URL`, ปฏิเสธ credentials/fragment/redirect, ไม่ส่ง Bearer/cookies และอ่าน stream จริงภายใน 0–10,000,000 bytes พร้อมเทียบ canonical `size_bytes` ก่อนเริ่ม upload ทุกแผน หาก provider ใช้ file origin อื่นต้องทบทวนนโยบาย deployment ไม่เพิ่ม CDN fallback หรือ fetch arbitrary URL
 
 ทุก canonical Draft transition รวม implicit row/project save ย้าย references ไป document key ใหม่ใน transaction เดียว ไม่อาศัย reference ของ Draft เก่าที่ไม่ใช่ canonical แล้ว การ retire refs ไม่แตะ snapshot ที่ Submission/Correction/workspace/eligible Operation หรือ Draft อื่นยังใช้ และนับ surviving refs ทั่วระบบ การ acquire ref กับ deletion claim lock version row เดียวกัน จึง acquire ไปยัง deleting/deletion-unknown version ไม่ได้ Internal workspace/Correction completion รักษา canonical receipt ของ base revision และ references โดยไม่เริ่ม attachment writes
+
+Existing append และ delete-selected ยังคงพฤติกรรมของ ordinary tables เดิม สำหรับ attachment-aware transition server ตรวจ native snapshot เทียบ canonical workbook, ใช้ command ที่รองรับกับ Builder แล้ว resolve contract/output ใหม่ ตรวจ actual body count/column offsets และทุก surviving input cell ตาม old/new physical mapping ก่อน commit Canonical table objects เปลี่ยนเฉพาะ current `row_index`; `EcmAttachmentVersion.rowIndex` เก็บ immutable original upload position และไม่ถูก rewrite การเลื่อนแถวไม่ upload ใหม่ Reference lookup ใช้ nested table column data และ paired receipt เดิม ไม่ index root ด้วย dotted Tag
+
+Completed Operation ส่ง `attachmentTransition` ที่มี from/to canonical document keys, table binding, old/new row counts และ row mapping Host ตรวจ proof ก่อน remount แล้วย้าย keys ของ pending Files/removals/validation errors โดยคง File object เดิม รวมกรณี append และการลบแถวอื่น การลบแถวที่มี pending slot ถูกหยุดก่อนเริ่มคำสั่ง Scope/document/contract ที่เปลี่ยนโดยไม่มี proof หยุดและรักษา selections ไม่ล้าง pending หรือเสนอ force reload Internal transitions ไม่เริ่ม ECM writes แม้ retire saved reference; cleanup-only record รอติดตามโดย authorized operator ไม่อาศัย upload batch เป็นเงื่อนไขว่ามีงานค้าง
 
 `EcmAttachmentCleanup` บันทึก initiating operation/version/Response และสถานะก่อน dispatch ใน transaction ของ snapshot ใหม่ ไม่มี cascading relation กับ Response Initial cleanup อ่านเฉพาะ pending intents ของ explicit operation นั้น ไม่ sweep งานค้างทั้ง Response และไม่ resend failed/unknown DELETE รุ่นเก่าหลัง Save รอบถัดไป `bridge.uploadPoc.cleanupWarning` เป็น safe string หรือ null จาก durable pending/started/unknown records จึงเห็นหลัง reopen และคงอยู่แม้ Save ถัดไปสำเร็จ ข้อมูลใหม่ยังอ่าน/ส่งออกได้ ส่วน canceled-batch cleanup ไม่ครบคง independent mutation hold เดิม ไม่มี queue, daemon หรือสมมติฐานว่า HTTP error/not-found พิสูจน์ผลลบแล้ว
 
@@ -600,9 +611,9 @@ Lookup404 ไม่ใช่หลักฐานว่าคำขอเก่�
 
 เมื่อ old outcome failed และ batch canceled ที่ยืนยันแล้ว จึงปล่อย checkpoint ให้ explicit Save/Submit ใหม่ได้ โดยคง File ที่ยังไม่ได้รับและใช้ version/UUID ใหม่ Known terminal failure หรือ negative-admission proof คืน native editing ตาม semantics เดิม ส่วน completed scalar ที่เปลี่ยน document key คง frozen จน host remount canonical เรียบร้อย Guard/identity-equal File clearing และ terminal replay dedupe เดิมยังอยู่
 
-Excel Fill Download ที่ไม่มี pending Files/removals ยังคง ordinary unsaved edits ปัญหาเดิมเกิดจาก plugin อ่าน `window.parent.Asc` ข้าม origin ก่อนถึง export request แก้ผ่าน existing native command กับ pinned `Api.GetActiveSheet().worksheet.workbook.oApi` เพื่อยืนยัน active cell อย่างเข้มงวด แล้วใช้ `GetFileToDownload` เดิม ไม่ปลด worksheet/object protection ตาราง, การแก้ไฟล์ผ่าน Correction, selected-history exports และ operator settlement ยังมีตั๋วต่อเนื่องของตน ไม่ถือว่า source Draft lifecycle นี้เป็นการยืนยันทั้งหมด
+Excel Fill Download ที่ไม่มี pending Files/removals ยังคง ordinary unsaved edits ใช้ existing native command กับ pinned `Api.GetActiveSheet().worksheet.workbook.oApi` และ `GetFileToDownload` เดิม ไม่ปลด worksheet/object protection ส่วน row attachments มี source และ regression coverage เพิ่มใน slice นี้ แต่ actual native new-row/protection/pending continuity ยังรอ Parent ตรวจจริง การแก้ไฟล์ผ่าน Correction, selected-history exports และ operator settlement มีตั๋วและ acceptance ของตน ไม่ถือว่า source row lifecycle นี้ยืนยันทั้งหมด
 
-อ้างอิง [scalar request/checkpoint](../../apps/server/src/responses/attachment-operation.ts), [durable attachment lifecycle](../../apps/server/src/ecm/attachments.ts), [strict canonical data](../../apps/server/src/responses/attachment-data.ts), [trusted native preparation](../../apps/server/src/operations/spreadsheet-document.ts), [original host pending Files](../../apps/web/src/features/onlyoffice/upload-poc-pending.ts), [original plugin save relay](../../apps/onlyoffice-plugin/src/upload-poc-save.js) และ [HTTP scalar acceptance](../../apps/server/test/http/ecm-scalar-save-submit.test.ts)
+อ้างอิง [shared attachment request/checkpoint](../../apps/server/src/responses/attachment-operation.ts), [durable attachment lifecycle](../../apps/server/src/ecm/attachments.ts), [strict scalar/table canonical data และ physical slots](../../apps/server/src/responses/attachment-data.ts), [trusted workbook extraction](../../apps/server/src/documents/spreadsheets/workbook.ts), [trusted native preparation/row proof](../../apps/server/src/operations/spreadsheet-document.ts), [original host pending Files](../../apps/web/src/features/onlyoffice/upload-poc-pending.ts), [completion consumer](../../apps/web/src/components/onlyoffice-editor.tsx), [HTTP scalar/table acceptance](../../apps/server/test/http/ecm-scalar-save-submit.test.ts) และ [pending transition consumer tests](../../apps/web/test/ui/upload-poc-pending.test.tsx)
 
 อ้างอิง [spreadsheet bindings](../../apps/server/src/routes/spreadsheet-authoring.ts), [shared fields](../../apps/server/src/forms/spreadsheet-fields.ts), [PDMS loader](../../apps/server/src/pdms/projects.ts#L27), [catalog scope](../../apps/server/src/pdms/catalog.ts#L136), [selection target](../../apps/server/src/pdms/selection.ts#L26) และ [Upload POC / publication verification](../../apps/server/src/documents/spreadsheets/upload-poc.ts)
 
@@ -962,7 +973,7 @@ ER แสดงความสัมพันธ์หลักสำหรั�
 | การแก้เอกสาร | `EditorLease` กันหลาย session แก้ target เดียวกัน, `Operation` เก็บงาน asynchronous, `CallbackClaim` กัน callback ใช้ซ้ำ |
 | Catalog ต่อการเปิด editor | `PdmsProjectCatalogSession` ผูกรายชื่อโครงการกับผู้ใช้ auth session, lease, target และ document |
 | ECM auth และ Document Category | `EcmAuthState` เก็บ encrypted token, expiry, generation และ shared claim; `EcmCategoryCatalog` เก็บรายชื่อจริงที่มีอายุและผูก authoring scope ไม่เก็บ service credentials |
-| Scalar attachment lifecycle | `EcmAttachmentBatch` ผูก original checkpoint/actor/lease/document และ independent mutation hold; `EcmAttachmentVersion` เก็บ intent/paired receipt โดยไม่เก็บ bytes; `EcmAttachmentReference` fence references กับ deletion claim; `EcmAttachmentCleanup` เก็บ initiating operation/version และ durable old-file cleanup warning แยกจาก canceled batch |
+| Scalar/table attachment lifecycle | `EcmAttachmentBatch` ผูก original checkpoint/actor/lease/document และ independent mutation hold; `EcmAttachmentVersion` เก็บ immutable intent/paired receipt รวม original physical `rowIndex` โดยไม่เก็บ bytes; current canonical `row_index` ย้ายได้ผ่าน trusted mapping; `EcmAttachmentReference` fence references ทุก nested table/scalar snapshot กับ deletion claim; `EcmAttachmentCleanup` เก็บ initiating operation/version และ durable cleanup warning แยกจาก canceled batch |
 | การตรวจย้อนหลังและ cleanup | `AuditEvent` เก็บเหตุการณ์, `ObjectCleanupIntent` เก็บไฟล์ที่ต้องลบต่อ, `DeletionTombstone` กันข้อมูลที่ลบแล้วกลับมาจาก handoff เดิม |
 
 AI authoring sessions อยู่ใน workspace ชั่วคราวของบริการ ไม่ได้มี Prisma model ชื่อ AI session ใน schema นี้
@@ -1427,7 +1438,7 @@ flowchart TD
 | Form authoring | `routes/form-authoring.ts`: editor-config, external schema search, DOCX rules, save, publish และ per-form submissions |
 | Spreadsheet authoring | `routes/spreadsheet-authoring.ts`: get/patch/recover bindings และ scoped attachment-categories; ECM auth/category อยู่ใน `ecm/` |
 | Form fill | `routes/public-forms.ts`: published metadata, start/resume/reopen, editor-config และประวัติการส่งของเจ้าของ |
-| Response actions | `routes/response-actions.ts`: save Draft และ Submit ทั้ง native กับ ONLYOFFICE; scalar attachment multipart ใช้ trusted native snapshot และ lookup original attachment checkpoint |
+| Response actions | `routes/response-actions.ts`: save Draft และ Submit ทั้ง native กับ ONLYOFFICE; scalar/table attachment multipart ใช้ trusted native snapshot, physical-slot validation และ original attachment checkpoint เดียว |
 | Response read/delete | `routes/responses.ts`: my responses, current correction history, saved Draft export, owner discard และ Admin erase |
 | Excel Fill Download | `POST /api/responses/:id/editor-export/:format`: เจ้าของ Response ใช้ editor lease ปัจจุบันดาวน์โหลดสำเนา XLSX หรือแปลงเป็น PDF |
 | Results/correction | `routes/results.ts`: list, detail, viewer-config, correction editor, final correction และ workspace save |

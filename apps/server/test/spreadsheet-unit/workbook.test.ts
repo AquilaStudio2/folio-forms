@@ -31,6 +31,7 @@ describe("spreadsheet contract and authoritative XLSX extraction", () => {
         date: "1900-03-01",
       },
       errors: [],
+      rowIndices: [0, 3],
     });
   });
 

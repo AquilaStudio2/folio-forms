@@ -195,12 +195,31 @@ export const parseFieldSelectionMessage = (
   return value as unknown as FieldSelectionBridgeMessage;
 };
 
+const isValidAttachmentTransition = (value: unknown): boolean =>
+  isRecord(value) &&
+  isNonEmptyString(value.fromDocumentKey) &&
+  isNonEmptyString(value.toDocumentKey) &&
+  (value.tableBindingId === null || isNonEmptyString(value.tableBindingId)) &&
+  Number.isSafeInteger(value.oldRowCount) &&
+  Number(value.oldRowCount) >= 0 &&
+  Number.isSafeInteger(value.newRowCount) &&
+  Number(value.newRowCount) >= 0 &&
+  Array.isArray(value.rowMapping) &&
+  value.rowMapping.length === value.oldRowCount &&
+  value.rowMapping.every(
+    (row) =>
+      row === null ||
+      (Number.isSafeInteger(row) && row >= 0 && row < Number(value.newRowCount))
+  );
+
 const isValidOperationResult = (value: Record<string, unknown>): boolean =>
   (value.submissionId === undefined ||
     typeof value.submissionId === "string") &&
   (value.documentKey === undefined || isNonEmptyString(value.documentKey)) &&
   (value.editorSessionPreserved === undefined ||
-    typeof value.editorSessionPreserved === "boolean");
+    typeof value.editorSessionPreserved === "boolean") &&
+  (value.attachmentTransition === undefined ||
+    isValidAttachmentTransition(value.attachmentTransition));
 
 // oxlint-disable-next-line complexity -- Validate original/requested action correlation and terminal payload together at the untrusted bridge boundary.
 export const parseOperationMessage = (
@@ -251,6 +270,7 @@ interface EditorOperationBridgeMessage {
   operation?: {
     result?: {
       documentKey?: string;
+      attachmentTransition?: unknown;
       editorSessionPreserved?: boolean;
       submissionId?: string;
     };

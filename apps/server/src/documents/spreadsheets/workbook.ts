@@ -1,4 +1,8 @@
-import { canonicalAttachment } from "../../responses/attachment-data";
+import {
+  canonicalAttachment,
+  canonicalTableAttachments,
+  attachmentSlotKey,
+} from "../../responses/attachment-data";
 import {
   readTemplateArchive,
   templateArchiveText,
@@ -530,13 +534,16 @@ export const extractSpreadsheetData = (
   workbook: SpreadsheetWorkbook,
   contract: SpreadsheetContract,
   required: boolean,
-  attachments: Record<string, unknown> = {}
+  attachments: Record<string, unknown> = {},
+  selectedSlots: ReadonlySet<string> = new Set()
 ): {
   data: Record<string, unknown>;
   errors: { address: string; message: string }[];
+  rowIndices: number[];
 } => {
   const data: Record<string, unknown> = {};
   const errors: { address: string; message: string }[] = [];
+  const rowIndices: number[] = [];
   const pictures = readSpreadsheetPictures(workbook, contract);
   const read = (
     address: string,
@@ -560,18 +567,23 @@ export const extractSpreadsheetData = (
       return null;
     }
   };
-  for (const field of contract.fields) {
+  const extractField = (field: SpreadsheetField): void => {
     const range = contract.locations[field.anchor] as SpreadsheetRange;
     if (field.attachment) {
       const attachment = canonicalAttachment(attachments[field.key]);
       data[field.key] = attachment;
-      if (required && field.required && attachment === null) {
+      if (
+        required &&
+        field.required &&
+        attachment === null &&
+        !selectedSlots.has(attachmentSlotKey(field.id, null))
+      ) {
         errors.push({
           address: `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`,
           message: `Required attachment: ${field.label}`,
         });
       }
-      continue;
+      return;
     }
     if (field.type === "picture") {
       if (required && field.required && !pictures.has(field.id)) {
@@ -580,20 +592,49 @@ export const extractSpreadsheetData = (
           message: `Required picture: ${field.label}`,
         });
       }
-      continue;
+      return;
     }
     data[field.key] = read(
       `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`,
       field
     );
+  };
+  for (const field of contract.fields) {
+    extractField(field);
   }
   if (contract.table) {
     const { table } = contract;
     const range = contract.locations[table.anchor] as SpreadsheetRange;
     const rows = new Set<number>();
+    const attached = canonicalTableAttachments(
+      attachments,
+      table.key,
+      table.columns
+        .filter((column) => column.attachment)
+        .map((column) => column.key),
+      range.lastRow - range.firstRow + 1
+    );
+    for (const rowIndex of attached.keys()) {
+      rows.add(range.firstRow + rowIndex);
+    }
+    for (
+      let rowIndex = 0;
+      rowIndex <= range.lastRow - range.firstRow;
+      rowIndex += 1
+    ) {
+      if (
+        table.columns.some(
+          (column) =>
+            column.attachment &&
+            selectedSlots.has(attachmentSlotKey(column.id, rowIndex))
+        )
+      ) {
+        rows.add(range.firstRow + rowIndex);
+      }
+    }
     const inputColumns = new Set(
       table.columns
-        .filter((column) => !column.computed)
+        .filter((column) => !column.computed && !column.attachment)
         .map((column) => range.firstColumn + column.offset)
     );
     for (const cell of workbook.cells.values()) {
@@ -611,14 +652,30 @@ export const extractSpreadsheetData = (
       .toSorted((a, b) => a - b)
       .map((row) => {
         const values: Record<string, unknown> = {};
+        const rowIndex = row - range.firstRow;
+        rowIndices.push(rowIndex);
         for (const column of table.columns) {
-          values[column.key] = read(
-            `${spreadsheetColumnName(range.firstColumn + column.offset)}${row + 1}`,
-            column
-          );
+          const address = `${spreadsheetColumnName(range.firstColumn + column.offset)}${row + 1}`;
+          if (column.attachment) {
+            const attachment = attached.get(rowIndex)?.[column.key] ?? null;
+            values[column.key] = attachment;
+            if (
+              required &&
+              column.required &&
+              !attachment &&
+              !selectedSlots.has(attachmentSlotKey(column.id, rowIndex))
+            ) {
+              errors.push({
+                address,
+                message: `Required attachment: ${column.label} (แถว ${rowIndex + 1})`,
+              });
+            }
+          } else {
+            values[column.key] = read(address, column);
+          }
         }
         return values;
       });
   }
-  return { data, errors };
+  return { data, errors, rowIndices };
 };

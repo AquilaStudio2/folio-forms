@@ -10,7 +10,10 @@ import {
   invalidResponsePicture,
   validateResponsePictureMediaBytes,
 } from "../documents/pictures";
-import type { SpreadsheetBindings } from "../documents/spreadsheets/contract";
+import type {
+  SpreadsheetBindings,
+  SpreadsheetContract,
+} from "../documents/spreadsheets/contract";
 import { fail } from "../http/errors";
 import {
   maxTemplateMultipartOverheadBytes,
@@ -19,6 +22,7 @@ import {
   asRecord,
 } from "../http/input";
 import type { JsonRecord } from "../model-types";
+import { attachmentSlotKey } from "./attachment-data";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import { maxResponseDataBytes } from "./data";
 
@@ -52,7 +56,7 @@ const validateAttachmentRemovals = (
       z
         .object({
           bindingId: z.string().min(1),
-          rowIndex: z.null(),
+          rowIndex: z.number().int().nonnegative().nullable(),
         })
         .strict()
     )
@@ -62,16 +66,19 @@ const validateAttachmentRemovals = (
   }
   const seen = new Set<string>();
   for (const removal of parsed.data) {
-    if (
-      seen.has(removal.bindingId) ||
-      files.has(removal.bindingId) ||
-      !bindings?.fields.some(
-        (field) => field.id === removal.bindingId && field.attachment
-      )
-    ) {
+    const key = attachmentSlotKey(removal.bindingId, removal.rowIndex);
+    const field =
+      removal.rowIndex === null
+        ? bindings?.fields.find(
+            (candidate) => candidate.id === removal.bindingId
+          )
+        : bindings?.table?.columns.find(
+            (candidate) => candidate.id === removal.bindingId
+          );
+    if (seen.has(key) || files.has(key) || !field?.attachment) {
       fail(400, "invalid_attachment", "ช่องนำไฟล์ออกไม่ถูกต้อง ซ้ำ หรือมีไฟล์ใหม่พร้อมกัน");
     }
-    seen.add(removal.bindingId);
+    seen.add(key);
   }
   if (
     (files.size || seen.size) &&
@@ -88,7 +95,7 @@ const validateAttachmentRemovals = (
 export async function nativeResponseRequest(
   request: Request,
   pictureFields: readonly ResponsePictureManifestField[],
-  bindings?: SpreadsheetBindings
+  bindings?: SpreadsheetBindings | SpreadsheetContract
 ): Promise<NativeResponseRequest> {
   const contentType = request.headers.get("content-type");
   if (!contentType || !/^multipart\/form-data(?:\s*;|$)/iu.test(contentType)) {
@@ -103,11 +110,23 @@ export async function nativeResponseRequest(
     (total, field) => total + (field.pictureMaxBytes ?? 0),
     0
   );
-  const attachmentFields =
+  const scalarAttachments =
     bindings?.fields.filter((field) => field.attachment) ?? [];
-  const maximumBodyBytes = attachmentFields.length
+  const tableAttachments =
+    bindings?.table?.columns.filter((field) => field.attachment) ?? [];
+  const body =
+    bindings && "locations" in bindings && bindings.table
+      ? bindings.locations[bindings.table.anchor]
+      : undefined;
+  if (tableAttachments.length && !body) {
+    fail(409, "invalid_attachment", "ยังยืนยันขอบเขตแถวของเอกสารปัจจุบันไม่ได้");
+  }
+  const slotCount =
+    scalarAttachments.length +
+    tableAttachments.length * (body ? body.lastRow - body.firstRow + 1 : 0);
+  const maximumBodyBytes = slotCount
     ? imageByteLimit +
-      attachmentFields.length * 10_000_000 +
+      slotCount * 10_000_000 +
       maxNativePictureMultipartOverheadBytes
     : Math.min(
         maxTemplateArchiveExpandedBytes +
@@ -148,9 +167,34 @@ export async function nativeResponseRequest(
       continue;
     }
     if (key.startsWith("attachment:")) {
-      const id = key.slice("attachment:".length);
-      const field = attachmentFields.find((candidate) => candidate.id === id);
-      if (!field || attachments.has(id) || !(value instanceof File)) {
+      const suffix = key.slice("attachment:".length);
+      let bindingId = suffix;
+      let rowIndex: number | null = null;
+      if (suffix.startsWith("%5B")) {
+        let slot: unknown;
+        try {
+          slot = JSON.parse(decodeURIComponent(suffix));
+        } catch {
+          fail(400, "invalid_attachment", "ตำแหน่งไฟล์รายแถวไม่ถูกต้อง");
+        }
+        const parsed = z
+          .tuple([z.string().min(1), z.number().int().nonnegative()])
+          .safeParse(slot);
+        if (!parsed.success) {
+          fail(400, "invalid_attachment", "ตำแหน่งไฟล์รายแถวไม่ถูกต้อง");
+        }
+        [bindingId, rowIndex] = parsed.data;
+      }
+      const field =
+        rowIndex === null
+          ? bindings?.fields.find(
+              (candidate) => candidate.id === bindingId && candidate.attachment
+            )
+          : bindings?.table?.columns.find(
+              (candidate) => candidate.id === bindingId && candidate.attachment
+            );
+      const slotKey = attachmentSlotKey(bindingId, rowIndex);
+      if (!field || attachments.has(slotKey) || !(value instanceof File)) {
         fail(400, "invalid_attachment", "ช่องแนบไม่ตรงกับสัญญาฟอร์มหรือซ้ำ");
       }
       const bytes = await value.arrayBuffer();
@@ -158,10 +202,10 @@ export async function nativeResponseRequest(
         fail(
           413,
           "invalid_attachment",
-          `${field.label}: ${bytes.byteLength} bytes เกิน 10,000,000 bytes`
+          `${field.label}${rowIndex === null ? "" : ` / แถว ${rowIndex + 1}`}: ${bytes.byteLength} bytes เกิน 10,000,000 bytes`
         );
       }
-      attachments.set(id, value);
+      attachments.set(slotKey, value);
       continue;
     }
     if (!key.startsWith("picture:") || typeof value === "string") {

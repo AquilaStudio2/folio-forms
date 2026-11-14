@@ -111,6 +111,7 @@ builder.CloseFile();`);
       expect(extractSpreadsheetData(workbook, contract, true)).toEqual({
         data: values,
         errors: [],
+        rowIndices: [0],
       });
       const { names } = workbookXml(bytes);
       const anchors = spreadsheetBindingAnchors(bindings).map(
@@ -182,6 +183,7 @@ builder.CloseFile();`);
         expect(extractSpreadsheetData(workbook, contract, true)).toEqual({
           data: values,
           errors: [],
+          rowIndices: [0],
         });
       }
     }, 120_000);
@@ -271,7 +273,7 @@ builder.CloseFile();`);
           resolveSpreadsheetContract(bindings, workbook),
           true
         )
-      ).toEqual({ data: values, errors: [] });
+      ).toEqual({ data: values, errors: [], rowIndices: [0] });
     }, 120_000);
 
     test("tracked column identities remain usable after response row insertions/deletions", async () => {
@@ -301,7 +303,11 @@ builder.CloseFile();`);
             resolveSpreadsheetContract(bindings, workbook),
             true
           )
-        ).toEqual({ data: values, errors: [] });
+        ).toEqual({
+          data: values,
+          errors: [],
+          rowIndices: [name === "row-added.xlsx" ? 1 : 0],
+        });
       }
     }, 120_000);
   }

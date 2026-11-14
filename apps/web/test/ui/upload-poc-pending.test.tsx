@@ -21,6 +21,7 @@ const options = {
     locations: { folio_body: { firstRow: 6, lastRow: 8 } },
     table: {
       anchor: "folio_body",
+      id: "folio_body",
       columns: [
         {
           attachment: { category: "หลักฐาน" },
@@ -46,6 +47,14 @@ const message = (extra: Record<string, unknown> = {}) => ({
   ...extra,
 });
 
+const sameRowsTransition = {
+  fromDocumentKey: "draft-1",
+  toDocumentKey: "draft-2",
+  tableBindingId: "folio_body",
+  oldRowCount: 3,
+  newRowCount: 3,
+  rowMapping: [0, 1, 2],
+};
 describe("local POC pending files", () => {
   it("keeps scalar removal local until explicit save and preserves a newer removal across an older receipt", async () => {
     sessionStorage.clear();
@@ -106,19 +115,16 @@ describe("local POC pending files", () => {
       store.handle(message({ ...slot, type: "pending-file-remove" }), host);
       store.complete("removed");
       expect(store.hasPending()).toBe(true);
-      expect(
+      expect(() =>
         store.handle(
           message({
             ...slot,
             documentKey: "draft-2",
             type: "pending-file-get",
           }),
-          {
-            ...host,
-            documentKey: "draft-2",
-          }
+          { ...host, documentKey: "draft-2" }
         )
-      ).toMatchObject({ removal: true, hasPending: true });
+      ).toThrow(/ยืนยันการย้าย/u);
       await store.save(
         message({
           action: "save-draft",
@@ -212,7 +218,7 @@ describe("local POC pending files", () => {
       });
       store.handle(message({ ...slot, type: "pending-file-remove" }), host);
       expect(store.hasPending()).toBe(true);
-      expect(() =>
+      expect(
         store.handle(
           message({
             ...slot,
@@ -221,7 +227,24 @@ describe("local POC pending files", () => {
           }),
           host
         )
-      ).toThrow();
+      ).toMatchObject({ allowed: true, hasPending: true });
+      expect(() =>
+        store.handle(
+          message({
+            ...slot,
+            type: "pending-file-get",
+            documentKey: "draft-2",
+          }),
+          { ...host, documentKey: "draft-2" }
+        )
+      ).toThrow(/ยืนยันการย้าย/u);
+      expect(
+        store.handle(message({ ...slot, type: "pending-file-get" }), host)
+      ).toMatchObject({
+        removal: true,
+        hasPending: true,
+        saved,
+      });
       const replacement = new File([], "empty");
       store.handle(
         message({ ...slot, type: "pending-file-set", file: replacement }),
@@ -476,7 +499,10 @@ describe("local POC pending files", () => {
       expect(sessionStorage.getItem(key)).toBe(previous);
       expect([...store.snapshot().values()]).toEqual([selected]);
       expect(await store.pendingOperation(host)).toMatchObject(original);
-      store.complete("old-completed");
+      store.complete("old-completed", host, {
+        documentKey: "draft-2",
+        attachmentTransition: sameRowsTransition,
+      });
       expect([...store.snapshot().values()]).toEqual([selected]);
       const nextOptions = { ...host, documentKey: "draft-2" };
       const accepted = await store.save(
@@ -633,6 +659,10 @@ describe("local POC pending files", () => {
         options
       )
     ).toMatchObject({ allowed: true, hasPending: true });
+    store.complete("append", options, {
+      documentKey: "draft-2",
+      attachmentTransition: { ...sameRowsTransition, newRowCount: 4 },
+    });
     const refreshed = {
       ...options,
       bridgeId: "next-bridge",
@@ -658,7 +688,7 @@ describe("local POC pending files", () => {
         refreshed
       ).filename
     ).toBeNull();
-    expect(
+    expect(() =>
       store.handle(
         message({
           bridgeId: "next-bridge",
@@ -666,8 +696,9 @@ describe("local POC pending files", () => {
           scopeIdentity: "other",
         }),
         { ...refreshed, scopeIdentity: "other" }
-      ).filename
-    ).toBeNull();
+      )
+    ).toThrow(/บันทึกหรือยกเลิก/u);
+    expect([...store.snapshot().values()]).toContain(second);
   });
   it.each([
     { bridgeId: "wrong" },
@@ -705,7 +736,6 @@ describe("local POC pending files", () => {
       "save-template",
       "save-correction",
       "save-correction-workspace",
-      "delete-row",
     ]) {
       expect(() =>
         store.handle(message({ type: "pending-file-check", action }), options)
@@ -721,6 +751,16 @@ describe("local POC pending files", () => {
         options
       )
     ).toThrow(/ท้ายตาราง/u);
+    expect(
+      store.handle(
+        message({
+          type: "pending-file-check",
+          action: "delete-row",
+          rowIndex: 1,
+        }),
+        options
+      )
+    ).toMatchObject({ allowed: true, hasPending: true });
   });
   it("rejects non-Files and files over the stated 10MB POC limit without replacing the retained file", () => {
     const store = new UploadPocPendingFiles();
@@ -781,7 +821,7 @@ describe("local POC pending files", () => {
       }),
       options
     );
-    expect(() =>
+    expect(
       store.handle(
         message({
           action: "save-correction-workspace",
@@ -789,7 +829,7 @@ describe("local POC pending files", () => {
         }),
         correction
       )
-    ).toThrow(/ยังอยู่เฉพาะหน้านี้/u);
+    ).toMatchObject({ allowed: true, hasPending: true });
   });
   it("clears only accepted File objects and preserves a newer selection across document-key transition", () => {
     const store = new UploadPocPendingFiles();
@@ -807,6 +847,10 @@ describe("local POC pending files", () => {
     store.accept(accepted);
     expect(store.hasPending()).toBe(true);
     expect([...store.snapshot().values()]).toEqual([replacement]);
+    store.complete("ordinary-save", options, {
+      documentKey: "draft-2",
+      attachmentTransition: sameRowsTransition,
+    });
     store.handle(
       message({
         type: "pending-file-check",
@@ -819,4 +863,152 @@ describe("local POC pending files", () => {
     store.accept(store.snapshot());
     expect(store.hasPending()).toBe(false);
   });
+  it("moves original File identities and removals only through verified physical row transitions", () => {
+    const store = new UploadPocPendingFiles();
+    const selected = new File([], "empty.TXT");
+    store.handle(
+      message({ rowIndex: 2, type: "pending-file-set", file: selected }),
+      options
+    );
+    store.handle(
+      message({ rowIndex: 1, type: "pending-file-remove" }),
+      options
+    );
+    expect(() =>
+      store.handle(
+        message({
+          action: "delete-row",
+          rowIndex: 1,
+          type: "pending-file-check",
+        }),
+        options
+      )
+    ).toThrow(/บันทึกหรือยกเลิก/u);
+    expect(
+      store.handle(
+        message({
+          action: "delete-row",
+          rowIndex: 0,
+          type: "pending-file-check",
+        }),
+        options
+      )
+    ).toMatchObject({ allowed: true });
+    expect(() =>
+      store.complete("stale", options, {
+        documentKey: "draft-2",
+        attachmentTransition: {
+          ...sameRowsTransition,
+          fromDocumentKey: "older",
+        },
+      })
+    ).toThrow(/mapping/u);
+    expect(store.snapshot().get(JSON.stringify(["folio_file", 2]))).toBe(
+      selected
+    );
+    store.complete("delete", options, {
+      documentKey: "draft-2",
+      attachmentTransition: {
+        ...sameRowsTransition,
+        newRowCount: 2,
+        rowMapping: [null, 0, 1],
+      },
+    });
+    const next = {
+      ...options,
+      documentKey: "draft-2",
+      spreadsheetBindings: {
+        ...options.spreadsheetBindings,
+        locations: { folio_body: { firstRow: 6, lastRow: 7 } },
+      },
+    };
+    expect(store.snapshot().get(JSON.stringify(["folio_file", 1]))).toBe(
+      selected
+    );
+    expect(
+      store.handle(message({ documentKey: "draft-2", rowIndex: 0 }), next)
+    ).toMatchObject({ removal: true });
+    expect(
+      store.handle(message({ documentKey: "draft-2", rowIndex: 1 }), next)
+    ).toMatchObject({ filename: "empty.TXT", size: 0 });
+  });
+  it("reads saved table slots by physical metadata rather than compact array position or dotted root tags", () => {
+    const store = new UploadPocPendingFiles();
+    const host = {
+      ...options,
+      savedData: {
+        items: [
+          {
+            file: {
+              row_index: 2,
+              file_link: "https://files.test/two",
+              original_name: "two.TXT",
+              size_bytes: 0,
+            },
+          },
+        ],
+      },
+    };
+    expect(store.handle(message(), host).saved).toBeNull();
+    expect(store.handle(message({ rowIndex: 2 }), host).saved).toEqual({
+      file_link: "https://files.test/two",
+      original_name: "two.TXT",
+      size_bytes: 0,
+    });
+  });
+});
+
+it("sends table Files and removals through the existing multipart save while retaining original File identity", async () => {
+  sessionStorage.clear();
+  const store = new UploadPocPendingFiles();
+  const selected = new File([], "empty.TXT");
+  const host = { ...options, publicId: "form", responseId: "response" };
+  store.handle(
+    message({ rowIndex: 1, file: selected, type: "pending-file-set" }),
+    host
+  );
+  store.handle(message({ rowIndex: 2, type: "pending-file-remove" }), host);
+  const post = vi.spyOn(api, "apiPostFormData").mockResolvedValue({
+    action: "save-draft",
+    operationId: "row-files",
+    operationCapability: "capability",
+    status: "pending",
+  });
+  try {
+    await store.save(
+      message({
+        action: "save-draft",
+        body: {},
+        capability: "capability",
+        snapshotUrl: "http://office.test/snapshot.xlsx",
+      }),
+      host
+    );
+    const multipart = post.mock.calls[0]?.[1];
+    if (!(multipart instanceof FormData)) {
+      throw new Error(
+        "The explicit table save must use the existing multipart transport"
+      );
+    }
+    const file = multipart.get(
+      `attachment:${encodeURIComponent(JSON.stringify(["folio_file", 1]))}`
+    );
+    expect(file).toBeInstanceOf(File);
+    if (!(file instanceof File)) {
+      throw new Error("Table upload part must contain original bytes");
+    }
+    expect(file.name).toBe("empty.TXT");
+    expect(file.size).toBe(0);
+    expect(
+      JSON.parse(String(multipart.get("payload"))).attachmentRemovals
+    ).toEqual([{ bindingId: "folio_file", rowIndex: 2 }]);
+    expect(store.snapshot().get(JSON.stringify(["folio_file", 1]))).toBe(
+      selected
+    );
+    store.complete("row-files");
+    expect(store.hasPending()).toBe(false);
+  } finally {
+    vi.restoreAllMocks();
+    sessionStorage.clear();
+  }
 });

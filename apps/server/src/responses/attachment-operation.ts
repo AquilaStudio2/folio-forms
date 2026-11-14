@@ -7,7 +7,7 @@ import {
   cancelAttachmentBatch,
   cleanupCommittedAttachments,
   requireAttachmentMutationReady,
-  uploadScalarAttachments,
+  uploadAttachments,
 } from "../ecm/attachments";
 import type { EcmClient } from "../ecm/client";
 import type { ActionEditorAuthorization } from "../editor/authorization";
@@ -30,6 +30,7 @@ import { createOperation } from "../operations/create";
 import { updateOperationFailed } from "../operations/lifecycle";
 import type { OperationMetadata } from "../operations/model";
 import { objectKey } from "../storage";
+import { attachmentSlotKey } from "./attachment-data";
 
 const checkpoint = (input: JsonRecord): string => {
   const result = z.uuid().safeParse(input.checkpoint);
@@ -347,10 +348,9 @@ export const startAttachmentOperation = async (options: {
         snapshot,
         new Set(),
         undefined,
-        (contract, data, savedData) =>
-          uploadScalarAttachments({
+        (contract, savedData, workbook) =>
+          uploadAttachments({
             contract,
-            data,
             ecm,
             files,
             operation,
@@ -358,13 +358,19 @@ export const startAttachmentOperation = async (options: {
               z
                 .array(
                   z
-                    .object({ bindingId: z.string(), rowIndex: z.null() })
+                    .object({
+                      bindingId: z.string(),
+                      rowIndex: z.number().int().nonnegative().nullable(),
+                    })
                     .strict()
                 )
                 .parse(input.attachmentRemovals ?? [])
-                .map((removal) => removal.bindingId)
+                .map((removal) =>
+                  attachmentSlotKey(removal.bindingId, removal.rowIndex)
+                )
             ),
             savedData,
+            workbook,
           })
       );
       await cleanupCommittedAttachments(operation.id, ecm);
