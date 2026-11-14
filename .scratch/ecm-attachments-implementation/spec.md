@@ -1,6 +1,6 @@
 # Folio Excel ECM/DCM Attachments — Implementation Specification
 
-Status: ready-for-agent
+Status: resolved
 Decision baseline: resolved planning decisions และ amendments ที่อ้างอิงใน Further Notes
 
 ## Problem Statement
@@ -373,15 +373,15 @@ ECM มีข้อจำกัดสำคัญตามคำชี้แจ�
 - ยังไม่ได้รับหรือทดสอบ dedicated Folio account; ต้องมีสิทธิ์ category/upload/delete, secret/key provisioning, endpoint/transport trust และ coordinated callers จริงก่อนเปิดใช้งาน
 - ยังไม่ยืนยัน real login expiry format/timezone, success/error semantics, token scope และ timing; design budgets ไม่ใช่ค่าที่วัดจริง
 - ยังไม่ยืนยัน actual provider response shapes, zero-byte/encrypted/10 MB acceptance, safe exact original-byte retrieval, redirect behavior, overwrite/delete outcomes และ request settlement จากระบบจริง
-- ยังไม่ยืนยัน Operation/callback/upload deadlines, PostgreSQL race/fencing, crash recovery, actual browser XLSX/PDF round trip หรือ operator procedure ใน runtime จริง ต้องพิสูจน์ก่อนเปิดใช้งาน ไม่ถือ prototype walkthrough/model assertions เป็นหลักฐานแทน
+- มีหลักฐาน local isolated runtime, PostgreSQL coordination, recovery และ actual browser XLSX/PDF ตาม Implementation resolution ด้านล่าง แต่ยังไม่ได้ยืนยัน deadlines, deployed-topology races/fencing, crash recovery และ operator procedure กับ ECM จริง ต้องผ่าน release gates ก่อนเปิดใช้งาน ไม่ถือ controlled provider หรือ prototype เป็นหลักฐานแทนระบบจริง
 - ต้องมี PM/ECM operator ที่ยืนยัน sender/request settlement และ cleanup ได้จริง หากไม่มีให้คง blocked state ไม่ลด requirement เป็นการค้นไม่พบหรือกดรับทราบ
 - Central PDMS Knowledge recall ล้มเหลวในรอบนี้ **ไม่ได้รับ Knowledge กลางและไม่อ้างว่า recall สำเร็จ** สเปกอ้าง current Folio source และ resolved planning documents ตามขอบเขตที่อ่าน ไม่ใช้ Dev Memory เป็นหลักฐาน business logic
 
 ### Handoff
 
-สเปกนี้ครอบคลุม 112 user stories และ full end-to-end intended behavior ผู้ใช้ยืนยัน test seam, 8 vertical implementation slices และ dependencies ก่อนเผยแพร่แล้ว ทุกตั๋วมี Status: ready-for-agent แต่ต้องทำตาม Blocked by ไม่ถือ slice ใดหรือ provider double ว่า feature ทั้งหมดพร้อมเปิดใช้
+สเปกนี้ครอบคลุม 112 user stories และ full end-to-end intended behavior ผู้ใช้ยืนยัน test seam, 8 vertical implementation slices และ dependencies ก่อนเผยแพร่แล้ว ขณะเผยแพร่ทุกตั๋วมี Status: ready-for-agent และต้องทำตาม Blocked by ไม่ถือ slice ใดหรือ provider double ว่า feature ทั้งหมดพร้อมเปิดใช้
 
-งานที่ส่งมอบรอบนี้มีเฉพาะสเปกกับตั๋ว ไม่ได้แก้ application, migrate ข้อมูล, deploy หรือเรียก ECM/DB จริง ความพร้อมบัญชี/provider/operator และ runtime acceptance ยังเป็น release gates ตามรายการข้างต้น
+บันทึกสถานะขณะเผยแพร่สเปก: งานรอบนั้นมีเฉพาะสเปกกับตั๋ว ไม่ได้แก้ application, migrate ข้อมูล, deploy หรือเรียก ECM/DB จริง สถานะ implementation ปัจจุบันแยกไว้ด้านล่าง ความพร้อมบัญชี/provider/operator ยังคงเป็น release gates
 
 
 ### Implementation tickets
@@ -394,3 +394,21 @@ ECM มีข้อจำกัดสำคัญตามคำชี้แจ�
 6. [แนบไฟล์รายแถวโดยรักษา mapping](issues/06-table-row-attachments.md)
 7. [Correction ประวัติ และส่งออกฉบับที่เลือก](issues/07-corrections-history-exports.md)
 8. [ลบ Response พร้อมไฟล์ที่ไม่มีการอ้างถึง](issues/08-response-deletion-cleanup.md)
+
+### Implementation resolution
+
+- Implementation tickets ทั้งแปดใบ resolved และรวมอยู่บน branch `feat/ecm-attachments` ที่ `/tmp/folio-ecm-implementation-integration` ไม่มี implementation ticket ค้าง ไม่เปลี่ยน parent planning map หรือ resolved business decisions
+- Final reviewed application source คือ `530410f7527bbe66d369a0359c57ec1c0898f600`; generated workflow/documentation checkpoint คือ `c63a90529b3c5b9146254ef548f16cdc41efbfa7` Parent ตรวจ exact source/index/filesystem inclusion ของ corrective delta ทั้ง 13 paths ก่อนสร้างเอกสาร และไม่ได้เปลี่ยน application bytes หลัง gates
+- Final review ทั้ง standards และ spec ตรวจ corrective delta แล้วไม่เหลือ concrete code defect แก้ root cause ของ Correction ที่เคยทิ้ง newer pending File/removal หลัง accepted snapshot สำเร็จ, เปลี่ยน operator confirmation เป็น native modal และเปิดรับหลาย valid attachment slots เกิน listener cap เดิมโดยยังตรวจ per-slot/per-file/streamed byte budgets และ JSON boundaries
+- Final automated evidence: root formatting/lint ของ supported changed source/test files ผ่าน 11 paths โดยไม่มี warning/error; full ECM HTTP 78 tests/2,995 assertions ผ่าน รวม actual TCP multipart 14 × 10,000,000 bytes และ actual chunked over-budget rejection; full UI 262 tests/18 suites ผ่าน; integration typecheck 5/5 และ build 3/3 ผ่าน
+- Pure suites ผ่าน: plugin 297/1,409 assertions, spreadsheet units 116/301, form lifecycle 12/75 และ native CLI 15/264 จากสามไฟล์ใน invocation เดียว Cross-feature HTTP regressions รันแบบ serial ครบ 18 commands ผ่าน 225 test invocations/10,976 assertions ไม่มี failure/skip ตัวเลขนี้ไม่ใช่จำนวน unique tests ที่นำมาบวกกับ suite อื่น
+- หลังรวม source แล้ว รัน actual integration TCP smoke อีกครั้งผ่าน 2 tests/105 assertions พร้อม forced typecheck 5/5 และ build 3/3 ไม่ใช้ application-handle-only proof แทน actual listener
+- Native acceptance ต่อจากปุ่ม PoC เดิมใช้ isolated synthetic accounts/forms, actual ONLYOFFICE, PostgreSQL/object storage และ controlled HTTP provider ครอบคลุม accepted scalar/table/row mapping, Draft replacement/metadata/removal, recovery/fencing, Correction/history/export และ Response-deletion surfaces ตาม ticket evidence ไม่ใช่ live ECM หรือ full 112-story native-wide pass
+- Final Correction race smoke: accepted A 68 bytes สำเร็จเป็น revision 4 ขณะที่ original popup รับ newer B 97 bytes; หลัง completion คง live editor/popup และ actual B File เดิมผ่าน Stay/Escape จนผู้ใช้ explicit discard-and-exit Canonical revision ใหม่มี A เท่านั้น ไม่มี B upload/version และไม่กด Save ซ้ำกับ completed workspace Precompletion host B identity/hash และ native beforeunload dismissal ไม่ได้วัดใน scenario สุดท้ายนี้
+- Native operator dialog ตรวจ actual `:modal`, initial Cancel focus, Escape/Cancel คืน focus ให้ exact trigger และไม่มี API mutation ระหว่างยกเลิก หนึ่ง Tab sample อยู่ที่ BODY และไม่ได้วัด `document.hasFocus` จึงไม่อ้างว่าทุก Tab sample อยู่ใน dialog
+- Final actual UI downloads อีกแปดไฟล์ครอบคลุม Admin/Viewer × latest Correction 4/older Correction 3 × XLSX/PDF ตรวจ actual bytes/full SHA, workbook hyperlink และ PDF URL annotations ตรงฉบับ ไม่มี newer B/token/PoC control รั่วไปใน export คง evidence exports เดิมและ page-layout behavior ของ URL ยาวไว้ ไม่อ้างว่าออกแบบ layout ใหม่
+- Protected old history, references, unknown-operation/deleted-case records และ canonical packages เดิมไม่เปลี่ยน Original public files 12 ไฟล์ยังอ่าน anonymous ได้ตรง bytes/hash การเปลี่ยนไฟล์ disposable 56 เป็น 60 bytes และ cleanup เดิมเป็น 404 เป็นผลที่อนุญาตแยกต่างหาก Final native editor leases เป็นศูนย์ ไม่มี File/dialog/iframe หรือ held provider receipt ค้าง
+- Workflow build/check ผ่านและ inventory pin source `530410f` ครบ 310 runtime/deployment files, 23 rendered diagrams และ sharing ZIP Parent เปิด generated HTML จริง ตรวจ arrows/continuation branches ของ diagrams 09/21, zoom/Fit, status table, 131 source links ที่ pin commit และ local anchors ไม่มี dangling anchor การเข้าถึง unpushed commit ผ่าน GitHub ไม่ได้ยืนยัน
+- Context pointers: `/tmp/ecm-final-fixer-source-ready.txt`, `/tmp/ecm-final-integration-inclusion.json`, `/tmp/ecm-final-regression-handoff.txt`, `/tmp/ecm-final-native-handoff.txt`, `/tmp/ecm-final-native-final-proof.json`, `/tmp/ecm-final-accepted-downloads/manifest.json`, `/tmp/ecm-final-merger-handoff.txt` และ `/tmp/ecm-final-guide-visual-proof.json` Allocation ครบ 112 stories ไม่ใช่หลักฐานว่าทุก story ผ่าน native test
+- **Release gates ที่ยังเปิด:** dedicated Folio credentials/permissions/key provisioning, actual provider response/expiry/transport/original-byte/zero-byte/encrypted/10 MB contracts, deployed topology และ authorized PM/ECM request-settlement/uncertain DELETE proof ไม่มี trusted proof contract สำหรับ receiptless unknown หรือ dispatched unknown DELETE จึงคง blocked ไม่เพิ่ม checkbox/free text/retry เพื่อปลดเอง
+- ปิด implementation ไม่ใช่อนุมัติ production หรือ human business review เพิ่มเติม รอบนี้ไม่ push, เปิด PR, deploy, เรียก live ECM/PDMS หรือแก้ข้อมูล production
