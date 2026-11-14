@@ -16,7 +16,7 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { API_ORIGIN, SESSION_KEY } from "@/lib/api";
-import type { AdminResult, Role } from "@/lib/api";
+import type { AdminResult, AttachmentFollowUp, Role } from "@/lib/api";
 import { routeTree } from "@/routeTree.gen";
 
 const result = (id = "11111111-1111-4111-8111-111111111111"): AdminResult => ({
@@ -39,6 +39,7 @@ const result = (id = "11111111-1111-4111-8111-111111111111"): AdminResult => ({
 const fetchMock = vi.fn<typeof fetch>();
 let sessionRole: Role;
 let listResponse: () => Response | Promise<Response>;
+let attachmentFollowUps: AttachmentFollowUp[];
 
 let requestedPage = 1;
 const resultsPayload = (results: AdminResult[], total = results.length) => ({
@@ -87,6 +88,7 @@ const mount = async () => {
 beforeEach(() => {
   sessionRole = "admin";
   listResponse = () => Response.json(resultsPayload([result()]));
+  attachmentFollowUps = [];
   localStorage.setItem(SESSION_KEY, "results-reader-test-token");
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (input) => {
@@ -101,6 +103,9 @@ beforeEach(() => {
           role: sessionRole,
         },
       });
+    }
+    if (pathname === "/api/admin/results/attachment-follow-up") {
+      return Response.json({ followUps: attachmentFollowUps });
     }
     if (pathname === "/api/admin/results") {
       requestedPage = Number(
@@ -840,3 +845,87 @@ describe("Fiscal year results search", () => {
     ).not.toBeInTheDocument();
   });
 });
+
+it.each(["admin", "viewer"] as const)(
+  "%s can expand retained attachment tracking without reviving a deleted Response",
+  async (role) => {
+    sessionRole = role;
+    listResponse = () => Response.json(resultsPayload([]));
+    attachmentFollowUps = [
+      {
+        actorId: "original-owner",
+        canFence: false,
+        checkpoint: "55555555-5555-4555-8555-555555555555",
+        createdAt: "2026-11-14T03:00:00.000Z",
+        documentKey: "original-canonical",
+        formId: "44444444-4444-4444-8444-444444444444",
+        formPublicId: "0123456789abcdef0123456789abcdef",
+        formTitle: "Retained file tracking",
+        generation: 1,
+        mutationHeld: true,
+        nextAction: "Admin เริ่มลบได้เฉพาะ receipt ที่ยืนยันแล้วและยังไม่เคยส่ง DELETE",
+        operationId: "22222222-2222-4222-8222-222222222222",
+        reason: "ยังไม่ได้บันทึกคำตอบใหม่ ต้องจัดการไฟล์รอบที่ยกเลิกให้ครบ",
+        responseDeleted: true,
+        responseId: "33333333-3333-4333-8333-333333333333",
+        state: "cleanup-pending",
+        versions: [
+          {
+            bindingId: "folio_attachment",
+            canDelete: true,
+            category: "หลักฐาน",
+            cleanupState: "pending",
+            confirmedAt: null,
+            confirmedBy: null,
+            deleteAttemptedAt: null,
+            documentNumber: "DOC",
+            evidence: null,
+            filename: "DOC-unique-หลักฐาน.TXT",
+            fiscalYear: "2570",
+            generation: 2,
+            id: "66666666-6666-4666-8666-666666666666",
+            originalName: "original.TXT",
+            receivedAt: "2026-11-14T03:00:01.000Z",
+            referenced: false,
+            requestSettledAt: "2026-11-14T03:00:01.000Z",
+            rowIndex: 2,
+            sentAt: "2026-11-14T03:00:00.000Z",
+            sizeBytes: 49,
+            state: "received",
+            tag: "items.proof",
+          },
+        ],
+      },
+    ];
+    const user = userEvent.setup();
+    await mount();
+    await user.click(await screen.findByText(/Retained file tracking —/u));
+    expect(screen.getByText(/ลบคำตอบแล้ว \(หลักฐานติดตามเท่านั้น\)/u)).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "items.proof / แถว 3 (index 2)" })
+    ).toBeVisible();
+    expect(
+      screen.queryByRole("link", { name: "เปิดอ่านคำตอบที่บันทึกไว้" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { exact: true, name: "เปิดอ่าน" })
+    ).not.toBeInTheDocument();
+    if (role === "admin") {
+      await user.click(
+        screen.getByRole("button", { name: "เริ่มลบไฟล์ค้างครั้งแรก" })
+      );
+      expect(
+        screen.getByRole("dialog", { name: "ยืนยันการลบไฟล์ค้างครั้งแรก" })
+      ).toBeVisible();
+      expect(screen.getByText(/ไฟล์ลบแล้วกู้คืนไม่ได้/u)).toBeVisible();
+      await user.click(screen.getByRole("button", { name: "ยกเลิก" }));
+    } else {
+      expect(
+        screen.queryByRole("button", { name: "เริ่มลบไฟล์ค้างครั้งแรก" })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "หยุดรอบเดิมและติดตามผล" })
+      ).not.toBeInTheDocument();
+    }
+  }
+);

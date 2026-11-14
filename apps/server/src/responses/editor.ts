@@ -15,7 +15,10 @@ import {
   readSpreadsheetWorkbook,
   XLSX_CONTENT_TYPE,
 } from "../documents/spreadsheets/workbook";
-import { attachmentCleanupWarning } from "../ecm/attachments";
+import {
+  attachmentCleanupWarning,
+  attachmentMutationNotice,
+} from "../ecm/attachments";
 import { actionEditorCapability } from "../editor/authorization";
 import type {
   EditorLeaseGrant,
@@ -470,27 +473,13 @@ export async function userEditorConfig(
       ? { pdmsCatalogSessionId: pdmsProjectCatalog.sessionId }
       : {}),
   };
+  const attachmentNotice =
+    form.documentKind === "xlsx"
+      ? await attachmentMutationNotice(response.id)
+      : null;
   return {
     ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
-    attachmentNotice:
-      form.documentKind === "xlsx" &&
-      (await prisma.ecmAttachmentBatch.findFirst({
-        select: { operationId: true },
-        where: {
-          responseId: response.id,
-          state: {
-            in: [
-              "prepared",
-              "sending",
-              "unknown",
-              "canceling",
-              "cleanup-pending",
-            ],
-          },
-        },
-      }))
-        ? "ยังยืนยันผลไฟล์แนบรอบเดิมไม่ได้ ข้อมูลที่บันทึกเดิมยังอยู่ กรุณาติดต่อผู้ดูแลก่อนบันทึก ส่ง หรือลบคำตอบ"
-        : null,
+    attachmentNotice,
     ...editorConfig(
       {
         ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
@@ -504,6 +493,7 @@ export async function userEditorConfig(
           form.documentKind === "xlsx"
             ? await attachmentCleanupWarning(response.id)
             : null,
+        attachmentMutationNotice: attachmentNotice,
         attachmentSavedData: response.draftData,
         capabilities: {
           ...(form.documentKind === "xlsx" && requestedAction !== "submit"

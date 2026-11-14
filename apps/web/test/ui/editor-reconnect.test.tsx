@@ -758,6 +758,11 @@ it("keeps pending checkpoint recovery bounded and retryable without opening edit
     await screen.findByText(/ยังตรวจผลบันทึกรอบก่อนไม่ได้/u);
     expect(screen.queryByTitle("Office sandbox")).toBeNull();
     expect(sessionStorage.getItem(key)).toBe(previous);
+    expect(
+      screen.getByRole("button", {
+        name: "เปิดอ่าน Excel ฉบับที่บันทึกไว้",
+      })
+    ).toBeVisible();
     expect(transport.postForm).not.toHaveBeenCalled();
     transport.get
       .mockReset()
@@ -905,12 +910,23 @@ it("adopts only the fenced recovery lease and ignores a stale capability reply w
     },
   };
   const stale = createDeferred<typeof initial>();
-  transport.get
-    .mockReset()
-    .mockResolvedValueOnce(initial)
-    .mockReturnValueOnce(stale.promise)
-    .mockRejectedValueOnce(new ApiError(404, "not_found", "not admitted yet"))
-    .mockResolvedValue(fresh);
+  let configReads = 0;
+  transport.get.mockReset().mockImplementation((path: string) => {
+    if (path === "/api/responses/response/attachment-status") {
+      return Promise.resolve({ cleanupWarning: null, mutationNotice: null });
+    }
+    if (path.startsWith("/api/responses/response/attachment-operations/")) {
+      return Promise.reject(new ApiError(404, "not_found", "not admitted yet"));
+    }
+    configReads += 1;
+    if (configReads === 1) {
+      return Promise.resolve(initial);
+    }
+    if (configReads === 2) {
+      return stale.promise;
+    }
+    return Promise.resolve(fresh);
+  });
   transport.postForm.mockRejectedValue(new TypeError("transport interrupted"));
   transport.post.mockResolvedValue({
     admission: "not-admitted",
@@ -1005,9 +1021,14 @@ it("adopts only the fenced recovery lease and ignores a stale capability reply w
       requestId: "retained",
       type: "pending-file-get",
     });
-    expect(plugin.send).toHaveBeenLastCalledWith(
-      expect.objectContaining({ filename: "proof.bin", requestId: "retained" }),
-      window.location.origin
+    await waitFor(() =>
+      expect(plugin.send).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          filename: "proof.bin",
+          requestId: "retained",
+        }),
+        window.location.origin
+      )
     );
     expect(dirty).toHaveBeenLastCalledWith(true);
     expect(transport.postForm).toHaveBeenCalledTimes(1);
@@ -1048,8 +1069,11 @@ it("keeps POC Files in the host across native remount and rejects messages outsi
   transport.get
     .mockReset()
     .mockResolvedValueOnce(firstConfig)
-    .mockImplementation((path: string) =>
-      Promise.resolve(
+    .mockImplementation((path: string) => {
+      if (path === "/api/responses/response/attachment-status") {
+        return Promise.resolve({ cleanupWarning: null, mutationNotice: null });
+      }
+      return Promise.resolve(
         path === "/api/operations/project-operation"
           ? {
               operation: {
@@ -1071,8 +1095,8 @@ it("keeps POC Files in the host across native remount and rejects messages outsi
               },
             }
           : nextConfig
-      )
-    );
+      );
+    });
   const onBridge = vi.fn();
   const view = render(
     <OnlyOfficeEditor
@@ -1112,19 +1136,23 @@ it("keeps POC Files in the host across native remount and rejects messages outsi
   expect(outsider).not.toHaveBeenCalled();
   unrelated.remove();
   send(picker.source, request);
-  expect(picker.send).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      filename: "proof.txt",
-      size: 5,
-      type: "pending-file-result",
-    }),
-    window.location.origin
+  await waitFor(() =>
+    expect(picker.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        filename: "proof.txt",
+        size: 5,
+        type: "pending-file-result",
+      }),
+      window.location.origin
+    )
   );
   picker.send.mockClear();
   send(picker.source, { ...request, bindingId: "folio_unknown" });
-  expect(picker.send).toHaveBeenLastCalledWith(
-    expect.objectContaining({ error: expect.any(String) }),
-    window.location.origin
+  await waitFor(() =>
+    expect(picker.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ error: expect.any(String) }),
+      window.location.origin
+    )
   );
   send(picker.source, {
     action: "save-draft",
@@ -1164,9 +1192,11 @@ it("keeps POC Files in the host across native remount and rejects messages outsi
     file: undefined,
     type: "pending-file-get",
   });
-  expect(reconnected.send).toHaveBeenLastCalledWith(
-    expect.objectContaining({ filename: "proof.txt", size: 5 }),
-    window.location.origin
+  await waitFor(() =>
+    expect(reconnected.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ filename: "proof.txt", size: 5 }),
+      window.location.origin
+    )
   );
   expect(transport.post).not.toHaveBeenCalled();
 });
@@ -1192,8 +1222,11 @@ it("keeps removal dirty and export-blocking, rejects forged cancellation, and re
       },
     },
   };
-  transport.get.mockImplementation((path: string) =>
-    Promise.resolve(
+  transport.get.mockImplementation((path: string) => {
+    if (path === "/api/responses/response/attachment-status") {
+      return Promise.resolve({ cleanupWarning: warning, mutationNotice: null });
+    }
+    return Promise.resolve(
       path === "/api/operations/remove-op"
         ? {
             operation: {
@@ -1215,8 +1248,8 @@ it("keeps removal dirty and export-blocking, rejects forged cancellation, and re
             },
           }
         : initial
-    )
-  );
+    );
+  });
   transport.postForm.mockResolvedValue({
     action: "save-draft",
     operationCapability: "cap",
@@ -1265,9 +1298,11 @@ it("keeps removal dirty and export-blocking, rejects forged cancellation, and re
     "https://forged.test"
   );
   send(picker.source, { ...slot, type: "pending-file-get" });
-  expect(picker.send).toHaveBeenLastCalledWith(
-    expect.objectContaining({ removal: true }),
-    window.location.origin
+  await waitFor(() =>
+    expect(picker.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ removal: true }),
+      window.location.origin
+    )
   );
   expect(screen.getByText(warning)).toBeVisible();
   send(picker.source, {
@@ -1304,13 +1339,15 @@ it("keeps removal dirty and export-blocking, rejects forged cancellation, and re
   );
   expect(screen.getByText(warning)).toBeVisible();
   send(picker.source, { ...slot, type: "pending-file-get" });
-  expect(picker.send).toHaveBeenLastCalledWith(
-    expect.objectContaining({
-      attachmentCommitUnresolved: false,
-      hasPending: false,
-      removal: false,
-    }),
-    window.location.origin
+  await waitFor(() =>
+    expect(picker.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        attachmentCommitUnresolved: false,
+        hasPending: false,
+        removal: false,
+      }),
+      window.location.origin
+    )
   );
   transport.get.mockResolvedValue({
     ...initial,
@@ -1383,7 +1420,12 @@ it("blocks export during its own uncertain commit even when no File remains in m
   );
   send(picker.source, { type: "bridge-ready" });
   transport.postForm.mockRejectedValue(new TypeError("response lost"));
-  transport.get.mockRejectedValue(new TypeError("checkpoint unavailable"));
+  transport.get.mockImplementation((path: string) => {
+    if (path === "/api/responses/response/attachment-status") {
+      return Promise.resolve({ cleanupWarning: null, mutationNotice: null });
+    }
+    return Promise.reject(new TypeError("checkpoint unavailable"));
+  });
   send(picker.source, {
     action: "save-draft",
     body: {},
@@ -1449,12 +1491,14 @@ it.each(["draft", "correction"])(
       file: new File(["private"], "private.txt"),
       type: "pending-file-set",
     });
-    expect(picker.send).toHaveBeenLastCalledWith(
-      expect.objectContaining({
-        error: expect.stringContaining("Admin"),
-        unavailable: true,
-      }),
-      window.location.origin
+    await waitFor(() =>
+      expect(picker.send).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          error: expect.stringContaining("Admin"),
+          unavailable: true,
+        }),
+        window.location.origin
+      )
     );
     send(picker.source, {
       ...message,
@@ -2062,4 +2106,134 @@ it("keeps pending table bytes through a real host remount only after reading the
     )
   );
   view.unmount();
+});
+
+it("retains a File and dirty guard before held status, includes it in faster Save, and keeps it after status rejection", async () => {
+  const initial = {
+    ...exportConfig("document", "lease"),
+    bridge: {
+      ...exportConfig("document", "lease").bridge,
+      uploadPoc: {
+        ...uploadOptions("document", "editor-bridge"),
+        publicId: "form",
+        responseId: "response",
+      },
+    },
+  };
+  const heldStatus = createDeferred<{
+    cleanupWarning: null;
+    mutationNotice: null;
+  }>();
+  let statusRequests = 0;
+  transport.get.mockImplementation((path: string) => {
+    if (path === "/api/responses/response/attachment-status") {
+      statusRequests += 1;
+      if (statusRequests === 1) {
+        return heldStatus.promise;
+      }
+      return Promise.resolve({ cleanupWarning: null, mutationNotice: null });
+    }
+    return Promise.resolve(initial);
+  });
+  transport.postForm.mockResolvedValue({
+    action: "save-draft",
+    operationCapability: "original-capability",
+    operationId: "original-save",
+    status: "pending",
+  });
+  const capture = createRef<CaptureWorkbook>();
+  const dirty = vi.fn();
+  const view = render(
+    <OnlyOfficeEditor
+      captureWorkbookRef={capture}
+      configUrl="/editor-config"
+      onDirtyChange={dirty}
+      title="Held attachment status"
+    />
+  );
+  const selected = new File(["retained during status outage"], "retained.bin");
+  const statusError = new ApiError(
+    503,
+    "attachment_status_unavailable",
+    "ยังตรวจสถานะไฟล์แนบไม่ได้ กรุณารักษาไฟล์ในหน้านี้ ห้ามส่งไฟล์ซ้ำ"
+  );
+  try {
+    const office = (await screen.findByTitle(
+      "Office sandbox"
+    )) as HTMLIFrameElement;
+    const picker = pluginFrame(office);
+    send(picker.source, { type: "bridge-ready" });
+    const slot = {
+      bindingId: "folio_file",
+      documentKey: "document",
+      rowIndex: null,
+      scopeIdentity: "actor/response",
+      source: "folio-upload-poc",
+      tag: "file",
+    };
+    send(picker.source, {
+      ...slot,
+      file: selected,
+      requestId: "choose-held",
+      type: "pending-file-set",
+    });
+    expect(dirty).toHaveBeenLastCalledWith(true);
+    expect(
+      picker.send.mock.calls.some(
+        ([reply]) => reply.requestId === "choose-held"
+      )
+    ).toBe(false);
+    if (!capture.current) {
+      throw new Error("The actual host capture guard is unavailable");
+    }
+    await expect(capture.current()).rejects.toThrow(/ยังไม่บันทึก/u);
+    send(picker.source, {
+      ...slot,
+      action: "save-draft",
+      body: {},
+      capability: "capability",
+      requestId: "save-faster",
+      snapshotUrl: "http://office.test/current.xlsx",
+      type: "pending-file-save",
+    });
+    await waitFor(() => expect(transport.postForm).toHaveBeenCalledTimes(1));
+    const multipart = transport.postForm.mock.calls[0]?.[1];
+    const transmitted = multipart?.get("attachment:folio_file");
+    expect(transmitted).toMatchObject({
+      name: selected.name,
+      size: selected.size,
+    });
+    heldStatus.reject(statusError);
+    await waitFor(() =>
+      expect(picker.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          error: statusError.message,
+          requestId: "choose-held",
+        }),
+        window.location.origin
+      )
+    );
+    expect(await screen.findByText(statusError.message)).toBeVisible();
+    expect(dirty).toHaveBeenLastCalledWith(true);
+    await expect(capture.current()).rejects.toThrow(/ยังไม่บันทึก|ยังยืนยันผล/u);
+    send(picker.source, {
+      ...slot,
+      requestId: "read-retained",
+      type: "pending-file-get",
+    });
+    await waitFor(() =>
+      expect(picker.send).toHaveBeenCalledWith(
+        expect.objectContaining({
+          filename: selected.name,
+          requestId: "read-retained",
+          size: selected.size,
+        }),
+        window.location.origin
+      )
+    );
+    expect(transport.postForm).toHaveBeenCalledTimes(1);
+  } finally {
+    heldStatus.reject(statusError);
+    view.unmount();
+  }
 });

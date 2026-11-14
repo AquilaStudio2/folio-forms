@@ -228,6 +228,48 @@ export interface AdminResultListResponse {
   pagination: PaginationInfo;
   results: AdminResult[];
 }
+export interface AttachmentFollowUp {
+  operationId: string;
+  responseId: string;
+  responseDeleted: boolean;
+  formId: string | null;
+  formPublicId: string | null;
+  formTitle: string | null;
+  checkpoint: string | null;
+  documentKey: string | null;
+  actorId: string | null;
+  state: string;
+  generation: number | null;
+  canFence: boolean;
+  mutationHeld: boolean;
+  createdAt: string;
+  reason: string;
+  nextAction: string;
+  versions: {
+    id: string;
+    bindingId: string;
+    tag: string;
+    rowIndex: number | null;
+    filename: string;
+    originalName: string;
+    sizeBytes: number;
+    fiscalYear: string;
+    documentNumber: string;
+    category: string;
+    state: string;
+    generation: number;
+    sentAt: string | null;
+    receivedAt: string | null;
+    requestSettledAt: string | null;
+    referenced: boolean;
+    cleanupState: string | null;
+    deleteAttemptedAt: string | null;
+    confirmedBy: string | null;
+    confirmedAt: string | null;
+    evidence: Record<string, unknown> | null;
+    canDelete: boolean;
+  }[];
+}
 export type AuditOutcome = "failure" | "success";
 export type AuditMetadataValue = boolean | number | string | null;
 export interface AdminAuditEvent {

@@ -144,7 +144,9 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
     input.value = "";
     selected = null;
     input.disabled = false;
-    if (message.validationError) {
+    if (message.mutationNotice || message.commitNotice) {
+      notify(String(message.mutationNotice || message.commitNotice), true);
+    } else if (message.validationError) {
       notify(String(message.validationError), true);
     } else if (message.removal === true) {
       notify("รอนำไฟล์ออกเมื่อบันทึกฉบับร่างหรือส่ง ยังไม่ลบไฟล์ที่บันทึกแล้ว");

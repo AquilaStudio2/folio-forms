@@ -25,9 +25,12 @@ export function createOperations(
 ) {
   const { setStatus, isInitializationPending } = callbacks;
   let actionInFlight = false;
-  const scalarAttachments =
+  const hasAttachments =
     options.documentKind === "xlsx" &&
-    options.spreadsheetBindings?.fields?.some((field) => field.attachment);
+    (options.spreadsheetBindings?.fields?.some((field) => field.attachment) ||
+      options.spreadsheetBindings?.table?.columns?.some(
+        (field) => field.attachment
+      ));
   let attachmentCommitUnresolved = false;
   let attachmentOperationId = "";
 
@@ -158,7 +161,7 @@ export function createOperations(
       requestContext
     );
     if (
-      scalarAttachments &&
+      hasAttachments &&
       !rowChange &&
       !requestContext?.pdmsSelection &&
       [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT].includes(action)
@@ -363,8 +366,8 @@ export function createOperations(
     let resultAction = action;
     let recoveredCheckpoint = false;
     const correctionReason = typeof reason === "string" ? reason.trim() : "";
-    const scalarSave =
-      scalarAttachments &&
+    const attachmentSave =
+      hasAttachments &&
       !rowChange &&
       !saveContext?.pdmsSelection &&
       [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT].includes(action);
@@ -410,9 +413,16 @@ export function createOperations(
         action === ACTIONS.SAVE_CORRECTION_WORKSPACE ||
         action === ACTIONS.SUBMIT;
       const recovery =
-        scalarSave && isRecord(pendingGuard?.checkpointOperation)
+        attachmentSave && isRecord(pendingGuard?.checkpointOperation)
           ? pendingGuard.checkpointOperation
           : null;
+      if (
+        !recovery &&
+        typeof pendingGuard?.mutationNotice === "string" &&
+        pendingGuard.mutationNotice
+      ) {
+        throw new Error(pendingGuard.mutationNotice);
+      }
       let response;
       if (recovery) {
         // Read the original result before minting any capability against a possibly superseded native key.
@@ -461,7 +471,10 @@ export function createOperations(
         }
         await bridge.flushEditorChanges();
         setStatus(`${actionLabel(action)} กำลังรอดำเนินการ…`, "pending");
-        if (scalarSave && pendingGuard?.attachmentCommitUnresolved === true) {
+        if (
+          attachmentSave &&
+          pendingGuard?.attachmentCommitUnresolved === true
+        ) {
           attachmentCommitUnresolved = true;
         }
         const capability = await bridge.requestActionCapability(action);
@@ -484,14 +497,14 @@ export function createOperations(
         );
       }
       if (
-        scalarSave &&
+        attachmentSave &&
         [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT].includes(response?.action)
       ) {
         resultAction = response.action;
         recoveredCheckpoint ||= resultAction !== action;
       }
       operationId = operationIdFromResponse(response);
-      if (scalarSave) {
+      if (attachmentSave) {
         attachmentOperationId = operationId || "";
       }
       bridge.notifyParent(
@@ -525,7 +538,7 @@ export function createOperations(
       }
       waitForReload =
         options.documentKind === "xlsx" &&
-        (Boolean(options.pdmsProjectCatalog) || scalarSave) &&
+        (Boolean(options.pdmsProjectCatalog) || attachmentSave) &&
         (resultAction === ACTIONS.SUBMIT ||
           (typeof result?.documentKey === "string" &&
             result.documentKey !== options.documentKey));

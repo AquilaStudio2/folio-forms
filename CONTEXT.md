@@ -85,6 +85,12 @@ Supported append and existing delete-selected commands preserve file identity wh
 
 Old files become eligible for deletion only after the complete new snapshot commits and no Draft, immutable history, workspace or eligible Operation still references them. A failed or uncertain old-file cleanup does not undo the saved snapshot or prevent its use and export. Its persistent warning states that old public URLs may still work; later ordinary saves neither retry that deletion nor dismiss the warning. This differs from an unsettled canceled batch, which continues to block mutations.
 
+Admin follow-up is expandable inside the existing Results page. Tracking records remain separate from live Responses, including after Response deletion, and do not restore deleted answer rows. Admin and Viewer can read trusted operation, slot and destination evidence; only a current enabled Admin can fence an original batch or initiate authorized cleanup.
+
+A sender fence prevents future dispatch and canonical commit for the canceled batch; it does not prove an already dispatched request has finished at ECM. Only the validated receipt from that original request establishes its known received outcome. A late receipt remains canceled work for cleanup, never a new answer. Admin may initiate the first deletion of a known received, unreferenced canceled file after rechecking its generation and sender fence. An unknown upload or a previously dispatched uncertain deletion remains held: elapsed time, restart, an empty search or an operator note is not settlement proof.
+
+The picker and fill page retain unknown-outcome instructions separately from pending selection and committed cleanup warnings. A rejected action does not replace these instructions with an invitation to resend. When original-checkpoint recovery cannot open an editable document, the saved canonical Excel copy remains separately readable without clearing the checkpoint or uploading pending files.
+
 
 ## Document Category
 

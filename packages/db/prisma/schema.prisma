@@ -689,6 +689,7 @@ model EcmAttachmentBatch {
   formId        String   @map("form_id") @db.Uuid
   documentKey   String   @map("document_key")
   state         String   @default("prepared")
+  generation    Int      @default(0)
   createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
@@ -716,6 +717,8 @@ model EcmAttachmentVersion {
   fileToken      String?   @unique @map("file_token")
   sentAt         DateTime? @map("sent_at") @db.Timestamptz(3)
   receivedAt     DateTime? @map("received_at") @db.Timestamptz(3)
+  requestSettledAt DateTime? @map("request_settled_at") @db.Timestamptz(3)
+  generation       Int       @default(0)
   updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([operationId, state])
@@ -738,8 +741,13 @@ model EcmAttachmentCleanup {
   operationId String   @map("operation_id") @db.Uuid
   versionId   String   @map("version_id") @db.Uuid
   responseId  String   @map("response_id") @db.Uuid
+  formId      String?  @map("form_id") @db.Uuid
   state       String   @default("pending")
   attemptedAt DateTime? @map("attempted_at") @db.Timestamptz(3)
+  generation  Int      @default(0)
+  confirmedBy String?  @map("confirmed_by")
+  confirmedAt DateTime? @map("confirmed_at") @db.Timestamptz(3)
+  evidence    Json?
   createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 

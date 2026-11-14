@@ -28,12 +28,13 @@ export const lockBatch = async (
     Prisma.sql`SELECT "operation_id" FROM "ecm_attachment_batches" WHERE "operation_id" = ${operationId}::uuid FOR UPDATE`
   );
 };
-export const requireAttachmentMutationReady = async (
+export const attachmentMutationNotice = async (
   responseId: string,
   tx: Prisma.TransactionClient = prisma,
   ownOperation?: string
-): Promise<void> => {
-  const unsettled = await tx.ecmAttachmentBatch.findFirst({
+): Promise<string | null> => {
+  const batch = await tx.ecmAttachmentBatch.findFirst({
+    orderBy: { createdAt: "asc" },
     where: {
       responseId,
       ...(ownOperation ? { operationId: { not: ownOperation } } : {}),
@@ -42,23 +43,62 @@ export const requireAttachmentMutationReady = async (
       },
     },
   });
-  if (unsettled) {
-    fail(
-      409,
-      "attachment_outcome_unresolved",
-      "ยังยืนยันผลไฟล์แนบรอบเดิมไม่ได้ ข้อมูลเดิมยังอ่านได้ กรุณาติดต่อผู้ดูแลก่อนบันทึก ส่ง หรือลบคำตอบ"
-    );
+  if (!batch) {
+    return null;
+  }
+  const versions = await tx.ecmAttachmentVersion.findMany({
+    where: {
+      operationId: batch.operationId,
+      state: { notIn: ["canceled", "deleted"] },
+    },
+  });
+  const slots = versions.map((version) => {
+    const slot = `${version.tag}${version.rowIndex === null ? "" : ` / แถว ${version.rowIndex + 1}`}`;
+    let reason = "ยังไม่เริ่มส่งไฟล์ กำลังตรวจผลรอบเดิม";
+    if (["started", "unknown"].includes(version.state)) {
+      reason = "เริ่มส่งแล้วแต่ยังยืนยันผล upload ไม่ได้ อาจมีไฟล์ที่ ECM";
+    } else if (version.state === "received") {
+      reason = "ECM รับไฟล์แล้ว แต่ไม่ได้บันทึกเป็นคำตอบ รอบที่ยกเลิกต้องจัดการไฟล์ค้าง";
+    } else if (version.state === "deleting") {
+      reason = "ยังยืนยันผลการลบไฟล์รอบที่ยกเลิกไม่ได้";
+    }
+    return `${slot}: ${reason}`;
+  });
+  return `${slots.join("; ") || "กำลังตรวจผลรอบแนบเดิม"} ข้อมูลที่บันทึกเดิมยังอ่านได้ กรุณาติดต่อผู้ดูแลก่อนบันทึก ส่ง หรือลบคำตอบ ห้ามส่งไฟล์ซ้ำ รหัสติดตาม ${batch.operationId}`;
+};
+
+export const requireAttachmentMutationReady = async (
+  responseId: string,
+  tx: Prisma.TransactionClient = prisma,
+  ownOperation?: string
+): Promise<void> => {
+  const notice = await attachmentMutationNotice(responseId, tx, ownOperation);
+  if (notice) {
+    fail(409, "attachment_outcome_unresolved", notice);
   }
 };
 
 export const attachmentCleanupWarning = async (
   responseId: string
 ): Promise<string | null> => {
-  const pending = await prisma.ecmAttachmentCleanup.findFirst({
-    select: { versionId: true },
-    where: { responseId, state: { in: ["pending", "started", "unknown"] } },
+  const pending = await prisma.ecmAttachmentCleanup.findMany({
+    select: { operationId: true },
+    where: {
+      responseId,
+      state: { in: ["pending", "claimed", "started", "unknown"] },
+    },
   });
-  return pending
+  const batches = await prisma.ecmAttachmentBatch.findMany({
+    select: { operationId: true, state: true },
+    where: { operationId: { in: pending.map((intent) => intent.operationId) } },
+  });
+  const warning = pending.some((intent) => {
+    const batch = batches.find(
+      (candidate) => candidate.operationId === intent.operationId
+    );
+    return !batch || batch.state === "committed";
+  });
+  return warning
     ? "บันทึกข้อมูลใหม่แล้ว แต่ยังยืนยันการลบไฟล์เก่าไม่ได้ URL เก่าอาจยังเปิดได้ กรุณาติดต่อผู้ดูแล"
     : null;
 };
@@ -320,7 +360,10 @@ export const uploadAttachments = async (
     const active = await tx.operation.findUnique({
       where: { id: operation.id },
     });
-    if (active?.status !== "processing" || batch.state !== "prepared") {
+    const current = await tx.ecmAttachmentBatch.findUniqueOrThrow({
+      where: { operationId: operation.id },
+    });
+    if (active?.status !== "processing" || current.state !== "prepared") {
       fail(409, "stale_operation", "การบันทึกไฟล์รอบนี้ไม่พร้อมเริ่ม");
     }
     for (const plan of plans) {
@@ -394,10 +437,17 @@ export const uploadAttachments = async (
           ) {
             fail(409, "stale_operation", "สิทธิ์หรือเอกสารเปลี่ยนก่อนส่งไฟล์");
           }
-          await tx.ecmAttachmentVersion.update({
-            data: { sentAt: new Date(), state: "started" },
-            where: { id: plan.id },
+          const admitted = await tx.ecmAttachmentVersion.updateMany({
+            data: {
+              generation: { increment: 1 },
+              sentAt: new Date(),
+              state: "started",
+            },
+            where: { id: plan.id, sentAt: null, state: "prepared" },
           });
+          if (admitted.count !== 1) {
+            fail(409, "stale_operation", "คำขอไฟล์รอบนี้เริ่มแล้ว ห้ามส่งซ้ำ");
+          }
           await tx.ecmAttachmentBatch.update({
             data: { state: "sending" },
             where: { operationId: operation.id },
@@ -406,14 +456,46 @@ export const uploadAttachments = async (
       });
       // A receipt is retained even if the Folio Operation expired while ECM was sending.
       // oxlint-disable-next-line no-await-in-loop -- Persist or settle each version before the next external mutation.
-      await prisma.ecmAttachmentVersion.update({
-        data: {
-          fileLink: receipt.file_link,
-          fileToken: receipt.file_token,
-          receivedAt: new Date(),
-          state: "received",
-        },
-        where: { id: plan.id },
+      await prisma.$transaction(async (tx) => {
+        await lockBatch(tx, operation.id);
+        const received = await tx.ecmAttachmentVersion.updateMany({
+          data: {
+            fileLink: receipt.file_link,
+            fileToken: receipt.file_token,
+            generation: { increment: 1 },
+            receivedAt: new Date(),
+            requestSettledAt: new Date(),
+            state: "received",
+          },
+          where: { id: plan.id, state: { in: ["started", "unknown"] } },
+        });
+        if (received.count !== 1) {
+          fail(
+            409,
+            "stale_operation",
+            "ผลไฟล์รอบเดิมเปลี่ยนแล้ว ห้ามใช้เป็นคำตอบรอบใหม่"
+          );
+        }
+        const current = await tx.ecmAttachmentBatch.findUniqueOrThrow({
+          where: { operationId: operation.id },
+        });
+        if (!["prepared", "sending"].includes(current.state)) {
+          await tx.ecmAttachmentCleanup.upsert({
+            create: {
+              formId: batch.formId,
+              operationId: operation.id,
+              responseId: batch.responseId,
+              versionId: plan.id,
+            },
+            update: {},
+            where: {
+              operationId_versionId: {
+                operationId: operation.id,
+                versionId: plan.id,
+              },
+            },
+          });
+        }
       });
       // oxlint-disable-next-line no-await-in-loop -- Persist or settle each version before the next external mutation.
       const active = await prisma.operation.findUnique({
@@ -432,6 +514,12 @@ export const uploadAttachments = async (
       };
       checkAttachmentJsonBytes(data);
     } catch (error) {
+      // A failed transport/parser is not proof that ECM did not create the file.
+      // oxlint-disable-next-line no-await-in-loop -- Preserve each dispatched request's unknown outcome before cancellation.
+      await prisma.ecmAttachmentVersion.updateMany({
+        data: { generation: { increment: 1 }, state: "unknown" },
+        where: { id: plan.id, state: "started" },
+      });
       if (error instanceof HttpError) {
         fail(
           error.httpStatus,
@@ -693,34 +781,341 @@ export const commitAttachmentBatch = async (
       state: "received",
     },
   });
-  if (batch) {
-    for (const versionId of new Set(
-      retired.map((reference) => reference.versionId)
-    )) {
-      // oxlint-disable-next-line no-await-in-loop -- Persist only this explicit operation's newly eligible cleanup intent.
-      const remaining = await tx.ecmAttachmentReference.count({
-        where: { versionId },
+  for (const versionId of new Set(
+    retired.map((reference) => reference.versionId)
+  )) {
+    // oxlint-disable-next-line no-await-in-loop -- Persist only this transition's newly eligible cleanup intent.
+    const remaining = await tx.ecmAttachmentReference.count({
+      where: { versionId },
+    });
+    // oxlint-disable-next-line no-await-in-loop -- Earlier pending or uncertain cleanup is never automatically retried.
+    const previous = await tx.ecmAttachmentCleanup.findFirst({
+      where: {
+        state: { in: ["pending", "claimed", "started", "unknown"] },
+        versionId,
+      },
+    });
+    // oxlint-disable-next-line no-await-in-loop -- All candidates are already held under the version-row fence.
+    const version = await tx.ecmAttachmentVersion.findUnique({
+      where: { id: versionId },
+    });
+    if (!remaining && !previous && version?.state === "committed") {
+      // oxlint-disable-next-line no-await-in-loop -- Internal transitions retain intent without dispatching an ECM write.
+      await tx.ecmAttachmentCleanup.create({
+        data: {
+          formId: response.formId,
+          operationId: operation.id,
+          responseId,
+          versionId,
+        },
       });
-      // oxlint-disable-next-line no-await-in-loop -- Earlier pending or uncertain cleanup is never automatically retried.
-      const previous = await tx.ecmAttachmentCleanup.findFirst({
-        where: { state: { in: ["pending", "started", "unknown"] }, versionId },
-      });
-      // oxlint-disable-next-line no-await-in-loop -- All candidates are already held under the version-row fence.
-      const version = await tx.ecmAttachmentVersion.findUnique({
-        where: { id: versionId },
-      });
-      if (!remaining && !previous && version?.state === "committed") {
-        // oxlint-disable-next-line no-await-in-loop -- Cleanup intent commits atomically with the new canonical snapshot.
-        await tx.ecmAttachmentCleanup.create({
-          data: { operationId: operation.id, responseId, versionId },
-        });
-      }
     }
+  }
+  if (batch) {
     await tx.ecmAttachmentBatch.update({
       data: { state: "committed" },
       where: { operationId: operation.id },
     });
   }
+};
+
+/** Only verified receipts and a fenced sender permit the first DELETE; no uncertain request is retried. */
+export const deleteAttachmentCleanup = async (
+  operationId: string,
+  versionId: string,
+  ecm: EcmClient,
+  operator?: { id: string; generation: number }
+): Promise<void> => {
+  const key = { operationId_versionId: { operationId, versionId } };
+  const version = await prisma.$transaction(async (tx) => {
+    await lockBatch(tx, operationId);
+    await tx.$queryRaw(
+      Prisma.sql`SELECT "id" FROM "ecm_attachment_versions" WHERE "id" = ${versionId}::uuid FOR UPDATE`
+    );
+    if (operator) {
+      const actor = await tx.user.findFirst({
+        where: { enabled: true, id: operator.id, role: "admin" },
+      });
+      if (!actor) {
+        fail(403, "forbidden", "เฉพาะ Admin ที่ยังมีสิทธิ์เท่านั้นจัดการไฟล์ค้างได้");
+      }
+    }
+    let intent = await tx.ecmAttachmentCleanup.findUnique({ where: key });
+    const owned = await tx.ecmAttachmentVersion.findFirst({
+      where: {
+        accountKey: ecm.accountKey(),
+        fileLink: { not: null },
+        fileToken: { not: null },
+        id: versionId,
+        requestSettledAt: { not: null },
+        state: { in: ["received", "committed"] },
+        ...(operator ? { generation: operator.generation } : {}),
+      },
+    });
+    const batch = await tx.ecmAttachmentBatch.findUnique({
+      where: { operationId },
+    });
+    if (!owned?.requestSettledAt) {
+      fail(
+        409,
+        "attachment_outcome_unresolved",
+        "ยังไม่มีหลักฐานคำขอเดิมที่ตรงกับ generation และบัญชี Folio ปัจจุบัน"
+      );
+    }
+    if (owned.state === "received") {
+      if (
+        owned.operationId !== operationId ||
+        !batch ||
+        !["canceling", "cleanup-pending"].includes(batch.state)
+      ) {
+        fail(
+          409,
+          "attachment_outcome_unresolved",
+          "sender เดิมยังไม่ได้ถูก fence ห้ามลบไฟล์รอบนี้"
+        );
+      }
+      if (!intent && operator) {
+        intent = await tx.ecmAttachmentCleanup.create({
+          data: {
+            formId: batch.formId,
+            operationId,
+            responseId: owned.responseId,
+            versionId,
+          },
+        });
+      }
+    }
+    if (!intent || intent.state !== "pending" || intent.attemptedAt) {
+      fail(
+        409,
+        "attachment_outcome_unresolved",
+        "ไม่มี cleanup ที่ยังไม่เคยส่ง DELETE ห้ามส่งคำขอลบซ้ำ กรุณาประสาน PM/ECM"
+      );
+    }
+    if (await tx.ecmAttachmentReference.count({ where: { versionId } })) {
+      await tx.ecmAttachmentCleanup.update({
+        data: { state: "protected" },
+        where: key,
+      });
+      return null;
+    }
+    const evidence = {
+      batchGeneration: batch ? batch.generation : null,
+      noReferences: true,
+      requestSettledAt: owned.requestSettledAt.toISOString(),
+      senderFence: batch ? batch.state : "committed-version",
+      source: "verified-upload-receipt",
+      versionGeneration: owned.generation,
+    };
+    await tx.ecmAttachmentCleanup.update({
+      data: {
+        evidence,
+        generation: { increment: 1 },
+        state: "claimed",
+        ...(operator ? { confirmedBy: operator.id } : {}),
+      },
+      where: key,
+    });
+    const claimed = await tx.ecmAttachmentVersion.update({
+      data: { generation: { increment: 1 }, state: "deleting" },
+      where: { id: versionId },
+    });
+    return { ...claimed, previousState: owned.state };
+  });
+  if (!version) {
+    if (operator) {
+      fail(
+        409,
+        "attachment_referenced",
+        "ไฟล์ยังมีข้อมูลหรือประวัติอ้างอิงอยู่ ไม่สามารถลบได้"
+      );
+    }
+    return;
+  }
+  if (!version.fileToken) {
+    fail(409, "attachment_outcome_unresolved", "ไม่มีหลักฐานไฟล์สำหรับคำขอลบ");
+  }
+  try {
+    await ecm.deleteFile(version.fileToken, async () => {
+      await prisma.$transaction(async (tx) => {
+        await lockBatch(tx, operationId);
+        await tx.$queryRaw(
+          Prisma.sql`SELECT "id" FROM "ecm_attachment_versions" WHERE "id" = ${versionId}::uuid FOR UPDATE`
+        );
+        const current = await tx.ecmAttachmentVersion.findUniqueOrThrow({
+          where: { id: versionId },
+        });
+        const intent = await tx.ecmAttachmentCleanup.findUniqueOrThrow({
+          where: key,
+        });
+        const actor = operator
+          ? await tx.user.findFirst({
+              where: { enabled: true, id: operator.id, role: "admin" },
+            })
+          : null;
+        if (
+          current.state !== "deleting" ||
+          current.generation !== version.generation ||
+          intent.state !== "claimed" ||
+          intent.attemptedAt ||
+          (operator && !actor) ||
+          (await tx.ecmAttachmentReference.count({ where: { versionId } }))
+        ) {
+          fail(
+            409,
+            "attachment_outcome_unresolved",
+            "สิทธิ์หรือหลักฐานเปลี่ยนก่อนส่งคำขอลบ"
+          );
+        }
+        await tx.ecmAttachmentCleanup.update({
+          data: { attemptedAt: new Date(), state: "started" },
+          where: key,
+        });
+        if (operator) {
+          await tx.auditEvent.create({
+            data: {
+              action: "ecm_attachment_cleanup_started",
+              actorId: operator.id,
+              outcome: "success",
+              safeMetadata: {
+                generation: version.generation,
+                operationId,
+                versionId,
+              },
+              targetId: intent.responseId,
+              targetType: "attachment-follow-up",
+            },
+          });
+        }
+      });
+    });
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "ecm_attachment_versions" WHERE "id" = ${versionId}::uuid FOR UPDATE`
+      );
+      const current = await tx.ecmAttachmentVersion.findUniqueOrThrow({
+        where: { id: versionId },
+      });
+      if (
+        current.state !== "deleting" ||
+        current.generation !== version.generation
+      ) {
+        fail(
+          409,
+          "attachment_outcome_unresolved",
+          "หลักฐานการลบเปลี่ยนแล้ว กรุณาติดต่อผู้ดูแล"
+        );
+      }
+      await tx.ecmAttachmentVersion.update({
+        data: { generation: { increment: 1 }, state: "deleted" },
+        where: { id: versionId },
+      });
+      const cleanup = await tx.ecmAttachmentCleanup.findUniqueOrThrow({
+        where: key,
+      });
+      await tx.ecmAttachmentCleanup.update({
+        data: {
+          confirmedAt: new Date(),
+          evidence: {
+            ...(cleanup.evidence &&
+            typeof cleanup.evidence === "object" &&
+            !Array.isArray(cleanup.evidence)
+              ? cleanup.evidence
+              : {}),
+            deleteProof: "verified-delete-response",
+          },
+          state: "deleted",
+        },
+        where: key,
+      });
+      if (operator) {
+        await tx.auditEvent.create({
+          data: {
+            action: "ecm_attachment_cleanup_confirmed",
+            actorId: operator.id,
+            outcome: "success",
+            safeMetadata: {
+              operationId,
+              proof: "verified-delete-response",
+              versionId,
+            },
+            targetId: version.responseId,
+            targetType: "attachment-follow-up",
+          },
+        });
+      }
+    });
+  } catch (error) {
+    await prisma.$transaction(async (tx) => {
+      await tx.$queryRaw(
+        Prisma.sql`SELECT "id" FROM "ecm_attachment_versions" WHERE "id" = ${versionId}::uuid FOR UPDATE`
+      );
+      const intent = await tx.ecmAttachmentCleanup.findUniqueOrThrow({
+        where: key,
+      });
+      if (intent.state === "deleted") {
+        return;
+      }
+      // Only the durable beforeSend marker distinguishes never-dispatched work from unknown deletion.
+      await tx.ecmAttachmentCleanup.update({
+        data: { state: intent.attemptedAt ? "unknown" : "pending" },
+        where: key,
+      });
+      if (!intent.attemptedAt) {
+        await tx.ecmAttachmentVersion.updateMany({
+          data: {
+            generation: { increment: 1 },
+            state: version.previousState,
+          },
+          where: {
+            generation: version.generation,
+            id: versionId,
+            state: "deleting",
+          },
+        });
+      }
+      if (operator) {
+        await tx.auditEvent.create({
+          data: {
+            action: "ecm_attachment_cleanup_failed",
+            actorId: operator.id,
+            outcome: "failure",
+            safeMetadata: {
+              dispatched: intent.attemptedAt !== null,
+              operationId,
+              versionId,
+            },
+            targetId: version.responseId,
+            targetType: "attachment-follow-up",
+          },
+        });
+      }
+    });
+    throw error;
+  }
+};
+
+export const settleCanceledAttachmentBatch = async (
+  operationId: string,
+  tx: Prisma.TransactionClient = prisma
+): Promise<void> => {
+  await lockBatch(tx, operationId);
+  const batch = await tx.ecmAttachmentBatch.findUnique({
+    where: { operationId },
+  });
+  if (!batch || !["canceling", "cleanup-pending"].includes(batch.state)) {
+    return;
+  }
+  const remaining = await tx.ecmAttachmentVersion.count({
+    where: { operationId, state: { notIn: ["canceled", "deleted"] } },
+  });
+  await tx.ecmAttachmentBatch.update({
+    data: {
+      generation: { increment: 1 },
+      state: remaining ? "cleanup-pending" : "canceled",
+    },
+    where: { operationId },
+  });
 };
 
 export const cleanupCommittedAttachments = async (
@@ -734,168 +1129,92 @@ export const cleanupCommittedAttachments = async (
     return;
   }
   const intents = await prisma.ecmAttachmentCleanup.findMany({
-    where: { operationId, state: "pending" },
+    where: { attemptedAt: null, operationId, state: "pending" },
   });
   for (const intent of intents) {
-    const key = {
-      operationId_versionId: { operationId, versionId: intent.versionId },
-    };
     try {
-      // oxlint-disable-next-line no-await-in-loop -- Claim each initial deletion exactly once before any network dispatch.
-      const version = await prisma.$transaction(async (tx) => {
-        await tx.$queryRaw(
-          Prisma.sql`SELECT "id" FROM "ecm_attachment_versions" WHERE "id" = ${intent.versionId}::uuid FOR UPDATE`
-        );
-        const current = await tx.ecmAttachmentCleanup.findUniqueOrThrow({
-          where: key,
-        });
-        if (current.state !== "pending") {
-          return null;
-        }
-        if (
-          await tx.ecmAttachmentReference.count({
-            where: { versionId: intent.versionId },
-          })
-        ) {
-          await tx.ecmAttachmentCleanup.update({
-            data: { state: "protected" },
-            where: key,
-          });
-          return null;
-        }
-        const owned = await tx.ecmAttachmentVersion.findUniqueOrThrow({
-          where: { id: intent.versionId },
-        });
-        if (
-          owned.state !== "committed" ||
-          !owned.fileToken ||
-          owned.accountKey !== ecm.accountKey()
-        ) {
-          await tx.ecmAttachmentCleanup.update({
-            data: { state: "unknown" },
-            where: key,
-          });
-          return null;
-        }
-        await tx.ecmAttachmentCleanup.update({
-          data: { attemptedAt: new Date(), state: "started" },
-          where: key,
-        });
-        await tx.ecmAttachmentVersion.update({
-          data: { state: "deleting" },
-          where: { id: owned.id },
-        });
-        return owned;
-      });
-      if (!version?.fileToken) {
-        continue;
-      }
-      // oxlint-disable-next-line no-await-in-loop -- Do not resend an uncertain DELETE or start the next one before settlement.
-      await ecm.deleteFile(version.fileToken);
-      // oxlint-disable-next-line no-await-in-loop -- Retain the confirmed deletion and its initiating operation together.
-      await prisma.$transaction(async (tx) => {
-        await tx.ecmAttachmentVersion.update({
-          data: { state: "deleted" },
-          where: { id: version.id },
-        });
-        await tx.ecmAttachmentCleanup.update({
-          data: { state: "deleted" },
-          where: key,
-        });
-      });
+      // oxlint-disable-next-line no-await-in-loop -- Only this explicit operation's initial DELETE is dispatched.
+      await deleteAttachmentCleanup(operationId, intent.versionId, ecm);
     } catch {
-      // oxlint-disable-next-line no-await-in-loop -- A saved snapshot stays usable; this durable warning is not a mutation hold.
-      await prisma.ecmAttachmentCleanup.updateMany({
-        data: { state: "unknown" },
-        where: {
-          operationId,
-          state: { in: ["pending", "started"] },
-          versionId: intent.versionId,
-        },
-      });
+      // A committed snapshot stays usable; the durable cleanup record retains the warning.
     }
   }
+};
+
+/** Fence future dispatch/commit without treating timeout or restart as remote settlement. */
+export const fenceAttachmentBatch = async (
+  tx: Prisma.TransactionClient,
+  operationId: string
+): Promise<boolean> => {
+  await lockBatch(tx, operationId);
+  const current = await tx.ecmAttachmentBatch.findUnique({
+    where: { operationId },
+  });
+  if (!current || ["committed", "canceled"].includes(current.state)) {
+    return false;
+  }
+  const operation = await tx.operation.findUnique({
+    where: { id: operationId },
+  });
+  if (operation?.status === "completed") {
+    return false;
+  }
+  const initial =
+    ["prepared", "sending"].includes(current.state) &&
+    operation?.status === "processing";
+  await tx.ecmAttachmentBatch.update({
+    data: { generation: { increment: 1 }, state: "canceling" },
+    where: { operationId },
+  });
+  await tx.ecmAttachmentVersion.updateMany({
+    data: { generation: { increment: 1 }, state: "canceled" },
+    where: { operationId, sentAt: null, state: "prepared" },
+  });
+  await tx.ecmAttachmentVersion.updateMany({
+    data: { generation: { increment: 1 }, state: "unknown" },
+    where: { operationId, state: "started" },
+  });
+  const receipts = await tx.ecmAttachmentVersion.findMany({
+    where: { operationId, state: "received" },
+  });
+  for (const receipt of receipts) {
+    // oxlint-disable-next-line no-await-in-loop -- Retain every canceled receipt independently of the Response.
+    await tx.ecmAttachmentCleanup.upsert({
+      create: {
+        formId: current.formId,
+        operationId,
+        responseId: current.responseId,
+        versionId: receipt.id,
+      },
+      update: {},
+      where: { operationId_versionId: { operationId, versionId: receipt.id } },
+    });
+  }
+  await settleCanceledAttachmentBatch(operationId, tx);
+  return initial;
 };
 
 export const cancelAttachmentBatch = async (
   operationId: string,
   ecm: EcmClient
 ): Promise<void> => {
-  const batch = await prisma.$transaction(async (tx) => {
-    await lockBatch(tx, operationId);
-    const current = await tx.ecmAttachmentBatch.findUnique({
-      where: { operationId },
+  const initial = await prisma.$transaction((tx) =>
+    fenceAttachmentBatch(tx, operationId)
+  );
+  if (initial) {
+    const receipts = await prisma.ecmAttachmentCleanup.findMany({
+      where: { attemptedAt: null, operationId, state: "pending" },
     });
-    if (!current || current.state === "committed") {
-      return null;
-    }
-    const operation = await tx.operation.findUnique({
-      where: { id: operationId },
-    });
-    if (operation?.status === "completed") {
-      return null;
-    }
-    await tx.ecmAttachmentBatch.update({
-      data: { state: "canceling" },
-      where: { operationId },
-    });
-    return current;
-  });
-  if (!batch) {
-    return;
-  }
-  const versions = await prisma.ecmAttachmentVersion.findMany({
-    where: { operationId },
-  });
-  let unsettled = false;
-  for (const version of versions) {
-    if (["started", "unknown", "deleting"].includes(version.state)) {
-      unsettled = true;
-      continue;
-    }
-    if (version.state !== "received" || !version.fileToken) {
-      continue;
-    }
-    if (version.accountKey !== ecm.accountKey()) {
-      unsettled = true;
-      continue;
-    }
-    // oxlint-disable-next-line no-await-in-loop -- Persist or settle each version before the next external mutation.
-    const claimed = await prisma.$transaction(async (tx) => {
-      await tx.$queryRaw(
-        Prisma.sql`SELECT "id" FROM "ecm_attachment_versions" WHERE "id" = ${version.id}::uuid FOR UPDATE`
-      );
-      if (
-        await tx.ecmAttachmentReference.count({
-          where: { versionId: version.id },
-        })
-      ) {
-        return false;
+    for (const receipt of receipts) {
+      try {
+        // oxlint-disable-next-line no-await-in-loop -- Cleanup belongs only to the initial user-started cancellation.
+        await deleteAttachmentCleanup(operationId, receipt.versionId, ecm);
+      } catch {
+        // Unknown or protected cleanup remains a mutation hold, never an automatic retry.
       }
-      const updated = await tx.ecmAttachmentVersion.updateMany({
-        data: { state: "deleting" },
-        where: { id: version.id, state: "received" },
-      });
-      return updated.count === 1;
-    });
-    if (!claimed) {
-      unsettled = true;
-      continue;
-    }
-    try {
-      // oxlint-disable-next-line no-await-in-loop -- Persist or settle each version before the next external mutation.
-      await ecm.deleteFile(version.fileToken);
-      // oxlint-disable-next-line no-await-in-loop -- Persist or settle each version before the next external mutation.
-      await prisma.ecmAttachmentVersion.update({
-        data: { state: "deleted" },
-        where: { id: version.id },
-      });
-    } catch {
-      unsettled = true;
     }
   }
-  await prisma.ecmAttachmentBatch.update({
-    data: { state: unsettled ? "cleanup-pending" : "canceled" },
-    where: { operationId },
-  });
+  await prisma.$transaction((tx) =>
+    settleCanceledAttachmentBatch(operationId, tx)
+  );
 };

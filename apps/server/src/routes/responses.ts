@@ -23,6 +23,10 @@ import {
   XLSX_CONTENT_TYPE,
 } from "../documents/spreadsheets/workbook";
 import {
+  attachmentCleanupWarning,
+  attachmentMutationNotice,
+} from "../ecm/attachments";
+import {
   requireActionEditorAuthorization,
   requireEditorScope,
   requireDocumentServerKey,
@@ -38,6 +42,7 @@ import {
   jsonRecord,
   requiredString,
 } from "../http/input";
+import { readOnlyViewerConfig } from "../onlyoffice";
 import { activeOperationForResponse } from "../operations/lifecycle";
 import { deleteResponseData } from "../responses/deletion";
 import { responseSummary, correctionRevisionSummary } from "../responses/query";
@@ -59,6 +64,31 @@ export function registerResponseRoutes(
 ): void {
   const { onlyOffice, removeObject, aiAuthoring } = dependencies;
   app
+    .get(
+      "/api/responses/:id/attachment-status",
+      async ({ request, params }) => {
+        const identity = await requireIdentity(request);
+        validateId(params.id, "Response");
+        const response = await prisma.response.findUnique({
+          select: { id: true, userId: true },
+          where: { id: params.id },
+        });
+        if (!response) {
+          fail(404, "not_found", "Response was not found");
+        }
+        if (
+          identity.role !== "admin" &&
+          identity.role !== "viewer" &&
+          response.userId !== identity.id
+        ) {
+          fail(403, "forbidden", "You may only access your own Response");
+        }
+        return {
+          cleanupWarning: await attachmentCleanupWarning(response.id),
+          mutationNotice: await attachmentMutationNotice(response.id),
+        };
+      }
+    )
     .get("/api/responses/me", async ({ request }) => {
       const identity = await requireIdentity(request);
       const responses = await prisma.response.findMany({
@@ -333,6 +363,45 @@ export function registerResponseRoutes(
         }
       },
       { parse: "none" }
+    )
+    .get(
+      "/api/responses/:id/draft/viewer-config",
+      async ({ request, params }) => {
+        const identity = await requireIdentity(request);
+        validateId(params.id, "Response");
+        const response = await prisma.response.findUnique({
+          include: { form: { select: { documentKind: true, publicId: true } } },
+          where: { id: params.id },
+        });
+        if (!response) {
+          fail(404, "not_found", "Response was not found");
+        }
+        if (
+          response.userId !== identity.id &&
+          identity.role !== "admin" &&
+          identity.role !== "viewer"
+        ) {
+          fail(403, "forbidden", "You may only inspect your own saved Draft");
+        }
+        if (
+          !["draft", "submitting"].includes(response.status) ||
+          !response.draftDocumentKey ||
+          !response.draftObjectKey ||
+          !(await objectExists(response.draftObjectKey))
+        ) {
+          fail(
+            404,
+            "document_unavailable",
+            "Saved Draft document was not found"
+          );
+        }
+        return readOnlyViewerConfig(
+          response.draftDocumentKey,
+          response.form.publicId,
+          { id: identity.id, name: identity.name },
+          response.form.documentKind
+        );
+      }
     )
     .get(
       "/api/responses/:id/draft/:format",

@@ -23,6 +23,11 @@ import {
 } from "../auth/identity";
 import { callbackFieldMetadata } from "../documents/office-values";
 import {
+  attachmentFollowUps,
+  fenceAttachmentFollowUp,
+  settleAttachmentFollowUp,
+} from "../ecm/follow-up";
+import {
   requireActionEditorAuthorization,
   requireEditorScope,
   operationEditorCapability,
@@ -67,7 +72,7 @@ export function registerResultRoutes(
   app: Elysia,
   dependencies: Pick<
     RouteDependencies,
-    "onlyOffice" | "allowedCallbackOrigins" | "pdmsProjects"
+    "onlyOffice" | "allowedCallbackOrigins" | "pdmsProjects" | "ecm"
   >
 ): void {
   const { onlyOffice, allowedCallbackOrigins } = dependencies;
@@ -268,6 +273,55 @@ export function registerResultRoutes(
       };
     };
   app
+    .get(
+      "/api/admin/results/attachment-follow-up",
+      async ({ request, query }) => {
+        const identity = await requireIdentity(request);
+        requireResultReader(identity);
+        const form = typeof query.form === "string" ? query.form : undefined;
+        if (form && !publicIdPattern.test(form)) {
+          fail(400, "invalid_request", "form is invalid");
+        }
+        return { followUps: await attachmentFollowUps(form) };
+      }
+    )
+    .post(
+      "/api/admin/results/attachment-follow-up/:operationId/settle",
+      async ({ request, params, body }) => {
+        const identity = await requireIdentity(request);
+        requireAdmin(identity);
+        validateId(params.operationId, "Operation");
+        await settleAttachmentFollowUp(
+          params.operationId,
+          body,
+          identity.id,
+          dependencies.ecm
+        );
+        return { followUps: await attachmentFollowUps() };
+      }
+    )
+    .post(
+      "/api/admin/results/attachment-follow-up/:operationId/cancel",
+      async ({ request, params, body }) => {
+        const identity = await requireIdentity(request);
+        requireAdmin(identity);
+        validateId(params.operationId, "Operation");
+        const input = jsonRecord(body);
+        if (Object.keys(input).some((key) => key !== "generation")) {
+          fail(
+            400,
+            "invalid_request",
+            "Only the trusted batch generation is accepted"
+          );
+        }
+        await fenceAttachmentFollowUp(
+          params.operationId,
+          input.generation,
+          identity.id
+        );
+        return { followUps: await attachmentFollowUps() };
+      }
+    )
     .get("/api/admin/results", async ({ request, query }) => {
       const identity = await requireIdentity(request);
       requireResultReader(identity);

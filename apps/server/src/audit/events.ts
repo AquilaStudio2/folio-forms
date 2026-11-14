@@ -89,6 +89,11 @@ const auditMetadataKeys = new Set([
   "sourcePublicId",
   "state",
   "status",
+  "operationId",
+  "versionId",
+  "generation",
+  "proof",
+  "dispatched",
 ]);
 
 export function safeAuditMetadata(value: unknown): JsonRecord {
