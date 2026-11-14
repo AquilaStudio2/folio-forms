@@ -7,13 +7,13 @@ flowchart TD
     gate{"Admin เปิด Correction ได้หรือไม่"}
     block["Response เป็น draft หรือเป้าหมายเก่า จึงถูกกัน"]
     workspace["สร้าง workspace จาก revision ปัจจุบัน"]
-    edit["แก้เอกสารใน workspace"]
+    edit["แก้เอกสารใน workspace; XLSX เลือกไฟล์ผ่าน PoC เดิม"]
     preview["Save workspace ไม่ upload; verified transition คง pending Files/removals"]
     reason["final explicit Save Correction พร้อมเหตุผลและ required"]
     commit["ตรวจ latest Submission/base, Admin/session/lease/workspace ก่อน dispatch และ commit"]
     revision["เพิ่ม immutable document/JSON/file revision"]
     history["Original และ revision ก่อนหน้ายังอยู่"]
-    abandon["ยกเลิกหรือปล่อย lease หมด"]
+    abandon{"ขอออก: มีงานค้างหรือกำลังบันทึกหรือไม่"}
     cleanup["workspace ชั่วคราวอาจถูกเก็บกวาด"]
     submitted --> actor
     actor -->|"User"| user --> newDraft --> next
@@ -22,4 +22,7 @@ flowchart TD
     gate -->|"ผ่านเงื่อนไข"| workspace --> edit
     edit --> preview --> edit
     edit --> reason --> commit --> revision --> history
-    edit --> abandon --> cleanup
+    edit --> abandon
+    abandon -->|"อยู่ต่อ/ESC หรือกำลังบันทึก"| edit
+    abandon -->|"ไม่มีงานค้าง หรือยืนยันออกเมื่อไม่ได้กำลังบันทึก"| cleanup
+    workspace -->|"lease หมด"| cleanup
