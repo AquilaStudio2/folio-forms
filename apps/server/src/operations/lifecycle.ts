@@ -9,6 +9,7 @@ import type { Prisma } from "@onlyoffice/db";
 
 import { createFormAudit, formAuditErrorCodeFromCode } from "../audit/events";
 import { tokenDigest } from "../digests";
+import { fenceAttachmentBatch, lockBatch } from "../ecm/attachments";
 import { fail } from "../http/errors";
 import { publicIdPattern } from "../http/input";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
@@ -74,6 +75,7 @@ export async function updateOperationFailed(
   }
 ): Promise<boolean> {
   const operation = await prisma.$transaction(async (tx) => {
+    await lockBatch(tx, operationId);
     const current = await tx.operation.findUnique({
       select: {
         actorId: true,
@@ -106,6 +108,7 @@ export async function updateOperationFailed(
     if (failed.count !== 1) {
       return null;
     }
+    await fenceAttachmentBatch(tx, operationId);
     if (metadata.action === "save-template" || metadata.action === "publish") {
       let targetId =
         typeof metadata.publicId === "string" &&

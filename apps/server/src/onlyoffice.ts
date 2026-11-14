@@ -136,6 +136,7 @@ export interface EditorOptions {
   spreadsheetBindings?: unknown;
   attachmentSavedData?: unknown;
   attachmentCleanupWarning?: string | null;
+  attachmentMutationNotice?: string | null;
   pdmsProjectCatalog?: PdmsProjectCatalog;
   pdmsProjectEnabled?: boolean;
   uploadPocSavedButtons?: {
@@ -566,6 +567,7 @@ export function editorConfig(
           bridgeId,
           cleanupWarning: options.attachmentCleanupWarning ?? null,
           documentKey: options.documentKey,
+          mutationNotice: options.attachmentMutationNotice ?? null,
           parentOrigin: exactOrigin(env.CORS_ORIGIN),
           publicId: options.publicId,
           responseId: options.responseId,

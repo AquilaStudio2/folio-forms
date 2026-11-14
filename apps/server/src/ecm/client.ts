@@ -456,11 +456,11 @@ export class EcmClient {
       return unavailable();
     }
     const configuration = this.configured();
+    const bearer = await this.bearer(budgetMs);
+    const headers = new Headers(init.headers);
+    headers.set("Authorization", `Bearer ${bearer.token}`);
+    await beforeSend?.();
     try {
-      const bearer = await this.bearer(budgetMs);
-      const headers = new Headers(init.headers);
-      headers.set("Authorization", `Bearer ${bearer.token}`);
-      await beforeSend?.();
       const response = await this.runtime.fetch(
         `${configuration.baseUrl}/${path}`,
         {
@@ -603,11 +603,15 @@ export class EcmClient {
     return receipt;
   }
 
-  async deleteFile(token: string): Promise<void> {
+  async deleteFile(
+    token: string,
+    beforeSend?: () => Promise<void>
+  ): Promise<void> {
     const response = await this.request(
       `file?token=${encodeURIComponent(token)}`,
       { method: "DELETE" },
-      30_000
+      30_000,
+      beforeSend
     );
     const parsed = z
       .object({ data: z.null(), status: z.literal(200) })

@@ -60,6 +60,7 @@ export interface UploadPocHostOptions {
   responseId?: string;
   savedData?: unknown;
   cleanupWarning?: string | null;
+  mutationNotice?: string | null;
 }
 
 interface SubmittedCheckpointRecovery {
@@ -160,6 +161,24 @@ export class UploadPocPendingFiles {
   private checkpointStorageKey = "";
   private readonly checkpoints = new Map<string, PendingAttachmentSnapshot>();
   private readonly operationCheckpoints = new Map<string, string>();
+  private mutationNotice: string | null = null;
+  private cleanupWarning: string | null = null;
+  private statusFetched = false;
+
+  async refreshStatus(options: UploadPocHostOptions) {
+    if (!options.responseId || options.action === "template-edit") {
+      return null;
+    }
+    const status = await apiGet<{
+      mutationNotice: string | null;
+      cleanupWarning: string | null;
+    }>(`/api/responses/${options.responseId}/attachment-status`);
+    this.requireScope(options);
+    this.mutationNotice = status.mutationNotice;
+    this.cleanupWarning = status.cleanupWarning;
+    this.statusFetched = true;
+    return status;
+  }
 
   complete(
     operationId: string,
@@ -691,7 +710,14 @@ export class UploadPocPendingFiles {
         body,
         value.capability
       );
-    } catch {
+    } catch (error) {
+      if (
+        error instanceof ApiError &&
+        error.code === "attachment_outcome_unresolved"
+      ) {
+        this.mutationNotice = error.message;
+        throw error;
+      }
       // A missing lookup is not settlement: only the shared admission fence can prove safe recovery.
       accepted = await this.original(checkpoint, value, options);
     }
@@ -746,6 +772,9 @@ export class UploadPocPendingFiles {
       this.accepted.clear();
       this.failedCheckpoints.clear();
       this.checkpointStorageKey = "";
+      this.mutationNotice = null;
+      this.cleanupWarning = null;
+      this.statusFetched = false;
       this.scopeIdentity = scopeIdentity;
       this.documentKey = "";
     }
@@ -889,7 +918,13 @@ export class UploadPocPendingFiles {
       ) {
         throw new Error("มีไฟล์ค้างที่ยังไม่ได้บันทึก กรุณารักษาหน้านี้ไว้");
       }
-      return { allowed: true, hasPending };
+      return {
+        allowed: true,
+        hasPending,
+        mutationNotice: this.statusFetched
+          ? this.mutationNotice
+          : (options.mutationNotice ?? null),
+      };
     }
     const fields = Array.isArray(bindings.fields) ? bindings.fields : [];
     const scalar = fields.find(
@@ -984,9 +1019,17 @@ export class UploadPocPendingFiles {
             : [];
         })[0] ?? null);
     return {
-      cleanupWarning: options.cleanupWarning ?? null,
+      cleanupWarning: this.statusFetched
+        ? this.cleanupWarning
+        : (options.cleanupWarning ?? null),
+      commitNotice: this.hasUnresolvedCommit()
+        ? "ยังยืนยันผลบันทึก Folio รอบเดิมไม่ได้ ไฟล์อาจส่งแล้ว กรุณาตรวจผลเดิมด้วยปุ่มบันทึก ห้ามส่งไฟล์ซ้ำหรือปิดหน้านี้"
+        : null,
       filename: file?.name ?? null,
       hasPending: this.hasPending(),
+      mutationNotice: this.statusFetched
+        ? this.mutationNotice
+        : (options.mutationNotice ?? null),
       removal: this.removals.has(key),
       saved: record(saved)
         ? {

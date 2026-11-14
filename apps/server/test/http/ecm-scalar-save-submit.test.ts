@@ -133,11 +133,18 @@ const providerFiles = new Map<string, { bytes: Uint8Array; token: string }>();
 let deleteFails = false;
 let deleteMalformed = false;
 let logins = 0;
-let nextMode: "ok" | "malformed" | "body-failure" | "store-then-reject" = "ok";
+let nextMode:
+  | "ok"
+  | "malformed"
+  | "body-failure"
+  | "store-then-reject"
+  | "unauthorized" = "ok";
 let rejectUploadAt: number | null = null;
 let customLink: string | null = null;
 let customToken: string | null = null;
 let receiveBarrier: { enter: () => void; release: Promise<void> } | null = null;
+let receiptBarrier: { enter: () => void; release: Promise<void> } | null = null;
+let loginBarrier: { enter: () => void; release: Promise<void> } | null = null;
 let captureBarrier: { enter: () => void; release: Promise<void> } | null = null;
 const originalReads: {
   authorization: string | null;
@@ -164,6 +171,12 @@ const provider = Bun.serve({
         : new Response(null, { status: 404 });
     }
     if (url.pathname.endsWith("/login")) {
+      const login = loginBarrier;
+      if (login) {
+        loginBarrier = null;
+        login.enter();
+        await login.release;
+      }
       logins += 1;
       return Response.json({
         data: {
@@ -243,6 +256,10 @@ const provider = Bun.serve({
       return Response.json({ data: null, msg: "ok", status: 200 });
     }
     if (url.pathname.endsWith("/file") && request.method === "POST") {
+      if (nextMode === "unauthorized") {
+        nextMode = "ok";
+        return Response.json({ data: null, status: 401 }, { status: 401 });
+      }
       const body = await request.formData();
       const file = body.get("documentFile");
       if (!(file instanceof File)) {
@@ -293,6 +310,12 @@ const provider = Bun.serve({
         bytes: fixtureValue(received.at(-1)).bytes,
         token,
       });
+      const receipt = receiptBarrier;
+      if (receipt) {
+        receiptBarrier = null;
+        receipt.enter();
+        await receipt.release;
+      }
       if (nextMode === "store-then-reject") {
         return Response.json(
           {
@@ -487,6 +510,7 @@ const fixture = async (
     tableItemRequired?: boolean;
     project?: boolean;
     admin?: boolean;
+    viewer?: boolean;
   } = {}
 ): Promise<Fixture> => {
   nextMode = "ok";
@@ -498,15 +522,22 @@ const fixture = async (
   originalReadMode = "ok";
   const id = crypto.randomUUID();
   const password = "Scalar-isolated-fixture-password!";
+  let role: "admin" | "viewer" | "user" = "user";
+  if (values.admin) {
+    role = "admin";
+  } else if (values.viewer) {
+    role = "viewer";
+  }
   const user = await createCredentialFixture({
     email: `scalar-${id}@example.test`,
     name: "Scalar User",
     password,
-    role: values.admin ? "admin" : "user",
+    role,
   });
   const bearer = await bearerFor(app, user.email, password);
   const documentKey = `scalar-${id}`;
-  const objectKey = `tests/scalar/${id}/draft.xlsx`;
+  const responseId = crypto.randomUUID();
+  const objectKey = `responses/${responseId}/draft/${id}.xlsx`;
   const templateObjectKey = `tests/scalar/${id}/template.xlsx`;
   let template = nativeTemplate;
   let publishedBindings = bindings;
@@ -634,6 +665,7 @@ const fixture = async (
       draftDocumentKey: documentKey,
       draftObjectKey: objectKey,
       formId: form.id,
+      id: responseId,
       publishedTemplateId: form.publishedTemplate.id,
       publishedVersion: 1,
       spreadsheetInitialized: true,
@@ -837,6 +869,84 @@ const tableRowsSchema = z.array(
 );
 const file = (bytes = new Uint8Array([0, 255, 7, 1]), name = "Original.BIN") =>
   new File([bytes], name, { type: "application/x-encrypted-private" });
+
+const followUpSchema = z.object({
+  actorId: z.string().nullable(),
+  canFence: z.boolean(),
+  generation: z.number().nullable(),
+  mutationHeld: z.boolean(),
+  operationId: z.string(),
+  responseDeleted: z.boolean(),
+  responseId: z.string(),
+  state: z.string(),
+  versions: z.array(
+    z.object({
+      bindingId: z.string(),
+      canDelete: z.boolean(),
+      cleanupState: z.string().nullable(),
+      confirmedAt: z.string().nullable(),
+      confirmedBy: z.string().nullable(),
+      deleteAttemptedAt: z.string().nullable(),
+      evidence: z.record(z.string(), z.unknown()).nullable(),
+      generation: z.number(),
+      id: z.string(),
+      referenced: z.boolean(),
+      requestSettledAt: z.string().nullable(),
+      rowIndex: z.number().nullable(),
+      state: z.string(),
+    })
+  ),
+});
+const followUpFor = async (
+  actor: Fixture,
+  operationId: string,
+  ready: (entry: z.infer<typeof followUpSchema>) => boolean = () => true
+) => {
+  const deadline = Date.now() + 10_000;
+  for (;;) {
+    const response = await app.handle(
+      new Request("http://test.local/api/admin/results/attachment-follow-up", {
+        headers: { Authorization: `Bearer ${actor.bearer}` },
+      })
+    );
+    expect(response.status).toBe(200);
+    const payload = z
+      .object({ followUps: z.array(followUpSchema) })
+      .parse(await response.json());
+    const entry = payload.followUps.find(
+      (candidate) => candidate.operationId === operationId
+    );
+    if (entry && ready(entry)) {
+      return entry;
+    }
+    if (Date.now() >= deadline) {
+      throw new Error(
+        `Follow-up ${operationId} did not reach the observed request outcome`
+      );
+    }
+    // Provider/native work runs outside fake time; poll public evidence until its actual durable transition.
+    await Bun.sleep(25);
+  }
+};
+const operatorAction = (
+  actor: Fixture,
+  operationId: string,
+  action: "cancel" | "settle",
+  body: unknown
+) =>
+  app.handle(
+    new Request(
+      `http://test.local/api/admin/results/attachment-follow-up/${operationId}/${action}`,
+      {
+        body: JSON.stringify(body),
+        headers: {
+          Authorization: `Bearer ${actor.bearer}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }
+    )
+  );
 
 const resume = async (f: Fixture) => {
   const saved = await prisma.response.findUniqueOrThrow({
@@ -2688,6 +2798,141 @@ test("failed canceled-batch cleanup keeps an independent mutation fence while ca
   expect(received.length - start).toBe(2);
 });
 
+test("Results exposes trusted unknown-upload follow-up without allowing an Admin note to release the hold", async () => {
+  const f = await fixture();
+  const admin = await fixture({ admin: true });
+  nextMode = "malformed";
+  const start = received.length;
+  const outcome = await poll(f, await send(f, { folio_proof: file() }));
+  expect(outcome.status).toBe("failed");
+  expect(received.length - start).toBe(1);
+  const request = (bearer: string) =>
+    app.handle(
+      new Request("http://test.local/api/admin/results/attachment-follow-up", {
+        headers: { Authorization: `Bearer ${bearer}` },
+      })
+    );
+  const ownerFollowUp = await request(f.bearer);
+  expect(ownerFollowUp.status).toBe(403);
+  const response = await request(admin.bearer);
+  expect(response.status).toBe(200);
+  const payload = z
+    .object({
+      followUps: z.array(
+        z.object({
+          operationId: z.string(),
+          responseId: z.string(),
+          state: z.string(),
+          versions: z.array(
+            z.object({
+              bindingId: z.string(),
+              category: z.string(),
+              filename: z.string(),
+              fiscalYear: z.string(),
+              rowIndex: z.number().nullable(),
+              state: z.string(),
+            })
+          ),
+        })
+      ),
+    })
+    .parse(await response.json());
+  const followUp = payload.followUps.find(
+    (entry) => entry.operationId === outcome.operationId
+  );
+  expect(followUp).toMatchObject({
+    responseId: f.response.id,
+    state: "cleanup-pending",
+    versions: [
+      {
+        bindingId: "folio_proof",
+        category: "หลักฐาน",
+        filename: fixtureValue(received[start]).name,
+        fiscalYear: "2570",
+        rowIndex: null,
+        state: "unknown",
+      },
+    ],
+  });
+  const attemptedRelease = await app.handle(
+    new Request(
+      `http://test.local/api/admin/results/attachment-follow-up/${outcome.operationId}/settle`,
+      {
+        body: JSON.stringify({
+          acceptRisk: true,
+          evidence: "PM found no file",
+        }),
+        headers: {
+          Authorization: `Bearer ${admin.bearer}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      }
+    )
+  );
+  expect(attemptedRelease.status).toBe(409);
+  const blocked = await send(f, { folio_proof: file() });
+  expect(blocked.status).toBe(409);
+  expect(await blocked.json()).toMatchObject({
+    error: "attachment_outcome_unresolved",
+    message: expect.stringContaining("กรุณาติดต่อผู้ดูแล"),
+  });
+  const status = await app.handle(
+    new Request(
+      `http://test.local/api/responses/${f.response.id}/attachment-status`,
+      { headers: { Authorization: `Bearer ${f.bearer}` } }
+    )
+  );
+  expect(status.status).toBe(200);
+  const durable = z
+    .object({
+      cleanupWarning: z.string().nullable(),
+      mutationNotice: z.string(),
+    })
+    .parse(await status.json());
+  expect(durable.mutationNotice).toContain("proof");
+  expect(durable.mutationNotice).toContain("อาจมีไฟล์ที่ ECM");
+  expect(durable.mutationNotice).toContain("ห้ามส่งไฟล์ซ้ำ");
+  expect(durable.cleanupWarning).toBeNull();
+  const inspection = await app.handle(
+    new Request(
+      `http://test.local/api/responses/${f.response.id}/draft/viewer-config`,
+      { headers: { Authorization: `Bearer ${f.bearer}` } }
+    )
+  );
+  expect(inspection.status).toBe(200);
+  const view = z
+    .object({
+      config: z.object({
+        document: z.object({
+          permissions: z.object({
+            download: z.literal(false),
+            edit: z.literal(false),
+          }),
+          url: z.string(),
+        }),
+        editorConfig: z.object({ mode: z.literal("view") }),
+      }),
+    })
+    .parse(await inspection.json());
+  const document = await app.handle(
+    new Request(view.config.document.url, {
+      headers: {
+        Authorization: createOnlyOfficeAuthorization({
+          url: view.config.document.url,
+        }),
+      },
+    })
+  );
+  expect(document.status).toBe(200);
+  const canonicalBytes: Uint8Array = new Uint8Array(
+    await document.arrayBuffer()
+  );
+  expect(canonicalBytes).toEqual(nativeTemplate);
+  expect(received.length - start).toBe(1);
+  expect(await draft(f)).toEqual({});
+});
+
 test("forged Response scope and expired lease cannot send provider bytes", async () => {
   const owner = await fixture();
   const other = await fixture();
@@ -2707,4 +2952,502 @@ test("forged Response scope and expired lease cannot send provider bytes", async
   expect(expired.status).toBe(409);
   expect(received.length).toBe(start);
   expect(await draft(owner)).toEqual({});
+});
+
+test("Admin fences the original sender and deletes a late canceled receipt once, with durable verified evidence", async () => {
+  const f = await fixture();
+  const admin = await fixture({ admin: true });
+  const competingAdmin = await fixture({ admin: true });
+  const viewer = await fixture({ viewer: true });
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const entered = Promise.withResolvers<undefined>();
+  const released = Promise.withResolvers<undefined>();
+  receiptBarrier = {
+    enter: () => entered.resolve(),
+    release: released.promise,
+  };
+  const accepted = await send(f, { folio_other: file(), folio_proof: file() });
+  const original = envelopeSchema.parse(await accepted.clone().json());
+  try {
+    await entered.promise;
+    const sending = await followUpFor(admin, original.operationId);
+    expect(sending).toMatchObject({
+      canFence: true,
+      mutationHeld: true,
+      state: "sending",
+    });
+    expect(
+      sending.versions.filter((version) => version.state === "started")
+    ).toHaveLength(1);
+    const generation = fixtureValue(sending.generation);
+    const viewerCancel = await operatorAction(
+      viewer,
+      original.operationId,
+      "cancel",
+      { generation }
+    );
+    expect(viewerCancel.status).toBe(403);
+    const ownerCancel = await operatorAction(
+      f,
+      original.operationId,
+      "cancel",
+      { generation }
+    );
+    expect(ownerCancel.status).toBe(403);
+    const adminCancel = await operatorAction(
+      admin,
+      original.operationId,
+      "cancel",
+      { generation }
+    );
+    expect(adminCancel.status).toBe(200);
+    const competingCancel = await operatorAction(
+      competingAdmin,
+      original.operationId,
+      "cancel",
+      { generation }
+    );
+    expect(competingCancel.status).toBe(409);
+    const fenced = await followUpFor(viewer, original.operationId);
+    expect(fenced).toMatchObject({
+      canFence: false,
+      mutationHeld: true,
+      state: "cleanup-pending",
+    });
+    expect(
+      fenced.versions.filter((version) => version.state === "unknown")
+    ).toHaveLength(1);
+    expect(
+      fenced.versions.filter((version) => version.state === "canceled")
+    ).toHaveLength(1);
+    expect(received.length).toBe(uploads + 1);
+    expect(deleted.length).toBe(deletes);
+    expect(await draft(f)).toEqual({});
+    released.resolve();
+    const canceledOutcome = await poll(f, accepted);
+    expect(canceledOutcome.status).toBe("failed");
+    const late = await followUpFor(admin, original.operationId, (entry) =>
+      entry.versions.some((version) => version.state === "received")
+    );
+    const version = fixtureValue(
+      late.versions.find((entry) => entry.state === "received")
+    );
+    expect(version).toMatchObject({
+      canDelete: true,
+      cleanupState: "pending",
+      deleteAttemptedAt: null,
+    });
+    expect(version.requestSettledAt).not.toBeNull();
+    const receivedFile = fixtureValue(received[uploads]);
+    expect(JSON.stringify(late)).not.toContain(receivedFile.token);
+    expect(JSON.stringify(late)).not.toContain("scalar-test-service-token");
+    const trusted = { generation: version.generation, versionId: version.id };
+    const viewerSettlement = await operatorAction(
+      viewer,
+      original.operationId,
+      "settle",
+      trusted
+    );
+    expect(viewerSettlement.status).toBe(403);
+    const arbitraryToken = await operatorAction(
+      admin,
+      original.operationId,
+      "settle",
+      {
+        ...trusted,
+        token: receivedFile.token,
+      }
+    );
+    expect(arbitraryToken.status).toBe(409);
+    const staleGeneration = await operatorAction(
+      admin,
+      original.operationId,
+      "settle",
+      {
+        ...trusted,
+        generation: version.generation - 1,
+      }
+    );
+    expect(staleGeneration.status).toBe(409);
+    const deleting = Promise.withResolvers<undefined>();
+    const deletedResponse = Promise.withResolvers<undefined>();
+    deleteBarrier = {
+      enter: () => deleting.resolve(),
+      release: deletedResponse.promise,
+    };
+    const first = operatorAction(
+      admin,
+      original.operationId,
+      "settle",
+      trusted
+    );
+    try {
+      await deleting.promise;
+      const competingSettlement = await operatorAction(
+        competingAdmin,
+        original.operationId,
+        "settle",
+        trusted
+      );
+      expect(competingSettlement.status).toBe(409);
+      const heldSave = await send(f, { folio_proof: file() });
+      expect(heldSave.status).toBe(409);
+      expect(received.length).toBe(uploads + 1);
+      expect(await draft(f)).toEqual({});
+    } finally {
+      deletedResponse.resolve();
+    }
+    const firstDeletion = await first;
+    expect(firstDeletion.status).toBe(200);
+    const settled = await followUpFor(admin, original.operationId);
+    expect(settled).toMatchObject({ mutationHeld: false, state: "canceled" });
+    expect(
+      settled.versions.find((entry) => entry.id === version.id)
+    ).toMatchObject({
+      cleanupState: "deleted",
+      confirmedBy: admin.identity.id,
+      evidence: {
+        deleteProof: "verified-delete-response",
+        noReferences: true,
+        source: "verified-upload-receipt",
+      },
+      state: "deleted",
+    });
+    expect(deleted.length).toBe(deletes + 1);
+    const repeatedDeletion = await operatorAction(
+      admin,
+      original.operationId,
+      "settle",
+      trusted
+    );
+    expect(repeatedDeletion.status).toBe(409);
+    expect(deleted.length).toBe(deletes + 1);
+    expect(await draft(f)).toEqual({});
+    const audit = await app.handle(
+      new Request(
+        `http://test.local/api/admin/audit-events?target=${f.response.id}&action=ecm_attachment_cleanup_confirmed`,
+        { headers: { Authorization: `Bearer ${admin.bearer}` } }
+      )
+    );
+    expect(audit.status).toBe(200);
+    expect(await audit.json()).toMatchObject({
+      events: [
+        {
+          actorId: admin.identity.id,
+          outcome: "success",
+          safeMetadata: {
+            operationId: original.operationId,
+            proof: "verified-delete-response",
+            versionId: version.id,
+          },
+        },
+      ],
+    });
+    const next = await poll(f, await send(f, { folio_proof: file() }));
+    expect(next.status).toBe("completed");
+    expect(fixtureValue(received[uploads + 1]).name).not.toBe(
+      receivedFile.name
+    );
+  } finally {
+    released.resolve();
+    receiptBarrier = null;
+    deleteBarrier = null;
+  }
+});
+
+test("unknown DELETE after authorized first cleanup remains held and is never retried or released by a note", async () => {
+  const f = await fixture();
+  const admin = await fixture({ admin: true });
+  const entered = Promise.withResolvers<undefined>();
+  const released = Promise.withResolvers<undefined>();
+  receiptBarrier = {
+    enter: () => entered.resolve(),
+    release: released.promise,
+  };
+  const accepted = await send(f, { folio_proof: file() });
+  const original = envelopeSchema.parse(await accepted.clone().json());
+  try {
+    await entered.promise;
+    const active = await followUpFor(admin, original.operationId);
+    const cancel = await operatorAction(admin, original.operationId, "cancel", {
+      generation: active.generation,
+    });
+    expect(cancel.status).toBe(200);
+    released.resolve();
+    const late = await followUpFor(admin, original.operationId, (entry) =>
+      entry.versions.some((version) => version.canDelete)
+    );
+    const version = fixtureValue(
+      late.versions.find((entry) => entry.canDelete)
+    );
+    const before = deleted.length;
+    deleteMalformed = true;
+    const firstDeletion = await operatorAction(
+      admin,
+      original.operationId,
+      "settle",
+      {
+        generation: version.generation,
+        versionId: version.id,
+      }
+    );
+    expect(firstDeletion.status).toBe(503);
+    deleteMalformed = false;
+    const unknown = await followUpFor(admin, original.operationId);
+    expect(unknown).toMatchObject({
+      mutationHeld: true,
+      state: "cleanup-pending",
+    });
+    expect(unknown.versions[0]).toMatchObject({
+      canDelete: false,
+      cleanupState: "unknown",
+      state: "deleting",
+    });
+    const repeatedDeletion = await operatorAction(
+      admin,
+      original.operationId,
+      "settle",
+      {
+        generation: fixtureValue(unknown.versions[0]).generation,
+        versionId: version.id,
+      }
+    );
+    expect(repeatedDeletion.status).toBe(409);
+    const emptySearch = await operatorAction(
+      admin,
+      original.operationId,
+      "settle",
+      {
+        acceptRisk: true,
+        evidence: "waited; PM search returned empty",
+      }
+    );
+    expect(emptySearch.status).toBe(409);
+    expect(deleted.length).toBe(before + 1);
+    const heldSave = await send(f, { folio_proof: file() });
+    expect(heldSave.status).toBe(409);
+    expect(await draft(f)).toEqual({});
+  } finally {
+    released.resolve();
+    receiptBarrier = null;
+    deleteMalformed = false;
+  }
+});
+
+test("Admin cancellation before dispatch fences an auth-waiting sender without treating a timeout as proof", async () => {
+  const previous = await fixture();
+  const f = await fixture();
+  const admin = await fixture({ admin: true });
+  // A real rejected write invalidates the shared auth generation; do not seed the request ledger.
+  nextMode = "unauthorized";
+  const rejectedWrite = await poll(
+    previous,
+    await send(previous, { folio_proof: file() })
+  );
+  expect(rejectedWrite.status).toBe("failed");
+  const uploads = received.length;
+  const entered = Promise.withResolvers<undefined>();
+  const released = Promise.withResolvers<undefined>();
+  loginBarrier = { enter: () => entered.resolve(), release: released.promise };
+  const accepted = await send(f, { folio_proof: file() });
+  const original = envelopeSchema.parse(await accepted.clone().json());
+  try {
+    await entered.promise;
+    const waiting = await followUpFor(admin, original.operationId);
+    expect(waiting).toMatchObject({ canFence: true, state: "prepared" });
+    expect(waiting.versions).toHaveLength(1);
+    expect(waiting.versions[0]).toMatchObject({
+      requestSettledAt: null,
+      state: "prepared",
+    });
+    const canceledBeforeDispatch = await operatorAction(
+      admin,
+      original.operationId,
+      "cancel",
+      {
+        generation: waiting.generation,
+      }
+    );
+    expect(canceledBeforeDispatch.status).toBe(200);
+    const held = await app.handle(
+      new Request(
+        `http://test.local/api/responses/${f.response.id}/attachment-status`,
+        { headers: { Authorization: `Bearer ${f.bearer}` } }
+      )
+    );
+    expect(held.status).toBe(200);
+    expect(await held.json()).toMatchObject({
+      cleanupWarning: null,
+      mutationNotice: null,
+    });
+    expect(received.length).toBe(uploads);
+    released.resolve();
+    const originalOutcome = await poll(f, accepted);
+    expect(originalOutcome.status).toBe("failed");
+    const nextOutcome = await poll(f, await send(f, { folio_proof: file() }));
+    expect(nextOutcome.status).toBe("completed");
+    expect(received.length).toBe(uploads + 1);
+  } finally {
+    released.resolve();
+    loginBarrier = null;
+    nextMode = "ok";
+  }
+});
+
+test("Results retains trusted cleanup tracking after real Response deletion without restoring a normal result row", async () => {
+  const f = await fixture();
+  const admin = await fixture({ admin: true });
+  const savedOutcome = await poll(f, await send(f, { folio_proof: file() }));
+  expect(savedOutcome.status).toBe("completed");
+  await resume(f);
+  const savedDraft = await draft(f);
+  const proof = attachmentSchema.parse(savedDraft.proof);
+  deleteFails = true;
+  const replacement = await poll(
+    f,
+    await send(f, {}, "draft", crypto.randomUUID(), {
+      attachmentRemovals: [{ bindingId: "folio_proof", rowIndex: null }],
+    })
+  );
+  expect(replacement.status).toBe("completed");
+  const pending = await followUpFor(admin, replacement.operationId, (entry) =>
+    entry.versions.some((version) => version.cleanupState === "unknown")
+  );
+  deleteFails = false;
+  expect(pending).toMatchObject({
+    mutationHeld: false,
+    responseDeleted: false,
+    state: "committed",
+  });
+  const release = await app.handle(
+    new Request(`http://test.local/api/editor-leases/${f.lease.id}`, {
+      headers: { Authorization: `Bearer ${f.bearer}` },
+      method: "DELETE",
+    })
+  );
+  expect(release.status).toBe(200);
+  const removed = await app.handle(
+    new Request(`http://test.local/api/admin/responses/${f.response.id}`, {
+      body: JSON.stringify({ confirm: true }),
+      headers: {
+        Authorization: `Bearer ${admin.bearer}`,
+        "Content-Type": "application/json",
+      },
+      method: "DELETE",
+    })
+  );
+  expect(removed.status).toBe(200);
+  const retained = await followUpFor(admin, replacement.operationId);
+  expect(retained).toMatchObject({
+    mutationHeld: false,
+    responseDeleted: true,
+    responseId: f.response.id,
+  });
+  expect(retained.versions).toEqual(pending.versions);
+  const list = await app.handle(
+    new Request(`http://test.local/api/admin/results?form=${f.form.publicId}`, {
+      headers: { Authorization: `Bearer ${admin.bearer}` },
+    })
+  );
+  expect(list.status).toBe(200);
+  expect(await list.json()).toMatchObject({ results: [] });
+  const detail = await app.handle(
+    new Request(`http://test.local/api/admin/results/${f.response.id}`, {
+      headers: { Authorization: `Bearer ${admin.bearer}` },
+    })
+  );
+  expect(detail.status).toBe(404);
+  const publicFile = await fetch(proof.file_link);
+  expect(publicFile.status).toBe(200);
+  expect(new Uint8Array(await publicFile.arrayBuffer())).toEqual(
+    new Uint8Array([0, 255, 7, 1])
+  );
+});
+
+test("physical-row deletion retains cleanup-only follow-up and permits only an Admin first DELETE of its unreferenced version", async () => {
+  const f = await fixture({ tableAttachments: true });
+  const admin = await fixture({ admin: true });
+  const viewer = await fixture({ viewer: true });
+  const initial = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 2])]: file(
+        new Uint8Array(),
+        "retired.TXT"
+      ),
+    })
+  );
+  expect(initial.status).toBe("completed");
+  const before = await draft(f);
+  const previous = tableRowsSchema.parse(before.rows);
+  const attachment = fixtureValue(previous[0]?.proof);
+  expect(attachment.row_index).toBe(2);
+  await resume(f);
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const authentication = logins;
+  const retired = await poll(
+    f,
+    await send(f, {}, "draft", crypto.randomUUID(), {
+      rowChange: { action: "delete", index: 2 },
+    })
+  );
+  expect(retired.status).toBe("completed");
+  const saved = await draft(f);
+  expect(saved.rows).toEqual([]);
+  expect(received.length).toBe(uploads);
+  expect(deleted.length).toBe(deletes);
+  expect(logins).toBe(authentication);
+  const tracking = await followUpFor(admin, retired.operationId);
+  expect(tracking).toMatchObject({
+    mutationHeld: false,
+    responseId: f.response.id,
+    state: "cleanup-only",
+  });
+  expect(tracking.versions).toHaveLength(1);
+  const version = fixtureValue(tracking.versions[0]);
+  expect(version).toMatchObject({
+    bindingId: "folio_row_proof",
+    canDelete: true,
+    cleanupState: "pending",
+    deleteAttemptedAt: null,
+    referenced: false,
+    rowIndex: 2,
+    state: "committed",
+  });
+  const publicBefore = await fetch(attachment.file_link);
+  expect(publicBefore.status).toBe(200);
+  const publicBytes = await publicBefore.arrayBuffer();
+  expect(publicBytes.byteLength).toBe(0);
+  const trusted = { generation: version.generation, versionId: version.id };
+  const denied = await operatorAction(
+    viewer,
+    retired.operationId,
+    "settle",
+    trusted
+  );
+  expect(denied.status).toBe(403);
+  expect(deleted.length).toBe(deletes);
+  const settled = await operatorAction(
+    admin,
+    retired.operationId,
+    "settle",
+    trusted
+  );
+  expect(settled.status).toBe(200);
+  expect(deleted.length).toBe(deletes + 1);
+  expect(received.length).toBe(uploads);
+  expect(await draft(f)).toEqual(saved);
+  const confirmed = await followUpFor(admin, retired.operationId);
+  expect(confirmed.versions[0]).toMatchObject({
+    canDelete: false,
+    cleanupState: "deleted",
+    confirmedBy: admin.identity.id,
+    evidence: { deleteProof: "verified-delete-response" },
+    rowIndex: 2,
+    state: "deleted",
+  });
+  const publicAfter = await fetch(attachment.file_link);
+  expect(publicAfter.status).toBe(404);
 });

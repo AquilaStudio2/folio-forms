@@ -173,6 +173,34 @@ test("picker sends a real File through structured clone only, replaces it and pr
   expect(h.elements.get("filename").textContent).toBe("replacement.txt");
 });
 
+test.each([
+  [
+    "mutationNotice",
+    "items.file / แถว 3: เริ่มส่งแล้วแต่ยังยืนยันผล upload ไม่ได้ อาจมีไฟล์ที่ ECM กรุณาติดต่อผู้ดูแล ห้ามส่งไฟล์ซ้ำ",
+  ],
+  [
+    "commitNotice",
+    "ยังยืนยันผลบันทึก Folio รอบเดิมไม่ได้ ไฟล์อาจส่งแล้ว กรุณาตรวจผลเดิม ห้ามส่งไฟล์ซ้ำ",
+  ],
+])(
+  "picker preserves pending name and size without claiming no upload during %s",
+  (key, notice) => {
+    const h = harness();
+    h.plugin.init(JSON.stringify(data));
+    h.ack({
+      cleanupWarning: "ข้อมูลใหม่บันทึกแล้ว แต่ URL เก่าอาจยังเปิดได้",
+      filename: "original.TXT",
+      size: 49,
+      [key]: notice,
+    });
+    expect(h.elements.get("filename").textContent).toBe("original.TXT");
+    expect(h.elements.get("filesize").textContent).toBe("49 ไบต์");
+    expect(h.elements.get("status").textContent).toBe(notice);
+    expect(h.elements.get("status").textContent).not.toContain("ยังไม่ได้อัปโหลด");
+    expect(h.elements.get("cleanup-warning").textContent).toContain("URL เก่า");
+  }
+);
+
 test("picker ignores forged and stale host acknowledgements", () => {
   const h = harness();
   h.plugin.init(JSON.stringify(data));

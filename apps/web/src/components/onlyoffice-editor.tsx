@@ -1,4 +1,4 @@
-import type { Ref } from "react";
+import type { ReactElement, Ref } from "react";
 import {
   useCallback,
   useEffect,
@@ -8,6 +8,7 @@ import {
   useState,
 } from "react";
 
+import { Button } from "@/components/ui";
 import { recoveredAttachmentLease } from "@/features/onlyoffice/attachment-admission-recovery";
 import {
   acknowledgeBridge,
@@ -102,7 +103,7 @@ export const OnlyOfficeEditor = ({
   saveRequest?: number;
   trackNativeDirty?: boolean;
   title: string;
-}) => {
+}): ReactElement => {
   const [retryToken, setRetryToken] = useState(0);
   const editorOpeningRef = useRef<{
     url: string | undefined;
@@ -170,7 +171,13 @@ export const OnlyOfficeEditor = ({
   const [config, setConfig] = useState<EditorConfig | null>(null);
   const [checkpointPending, setCheckpointPending] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [attachmentNotice, setAttachmentNotice] = useState<string | null>(null);
+  const [attachmentNotice, setAttachmentNotice] = useState<
+    string | null | undefined
+  >();
+  const [cleanupWarning, setCleanupWarning] = useState<
+    string | null | undefined
+  >();
+  const [showSavedCopy, setShowSavedCopy] = useState(false);
   const [editorState, setEditorState] =
     useState<OnlyOfficeEditorState>("loading");
   const [expanded, setExpanded] = useState(false);
@@ -463,6 +470,8 @@ export const OnlyOfficeEditor = ({
     onCommandReadyChangeRef.current?.(false);
     loadedConfigUrlRef.current = null;
     setConfig(null);
+    setAttachmentNotice(undefined);
+    setCleanupWarning(undefined);
     setCheckpointPending(true);
     setError(null);
     reportState("loading");
@@ -819,21 +828,28 @@ export const OnlyOfficeEditor = ({
         ) {
           return;
         }
-        result =
-          data.type === "pending-file-save"
-            ? await holder.save(data, currentOptions)
-            : holder.handle(data, currentOptions);
+        holder.setScope(currentOptions.scopeIdentity);
+        if (data.type === "pending-file-save") {
+          await holder.refreshStatus(currentOptions);
+          result = await holder.save(data, currentOptions);
+        } else {
+          result = holder.handle(data, currentOptions);
+          if (typeof result.hasPending === "boolean") {
+            onDirtyChangeRef.current?.(
+              documentDirtyRef.current || holder.hasPending()
+            );
+          }
+          const status = await holder.refreshStatus(currentOptions);
+          if (status) {
+            Object.assign(result, status);
+          }
+        }
         if (
           data.type === "pending-file-check" &&
           ["save-draft", "submit"].includes(String(data.action))
         ) {
           result.checkpointOperation =
             await holder.pendingOperation(currentOptions);
-        }
-        if (typeof result.hasPending === "boolean") {
-          onDirtyChangeRef.current?.(
-            documentDirtyRef.current || holder.hasPending()
-          );
         }
       } catch (caughtError) {
         const recoveredLease = recoveredAttachmentLease(
@@ -854,7 +870,7 @@ export const OnlyOfficeEditor = ({
               ? caughtError.message
               : "เลือกไฟล์ไม่ได้ กรุณาลองใหม่",
         };
-        setAttachmentNotice(String(result.error));
+        setAttachmentNotice(config.attachmentNotice || String(result.error));
       }
       if (
         cancelled ||
@@ -879,7 +895,23 @@ export const OnlyOfficeEditor = ({
         onDirtyChangeRef.current?.(true);
       }
       if (!result.error) {
-        if (typeof result.validationError === "string") {
+        if (
+          typeof result.cleanupWarning === "string" ||
+          result.cleanupWarning === null
+        ) {
+          setCleanupWarning(result.cleanupWarning);
+        }
+        if (
+          typeof result.mutationNotice === "string" &&
+          result.mutationNotice
+        ) {
+          setAttachmentNotice(result.mutationNotice);
+        } else if (
+          typeof result.commitNotice === "string" &&
+          result.commitNotice
+        ) {
+          setAttachmentNotice(result.commitNotice);
+        } else if (typeof result.validationError === "string") {
           setAttachmentNotice(result.validationError);
         } else if (hasPending) {
           const slot = typeof data.tag === "string" ? ` ในช่อง ${data.tag}` : "";
@@ -1142,6 +1174,21 @@ export const OnlyOfficeEditor = ({
             : null
         );
       }
+      if (message.status === "failed" && config.bridge?.uploadPoc) {
+        const options = config.bridge.uploadPoc;
+        const refreshFailureStatus = async () => {
+          try {
+            const status =
+              await uploadPocFilesRef.current?.refreshStatus(options);
+            if (!cancelled && status?.mutationNotice) {
+              setAttachmentNotice(status.mutationNotice);
+            }
+          } catch {
+            // Keep the original failure and checkpoint when durable status cannot be read.
+          }
+        };
+        refreshFailureStatus();
+      }
       message = {
         ...message,
         hasPendingAttachments: uploadPocFilesRef.current?.hasPending() ?? false,
@@ -1293,25 +1340,55 @@ export const OnlyOfficeEditor = ({
     setRetryToken((value) => value + 1);
   };
 
+  const activeAttachmentNotice =
+    attachmentNotice === undefined
+      ? config?.attachmentNotice
+      : attachmentNotice;
+  const activeCleanupWarning =
+    cleanupWarning === undefined
+      ? config?.bridge?.uploadPoc?.cleanupWarning
+      : cleanupWarning;
+
   return (
     <>
-      {attachmentNotice || config?.attachmentNotice ? (
+      {activeAttachmentNotice ? (
         <p
           className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
           role="status"
           aria-live="polite"
         >
-          {attachmentNotice ?? config?.attachmentNotice}
+          {activeAttachmentNotice}
         </p>
       ) : null}
-      {typeof config?.bridge?.uploadPoc?.cleanupWarning === "string" &&
-      config.bridge.uploadPoc.cleanupWarning ? (
+      {(activeAttachmentNotice || (checkpointPending && error)) &&
+      config?.bridge?.uploadPoc?.responseId ? (
+        <div className="mb-3">
+          <p className="mb-2 text-sm text-[var(--ink-soft)]">
+            เปิดสำเนาเดิมได้โดยไม่ตรวจรับรอบใหม่ ไม่ส่งไฟล์ซ้ำ และไม่ทิ้งไฟล์ที่เลือกค้างในหน้านี้
+          </p>
+          <Button
+            type="button"
+            variant="secondary"
+            onClick={() => setShowSavedCopy((visible) => !visible)}
+          >
+            {showSavedCopy ? "ปิดสำเนาที่บันทึกไว้" : "เปิดอ่าน Excel ฉบับที่บันทึกไว้"}
+          </Button>
+          {showSavedCopy ? (
+            <OnlyOfficeEditor
+              configUrl={`/api/responses/${encodeURIComponent(config.bridge.uploadPoc.responseId)}/draft/viewer-config`}
+              readOnly
+              title="Excel ฉบับที่บันทึกไว้ — อ่านอย่างเดียว"
+            />
+          ) : null}
+        </div>
+      ) : null}
+      {activeCleanupWarning ? (
         <p
           className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
           role="status"
           aria-live="polite"
         >
-          {config.bridge.uploadPoc.cleanupWarning}
+          {activeCleanupWarning}
         </p>
       ) : null}
       <EditorSurface

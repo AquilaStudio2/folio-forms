@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `eaa95e8c91b040f397be151fe5b3ccf2a4dd8c99`
+Commit: `c2d0a4e4bd331dce971f84f854ff01372ec6ad08`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -22,7 +22,7 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `/admin/` | `apps/web/src/routes/admin/index.tsx:5` |
 | `/admin/results/$responseId/correction` | `apps/web/src/routes/admin/results/$responseId/correction.tsx:147` |
 | `/admin/results/$responseId/` | `apps/web/src/routes/admin/results/$responseId/index.tsx:534` |
-| `/admin/results/` | `apps/web/src/routes/admin/results/index.tsx:465` |
+| `/admin/results/` | `apps/web/src/routes/admin/results/index.tsx:766` |
 | `/admin/results` | `apps/web/src/routes/admin/results.tsx:5` |
 | `/admin/users` | `apps/web/src/routes/admin/users.tsx:749` |
 | `/admin` | `apps/web/src/routes/admin.tsx:35` |
@@ -109,22 +109,27 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | GET | `/api/forms/:publicId/my-submissions` | `apps/server/src/routes/public-forms.ts:100` |
 | GET | `/api/forms/:publicId/my-submissions/export` | `apps/server/src/routes/public-forms.ts:110` |
 | POST | `/api/forms/:publicId/start` | `apps/server/src/routes/public-forms.ts:128` |
-| GET | `/api/responses/:id/attachment-operations/:checkpoint` | `apps/server/src/routes/response-actions.ts:70` |
-| POST | `/api/responses/:id/attachment-operations/:checkpoint/recover` | `apps/server/src/routes/response-actions.ts:114` |
-| POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:126` |
-| POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:342` |
-| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:62` |
-| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:96` |
-| POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:228` |
-| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:337` |
-| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:405` |
-| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:449` |
-| GET | `/api/admin/results` | `apps/server/src/routes/results.ts:271` |
-| GET | `/api/admin/results/:id` | `apps/server/src/routes/results.ts:349` |
-| GET | `/api/admin/results/:id/viewer-config` | `apps/server/src/routes/results.ts:499` |
-| GET | `/api/admin/results/:id/correction/editor-config` | `apps/server/src/routes/results.ts:574` |
-| POST | `/api/admin/results/:id/correction` | `apps/server/src/routes/results.ts:587` |
-| POST | `/api/admin/results/:id/correction/workspace` | `apps/server/src/routes/results.ts:588` |
+| GET | `/api/responses/:id/attachment-operations/:checkpoint` | `apps/server/src/routes/response-actions.ts:103` |
+| POST | `/api/responses/:id/attachment-operations/:checkpoint/recover` | `apps/server/src/routes/response-actions.ts:147` |
+| POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:159` |
+| POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:379` |
+| GET | `/api/responses/:id/attachment-status` | `apps/server/src/routes/responses.ts:67` |
+| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:92` |
+| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:126` |
+| POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:258` |
+| GET | `/api/responses/:id/draft/viewer-config` | `apps/server/src/routes/responses.ts:367` |
+| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:406` |
+| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:474` |
+| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:518` |
+| GET | `/api/admin/results/attachment-follow-up` | `apps/server/src/routes/results.ts:276` |
+| POST | `/api/admin/results/attachment-follow-up/:operationId/settle` | `apps/server/src/routes/results.ts:288` |
+| POST | `/api/admin/results/attachment-follow-up/:operationId/cancel` | `apps/server/src/routes/results.ts:303` |
+| GET | `/api/admin/results` | `apps/server/src/routes/results.ts:325` |
+| GET | `/api/admin/results/:id` | `apps/server/src/routes/results.ts:403` |
+| GET | `/api/admin/results/:id/viewer-config` | `apps/server/src/routes/results.ts:553` |
+| GET | `/api/admin/results/:id/correction/editor-config` | `apps/server/src/routes/results.ts:628` |
+| POST | `/api/admin/results/:id/correction` | `apps/server/src/routes/results.ts:641` |
+| POST | `/api/admin/results/:id/correction/workspace` | `apps/server/src/routes/results.ts:642` |
 | GET | `/api/admin/forms/:publicId/attachment-categories` | `apps/server/src/routes/spreadsheet-authoring.ts:234` |
 | GET | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:244` |
 | PATCH | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:261` |
@@ -180,9 +185,9 @@ Separate private HTTP listener in `apps/server/src/document-worker-server.ts:170
 | EcmAuthState | `ecm_auth_states` | `packages/db/prisma/schema.prisma:660` |
 | EcmCategoryCatalog | `ecm_category_catalogs` | `packages/db/prisma/schema.prisma:673` |
 | EcmAttachmentBatch | `ecm_attachment_batches` | `packages/db/prisma/schema.prisma:682` |
-| EcmAttachmentVersion | `ecm_attachment_versions` | `packages/db/prisma/schema.prisma:700` |
-| EcmAttachmentReference | `ecm_attachment_references` | `packages/db/prisma/schema.prisma:725` |
-| EcmAttachmentCleanup | `ecm_attachment_cleanups` | `packages/db/prisma/schema.prisma:736` |
+| EcmAttachmentVersion | `ecm_attachment_versions` | `packages/db/prisma/schema.prisma:701` |
+| EcmAttachmentReference | `ecm_attachment_references` | `packages/db/prisma/schema.prisma:729` |
+| EcmAttachmentCleanup | `ecm_attachment_cleanups` | `packages/db/prisma/schema.prisma:740` |
 
 ## Status enums
 

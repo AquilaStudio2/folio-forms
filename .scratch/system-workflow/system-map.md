@@ -15,6 +15,8 @@
 
 ทบทวน source ช่องแนบรายแถววันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments-rows` จาก integration `402a8f0` พร้อม source changes ที่ยังไม่ commit: ขยาย lifecycle เดียวสู่ physical table slots, nested canonical objects, required active rows, reference reconciliation และ verified document/row transition สำหรับ pending Files เดิม ยังไม่ได้รัน HTTP/UI/build/type checks หรือ native/browser/export acceptance ของส่วนนี้ ผล RED ของ tracer ก่อนแก้ production ตรวจโดย Parent แล้ว ไม่ใช่ผลยืนยัน implementation หรือ live ECM
 
+ทบทวน source recovery/follow-up วันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments-recovery` จาก integration `402a8f0` พร้อม source changes ที่ยังไม่ commit: เพิ่ม durable sender fence, request-settlement receipt, first-delete operator action, trusted tracking ที่ขยายใน Results เดิม และข้อความ hold ใน popup/fill หลัง rejected action การเพิ่ม source/regressions ยังไม่ใช่ผลผ่าน automated/native/browser และไม่ใช่หลักฐานบริการ ECM จริง ส่วน generated workflow artifacts ให้ขั้นตรวจส่วนกลางสร้างหลังรวม source
+
 เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
 รายการ source ครอบคลุมหน้าและ layout ฝั่งเว็บ, HTTP routes ของเซิร์ฟเวอร์หลัก, private document worker และ Prisma models
@@ -544,6 +546,15 @@ flowchart TD
         scalarAdmission -->|"ไม่พบและไม่มี active mutation"| scalarLease["rotate lease UUID; old sender เริ่มไม่ได้; คง File และ native edits"]
         scalarLease -->|"renew capability แล้วผู้ใช้กดบันทึกใหม่"| scalarCapture
         scalarPoll -->|"completed"| scalarResume
+        scalarAdmin --> followUp["Results เดิม:ขยาย trusted operation/version/slot/destination/time"]
+        followUp --> senderFence["Admin ที่มีสิทธิ์:หยุด dispatch/commit ของ batch เดิมด้วย generation fence"]
+        senderFence --> remoteUnknown{"คำขอเดิมมี validated receipt หรือไม่"}
+        remoteUnknown -->|"ไม่มี: restart/timeout/empty search ไม่ใช่ proof"| scalarHold
+        remoteUnknown -->|"late receipt จาก request เดิม"| canceledReceipt["persist received/request-settled ของ intent เดิม; ห้าม adopt"]
+        canceledReceipt --> firstDelete{"Admin + generation ปัจจุบัน + ไม่มี refs + ไม่เคยส่ง DELETE"}
+        firstDelete -->|"ครบ"| operatorDelete["เริ่ม DELETE ครั้งแรก; บันทึก actor และ trusted evidence"]
+        operatorDelete -->|"verified response และ canceled files ครบ"| settled["batch canceled; ผู้ใช้เริ่มใหม่ด้วย identities ใหม่"]
+        operatorDelete -->|"ผลไม่ชัด"| scalarHold
     end
 ```
 
@@ -603,6 +614,10 @@ Completed Operation ส่ง `attachmentTransition` ที่มี from/to can
 
 `EcmAttachmentCleanup` บันทึก initiating operation/version/Response และสถานะก่อน dispatch ใน transaction ของ snapshot ใหม่ ไม่มี cascading relation กับ Response Initial cleanup อ่านเฉพาะ pending intents ของ explicit operation นั้น ไม่ sweep งานค้างทั้ง Response และไม่ resend failed/unknown DELETE รุ่นเก่าหลัง Save รอบถัดไป `bridge.uploadPoc.cleanupWarning` เป็น safe string หรือ null จาก durable pending/started/unknown records จึงเห็นหลัง reopen และคงอยู่แม้ Save ถัดไปสำเร็จ ข้อมูลใหม่ยังอ่าน/ส่งออกได้ ส่วน canceled-batch cleanup ไม่ครบคง independent mutation hold เดิม ไม่มี queue, daemon หรือสมมติฐานว่า HTTP error/not-found พิสูจน์ผลลบแล้ว
 
+ก่อน upload แต่ละไฟล์ durable admission เปลี่ยนได้เพียง `prepared` ที่ยังไม่มี `sentAt` ภายใต้ batch lock เดียวกับ cancel/commit เท่านั้น การ cancel หรือ Operation failure fence batch ก่อนให้ sender เก่าเริ่มไฟล์ถัดไป และเปลี่ยน intents ที่ยังไม่ส่งเป็น canceled ส่วน started ไม่ถือว่าไม่มีไฟล์ การได้รับ validated receipt ผูกกับ original intent พร้อม `requestSettledAt` ใน transaction เดียว แม้ batch ถูก cancel ไปแล้วก็เก็บไว้เป็น cleanup pending ไม่ revive canonical commit การ restart ไม่ reset started/deleting ให้เป็นงานที่ส่งซ้ำได้
+
+User อ่าน `GET /api/responses/:id/attachment-status` ตามสิทธิ์เดิมเพื่อแสดง slot/row/reason/next action จาก durable state ใน fill และ popup เดิม เมื่อ upload อาจเกิดขึ้นแล้ว popup ไม่อ้างว่า “ยังไม่ได้อัปโหลด” เพียงเพราะ File ยังอยู่ใน memory การตรวจหรือการกดคำสั่งที่ถูกปฏิเสธยังคงข้อความติดต่อ Admin/ห้ามส่งซ้ำ ต่างจาก own Folio commit ที่ต้องตรวจ checkpoint เดิม และจาก committed cleanup warning ที่ไม่ block งานใหม่ ถ้าตรวจ checkpoint ก่อนเปิดแก้ไม่ได้ ยังมี action แยกเปิด canonical Excel ที่บันทึกไว้ผ่าน `GET /api/responses/:id/draft/viewer-config` ตามสิทธิ์เดิมใน existing read-only viewer ที่ไม่มี mutation capability ไม่ capture native snapshot ไม่ล้าง checkpoint และไม่รวม pending File
+
 Lookup404 ไม่ใช่หลักฐานว่าคำขอเก่าจะเริ่มไม่ได้ Host ใช้ `POST /api/responses/:id/attachment-operations/:checkpoint/recover` ภายใต้สิทธิ์ action เดิม โดย server lock Form แล้ว lease ตาม admission ของ `createOperation` หากพบ batch คืน Operation เดิม หากไม่พบและไม่มี active mutation จึง rotate UUID ของ lease เดิมใน transaction เพื่อให้ sender เก่าที่ค้างก่อน admission ผ่าน locked recheck ไม่ได้ คืน negative-admission proof พร้อม normal lease bridge แล้วจึงล้าง checkpoint เก่า คง File และ native edits ให้ผู้ใช้กด Save/Submit ใหม่ผ่าน capability renewal เดิม Host รับ bridge เฉพาะ expected old lease/scope ที่ยังตรงและไม่รับ stale renewal มาย้อน UUID ไม่มีการ resend ด้วยเวลา/404 หรือสร้าง save framework ใหม่
 
 ผลสำเร็จของ checkpoint เก่าเป็นหลักฐาน recovery ไม่ใช่หลักฐานว่า ordinary snapshot ที่เพิ่ง capture ถูกบันทึกแล้ว ก่อนสร้าง editable native frame ระบบตรวจ checkpoint ที่เก็บไว้ ใช้ bounded `waitForOperation` เดิมและ renew lease เดิมระหว่างรอ แล้วอ่าน canonical config ใหม่ก่อนเปิดแก้ หากผลยังยืนยันไม่ได้จะแสดง retry ที่มีขอบเขต ไม่ล้าง UUID หรือเปิดให้แก้ระหว่าง old commit ที่ยังอาจเกิดขึ้น ส่วน own request ที่ไม่ทราบผลจะคง native readOnly เดิม แต่เปิดปุ่มตรวจผลเดิม การ reconnect ของ plugin ตรวจ guard เดียวกันก่อนคืน editing ไม่อาศัย SDK edit counter หรือ hash ที่เดาเอง
@@ -611,7 +626,7 @@ Lookup404 ไม่ใช่หลักฐานว่าคำขอเก่�
 
 เมื่อ old outcome failed และ batch canceled ที่ยืนยันแล้ว จึงปล่อย checkpoint ให้ explicit Save/Submit ใหม่ได้ โดยคง File ที่ยังไม่ได้รับและใช้ version/UUID ใหม่ Known terminal failure หรือ negative-admission proof คืน native editing ตาม semantics เดิม ส่วน completed scalar ที่เปลี่ยน document key คง frozen จน host remount canonical เรียบร้อย Guard/identity-equal File clearing และ terminal replay dedupe เดิมยังอยู่
 
-Excel Fill Download ที่ไม่มี pending Files/removals ยังคง ordinary unsaved edits ใช้ existing native command กับ pinned `Api.GetActiveSheet().worksheet.workbook.oApi` และ `GetFileToDownload` เดิม ไม่ปลด worksheet/object protection ส่วน row attachments มี source และ regression coverage เพิ่มใน slice นี้ แต่ actual native new-row/protection/pending continuity ยังรอ Parent ตรวจจริง การแก้ไฟล์ผ่าน Correction, selected-history exports และ operator settlement มีตั๋วและ acceptance ของตน ไม่ถือว่า source row lifecycle นี้ยืนยันทั้งหมด
+Excel Fill Download ที่ไม่มี pending Files/removals ยังคง ordinary unsaved edits ใช้ existing native command กับ pinned `Api.GetActiveSheet().worksheet.workbook.oApi` และ `GetFileToDownload` เดิม ไม่ปลด worksheet/object protection ส่วน row attachments และ recovery/operator settlement มี source กับ regression coverage ใน slices นี้ แต่ actual native new-row/protection/pending continuity และ authorized follow-up ยังรอ Parent ตรวจจริง การแก้ไฟล์ผ่าน Correction และ selected-history exports มีตั๋วและ acceptance ของตน ไม่ถือว่า source row/recovery lifecycle นี้ยืนยันทั้งหมด
 
 อ้างอิง [shared attachment request/checkpoint](../../apps/server/src/responses/attachment-operation.ts), [durable attachment lifecycle](../../apps/server/src/ecm/attachments.ts), [strict scalar/table canonical data และ physical slots](../../apps/server/src/responses/attachment-data.ts), [trusted workbook extraction](../../apps/server/src/documents/spreadsheets/workbook.ts), [trusted native preparation/row proof](../../apps/server/src/operations/spreadsheet-document.ts), [original host pending Files](../../apps/web/src/features/onlyoffice/upload-poc-pending.ts), [completion consumer](../../apps/web/src/components/onlyoffice-editor.tsx), [HTTP scalar/table acceptance](../../apps/server/test/http/ecm-scalar-save-submit.test.ts) และ [pending transition consumer tests](../../apps/web/test/ui/upload-poc-pending.test.tsx)
 
@@ -644,6 +659,14 @@ flowchart TD
     preserved["คง Original และ revision ก่อนหน้า"]
     past["Admin submissions หรือ receipt ตาม submissionId"]
     search --> filters --> response --> state
+    search --> tracking["อ่าน durable attachment tracking แยกจาก normal Response rows"]
+    tracking --> expanded["ขยายใน Results เดิม: รวม cleanup-only และ deleted Response"]
+    expanded --> evidence["แสดง trusted ids/name/year/category/send/receipt/delete/evidence; ไม่แสดง token"]
+    evidence --> operator{"current enabled Admin เท่านั้น"}
+    operator --> fence["หยุด batch เดิม:กัน dispatch/commit ใหม่ ไม่ยืนยัน remote absence"]
+    operator --> cleanup["first DELETE เฉพาะ receipt ที่ settled + sender fenced + no refs + generation ตรง"]
+    cleanup --> verified["verified DELETE response:บันทึก actor/proof; ครบทุก canceled intent จึงปลด hold"]
+    cleanup --> uncertain["timeout/unknown:คง hold ห้าม retry หรือใช้ free text ปลด"]
     state -->|"ไม่ใช่"| draft --> read
     state -->|"ใช่"| submission --> revision --> read
     read -->|"เฉพาะ submitted"| doc
@@ -669,6 +692,14 @@ Correction เริ่มจากเอกสาร revision ปัจจุ�
 ปุ่มใช้ Submission และ revision ที่เลือก รวม Original และ Correction เก่า ไม่บังคับกลับไปรุ่นล่าสุด เมื่อประวัติยังไม่พร้อม โหลดล้มเหลว หรือไม่มี revision ที่เลือก จะดาวน์โหลดไม่ได้ ระหว่างส่งออกทั้งสองปุ่มถูกปิดเพื่อกันคำขอซ้ำ ข้อผิดพลาดเดิมแสดงให้ลองใหม่ได้โดยไม่บันทึก Draft ไม่ส่งคำตอบ และไม่เปลี่ยนข้อมูลหรือสถานะ Submission ตัวเลือก Revision และคำสั่ง Correction ยังอยู่ตำแหน่งเดิม Viewer ไม่ได้รับคำสั่งแก้ไขหรือลบเพิ่ม หน้ารายละเอียด Submission อีกหน้ายังคงใช้แท็บและปุ่มส่งออกเดิมโดยไม่รับ actions เพิ่ม
 
 หน้า Results รายละเอียดของ Draft ปัจจุบันแสดงอ่านอย่างเดียวและไม่มีปุ่มดาวน์โหลด ทั้ง Admin และ Viewer ส่วน API export Draft แยกมีสิทธิ์ของเจ้าของและ Viewer ตาม route จึงต้องแยกความสามารถของ API ออกจากปุ่มที่มีในหน้านี้
+
+ส่วนติดตาม ECM อยู่ในหน้า Results เดิมและขยายได้เป็นราย original operation ทั้ง Admin และ Viewer อ่านได้ แต่ Viewer ไม่มี cancel/settle mutations รายการนี้กรองด้วย Form เท่านั้นและบอกชัดว่าไม่ใช่ normal result row หลัง Response deletion ยังใช้ batch/version/cleanup ที่ไม่มี cascade และ retained form scope ได้ โดยไม่คืน deleted answer JSON และไม่สร้างลิงก์เปิด Response ที่ลบแล้ว รวม cleanup records ที่ไม่มี batch จาก internal transition ด้วย ไม่มี dashboard ใหม่หรือ Audit-only substitute
+
+`POST /api/admin/results/attachment-follow-up/:operationId/cancel` ตรวจ current enabled Admin กับ batch generation แล้ว fence sender/commit และยุติ original Operation การทำเช่นนี้ไม่ยืนยันคำขอที่ ECM รับไปแล้ว การดำเนินการ `/settle` รับเฉพาะ trusted version identity/generation ตรวจสิทธิ์อีกครั้งหลัง auth ก่อน dispatch ตรวจ sender fence, validated original receipt/request settlement, exact Folio account, cleanup ที่ยังไม่เคย dispatch และ global references ภายใต้ version-row fence เดียวกับการ acquire reference จึงเริ่ม DELETE ครั้งแรกได้จริงพร้อม actor/evidence/audit และเก็บ verified-delete confirmation โดยไม่ adopt ไฟล์กลับเป็นคำตอบ
+
+Unknown upload ที่ไม่มี usable receipt และ DELETE ที่เคย dispatch แต่ผลไม่ชัด ไม่มี API ปลดด้วย free text/checkbox/empty search/รอเวลา หากไม่มี provider settlement contract ที่พิสูจน์ผลจริงต้องคง blocked ตามจริง `/settle` ไม่ resend งานที่ attempted แล้ว ผลลบ confirmed ของ canceled batch ปลด hold เฉพาะเมื่อทุก version เป็น canceled/deleted ส่วน committed old-file cleanup ยังเป็น warning ที่ใช้คำตอบใหม่ต่อได้ การประสาน PM/ECM และหลักฐานบริการจริงยังเป็น deployment readiness gate ไม่ใช่ความสามารถ lookup ที่สมมติขึ้น
+
+อ้างอิง [trusted follow-up query/actions](../../apps/server/src/ecm/follow-up.ts), [sender/request/reference fences](../../apps/server/src/ecm/attachments.ts), [Results inline tracking](../../apps/web/src/routes/admin/results/index.tsx), [durable User status](../../apps/server/src/routes/responses.ts) และ [HTTP recovery regressions](../../apps/server/test/http/ecm-scalar-save-submit.test.ts)
 
 อ้างอิง [Results API](../../apps/server/src/routes/results.ts#L271), [current result state](../../apps/server/src/responses/query.ts#L269), [Results actions และ revision](../../apps/web/src/routes/admin/results/$responseId/index.tsx#L491), [layout แท็บและ actions](../../apps/web/src/components/submission-result-viewer.tsx#L199), [handler ส่งออกเดิม](../../apps/web/src/routes/admin/results/$responseId/index.tsx#L266), [Correction workspace](../../apps/server/src/responses/editor.ts#L57), [Correction commit](../../apps/server/src/operations/response-completion.ts#L421) และ [Submission API](../../apps/server/src/routes/submissions.ts#L34)
 
@@ -973,7 +1004,7 @@ ER แสดงความสัมพันธ์หลักสำหรั�
 | การแก้เอกสาร | `EditorLease` กันหลาย session แก้ target เดียวกัน, `Operation` เก็บงาน asynchronous, `CallbackClaim` กัน callback ใช้ซ้ำ |
 | Catalog ต่อการเปิด editor | `PdmsProjectCatalogSession` ผูกรายชื่อโครงการกับผู้ใช้ auth session, lease, target และ document |
 | ECM auth และ Document Category | `EcmAuthState` เก็บ encrypted token, expiry, generation และ shared claim; `EcmCategoryCatalog` เก็บรายชื่อจริงที่มีอายุและผูก authoring scope ไม่เก็บ service credentials |
-| Scalar/table attachment lifecycle | `EcmAttachmentBatch` ผูก original checkpoint/actor/lease/document และ independent mutation hold; `EcmAttachmentVersion` เก็บ immutable intent/paired receipt รวม original physical `rowIndex` โดยไม่เก็บ bytes; current canonical `row_index` ย้ายได้ผ่าน trusted mapping; `EcmAttachmentReference` fence references ทุก nested table/scalar snapshot กับ deletion claim; `EcmAttachmentCleanup` เก็บ initiating operation/version และ durable cleanup warning แยกจาก canceled batch |
+| Scalar/table attachment lifecycle และ recovery | `EcmAttachmentBatch` ผูก original checkpoint/actor/lease/document, generation และ independent mutation hold; `EcmAttachmentVersion` เก็บ immutable original intent/paired receipt/request settlement รวม original physical `rowIndex` โดยไม่เก็บ bytes; current canonical `row_index` ย้ายได้ผ่าน trusted mapping; `EcmAttachmentReference` fence references ทุก nested table/scalar snapshot กับ deletion claim; `EcmAttachmentCleanup` เก็บ initiating operation/version/retained form scope, attempt generation, verified actor/evidence และ durable cleanup warning แยกจาก canceled batch โดยไม่มี cascading relations |
 | การตรวจย้อนหลังและ cleanup | `AuditEvent` เก็บเหตุการณ์, `ObjectCleanupIntent` เก็บไฟล์ที่ต้องลบต่อ, `DeletionTombstone` กันข้อมูลที่ลบแล้วกลับมาจาก handoff เดิม |
 
 AI authoring sessions อยู่ใน workspace ชั่วคราวของบริการ ไม่ได้มี Prisma model ชื่อ AI session ใน schema นี้
@@ -1439,9 +1470,9 @@ flowchart TD
 | Spreadsheet authoring | `routes/spreadsheet-authoring.ts`: get/patch/recover bindings และ scoped attachment-categories; ECM auth/category อยู่ใน `ecm/` |
 | Form fill | `routes/public-forms.ts`: published metadata, start/resume/reopen, editor-config และประวัติการส่งของเจ้าของ |
 | Response actions | `routes/response-actions.ts`: save Draft และ Submit ทั้ง native กับ ONLYOFFICE; scalar/table attachment multipart ใช้ trusted native snapshot, physical-slot validation และ original attachment checkpoint เดียว |
-| Response read/delete | `routes/responses.ts`: my responses, current correction history, saved Draft export, owner discard และ Admin erase |
+| Response read/delete | `routes/responses.ts`: my responses, current correction history, saved Draft export/read-only inspection, authorized durable attachment-status, owner discard และ Admin erase |
 | Excel Fill Download | `POST /api/responses/:id/editor-export/:format`: เจ้าของ Response ใช้ editor lease ปัจจุบันดาวน์โหลดสำเนา XLSX หรือแปลงเป็น PDF |
-| Results/correction | `routes/results.ts`: list, detail, viewer-config, correction editor, final correction และ workspace save |
+| Results/correction | `routes/results.ts`: list, detail, viewer-config, correction editor, final correction/workspace save และ independent inline attachment-follow-up reads/authorized cancel/first-delete settlement |
 | Submission | `routes/submissions.ts`: data/fields, correction history, JSON, DOCX หรือ XLSX และ PDF ตาม revision |
 | Operation/lease | `routes/operations.ts`, `routes/editor-leases.ts`: poll, renew และ release |
 | PDMS catalog | `routes/pdms-project-catalog.ts`: retry catalog ภายใต้ editor scope |
