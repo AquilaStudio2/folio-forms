@@ -20,6 +20,7 @@ import type {
   AdminResultDetail,
   ReceiptField,
   ResponseRevisionsResponse,
+  ResponseDeletionOutcome,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -121,6 +122,9 @@ const AdminResultDetailRoute = () => {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteSuccess, setDeleteSuccess] = useState(false);
+  const [deleteCleanupWarning, setDeleteCleanupWarning] = useState<
+    string | null
+  >(null);
   const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
   const deleteFeedbackRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -252,7 +256,11 @@ const AdminResultDetailRoute = () => {
     setDeleting(true);
     setDeleteError(null);
     try {
-      await apiDelete(`/api/admin/responses/${responseId}`, { confirm: true });
+      const outcome = await apiDelete<ResponseDeletionOutcome>(
+        `/api/admin/responses/${responseId}`,
+        { confirm: true }
+      );
+      setDeleteCleanupWarning(outcome.attachmentCleanup.warning);
       setDeleteConfirmation(false);
       setResult(null);
       setDeleteSuccess(true);
@@ -292,10 +300,14 @@ const AdminResultDetailRoute = () => {
         role="status"
         tabIndex={-1}
       >
-        <Notice tone="success">
+        <Notice tone={deleteCleanupWarning ? "neutral" : "success"}>
           <strong>ลบข้อมูลคำตอบถาวรแล้ว</strong>
-          <div>ระบบลบข้อมูลส่วนบุคคล เอกสาร และข้อมูล Prefill ที่เกี่ยวข้องแล้ว</div>
+          <div>
+            ข้อมูลคำตอบ เอกสารหลัก และข้อมูล Prefill ถูกลบแล้ว
+            สถานะไฟล์แนบแยกจากผลลบข้อมูล
+          </div>
         </Notice>
+        {deleteCleanupWarning ? <Notice>{deleteCleanupWarning}</Notice> : null}
         <Link search={{ form: undefined }} to="/admin/results">
           <Button variant="secondary">กลับไปรายการผลลัพธ์</Button>
         </Link>

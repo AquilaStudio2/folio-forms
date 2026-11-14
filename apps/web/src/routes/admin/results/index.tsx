@@ -79,6 +79,7 @@ const AdminResultsRoute = () => {
   const [error, setError] = useState<string | null>(null);
   const [reloadVersion, setReloadVersion] = useState(0);
   const [followUps, setFollowUps] = useState<AttachmentFollowUp[]>([]);
+  const [followUpCase, setFollowUpCase] = useState("");
   const [followUpError, setFollowUpError] = useState<string | null>(null);
   const [followUpActionError, setFollowUpActionError] = useState<string | null>(
     null
@@ -234,6 +235,12 @@ const AdminResultsRoute = () => {
     setPage(1);
   };
 
+  const visibleFollowUps = followUps.filter(
+    (entry) =>
+      !followUpCase.trim() ||
+      entry.caseReference === followUpCase.trim() ||
+      entry.operationId === followUpCase.trim()
+  );
   return (
     <div className="space-y-6">
       {followUpConfirmation ? (
@@ -600,6 +607,13 @@ const AdminResultsRoute = () => {
           รายการติดตามแยกจากคำตอบปกติ กรองด้วยแบบฟอร์มเท่านั้น ไม่คืนข้อมูลคำตอบที่ลบแล้ว URL
           เป็น public และอาจยังเปิดได้ระหว่าง cleanup
         </p>
+        <label className="my-3 block text-sm">
+          รหัสติดตามการลบหรือ Operation
+          <Input
+            value={followUpCase}
+            onChange={(event) => setFollowUpCase(event.target.value)}
+          />
+        </label>
         {followUpError ? <Notice tone="danger">{followUpError}</Notice> : null}
         {followUpActionError ? (
           <Notice tone="danger">{followUpActionError}</Notice>
@@ -612,10 +626,10 @@ const AdminResultsRoute = () => {
           ตรวจหลักฐานล่าสุด
         </Button>
         {followUpLoading ? <p role="status">กำลังอ่านหลักฐานไฟล์แนบ…</p> : null}
-        {!followUpLoading && !followUps.length && !followUpError ? (
+        {!followUpLoading && !visibleFollowUps.length && !followUpError ? (
           <p className="mt-3">ไม่มีรายการติดตาม</p>
         ) : null}
-        {followUps.map((followUp) => (
+        {visibleFollowUps.map((followUp) => (
           <details
             key={followUp.operationId}
             className="mt-4 rounded-lg border border-[var(--line)] p-4"
@@ -630,6 +644,12 @@ const AdminResultsRoute = () => {
             <p className="mt-3">{followUp.reason}</p>
             <p className="mt-2 text-sm">{followUp.nextAction}</p>
             <div className="my-3 grid gap-1 break-all text-sm">
+              {followUp.caseReference ? (
+                <div>
+                  รหัสติดตามการลบ:{" "}
+                  <span className="font-mono">{followUp.caseReference}</span>
+                </div>
+              ) : null}
               <div>
                 Operation:{" "}
                 <span className="font-mono">{followUp.operationId}</span>

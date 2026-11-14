@@ -13,11 +13,12 @@ import {
   WandSparkles,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import { LegacySsoSwitchButton } from "@/components/legacy-sso-switch-button";
 import { Button, Notice, Spinner } from "@/components/ui";
-import { ApiError, homePathForRole } from "@/lib/api";
+import { ApiError, apiGet, homePathForRole } from "@/lib/api";
+import type { ResponseAttachmentCleanup } from "@/lib/api";
 import { roleFor, useAuth } from "@/lib/auth";
 
 const navigationLinkClassName =
@@ -106,6 +107,72 @@ const AdminNavigation = ({
         <Inbox size={16} />
         แดชบอร์ด
       </Link>
+    </>
+  );
+};
+
+const ResponseDeletionWarnings = ({
+  ownerUserId,
+  pathname,
+}: {
+  ownerUserId: string | undefined;
+  pathname: string;
+}) => {
+  const [deletionWarnings, setDeletionWarnings] = useState<{
+    outcomes: ResponseAttachmentCleanup[];
+    ownerUserId: string;
+  } | null>(null);
+  const [deletionStatusError, setDeletionStatusError] = useState(false);
+  useEffect(() => {
+    let canceled = false;
+    setDeletionWarnings(null);
+    setDeletionStatusError(false);
+    if (!ownerUserId) {
+      return;
+    }
+    const loadWarnings = async () => {
+      try {
+        const payload = await apiGet<{ warnings: ResponseAttachmentCleanup[] }>(
+          "/api/responses/deletion-status"
+        );
+        if (!Array.isArray(payload.warnings)) {
+          throw new TypeError("Response deletion status is invalid");
+        }
+        if (!canceled) {
+          setDeletionWarnings({ outcomes: payload.warnings, ownerUserId });
+        }
+      } catch {
+        if (!canceled) {
+          setDeletionStatusError(true);
+        }
+      }
+    };
+    void loadWarnings();
+    return () => {
+      canceled = true;
+    };
+  }, [ownerUserId, pathname]);
+  return (
+    <>
+      {deletionWarnings?.ownerUserId === ownerUserId && deletionWarnings
+        ? deletionWarnings.outcomes.map((cleanup) => (
+            <div
+              key={cleanup.caseReference}
+              className="mx-auto max-w-[1240px] px-5 pt-4 lg:px-8"
+              role="status"
+            >
+              <Notice>{cleanup.warning}</Notice>
+            </div>
+          ))
+        : null}
+      {deletionStatusError ? (
+        <div className="mx-auto max-w-[1240px] px-5 pt-4 lg:px-8">
+          <Notice>
+            ยังตรวจสถานะการลบไฟล์แนบไม่ได้ หากเพิ่งลบคำตอบ อย่าถือว่าไฟล์ถูกลบครบ
+            กรุณาติดต่อผู้ดูแล
+          </Notice>
+        </div>
+      ) : null}
     </>
   );
 };
@@ -275,6 +342,10 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
           <Notice tone="danger">ไม่สามารถเชื่อมต่อบัญชีระบบเดิมได้ กรุณาลองอีกครั้ง</Notice>
         </div>
       ) : null}
+      <ResponseDeletionWarnings
+        ownerUserId={user?.id}
+        pathname={location.pathname}
+      />
       <main className="mx-auto max-w-[1240px] px-5 py-8 lg:px-8 lg:py-12">
         {children}
       </main>

@@ -1143,6 +1143,7 @@ describe("VIEWER existing results access", () => {
               "/api/session",
               "/api/admin/results",
               "/api/admin/results/attachment-follow-up",
+              "/api/responses/deletion-status",
               "/api/legacy-sso/status",
             ].includes(requested)
         )

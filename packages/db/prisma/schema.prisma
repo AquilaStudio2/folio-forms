@@ -626,10 +626,13 @@ model DeletionTombstone {
   responseLookupDigest    String       @unique @map("response_lookup_digest")
   externalReferenceDigest String?      @unique @map("external_reference_digest")
   actorId                 String?      @map("actor_id")
+  ownerUserId             String?      @map("owner_user_id")
+  attachmentContext       Json?        @map("attachment_context")
   outcome                 AuditOutcome
   createdAt               DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([actorId, createdAt])
+  @@index([ownerUserId])
   @@map("deletion_tombstones")
 }
 
@@ -742,6 +745,7 @@ model EcmAttachmentCleanup {
   versionId   String   @map("version_id") @db.Uuid
   responseId  String   @map("response_id") @db.Uuid
   formId      String?  @map("form_id") @db.Uuid
+  deletionCaseId String? @map("deletion_case_id") @db.Uuid
   state       String   @default("pending")
   attemptedAt DateTime? @map("attempted_at") @db.Timestamptz(3)
   generation  Int      @default(0)
@@ -754,5 +758,6 @@ model EcmAttachmentCleanup {
   @@id([operationId, versionId])
   @@index([responseId, state])
   @@index([versionId, state])
+  @@index([deletionCaseId, state])
   @@map("ecm_attachment_cleanups")
 }

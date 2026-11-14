@@ -91,6 +91,14 @@ A sender fence prevents future dispatch and canonical commit for the canceled ba
 
 The picker, fill page and dashboard Response-deletion dialog retain actionable unknown-outcome instructions. A rejected action does not replace these instructions with an invitation to resend. When original-checkpoint recovery cannot open an editable document, the saved canonical Excel copy remains separately readable without clearing the checkpoint or uploading pending files.
 
+## Response Deletion Case
+
+A durable record of an authorized whole-Response deletion. It retains the original Response owner's identity and attachment reference evidence, not a restored answer. Deleting Response data and confirming deletion of unreferenced Folio files are separate outcomes. Pending cleanup may leave public URLs usable and prevents removing the owner's account until that cleanup is resolved.
+
+Owner discard applies only to that person's Draft, including an Admin's own Draft. It cannot replace the confirmed Admin deletion flow for another person's Response or a submitted Response. Whole-Response deletion retires that Response's Draft, Submission, Correction, workspace and eligible Operation references together; references surviving elsewhere still protect their files. Archive preserves files and history.
+
+The owner can still read a pending deletion warning after leaving Fill or reloading a page. Admin and Viewer find the case in existing Results tracking without restoring a normal Response row. Only an authorized Admin may perform the existing evidence-based first cleanup action; an uncertain dispatched DELETE cannot be resent or settled by a note.
+
 
 ## Document Category
 

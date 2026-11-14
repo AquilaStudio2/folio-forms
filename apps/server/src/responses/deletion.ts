@@ -14,7 +14,11 @@ import { createResponseDeletionAudit } from "../audit/events";
 import type { Identity } from "../auth/identity";
 import { endAiAuthoringSessions } from "../auth/password-session";
 import { tokenDigest } from "../digests";
-import { requireAttachmentMutationReady } from "../ecm/attachments";
+import {
+  deleteAttachmentCleanup,
+  retireResponseAttachments,
+} from "../ecm/attachments";
+import type { EcmClient } from "../ecm/client";
 import { fail } from "../http/errors";
 import { operationMetadata } from "../operations/model";
 import {
@@ -27,6 +31,11 @@ interface ResponseDeletionResult {
   alreadyDeleted: boolean;
   deleted: boolean;
   ownerSessionIds: string[];
+  attachmentCleanup: {
+    caseReference: string | null;
+    state: "complete" | "pending";
+    warning: string | null;
+  };
 }
 
 function responseDeletionPrefixes(
@@ -47,29 +56,84 @@ function responseDeletionKeyBelongs(
 ): boolean {
   return prefixes.some((prefix) => key.startsWith(prefix));
 }
+const deletionWarning =
+  "ลบข้อมูลคำตอบแล้ว แต่ยังยืนยันการลบไฟล์แนบไม่ครบ URL อาจยังเปิดได้ กรุณาติดต่อผู้ดูแล ห้ามส่งคำขอลบเดิมซ้ำ รหัสติดตาม";
+async function deletionAttachmentOutcome(
+  caseReference: string
+): Promise<ResponseDeletionResult["attachmentCleanup"]> {
+  const pending = await prisma.ecmAttachmentCleanup.count({
+    where: {
+      deletionCaseId: caseReference,
+      state: { in: ["pending", "claimed", "started", "unknown"] },
+    },
+  });
+  return {
+    caseReference,
+    state: pending ? "pending" : "complete",
+    warning: pending ? `${deletionWarning} ${caseReference}` : null,
+  };
+}
+export async function responseDeletionWarnings(
+  ownerUserId: string
+): Promise<ResponseDeletionResult["attachmentCleanup"][]> {
+  const cases = await prisma.deletionTombstone.findMany({
+    orderBy: { createdAt: "desc" },
+    select: { id: true },
+    where: { ownerUserId },
+  });
+  const pending = await prisma.ecmAttachmentCleanup.findMany({
+    distinct: ["deletionCaseId"],
+    select: { deletionCaseId: true },
+    where: {
+      deletionCaseId: { in: cases.map((item) => item.id) },
+      state: { in: ["pending", "claimed", "started", "unknown"] },
+    },
+  });
+  return pending.flatMap(({ deletionCaseId }) =>
+    deletionCaseId
+      ? [
+          {
+            caseReference: deletionCaseId,
+            state: "pending",
+            warning: `${deletionWarning} ${deletionCaseId}`,
+          },
+        ]
+      : []
+  );
+}
 
 export async function deleteResponseData({
   actor,
   aiAuthoring,
-  allowActiveLease,
-  missingOk,
+  intent,
+  ecm,
   removeObject,
   responseId,
-  revokeOwnerSessions,
 }: {
   actor: Identity;
   aiAuthoring: AiAuthoringSessions;
-  allowActiveLease: boolean;
-  missingOk: boolean;
+  intent: "confirmed-admin-delete" | "discard-own-draft";
+  ecm: EcmClient;
   removeObject: (key: string) => Promise<void>;
   responseId: string;
-  revokeOwnerSessions: boolean;
 }): Promise<ResponseDeletionResult> {
+  const confirmedAdminDelete = intent === "confirmed-admin-delete";
+  if (confirmedAdminDelete && actor.role !== "admin") {
+    fail(403, "forbidden", "Administrator access is required");
+  }
+  const emptyCleanup: ResponseDeletionResult["attachmentCleanup"] = {
+    caseReference: null,
+    state: "complete",
+    warning: null,
+  };
   const responseLookupDigest = tokenDigest(responseId);
   const existingTombstone = await prisma.deletionTombstone.findUnique({
     where: { responseLookupDigest },
   });
   if (existingTombstone) {
+    if (!confirmedAdminDelete && existingTombstone.ownerUserId !== actor.id) {
+      fail(403, "forbidden", "You may only discard your own Draft");
+    }
     await drainObjectCleanupIntents(
       undefined,
       responseLookupDigest,
@@ -81,10 +145,25 @@ export async function deleteResponseData({
     if (remaining > 0) {
       fail(503, "deletion_cleanup_failed", "Response objects remain");
     }
-    return { alreadyDeleted: true, deleted: true, ownerSessionIds: [] };
+    return {
+      alreadyDeleted: true,
+      attachmentCleanup: await deletionAttachmentOutcome(existingTombstone.id),
+      deleted: true,
+      ownerSessionIds: [],
+    };
   }
   const result = await prisma.$transaction(
     async (tx) => {
+      // Admission locks Form before editor lease; deletion uses the same outer fence.
+      const scope = await tx.response.findUnique({
+        select: { formId: true },
+        where: { id: responseId },
+      });
+      if (scope) {
+        await tx.$queryRaw(
+          Prisma.sql`SELECT "id" FROM "forms" WHERE "id" = ${scope.formId}::uuid FOR UPDATE`
+        );
+      }
       const [lockedResponse] = await tx.$queryRaw<{ id: string }[]>(
         Prisma.sql`
           SELECT "id"
@@ -94,10 +173,13 @@ export async function deleteResponseData({
         `
       );
       if (!lockedResponse) {
-        if (missingOk) {
+        if (!confirmedAdminDelete) {
           return {
             alreadyDeleted: false,
+            attachmentCleanup: emptyCleanup,
             deleted: false,
+            deletionCaseId: null,
+            initial: [],
             ownerSessionIds: [],
           };
         }
@@ -111,35 +193,27 @@ export async function deleteResponseData({
         where: { id: responseId },
       });
       if (!response) {
-        if (missingOk) {
+        if (!confirmedAdminDelete) {
           return {
             alreadyDeleted: false,
+            attachmentCleanup: emptyCleanup,
             deleted: false,
+            deletionCaseId: null,
+            initial: [],
             ownerSessionIds: [],
           };
         }
         fail(404, "not_found", "Response was not found");
       }
-      if (actor.role !== "admin" && response.userId !== actor.id) {
+      if (!confirmedAdminDelete && response.userId !== actor.id) {
         fail(403, "forbidden", "You may only delete your own Draft");
       }
-      if (actor.role !== "admin" && response.status !== ResponseStatus.draft) {
+      if (!confirmedAdminDelete && response.status !== ResponseStatus.draft) {
         fail(409, "draft_unavailable", "Only a Draft can be discarded");
-      }
-      await requireAttachmentMutationReady(response.id, tx);
-      const [lockedForm] = await tx.$queryRaw<{ id: string }[]>(
-        Prisma.sql`
-          SELECT "id"
-          FROM "forms"
-          WHERE "id" = ${response.formId}::uuid
-          FOR UPDATE
-        `
-      );
-      if (!lockedForm) {
-        fail(409, "stale_response", "The Response form is unavailable");
       }
       const operations = await tx.operation.findMany({
         select: {
+          documentKey: true,
           id: true,
           metadata: true,
           stagingObjectKey: true,
@@ -186,7 +260,13 @@ export async function deleteResponseData({
         (correction) => correction.id
       );
       const leases = await tx.editorLease.findMany({
-        select: { id: true, workspaceObjectKey: true },
+        select: {
+          id: true,
+          workspaceBaseDocumentKey: true,
+          workspaceBaseRevision: true,
+          workspaceDocumentKey: true,
+          workspaceObjectKey: true,
+        },
         where: {
           OR: [
             {
@@ -200,9 +280,16 @@ export async function deleteResponseData({
           ],
         },
       });
-      if (leases.length > 0 && !allowActiveLease) {
+      if (leases.length > 0 && confirmedAdminDelete) {
         fail(409, "editor_in_use", "The Response is open in an editor");
       }
+      const deletionCaseId = crypto.randomUUID();
+      const attachments = await retireResponseAttachments(
+        tx,
+        response.id,
+        response.formId,
+        deletionCaseId
+      );
 
       const candidateKeys = [
         response.draftObjectKey,
@@ -340,14 +427,14 @@ export async function deleteResponseData({
           ],
         },
       });
-      const ownerSessions = revokeOwnerSessions
+      const ownerSessions = confirmedAdminDelete
         ? await tx.session.findMany({
             select: { id: true },
             where: { userId: response.userId },
           })
         : [];
       const ownerSessionIds = ownerSessions.map(({ id }) => id);
-      if (revokeOwnerSessions) {
+      if (confirmedAdminDelete) {
         await tx.session.deleteMany({ where: { userId: response.userId } });
       }
       await tx.correction.deleteMany({ where: { responseId: response.id } });
@@ -359,9 +446,19 @@ export async function deleteResponseData({
       await tx.deletionTombstone.create({
         data: {
           actorId: actor.id,
+          attachmentContext: {
+            ...attachments.context,
+            operations: operations.map((operation) => ({
+              documentKey: operation.documentKey,
+              id: operation.id,
+              status: operation.status,
+            })),
+            workspaces: leases,
+          },
           externalReferenceDigest: response.externalReferenceDigest,
-          id: crypto.randomUUID(),
+          id: deletionCaseId,
           outcome: AuditOutcome.success,
+          ownerUserId: response.userId,
           responseLookupDigest,
         },
       });
@@ -372,12 +469,30 @@ export async function deleteResponseData({
         targetId: response.id,
         tx,
       });
-      return { alreadyDeleted: false, deleted: true, ownerSessionIds };
+      return {
+        alreadyDeleted: false,
+        attachmentCleanup: emptyCleanup,
+        deleted: true,
+        deletionCaseId,
+        initial: attachments.initial,
+        ownerSessionIds,
+      };
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
   );
-  if (!result.deleted) {
+  if (!result.deleted || !result.deletionCaseId) {
     return result;
+  }
+  for (const cleanup of result.initial) {
+    try {
+      await deleteAttachmentCleanup(
+        cleanup.operationId,
+        cleanup.versionId,
+        ecm
+      );
+    } catch {
+      // Rows stay deleted; existing durable cleanup evidence retains the incomplete outcome.
+    }
   }
   const cleanupResults = await Promise.allSettled([
     endAiAuthoringSessions(aiAuthoring, result.ownerSessionIds),
@@ -409,5 +524,8 @@ export async function deleteResponseData({
     outcome: AuditOutcome.success,
     targetId: responseId,
   });
-  return result;
+  return {
+    ...result,
+    attachmentCleanup: await deletionAttachmentOutcome(result.deletionCaseId),
+  };
 }

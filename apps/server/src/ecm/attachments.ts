@@ -856,6 +856,158 @@ export const commitAttachmentBatch = async (
   }
 };
 
+/** Retire every snapshot in the same transaction as whole-Response deletion. */
+/* oxlint-disable complexity no-await-in-loop -- Snapshot retirement and intent selection share ordered version locks in one transaction. */
+export const retireResponseAttachments = async (
+  tx: Prisma.TransactionClient,
+  responseId: string,
+  formId: string,
+  deletionCaseId: string
+) => {
+  const batches = await tx.ecmAttachmentBatch.findMany({
+    orderBy: { operationId: "asc" },
+    where: { responseId },
+  });
+  for (const batch of batches) {
+    await lockBatch(tx, batch.operationId);
+  }
+  await requireAttachmentMutationReady(responseId, tx);
+  const references = await tx.ecmAttachmentReference.findMany({
+    where: { responseId },
+  });
+  const cleanups = await tx.ecmAttachmentCleanup.findMany({
+    where: { responseId },
+  });
+  const versions = await tx.ecmAttachmentVersion.findMany({
+    orderBy: { id: "asc" },
+    where: {
+      OR: [
+        { responseId },
+        {
+          id: {
+            in: [
+              ...references.map((reference) => reference.versionId),
+              ...cleanups.map((cleanup) => cleanup.versionId),
+            ],
+          },
+        },
+      ],
+    },
+  });
+  if (versions.length) {
+    await tx.$queryRaw(
+      Prisma.sql`SELECT "id" FROM "ecm_attachment_versions" WHERE "id" IN (${Prisma.join(versions.map((version) => Prisma.sql`${version.id}::uuid`))}) ORDER BY "id" FOR UPDATE`
+    );
+  }
+  // A missing batch never turns an unsettled sender into permission to delete data.
+  const unsettled = await tx.ecmAttachmentVersion.count({
+    where: {
+      responseId,
+      state: { in: ["prepared", "started", "unknown", "received"] },
+    },
+  });
+  if (unsettled) {
+    fail(
+      409,
+      "attachment_outcome_unresolved",
+      "ยังยืนยันคำขอแนบเดิมไม่ได้ กรุณาติดต่อผู้ดูแล ห้ามลบคำตอบหรือส่งไฟล์ซ้ำ"
+    );
+  }
+  await tx.ecmAttachmentReference.deleteMany({ where: { responseId } });
+  await tx.ecmAttachmentCleanup.updateMany({
+    data: { deletionCaseId },
+    where: { responseId },
+  });
+  const initial: { operationId: string; versionId: string }[] = [];
+  for (const version of versions) {
+    const remaining = await tx.ecmAttachmentReference.count({
+      where: { versionId: version.id },
+    });
+    const previous = await tx.ecmAttachmentCleanup.findFirst({
+      orderBy: { createdAt: "desc" },
+      where: {
+        state: { in: ["pending", "claimed", "started", "unknown"] },
+        versionId: version.id,
+      },
+    });
+    if (previous) {
+      await tx.ecmAttachmentCleanup.update({
+        data: {
+          deletionCaseId,
+          ...(remaining && previous.state === "pending" && !previous.attemptedAt
+            ? { state: "protected" }
+            : {}),
+        },
+        where: {
+          operationId_versionId: {
+            operationId: previous.operationId,
+            versionId: version.id,
+          },
+        },
+      });
+      if (
+        !remaining &&
+        previous.state === "pending" &&
+        !previous.attemptedAt &&
+        version.state === "committed"
+      ) {
+        initial.push({
+          operationId: previous.operationId,
+          versionId: version.id,
+        });
+      }
+      continue;
+    }
+    if (remaining || version.state !== "committed") {
+      continue;
+    }
+    const key = {
+      operationId_versionId: {
+        operationId: version.operationId,
+        versionId: version.id,
+      },
+    };
+    const retired = await tx.ecmAttachmentCleanup.findUnique({ where: key });
+    if (retired?.attemptedAt) {
+      continue;
+    }
+    await tx.ecmAttachmentCleanup.upsert({
+      create: {
+        deletionCaseId,
+        formId,
+        operationId: version.operationId,
+        responseId,
+        versionId: version.id,
+      },
+      update: { deletionCaseId, state: "pending" },
+      where: key,
+    });
+    initial.push({ operationId: version.operationId, versionId: version.id });
+  }
+  return {
+    context: {
+      batches: batches.map((batch) => ({
+        generation: batch.generation,
+        operationId: batch.operationId,
+        state: batch.state,
+      })),
+      cleanups: cleanups.map((cleanup) => ({
+        attemptedAt: cleanup.attemptedAt?.toISOString() ?? null,
+        operationId: cleanup.operationId,
+        state: cleanup.state,
+        versionId: cleanup.versionId,
+      })),
+      references,
+      versions: versions.map((version) => ({
+        id: version.id,
+        operationId: version.operationId,
+      })),
+    },
+    initial,
+  };
+};
+/* oxlint-enable complexity no-await-in-loop */
+
 /** Only verified receipts and a fenced sender permit the first DELETE; no uncertain request is retried. */
 export const deleteAttachmentCleanup = async (
   operationId: string,

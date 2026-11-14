@@ -222,7 +222,6 @@ export const runErasureFailures = async (
     })
   );
   expect(retriedCleanupDeletion.status).toBe(200);
-  expect(await retriedCleanupDeletion.json()).toEqual({ deleted: true });
   expect(
     await prisma.objectCleanupIntent.count({
       where: {

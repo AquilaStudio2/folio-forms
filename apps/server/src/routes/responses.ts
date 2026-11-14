@@ -44,7 +44,10 @@ import {
 } from "../http/input";
 import { readOnlyViewerConfig } from "../onlyoffice";
 import { activeOperationForResponse } from "../operations/lifecycle";
-import { deleteResponseData } from "../responses/deletion";
+import {
+  deleteResponseData,
+  responseDeletionWarnings,
+} from "../responses/deletion";
 import { responseSummary, correctionRevisionSummary } from "../responses/query";
 import type { CorrectionRevisionSummary } from "../responses/query";
 import { responseSpreadsheetExport } from "../responses/spreadsheet-document";
@@ -60,11 +63,15 @@ export function registerResponseRoutes(
   app: Elysia,
   dependencies: Pick<
     RouteDependencies,
-    "onlyOffice" | "removeObject" | "aiAuthoring"
+    "onlyOffice" | "removeObject" | "aiAuthoring" | "ecm"
   >
 ): void {
-  const { onlyOffice, removeObject, aiAuthoring } = dependencies;
+  const { onlyOffice, removeObject, aiAuthoring, ecm } = dependencies;
   app
+    .get("/api/responses/deletion-status", async ({ request }) => {
+      const identity = await requireIdentity(request);
+      return { warnings: await responseDeletionWarnings(identity.id) };
+    })
     .get(
       "/api/responses/:id/attachment-status",
       async ({ request, params }) => {
@@ -509,11 +516,10 @@ export function registerResponseRoutes(
           const result = await deleteResponseData({
             actor: identity,
             aiAuthoring,
-            allowActiveLease: false,
-            missingOk: false,
+            ecm,
+            intent: "confirmed-admin-delete",
             removeObject,
             responseId,
-            revokeOwnerSessions: true,
           });
           if (result.alreadyDeleted) {
             await createResponseDeletionAudit({
@@ -522,7 +528,7 @@ export function registerResponseRoutes(
               targetId: responseId,
             });
           }
-          return { deleted: true };
+          return { attachmentCleanup: result.attachmentCleanup, deleted: true };
         } catch (error) {
           try {
             await createResponseDeletionAudit({
@@ -544,16 +550,15 @@ export function registerResponseRoutes(
       requireResponseWriter(identity);
       const responseId = validateId(params.id, "Response");
       try {
-        await deleteResponseData({
+        const result = await deleteResponseData({
           actor: identity,
           aiAuthoring,
-          allowActiveLease: true,
-          missingOk: true,
+          ecm,
+          intent: "discard-own-draft",
           removeObject,
           responseId,
-          revokeOwnerSessions: false,
         });
-        return { discarded: true };
+        return { attachmentCleanup: result.attachmentCleanup, discarded: true };
       } catch (error) {
         try {
           await createResponseDeletionAudit({

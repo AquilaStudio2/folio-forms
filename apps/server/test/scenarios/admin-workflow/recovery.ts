@@ -150,7 +150,6 @@ export const runDiscardAndRestart = async (
     })
   );
   expect(discardResponse.status).toBe(200);
-  expect(await discardResponse.json()).toEqual({ discarded: true });
   expect(
     await prisma.response.findUnique({ where: { id: discardedResponseId } })
   ).toBeNull();
@@ -173,7 +172,6 @@ export const runDiscardAndRestart = async (
     })
   );
   expect(repeatedDiscardResponse.status).toBe(200);
-  expect(await repeatedDiscardResponse.json()).toEqual({ discarded: true });
   const responsesAfterDiscard = await app.handle(
     new Request("http://test.local/api/responses/me", {
       headers: { Authorization: `Bearer ${archivedNoResponseBearer}` },

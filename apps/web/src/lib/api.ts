@@ -229,10 +229,19 @@ export interface AdminResultListResponse {
   pagination: PaginationInfo;
   results: AdminResult[];
 }
+export interface ResponseAttachmentCleanup {
+  caseReference: string | null;
+  state: "complete" | "pending";
+  warning: string | null;
+}
+export interface ResponseDeletionOutcome {
+  attachmentCleanup: ResponseAttachmentCleanup;
+}
 export interface AttachmentFollowUp {
   operationId: string;
   responseId: string;
   responseDeleted: boolean;
+  caseReference: string | null;
   formId: string | null;
   formPublicId: string | null;
   formTitle: string | null;

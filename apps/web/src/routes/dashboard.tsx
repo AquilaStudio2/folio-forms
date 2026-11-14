@@ -7,7 +7,7 @@ import { DocumentKindBadge } from "@/components/document-kind-badge";
 import { ListPagination } from "@/components/list-pagination";
 import { Badge, Button, Card, Notice, Spinner } from "@/components/ui";
 import { ApiError, apiDelete, apiGet, formatDate } from "@/lib/api";
-import type { Submission } from "@/lib/api";
+import type { Submission, ResponseDeletionOutcome } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { paginateItems } from "@/lib/pagination";
 
@@ -54,6 +54,7 @@ const DashboardRoute = () => {
   const [discardingId, setDiscardingId] = useState<string | null>(null);
   const [discardError, setDiscardError] = useState<string | null>(null);
   const [discardSuccess, setDiscardSuccess] = useState<string | null>(null);
+  const [discardCleanupPending, setDiscardCleanupPending] = useState(false);
   const discardTriggerRef = useRef<HTMLButtonElement | null>(null);
   const discardStatusRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -127,10 +128,13 @@ const DashboardRoute = () => {
     setDiscardingId(id);
     setDiscardError(null);
     try {
-      await apiDelete(`/api/responses/${id}`);
+      const outcome = await apiDelete<ResponseDeletionOutcome>(
+        `/api/responses/${id}`
+      );
       setRows((currentRows) => currentRows.filter((row) => row.id !== id));
       setDiscardCandidateId(null);
-      setDiscardSuccess("ทิ้งฉบับร่างแล้ว");
+      setDiscardCleanupPending(outcome.attachmentCleanup.state === "pending");
+      setDiscardSuccess(outcome.attachmentCleanup.warning ?? "ทิ้งฉบับร่างแล้ว");
     } catch (caughtError) {
       if (
         caughtError instanceof ApiError &&
@@ -322,7 +326,9 @@ const DashboardRoute = () => {
           aria-live="polite"
           tabIndex={-1}
         >
-          <Notice tone="success">{discardSuccess}</Notice>
+          <Notice tone={discardCleanupPending ? "neutral" : "success"}>
+            {discardSuccess}
+          </Notice>
         </div>
       ) : null}
       <PageHeader

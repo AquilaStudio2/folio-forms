@@ -144,6 +144,7 @@ const providerFiles = new Map<string, { bytes: Uint8Array; token: string }>();
 let deleteFails = false;
 let deleteMalformed = false;
 let logins = 0;
+let loginRejects = false;
 let nextMode:
   | "ok"
   | "malformed"
@@ -182,6 +183,12 @@ const provider = Bun.serve({
         : new Response(null, { status: 404 });
     }
     if (url.pathname.endsWith("/login")) {
+      if (loginRejects) {
+        return Response.json(
+          { data: null, msg: "fixture login refused", status: 403 },
+          { status: 403 }
+        );
+      }
       const login = loginBarrier;
       if (login) {
         loginBarrier = null;
@@ -532,6 +539,7 @@ const fixture = async (
   deleteMalformed = false;
   rejectUploadAt = null;
   originalReadMode = "ok";
+  loginRejects = false;
   const id = crypto.randomUUID();
   const password = "Scalar-isolated-fixture-password!";
   let role: "admin" | "viewer" | "user" = "user";
@@ -4333,4 +4341,623 @@ test("physical-row deletion retains cleanup-only follow-up and permits only an A
   });
   const publicAfter = await fetch(attachment.file_link);
   expect(publicAfter.status).toBe(404);
+});
+
+test("whole-Response deletion retires its references and deletes only unshared Folio files after rows are gone", async () => {
+  const owner = await fixture();
+  const admin = await fixture({ admin: true });
+  const other = await fixture();
+  const saved = await poll(
+    owner,
+    await send(owner, { folio_other: file(), folio_proof: file() })
+  );
+  expect(saved.status).toBe("completed");
+  const canonical = await draft(owner);
+  const unshared = attachmentSchema.parse(canonical.proof);
+  const shared = attachmentSchema.parse(canonical.other);
+  const sharedVersion = await prisma.ecmAttachmentVersion.findUniqueOrThrow({
+    where: { fileToken: shared.file_token },
+  });
+  const sharedSnapshot = `shared-${crypto.randomUUID()}`;
+  await prisma.ecmAttachmentReference.create({
+    data: {
+      responseId: other.response.id,
+      snapshotId: sharedSnapshot,
+      versionId: sharedVersion.id,
+    },
+  });
+  const released = await app.handle(
+    new Request(`http://test.local/api/editor-leases/${owner.lease.id}`, {
+      headers: { Authorization: `Bearer ${owner.bearer}` },
+      method: "DELETE",
+    })
+  );
+  expect(released.status).toBe(200);
+  const before = deleted.length;
+  const removed = await app.handle(
+    new Request(`http://test.local/api/admin/responses/${owner.response.id}`, {
+      body: JSON.stringify({ confirm: true }),
+      headers: {
+        Authorization: `Bearer ${admin.bearer}`,
+        "Content-Type": "application/json",
+      },
+      method: "DELETE",
+    })
+  );
+  expect(removed.status).toBe(200);
+  expect(
+    await prisma.response.findUnique({ where: { id: owner.response.id } })
+  ).toBeNull();
+  expect(
+    await prisma.operation.count({ where: { responseId: owner.response.id } })
+  ).toBe(0);
+  expect(deleted.slice(before)).toEqual([unshared.file_token]);
+  expect(
+    deleteSnapshots.find((entry) => entry.token === unshared.file_token)
+  ).toMatchObject({ data: undefined, references: 0 });
+  expect(
+    await prisma.ecmAttachmentReference.count({
+      where: { responseId: owner.response.id },
+    })
+  ).toBe(0);
+  expect(
+    await prisma.ecmAttachmentReference.findUnique({
+      where: {
+        versionId_snapshotId: {
+          snapshotId: sharedSnapshot,
+          versionId: sharedVersion.id,
+        },
+      },
+    })
+  ).not.toBeNull();
+  const sharedFile = await fetch(shared.file_link);
+  const unsharedFile = await fetch(unshared.file_link);
+  expect(sharedFile.status).toBe(200);
+  expect(unsharedFile.status).toBe(404);
+  expect(await removed.json()).toMatchObject({
+    attachmentCleanup: { state: "complete", warning: null },
+    deleted: true,
+  });
+});
+
+test.each(["failed", "unknown"] as const)(
+  "whole-Response deletion keeps durable %s file cleanup separate from deleted data without retry",
+  async (mode) => {
+    const owner = await fixture();
+    const admin = await fixture({ admin: true });
+    const saved = await poll(owner, await send(owner, { folio_proof: file() }));
+    expect(saved.status).toBe("completed");
+    const savedDraft = await draft(owner);
+    const proof = attachmentSchema.parse(savedDraft.proof);
+    deleteFails = mode === "failed";
+    deleteMalformed = mode === "unknown";
+    const before = deleted.length;
+    try {
+      const removed = await app.handle(
+        new Request(`http://test.local/api/responses/${owner.response.id}`, {
+          headers: { Authorization: `Bearer ${owner.bearer}` },
+          method: "DELETE",
+        })
+      );
+      expect(removed.status).toBe(200);
+      expect(
+        await prisma.response.findUnique({ where: { id: owner.response.id } })
+      ).toBeNull();
+      expect(deleted.slice(before)).toEqual([proof.file_token]);
+      const outcome = z
+        .object({
+          attachmentCleanup: z.object({
+            caseReference: z.string().min(1),
+            state: z.literal("pending"),
+            warning: z.string().min(1),
+          }),
+          discarded: z.literal(true),
+        })
+        .parse(await removed.json());
+      const tracking = await followUpFor(admin, saved.operationId);
+      expect(tracking).toMatchObject({
+        responseDeleted: true,
+        responseId: owner.response.id,
+      });
+      expect(tracking.versions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            canDelete: false,
+            cleanupState: "unknown",
+            referenced: false,
+          }),
+        ])
+      );
+      const repeated = await app.handle(
+        new Request(`http://test.local/api/responses/${owner.response.id}`, {
+          headers: { Authorization: `Bearer ${owner.bearer}` },
+          method: "DELETE",
+        })
+      );
+      expect(repeated.status).toBe(200);
+      expect(await repeated.json()).toMatchObject(outcome);
+      expect(deleted.slice(before)).toEqual([proof.file_token]);
+      const accountRemoval = await app.handle(
+        new Request(`http://test.local/api/admin/users/${owner.identity.id}`, {
+          body: JSON.stringify({ confirm: true }),
+          headers: {
+            Authorization: `Bearer ${admin.bearer}`,
+            "Content-Type": "application/json",
+          },
+          method: "DELETE",
+        })
+      );
+      expect(accountRemoval.status).toBe(409);
+      expect(await accountRemoval.json()).toMatchObject({
+        error: "personal_data_remains",
+      });
+      const results = await app.handle(
+        new Request(
+          `http://test.local/api/admin/results?form=${owner.form.publicId}`,
+          { headers: { Authorization: `Bearer ${admin.bearer}` } }
+        )
+      );
+      expect(results.status).toBe(200);
+      expect(await results.json()).toMatchObject({ results: [] });
+      const publicFile = await fetch(proof.file_link);
+      expect(publicFile.status).toBe(mode === "failed" ? 200 : 404);
+    } finally {
+      deleteFails = false;
+      deleteMalformed = false;
+    }
+  }
+);
+
+test.each(["other Draft", "other Submission", "own Submission"] as const)(
+  "whole-Response deletion rejects Admin User-route bypass for %s",
+  async (scope) => {
+    const admin = await fixture({ admin: true });
+    const owner = scope === "own Submission" ? admin : await fixture();
+    if (scope !== "other Draft") {
+      const submitted = await poll(
+        owner,
+        await send(owner, { folio_proof: file() }, "submit")
+      );
+      expect(submitted.status).toBe("completed");
+    }
+    const before = deleted.length;
+    const removed = await app.handle(
+      new Request(`http://test.local/api/responses/${owner.response.id}`, {
+        headers: { Authorization: `Bearer ${admin.bearer}` },
+        method: "DELETE",
+      })
+    );
+    expect(removed.status).toBe(scope === "own Submission" ? 409 : 403);
+    expect(
+      await prisma.response.findUnique({ where: { id: owner.response.id } })
+    ).not.toBeNull();
+    expect(deleted.length).toBe(before);
+  }
+);
+
+test("whole-Response deletion still permits Admin to discard their own active Draft", async () => {
+  const admin = await fixture({ admin: true });
+  const removed = await app.handle(
+    new Request(`http://test.local/api/responses/${admin.response.id}`, {
+      headers: { Authorization: `Bearer ${admin.bearer}` },
+      method: "DELETE",
+    })
+  );
+  expect(removed.status).toBe(200);
+  expect(await removed.json()).toMatchObject({ discarded: true });
+  expect(
+    await prisma.response.findUnique({ where: { id: admin.response.id } })
+  ).toBeNull();
+});
+
+test("whole-Response deletion snapshots Submission, Correction, workspace and Operation evidence before cascade", async () => {
+  const owner = await fixture();
+  const admin = await fixture({ admin: true });
+  const submitted = await poll(
+    owner,
+    await send(owner, { folio_other: file(), folio_proof: file() }, "submit")
+  );
+  expect(submitted.status).toBe("completed");
+  const bridge = await openCorrection(owner, admin);
+  snapshots.set(
+    bridge.documentKey,
+    replaceCell(
+      fixtureValue(snapshots.get(bridge.documentKey)),
+      "B2",
+      "DELETION.CORRECTION"
+    )
+  );
+  const corrected = await poll(
+    admin,
+    await postCorrection(owner, admin, bridge)
+  );
+  expect(corrected.status).toBe("completed");
+  const workspace = await openCorrection(owner, admin);
+  const checkpoint = await poll(
+    admin,
+    await postCorrection(owner, admin, workspace, {}, {}, true)
+  );
+  expect(checkpoint.status).toBe("completed");
+  const versions = await prisma.ecmAttachmentVersion.findMany({
+    where: { responseId: owner.response.id },
+  });
+  expect(versions).toHaveLength(4);
+  const references = await prisma.ecmAttachmentReference.findMany({
+    where: { responseId: owner.response.id },
+  });
+  expect(references.length).toBeGreaterThan(versions.length);
+  const leases = await prisma.editorLease.findMany({
+    where: { targetId: owner.response.id },
+  });
+  for (const lease of leases) {
+    const released = await app.handle(
+      new Request(`http://test.local/api/editor-leases/${lease.id}`, {
+        headers: {
+          Authorization: `Bearer ${lease.holderUserId === admin.identity.id ? admin.bearer : owner.bearer}`,
+        },
+        method: "DELETE",
+      })
+    );
+    expect(released.status).toBe(200);
+  }
+  const before = deleted.length;
+  const removed = await app.handle(
+    new Request(`http://test.local/api/admin/responses/${owner.response.id}`, {
+      body: JSON.stringify({ confirm: true }),
+      headers: {
+        Authorization: `Bearer ${admin.bearer}`,
+        "Content-Type": "application/json",
+      },
+      method: "DELETE",
+    })
+  );
+  expect(removed.status).toBe(200);
+  const outcome = z
+    .object({
+      attachmentCleanup: z.object({
+        caseReference: z.string(),
+        state: z.literal("complete"),
+      }),
+    })
+    .parse(await removed.json());
+  expect(deleted.slice(before).toSorted()).toEqual(
+    versions.map((version) => fixtureValue(version.fileToken)).toSorted()
+  );
+  expect(
+    await prisma.submission.count({ where: { responseId: owner.response.id } })
+  ).toBe(0);
+  expect(
+    await prisma.correction.count({ where: { responseId: owner.response.id } })
+  ).toBe(0);
+  expect(
+    await prisma.operation.count({ where: { responseId: owner.response.id } })
+  ).toBe(0);
+  expect(
+    await prisma.ecmAttachmentReference.count({
+      where: { responseId: owner.response.id },
+    })
+  ).toBe(0);
+  const retained = await prisma.deletionTombstone.findUniqueOrThrow({
+    where: { id: outcome.attachmentCleanup.caseReference },
+  });
+  expect(retained.ownerUserId).toBe(owner.identity.id);
+  expect(retained.attachmentContext).toMatchObject({
+    operations: expect.arrayContaining([
+      expect.objectContaining({ id: submitted.operationId }),
+      expect.objectContaining({ id: corrected.operationId }),
+      expect.objectContaining({ id: checkpoint.operationId }),
+    ]),
+    references: expect.arrayContaining(references),
+    versions: expect.arrayContaining(
+      versions.map((version) => ({
+        id: version.id,
+        operationId: version.operationId,
+      }))
+    ),
+  });
+  const session = await app.handle(
+    new Request("http://test.local/api/session", {
+      headers: { Authorization: `Bearer ${owner.bearer}` },
+    })
+  );
+  expect(session.status).toBe(401);
+});
+
+test("whole-Response deletion retains pending cases across fresh application instances without another DELETE", async () => {
+  const owner = await fixture();
+  const admin = await fixture({ admin: true });
+  const saved = await poll(owner, await send(owner, { folio_proof: file() }));
+  expect(saved.status).toBe("completed");
+  deleteFails = true;
+  const before = deleted.length;
+  try {
+    const removed = await app.handle(
+      new Request(`http://test.local/api/responses/${owner.response.id}`, {
+        headers: { Authorization: `Bearer ${owner.bearer}` },
+        method: "DELETE",
+      })
+    );
+    expect(removed.status).toBe(200);
+    const outcome = z
+      .object({
+        attachmentCleanup: z.object({
+          caseReference: z.string(),
+          state: z.literal("pending"),
+          warning: z.string(),
+        }),
+      })
+      .parse(await removed.json());
+    const fresh = createApp({
+      legacySso: null,
+      omniRoute: null,
+      pdmsProjects: null,
+    });
+    const ownStatus = await fresh.handle(
+      new Request("http://test.local/api/responses/deletion-status", {
+        headers: { Authorization: `Bearer ${owner.bearer}` },
+      })
+    );
+    expect(ownStatus.status).toBe(200);
+    expect(await ownStatus.json()).toEqual({
+      warnings: [outcome.attachmentCleanup],
+    });
+    const otherStatus = await fresh.handle(
+      new Request("http://test.local/api/responses/deletion-status", {
+        headers: { Authorization: `Bearer ${admin.bearer}` },
+      })
+    );
+    expect(await otherStatus.json()).toEqual({ warnings: [] });
+    const tracking = await fresh.handle(
+      new Request("http://test.local/api/admin/results/attachment-follow-up", {
+        headers: { Authorization: `Bearer ${admin.bearer}` },
+      })
+    );
+    expect(tracking.status).toBe(200);
+    expect(await tracking.json()).toMatchObject({
+      followUps: expect.arrayContaining([
+        expect.objectContaining({
+          caseReference: outcome.attachmentCleanup.caseReference,
+          operationId: saved.operationId,
+          responseDeleted: true,
+        }),
+      ]),
+    });
+    const repeated = await fresh.handle(
+      new Request(`http://test.local/api/responses/${owner.response.id}`, {
+        headers: { Authorization: `Bearer ${owner.bearer}` },
+        method: "DELETE",
+      })
+    );
+    expect(repeated.status).toBe(200);
+    expect(await repeated.json()).toMatchObject(outcome);
+    expect(deleted.length).toBe(before + 1);
+  } finally {
+    deleteFails = false;
+  }
+});
+
+test("whole-Response deletion fences replay while its initial provider DELETE is in flight", async () => {
+  const owner = await fixture();
+  const saved = await poll(owner, await send(owner, { folio_proof: file() }));
+  expect(saved.status).toBe("completed");
+  const entered = Promise.withResolvers<undefined>();
+  const released = Promise.withResolvers<undefined>();
+  deleteBarrier = { enter: () => entered.resolve(), release: released.promise };
+  const before = deleted.length;
+  const uploads = received.length;
+  const removing = app.handle(
+    new Request(`http://test.local/api/responses/${owner.response.id}`, {
+      headers: { Authorization: `Bearer ${owner.bearer}` },
+      method: "DELETE",
+    })
+  );
+  try {
+    await entered.promise;
+    expect(
+      await prisma.response.findUnique({ where: { id: owner.response.id } })
+    ).toBeNull();
+    const replay = await send(owner, { folio_proof: file() });
+    expect(replay.status).toBe(404);
+    const repeated = await app.handle(
+      new Request(`http://test.local/api/responses/${owner.response.id}`, {
+        headers: { Authorization: `Bearer ${owner.bearer}` },
+        method: "DELETE",
+      })
+    );
+    expect(repeated.status).toBe(200);
+    expect(await repeated.json()).toMatchObject({
+      attachmentCleanup: { state: "pending" },
+      discarded: true,
+    });
+    expect(deleted.length).toBe(before + 1);
+    expect(received.length).toBe(uploads);
+  } finally {
+    deleteBarrier = null;
+    released.resolve();
+    await removing;
+  }
+  expect(
+    await prisma.response.findUnique({ where: { id: owner.response.id } })
+  ).toBeNull();
+  expect(deleted.length).toBe(before + 1);
+});
+
+test("whole-Response deletion does not turn archive or Published Form deletion into file cleanup", async () => {
+  const owner = await fixture();
+  const admin = await fixture({ admin: true });
+  const saved = await poll(
+    owner,
+    await send(owner, { folio_proof: file() }, "submit")
+  );
+  expect(saved.status).toBe("completed");
+  const before = deleted.length;
+  const archived = await app.handle(
+    new Request(`http://test.local/api/admin/forms/${owner.form.publicId}`, {
+      body: JSON.stringify({ status: "archived" }),
+      headers: {
+        Authorization: `Bearer ${admin.bearer}`,
+        "Content-Type": "application/json",
+      },
+      method: "PATCH",
+    })
+  );
+  expect(archived.status).toBe(200);
+  const forbidden = await app.handle(
+    new Request(`http://test.local/api/admin/forms/${owner.form.publicId}`, {
+      headers: { Authorization: `Bearer ${admin.bearer}` },
+      method: "DELETE",
+    })
+  );
+  expect(forbidden.status).toBe(409);
+  expect(
+    await prisma.response.findUnique({ where: { id: owner.response.id } })
+  ).not.toBeNull();
+  expect(
+    await prisma.submission.count({ where: { responseId: owner.response.id } })
+  ).toBe(1);
+  expect(
+    await prisma.ecmAttachmentReference.count({
+      where: { responseId: owner.response.id },
+    })
+  ).toBeGreaterThan(0);
+  expect(deleted.length).toBe(before);
+});
+
+test("whole-Response deletion prevents a paused pre-admission sender from reviving deleted data", async () => {
+  const owner = await fixture();
+  const entered = Promise.withResolvers<undefined>();
+  const released = Promise.withResolvers<undefined>();
+  captureBarrier = {
+    enter: () => entered.resolve(),
+    release: released.promise,
+  };
+  const uploads = received.length;
+  const before = deleted.length;
+  const lateSender = send(owner, { folio_proof: file() });
+  try {
+    await entered.promise;
+    const removed = await app.handle(
+      new Request(`http://test.local/api/responses/${owner.response.id}`, {
+        headers: { Authorization: `Bearer ${owner.bearer}` },
+        method: "DELETE",
+      })
+    );
+    expect(removed.status).toBe(200);
+    captureBarrier = null;
+    released.resolve();
+    const rejected = await lateSender;
+    // Deletion revokes both lease and Response; either admission fence may reject first.
+    expect(rejected.status).toBeGreaterThanOrEqual(400);
+    expect(rejected.status).toBeLessThan(500);
+    expect(
+      await prisma.response.findUnique({ where: { id: owner.response.id } })
+    ).toBeNull();
+    expect(
+      await prisma.ecmAttachmentBatch.count({
+        where: { responseId: owner.response.id },
+      })
+    ).toBe(0);
+    expect(received.length).toBe(uploads);
+    expect(deleted.length).toBe(before);
+  } finally {
+    captureBarrier = null;
+    released.resolve();
+    await lateSender;
+  }
+});
+
+test("whole-Response deletion permits only an Admin first cleanup after proven non-dispatch and rows gone", async () => {
+  const owner = await fixture();
+  const admin = await fixture({ admin: true });
+  const viewer = await fixture({ viewer: true });
+  const saved = await poll(owner, await send(owner, { folio_proof: file() }));
+  expect(saved.status).toBe("completed");
+  const savedDraft = await draft(owner);
+  const proof = attachmentSchema.parse(savedDraft.proof);
+  const version = await prisma.ecmAttachmentVersion.findUniqueOrThrow({
+    where: { fileToken: proof.file_token },
+  });
+  await prisma.ecmAuthState.update({
+    data: { expiresAt: new Date(0) },
+    where: { accountKey: version.accountKey },
+  });
+  loginRejects = true;
+  const before = deleted.length;
+  try {
+    const removed = await app.handle(
+      new Request(`http://test.local/api/responses/${owner.response.id}`, {
+        headers: { Authorization: `Bearer ${owner.bearer}` },
+        method: "DELETE",
+      })
+    );
+    expect(removed.status).toBe(200);
+    expect(await removed.json()).toMatchObject({
+      attachmentCleanup: { state: "pending" },
+      discarded: true,
+    });
+    expect(
+      await prisma.response.findUnique({ where: { id: owner.response.id } })
+    ).toBeNull();
+    expect(deleted.length).toBe(before);
+    const tracking = await followUpFor(admin, saved.operationId);
+    const pending = fixtureValue(
+      tracking.versions.find((entry) => entry.id === version.id)
+    );
+    expect(pending).toMatchObject({
+      canDelete: true,
+      cleanupState: "pending",
+      deleteAttemptedAt: null,
+      state: "committed",
+    });
+    loginRejects = false;
+    const denied = await operatorAction(viewer, saved.operationId, "settle", {
+      generation: pending.generation,
+      versionId: pending.id,
+    });
+    expect(denied.status).toBe(403);
+    expect(deleted.length).toBe(before);
+    const settled = await operatorAction(admin, saved.operationId, "settle", {
+      generation: pending.generation,
+      versionId: pending.id,
+    });
+    expect(settled.status).toBe(200);
+    expect(deleted.slice(before)).toEqual([proof.file_token]);
+    const complete = await followUpFor(admin, saved.operationId);
+    expect(complete).toMatchObject({ responseDeleted: true });
+    expect(complete.versions).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          canDelete: false,
+          cleanupState: "deleted",
+          confirmedBy: admin.identity.id,
+          id: pending.id,
+        }),
+      ])
+    );
+    const ownStatus = await app.handle(
+      new Request("http://test.local/api/responses/deletion-status", {
+        headers: { Authorization: `Bearer ${owner.bearer}` },
+      })
+    );
+    expect(await ownStatus.json()).toEqual({ warnings: [] });
+    const repeated = await operatorAction(admin, saved.operationId, "settle", {
+      generation: pending.generation,
+      versionId: pending.id,
+    });
+    expect(repeated.status).toBe(409);
+    expect(deleted.length).toBe(before + 1);
+    const accountRemoval = await app.handle(
+      new Request(`http://test.local/api/admin/users/${owner.identity.id}`, {
+        body: JSON.stringify({ confirm: true }),
+        headers: {
+          Authorization: `Bearer ${admin.bearer}`,
+          "Content-Type": "application/json",
+        },
+        method: "DELETE",
+      })
+    );
+    expect(accountRemoval.status).toBe(200);
+  } finally {
+    loginRejects = false;
+  }
 });

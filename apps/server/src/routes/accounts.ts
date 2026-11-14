@@ -534,6 +534,28 @@ export function registerAccountRoutes(
                     "Response object cleanup is still pending"
                   );
                 }
+                const deletionCases = await tx.deletionTombstone.findMany({
+                  select: { id: true },
+                  where: { ownerUserId: target.id },
+                });
+                const attachmentCleanupCount =
+                  await tx.ecmAttachmentCleanup.count({
+                    where: {
+                      deletionCaseId: {
+                        in: deletionCases.map((item) => item.id),
+                      },
+                      state: {
+                        in: ["pending", "claimed", "started", "unknown"],
+                      },
+                    },
+                  });
+                if (attachmentCleanupCount > 0) {
+                  fail(
+                    409,
+                    "personal_data_remains",
+                    "Response attachment cleanup is still pending"
+                  );
+                }
                 const handoffs = await tx.handoff.findMany({
                   select: { id: true },
                   where: { normalizedEmail: target.email },

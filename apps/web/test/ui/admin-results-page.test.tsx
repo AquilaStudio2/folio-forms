@@ -16,7 +16,12 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { API_ORIGIN, SESSION_KEY } from "@/lib/api";
-import type { AdminResult, AttachmentFollowUp, Role } from "@/lib/api";
+import type {
+  AdminResult,
+  AttachmentFollowUp,
+  Role,
+  ResponseAttachmentCleanup,
+} from "@/lib/api";
 import { routeTree } from "@/routeTree.gen";
 
 const result = (id = "11111111-1111-4111-8111-111111111111"): AdminResult => ({
@@ -40,6 +45,7 @@ const fetchMock = vi.fn<typeof fetch>();
 let sessionRole: Role;
 let listResponse: () => Response | Promise<Response>;
 let attachmentFollowUps: AttachmentFollowUp[];
+let deletionOutcome: ResponseAttachmentCleanup;
 
 let requestedPage = 1;
 const resultsPayload = (results: AdminResult[], total = results.length) => ({
@@ -72,8 +78,7 @@ const flush = async () => {
     await Promise.resolve();
   });
 };
-const mount = async () => {
-  const path = "/admin/results";
+const mount = async (path = "/admin/results") => {
   window.history.replaceState(null, "", path);
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: [path] }),
@@ -81,7 +86,9 @@ const mount = async () => {
   });
   await router.load();
   render(<RouterProvider router={router} />);
-  await screen.findByRole("heading", { name: "ตรวจทานคำตอบ" });
+  await screen.findByRole("heading", {
+    name: path === "/admin/results" ? "ตรวจทานคำตอบ" : result().formTitle,
+  });
   await flush();
 };
 
@@ -89,9 +96,10 @@ beforeEach(() => {
   sessionRole = "admin";
   listResponse = () => Response.json(resultsPayload([result()]));
   attachmentFollowUps = [];
+  deletionOutcome = { caseReference: null, state: "complete", warning: null };
   localStorage.setItem(SESSION_KEY, "results-reader-test-token");
   fetchMock.mockReset();
-  fetchMock.mockImplementation(async (input) => {
+  fetchMock.mockImplementation(async (input, init) => {
     const { pathname } = new URL(String(input));
     if (pathname === "/api/session") {
       return Response.json({
@@ -101,6 +109,30 @@ beforeEach(() => {
           id: "reader",
           mustChangePassword: false,
           role: sessionRole,
+        },
+      });
+    }
+    if (pathname === "/api/responses/deletion-status") {
+      return Response.json({ warnings: [] });
+    }
+    if (
+      pathname === `/api/admin/responses/${result().id}` &&
+      init?.method === "DELETE"
+    ) {
+      return Response.json({
+        attachmentCleanup: deletionOutcome,
+        deleted: true,
+      });
+    }
+    if (pathname === `/api/admin/results/${result().id}`) {
+      return Response.json({
+        result: {
+          ...result(),
+          correction: null,
+          data: {},
+          document: { available: false, state: "draft" },
+          fields: [],
+          revision: null,
         },
       });
     }
@@ -855,6 +887,7 @@ it.each(["admin", "viewer"] as const)(
       {
         actorId: "original-owner",
         canFence: false,
+        caseReference: "66666666-6666-4666-8666-666666666666",
         checkpoint: "55555555-5555-4555-8555-555555555555",
         createdAt: "2026-11-14T03:00:00.000Z",
         documentKey: "original-canonical",
@@ -899,6 +932,10 @@ it.each(["admin", "viewer"] as const)(
     ];
     const user = userEvent.setup();
     await mount();
+    const caseSearch = screen.getByRole("textbox", {
+      name: "รหัสติดตามการลบหรือ Operation",
+    });
+    await user.type(caseSearch, "66666666-6666-4666-8666-666666666666");
     await user.click(await screen.findByText(/Retained file tracking —/u));
     expect(screen.getByText(/ลบคำตอบแล้ว \(หลักฐานติดตามเท่านั้น\)/u)).toBeVisible();
     expect(
@@ -930,5 +967,40 @@ it.each(["admin", "viewer"] as const)(
         screen.queryByRole("button", { name: "หยุดรอบเดิมและติดตามผล" })
       ).not.toBeInTheDocument();
     }
+    await user.clear(caseSearch);
+    await user.type(caseSearch, "not-this-case");
+    expect(
+      screen.queryByText(/Retained file tracking —/u)
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("ไม่มีรายการติดตาม")).toBeVisible();
   }
 );
+
+it("requires confirmation and retains the incomplete file outcome after Admin deletes Response data", async () => {
+  deletionOutcome = {
+    caseReference: "66666666-6666-4666-8666-666666666666",
+    state: "pending",
+    warning:
+      "ลบข้อมูลคำตอบแล้ว แต่ URL อาจยังเปิดได้ รหัสติดตาม 66666666-6666-4666-8666-666666666666",
+  };
+  await mount(`/admin/results/${result().id}`);
+  await userEvent.click(screen.getByRole("button", { name: "ลบคำตอบถาวร" }));
+  expect(
+    screen.getByRole("dialog", { name: "ยืนยันการลบคำตอบถาวร" })
+  ).toBeVisible();
+  expect(
+    fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE")
+  ).toHaveLength(0);
+  await userEvent.click(screen.getByRole("button", { name: "ยืนยันการลบถาวร" }));
+  expect(await screen.findByText("ลบข้อมูลคำตอบถาวรแล้ว")).toBeVisible();
+  expect(screen.getByText(deletionOutcome.warning ?? "")).toBeVisible();
+  expect(
+    fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE")
+  ).toEqual([
+    [
+      `${API_ORIGIN}/api/admin/responses/${result().id}`,
+      expect.objectContaining({ body: JSON.stringify({ confirm: true }) }),
+    ],
+  ]);
+  expect(screen.getByRole("link", { name: "กลับไปรายการผลลัพธ์" })).toBeVisible();
+});

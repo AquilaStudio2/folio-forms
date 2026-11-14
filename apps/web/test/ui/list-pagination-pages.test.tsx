@@ -4,17 +4,25 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { SESSION_KEY } from "@/lib/api";
-import type { Role, Submission } from "@/lib/api";
+import type { Role, Submission, ResponseAttachmentCleanup } from "@/lib/api";
 import { routeTree } from "@/routeTree.gen";
 
 let role: Role;
 let rows: Submission[];
 let discardResponse: (() => Response) | null;
+let deletionWarnings: ResponseAttachmentCleanup[];
 const fetchMock = vi.fn<typeof fetch>();
 const accountLinkRequests = () =>
   fetchMock.mock.calls.filter(
@@ -48,6 +56,7 @@ beforeEach(() => {
   role = "user";
   rows = Array.from({ length: 11 }, (_, index) => response(index));
   discardResponse = null;
+  deletionWarnings = [];
   localStorage.setItem(SESSION_KEY, "pagination-test-session");
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (input, init) => {
@@ -57,6 +66,9 @@ beforeEach(() => {
         session: { expiresAt: "2099-11-03T00:00:00.000Z" },
         user: { email: "owner@example.test", id: "owner", role },
       });
+    }
+    if (url.pathname === "/api/responses/deletion-status") {
+      return Response.json({ warnings: deletionWarnings });
     }
     if (url.pathname === "/api/responses/me") {
       return Response.json({ responses: rows });
@@ -69,7 +81,14 @@ beforeEach(() => {
         return discardResponse();
       }
       rows = rows.filter((row) => row.id !== url.pathname.split("/").at(-1));
-      return Response.json({ discarded: true });
+      return Response.json({
+        attachmentCleanup: {
+          caseReference: null,
+          state: "complete",
+          warning: null,
+        },
+        discarded: true,
+      });
     }
     if (url.pathname === `/api/admin/forms/${formId}/submissions`) {
       return Response.json({ submissions: rows });
@@ -175,6 +194,36 @@ it.each([undefined, "ผลการอัปโหลดไฟล์ยัง�
     await waitFor(() => expect(trigger).toHaveFocus());
   }
 );
+
+it("keeps deleted-data and pending-file outcomes distinct across Dashboard reload", async () => {
+  rows = [response(0)];
+  const pending: ResponseAttachmentCleanup = {
+    caseReference: "66666666-6666-4666-8666-666666666666",
+    state: "pending",
+    warning:
+      "ลบข้อมูลคำตอบแล้ว แต่ URL อาจยังเปิดได้ รหัสติดตาม 66666666-6666-4666-8666-666666666666",
+  };
+  discardResponse = () => {
+    rows = [];
+    deletionWarnings = [pending];
+    return Response.json({ attachmentCleanup: pending, discarded: true });
+  };
+  await mount("/dashboard");
+  await screen.findByText("Response 1");
+  await userEvent.click(
+    screen.getByRole("button", { exact: true, name: "ทิ้งฉบับร่าง" })
+  );
+  await userEvent.click(screen.getByRole("button", { name: "ยืนยันการทิ้ง" }));
+  expect(await screen.findByText(pending.warning ?? "")).toBeVisible();
+  expect(screen.queryByText("Response 1")).not.toBeInTheDocument();
+  cleanup();
+  await mount("/dashboard");
+  expect(await screen.findByText(pending.warning ?? "")).toBeVisible();
+  expect(screen.getByText("ยังไม่มีคำตอบ")).toBeVisible();
+  expect(
+    fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE")
+  ).toHaveLength(1);
+});
 
 it("keeps an empty My responses footer visible with disabled navigation", async () => {
   rows = [];

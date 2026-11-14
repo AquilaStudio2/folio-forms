@@ -10,6 +10,23 @@ import {
 } from "./attachments";
 import type { EcmClient } from "./client";
 
+const attachmentFollowUpReason = (
+  mutationHeld: boolean,
+  cleanupPending: boolean,
+  responseDeleted: boolean
+): string => {
+  if (mutationHeld) {
+    return "ข้อมูลเดิมยังอ่านได้ แต่ยังยืนยันคำขอหรือการลบรอบที่ยกเลิกไม่ได้ ห้ามบันทึก ส่ง หรือลบคำตอบ";
+  }
+  if (cleanupPending) {
+    if (responseDeleted) {
+      return "ลบข้อมูลคำตอบแล้ว แต่ยังยืนยันการลบไฟล์แนบไม่ครบ URL อาจยังเปิดได้";
+    }
+    return "ข้อมูลใหม่บันทึกแล้ว URL เก่าอาจยังเปิดได้จนกว่าจะยืนยันการลบ";
+  }
+  return "ยืนยันการจัดการไฟล์ค้างแล้ว ไฟล์รอบยกเลิกไม่ได้กลายเป็นคำตอบใหม่";
+};
+
 /** Tracking is independent of live Responses and never returns answer JSON or provider tokens. */
 export const attachmentFollowUps = async (formPublicId?: string) => {
   const form = formPublicId
@@ -114,13 +131,6 @@ export const attachmentFollowUps = async (formPublicId?: string) => {
     if (!held && !intents.length) {
       return [];
     }
-    let reason = "ยืนยันการจัดการไฟล์ค้างแล้ว ไฟล์รอบยกเลิกไม่ได้กลายเป็นคำตอบใหม่";
-    if (held) {
-      reason =
-        "ข้อมูลเดิมยังอ่านได้ แต่ยังยืนยันคำขอหรือการลบรอบที่ยกเลิกไม่ได้ ห้ามบันทึก ส่ง หรือลบคำตอบ";
-    } else if (cleanupPending) {
-      reason = "ข้อมูลใหม่บันทึกแล้ว URL เก่าอาจยังเปิดได้จนกว่าจะยืนยันการลบ";
-    }
     const original = batch
       ? {
           actorId: batch.actorId,
@@ -146,6 +156,9 @@ export const attachmentFollowUps = async (formPublicId?: string) => {
         canFence: Boolean(
           batch && ["prepared", "sending", "unknown"].includes(batch.state)
         ),
+        caseReference:
+          intents.find((intent) => intent.deletionCaseId)?.deletionCaseId ??
+          null,
         createdAt: context.createdAt,
         formId: formId ?? null,
         mutationHeld: Boolean(held),
@@ -154,7 +167,11 @@ export const attachmentFollowUps = async (formPublicId?: string) => {
             ? "ประสาน PM/ECM ด้วยชื่อและเวลาจากหลักฐานนี้ ห้ามส่งซ้ำหรือถือว่าค้นไม่พบเท่ากับไม่มีไฟล์; Admin เริ่มลบได้เฉพาะ receipt ที่ยืนยันแล้วและยังไม่เคยส่ง DELETE"
             : "ไม่ต้องส่งคำขอลบเดิมซ้ำ ผู้ใช้เริ่มบันทึกรอบใหม่เองด้วย version identities ใหม่ได้",
         operationId,
-        reason,
+        reason: attachmentFollowUpReason(
+          Boolean(held),
+          cleanupPending,
+          !response
+        ),
         responseDeleted: !response,
         responseId,
         versions: entries.map((version) => {

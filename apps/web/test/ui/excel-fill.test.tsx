@@ -28,6 +28,7 @@ const auth = vi.hoisted(() => ({
   user: { email: "user@example.test", id: "user", role: "user" },
 }));
 const navigation = vi.hoisted(() => ({ navigate: vi.fn() }));
+let deletionWarning: string | null = null;
 vi.mock("@/lib/auth", () => ({
   roleFor: () => "user",
   useAuth: () => ({ loading: false, user: auth.user }),
@@ -79,6 +80,7 @@ vi.mock("@/components/onlyoffice-editor", () => ({
 }));
 beforeEach(() => {
   auth.commandReady = true;
+  deletionWarning = null;
   bridge.captureWorkbook.mockReset();
   navigation.navigate.mockReset();
 });
@@ -86,25 +88,35 @@ const Fill = Route.options.component as ComponentType;
 const mount = (exportWorkbook?: (init?: RequestInit) => Promise<Response>) => {
   vi.stubGlobal(
     "fetch",
-    vi.fn(async (input: string, init?: RequestInit) =>
-      input.includes("/editor-export/") && exportWorkbook
-        ? exportWorkbook(init)
-        : Response.json(
-            init?.method === "POST"
-              ? {
-                  editorConfigUrl: "/editor-config",
-                  fillMethod: "onlyoffice",
-                  response: { id: "response" },
-                }
-              : {
-                  form: {
-                    documentKind: "xlsx",
-                    fillMethod: "onlyoffice",
-                    title: "Excel form",
-                  },
-                }
-          )
-    )
+    vi.fn(async (input: string, init?: RequestInit) => {
+      if (input.includes("/editor-export/") && exportWorkbook) {
+        return exportWorkbook(init);
+      }
+      if (init?.method === "DELETE") {
+        return Response.json({
+          attachmentCleanup: {
+            caseReference: deletionWarning ? "deletion-case" : null,
+            state: deletionWarning ? "pending" : "complete",
+            warning: deletionWarning,
+          },
+          discarded: true,
+        });
+      }
+      if (init?.method === "POST") {
+        return Response.json({
+          editorConfigUrl: "/editor-config",
+          fillMethod: "onlyoffice",
+          response: { id: "response" },
+        });
+      }
+      return Response.json({
+        form: {
+          documentKind: "xlsx",
+          fillMethod: "onlyoffice",
+          title: "Excel form",
+        },
+      });
+    })
   );
   return render(<Fill />);
 };
@@ -261,6 +273,20 @@ describe("Excel response actions", () => {
       expect(screen.queryByRole("alert")).not.toBeInTheDocument();
     }
   );
+  it("keeps a pending-file deletion warning available while Fill exits to the destination shell", async () => {
+    deletionWarning = "ลบข้อมูลคำตอบแล้ว แต่ URL อาจยังเปิดได้ รหัสติดตาม deletion-case";
+    mount();
+    await screen.findByRole("button", { name: "ออกจากแบบฟอร์ม" });
+    act(() => bridge.onDirtyChange?.(true));
+    await userEvent.click(
+      screen.getByRole("button", { name: "ออกจากแบบฟอร์ม" })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "ทิ้งฉบับร่าง" }));
+    await waitFor(() =>
+      expect(navigation.navigate).toHaveBeenCalledWith({ to: "/dashboard" })
+    );
+    expect(screen.getByText(deletionWarning)).toBeVisible();
+  });
   it("retries PDF conversion with a fresh capture and keeps unsaved edits", async () => {
     bridge.captureWorkbook
       .mockResolvedValueOnce({

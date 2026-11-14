@@ -46,7 +46,7 @@ import {
   formatDateTime,
   safeReturnPath,
 } from "@/lib/api";
-import type { FillMethod, Operation } from "@/lib/api";
+import type { FillMethod, Operation, ResponseDeletionOutcome } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
   createDeferred,
@@ -175,6 +175,9 @@ const FillRoute = () => {
   useEffect(() => () => workbookDownloadRef.current?.controller.abort(), []);
   const [clearDirtyRequest, setClearDirtyRequest] = useState(0);
   const [discardBusy, setDiscardBusy] = useState(false);
+  const [deletionCleanupWarning, setDeletionCleanupWarning] = useState<
+    string | null
+  >(null);
   const [submissionHistory, setSubmissionHistory] = useState<
     SubmissionHistoryEntry[]
   >([]);
@@ -1004,7 +1007,11 @@ const FillRoute = () => {
     setDiscardBusy(true);
     setOperationError(null);
     try {
-      await apiDelete(`/api/responses/${activeResponseId}`);
+      const outcome = await apiDelete<ResponseDeletionOutcome>(
+        `/api/responses/${activeResponseId}`
+      );
+      // The destination shell reloads durable owner-bound warnings after navigation.
+      setDeletionCleanupWarning(outcome.attachmentCleanup.warning);
       setDirty(false);
       setClearDirtyRequest((value) => value + 1);
       const intent = exitIntent;
@@ -1143,6 +1150,11 @@ const FillRoute = () => {
         {operationError ? (
           <div className="mb-4">
             <Notice tone="danger">{operationError}</Notice>
+          </div>
+        ) : null}
+        {deletionCleanupWarning ? (
+          <div className="mb-4">
+            <Notice>{deletionCleanupWarning}</Notice>
           </div>
         ) : null}
         {workbookDownloadError ? (
