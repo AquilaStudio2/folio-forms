@@ -10,13 +10,13 @@ flowchart LR
     clean{"ไม่มี Response และ cleanup ค้าง"}
     denied["หยุดและให้ลบข้อมูลก่อน"]
     account["ลบบัญชีและข้อมูลเชื่อมที่เกี่ยวข้อง"]
-    response["Admin ลบ Response หรือเจ้าของทิ้งร่าง"]
-    check["ตรวจสิทธิ์ สถานะ Operation และ lease"]
-    delete["ลบ Response, Submission และ Correction"]
-    intents["บันทึก object cleanup intents"]
-    files["ลบไฟล์ตาม ownership"]
-    retry["cleanup ไม่จบ ให้ recovery ทำต่อ"]
-    tombstone["เก็บ deletion tombstone"]
+    response["Admin ยืนยันลบ Response หรือเจ้าของทิ้ง Draft"]
+    check["ตรวจ caller intent, owner/Draft, Operation, lease และ unknown upload"]
+    intents["snapshot ทุก revision/workspace/Operation; owner-bound case และ intents"]
+    delete["version fence; retire เฉพาะ refs ของ Response; cascade rows"]
+    files["initial ECM DELETE เฉพาะ owned file ที่ไร้ surviving refs"]
+    retry["file cleanup pending: URL อาจยังเปิดได้; ห้าม blind resend"]
+    tombstone["durable tombstone/case อยู่รอดหลัง restart"]
     audit["เก็บ AuditEvent ที่ไม่มี credential"]
     view["/admin/audit อ่านและกรอง"]
     users --> create --> password
@@ -25,9 +25,10 @@ flowchart LR
     users --> erase --> clean
     clean -->|"ไม่ผ่าน"| denied
     clean -->|"ผ่าน"| account
-    response --> check --> delete --> intents --> files
-    files -->|"ยังไม่ครบ"| retry --> files
-    delete --> tombstone
+    response --> check --> intents --> delete --> files
+    files -->|"failed / unknown"| retry
+    files -->|"confirmed หรือ protected by surviving refs"| tombstone
+    retry --> tombstone
     create -.-> audit
     revoke -.-> audit
     account -.-> audit

@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `60bd63fd7b27eb6538ede1496b8582dd2bab4127`
+Commit: `203245ec331106737040dfa02c42705a7836a0b0`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -21,14 +21,14 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `/admin/forms/new` | `apps/web/src/routes/admin/forms/new.tsx:367` |
 | `/admin/` | `apps/web/src/routes/admin/index.tsx:5` |
 | `/admin/results/$responseId/correction` | `apps/web/src/routes/admin/results/$responseId/correction.tsx:212` |
-| `/admin/results/$responseId/` | `apps/web/src/routes/admin/results/$responseId/index.tsx:534` |
-| `/admin/results/` | `apps/web/src/routes/admin/results/index.tsx:775` |
+| `/admin/results/$responseId/` | `apps/web/src/routes/admin/results/$responseId/index.tsx:546` |
+| `/admin/results/` | `apps/web/src/routes/admin/results/index.tsx:795` |
 | `/admin/results` | `apps/web/src/routes/admin/results.tsx:5` |
 | `/admin/users` | `apps/web/src/routes/admin/users.tsx:749` |
 | `/admin` | `apps/web/src/routes/admin.tsx:35` |
 | `/change-password` | `apps/web/src/routes/change-password.tsx:229` |
-| `/dashboard` | `apps/web/src/routes/dashboard.tsx:377` |
-| `/forms/$publicId/fill` | `apps/web/src/routes/forms/$publicId/fill.tsx:1395` |
+| `/dashboard` | `apps/web/src/routes/dashboard.tsx:383` |
+| `/forms/$publicId/fill` | `apps/web/src/routes/forms/$publicId/fill.tsx:1407` |
 | `/forms/$publicId/submissions` | `apps/web/src/routes/forms/$publicId/submissions.tsx:243` |
 | `/handoff` | `apps/web/src/routes/handoff.tsx:59` |
 | `/` | `apps/web/src/routes/index.tsx:26` |
@@ -47,7 +47,7 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | POST | `/api/admin/users` | `apps/server/src/routes/accounts.ts:230` |
 | PATCH | `/api/admin/users/:id` | `apps/server/src/routes/accounts.ts:307` |
 | DELETE | `/api/admin/users/:id` | `apps/server/src/routes/accounts.ts:485` |
-| POST | `/api/admin/users/:id/password-reset` | `apps/server/src/routes/accounts.ts:587` |
+| POST | `/api/admin/users/:id/password-reset` | `apps/server/src/routes/accounts.ts:609` |
 | GET | `/api/admin/ai-authoring` | `apps/server/src/routes/ai-authoring.ts:21` |
 | POST | `/api/admin/ai-authoring/sessions` | `apps/server/src/routes/ai-authoring.ts:26` |
 | GET | `/api/admin/ai-authoring/sessions/current` | `apps/server/src/routes/ai-authoring.ts:57` |
@@ -113,14 +113,15 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | POST | `/api/responses/:id/attachment-operations/:checkpoint/recover` | `apps/server/src/routes/response-actions.ts:150` |
 | POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:162` |
 | POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:382` |
-| GET | `/api/responses/:id/attachment-status` | `apps/server/src/routes/responses.ts:68` |
-| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:93` |
-| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:127` |
-| POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:259` |
-| GET | `/api/responses/:id/draft/viewer-config` | `apps/server/src/routes/responses.ts:373` |
-| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:412` |
-| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:498` |
-| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:542` |
+| GET | `/api/responses/deletion-status` | `apps/server/src/routes/responses.ts:71` |
+| GET | `/api/responses/:id/attachment-status` | `apps/server/src/routes/responses.ts:75` |
+| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:100` |
+| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:134` |
+| POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:266` |
+| GET | `/api/responses/:id/draft/viewer-config` | `apps/server/src/routes/responses.ts:380` |
+| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:419` |
+| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:505` |
+| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:548` |
 | GET | `/api/admin/results/attachment-follow-up` | `apps/server/src/routes/results.ts:355` |
 | POST | `/api/admin/results/attachment-follow-up/:operationId/settle` | `apps/server/src/routes/results.ts:367` |
 | POST | `/api/admin/results/attachment-follow-up/:operationId/cancel` | `apps/server/src/routes/results.ts:382` |
@@ -181,13 +182,13 @@ Separate private HTTP listener in `apps/server/src/document-worker-server.ts:170
 | AuditEvent | `audit_events` | `packages/db/prisma/schema.prisma:592` |
 | LoginFailure | `login_failures` | `packages/db/prisma/schema.prisma:610` |
 | DeletionTombstone | `deletion_tombstones` | `packages/db/prisma/schema.prisma:624` |
-| PdmsProjectCatalogSession | `pdms_project_catalog_sessions` | `packages/db/prisma/schema.prisma:637` |
-| EcmAuthState | `ecm_auth_states` | `packages/db/prisma/schema.prisma:660` |
-| EcmCategoryCatalog | `ecm_category_catalogs` | `packages/db/prisma/schema.prisma:673` |
-| EcmAttachmentBatch | `ecm_attachment_batches` | `packages/db/prisma/schema.prisma:682` |
-| EcmAttachmentVersion | `ecm_attachment_versions` | `packages/db/prisma/schema.prisma:701` |
-| EcmAttachmentReference | `ecm_attachment_references` | `packages/db/prisma/schema.prisma:729` |
-| EcmAttachmentCleanup | `ecm_attachment_cleanups` | `packages/db/prisma/schema.prisma:740` |
+| PdmsProjectCatalogSession | `pdms_project_catalog_sessions` | `packages/db/prisma/schema.prisma:640` |
+| EcmAuthState | `ecm_auth_states` | `packages/db/prisma/schema.prisma:663` |
+| EcmCategoryCatalog | `ecm_category_catalogs` | `packages/db/prisma/schema.prisma:676` |
+| EcmAttachmentBatch | `ecm_attachment_batches` | `packages/db/prisma/schema.prisma:685` |
+| EcmAttachmentVersion | `ecm_attachment_versions` | `packages/db/prisma/schema.prisma:704` |
+| EcmAttachmentReference | `ecm_attachment_references` | `packages/db/prisma/schema.prisma:732` |
+| EcmAttachmentCleanup | `ecm_attachment_cleanups` | `packages/db/prisma/schema.prisma:743` |
 
 ## Status enums
 
