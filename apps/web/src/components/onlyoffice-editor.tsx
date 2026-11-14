@@ -846,7 +846,9 @@ export const OnlyOfficeEditor = ({
         }
         if (
           data.type === "pending-file-check" &&
-          ["save-draft", "submit"].includes(String(data.action))
+          ["save-draft", "submit", "save-correction"].includes(
+            String(data.action)
+          )
         ) {
           result.checkpointOperation =
             await holder.pendingOperation(currentOptions);

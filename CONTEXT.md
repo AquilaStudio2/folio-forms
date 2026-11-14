@@ -124,6 +124,8 @@ Dropdown helper ranges are internal workbook storage. Identical lists can share 
 
 A User's single attempt to fill a Form. A User can have at most one Response for a Form. A Response may hold a Draft and produce multiple immutable Submissions over time. Reopening a DOCX Response seeds its prior Submission's document and data; an XLSX new round instead starts blank from Published Template, without copying old answers or files. Resuming an already saved XLSX Draft preserves its canonical document and attachments.
 
+The XLSX exception includes the prior round's `fiscal_year`, `docs_number`, attachment URLs and file references: none are seeded from a Submission or Correction into a new round. The normal fill page still automatically starts that round after Submit. Earlier immutable history remains readable; this is distinct from resuming a saved Draft.
+
 ## Draft
 
 A manually saved, resumable Response state containing both the current document and its extracted field data. A Draft is not complete unless both representations were saved successfully.
@@ -131,6 +133,8 @@ A manually saved, resumable Response state containing both the current document 
 ## Excel Fill Download
 
 A copy of the workbook open while filling an XLSX Form, including edits awaiting a Draft save. The fill page provides the copy as an Excel file or a PDF independently of Draft persistence.
+
+Declared attachments must be explicitly saved before downloading pending changes. Download itself never uploads. Ordinary unsaved native edits, including the active cell, still come from the open workbook; removing managed attachment controls affects only the derived download, not its editable source, protection or unrelated artwork.
 
 ## Submission
 
@@ -140,6 +144,10 @@ An immutable completed result of a Response, recorded each time that Response is
 
 An Admin-authored revision to a specific Submission. It records changed Field values, a reason, and a revised document while preserving the original Submission. A Correction can only be added while its Response is currently in the submitted state for that same Submission; once the User reopens the Response to submit again, new Corrections on the earlier Submission are blocked until it becomes submitted again, though its existing history remains viewable.
 
+For declared XLSX Attachment Fields, only final explicit Save Correction uploads selected replacements or new metadata versions. Internal project/workspace saves do not upload. Pending original Files and removals cross a workspace document change only with verified canonical scope and physical-row mapping; otherwise the current page must retain them. The Admin acts on the submitted Response through its Correction lease, not through another User's Draft.
+
+Each Correction preserves its own document, canonical attachment receipts and file references. Removing or replacing a file in a later revision cannot delete a file still referenced by a Submission or older Correction. Read-only views and XLSX/PDF downloads derive URL-only copies from the selected revision, without upload controls or attachment tokens; editable canonical documents remain unchanged. A broken historical public URL is not replaced by the latest file.
+
 ## Editor Opening
 
 One mounted editor instance, identified by a validated opening UUID. The application document key remains the canonical identity of a saved document, capability scope, attachment checkpoint and Operation; opening a saved Draft does not create another revision. Mutable editor configurations expose this identity as `bridge.documentKey`.
@@ -147,6 +155,8 @@ One mounted editor instance, identified by a validated opening UUID. The applica
 For XLSX, ONLYOFFICE receives a separate opaque `documentServerKey`, bound to the canonical document, actor, Folio session and opening. Capability or lease renewal within the same opening retains that native key; a different opening receives another native cache identity. Signed capabilities and durable Operation metadata carry the native key, and callbacks must match both canonical and native identities before consuming their claim. Read-only XLSX viewers receive independent fresh native cache identities. DOCX retains its existing native document-key behavior.
 
 An unchanged-native response may reuse a failed capture only from the same native opening. A freshly opened editor reads the saved canonical document and must not revive unsaved ordinary input captured by another opening's failed action.
+
+An editor capability never changes an authenticated person's account, role or leased session. If a request supplies Folio bearer or cookie credentials, each credential is independently resolved through Folio's existing session validation and must match the capability's account, current role and session-bound lease proof. A conflicting or invalid supplied credential cannot fall back to a more privileged capability; Viewer sessions remain read-only. Credential-free native plugin requests retain their existing enabled-account, signed-capability and editor-lease checks. This editor-only inspection does not enable cookie-only access to ordinary APIs: `identityFor` and `requireIdentity` remain bearer-only, preserving ADR 0002.
 
 ## Operation
 

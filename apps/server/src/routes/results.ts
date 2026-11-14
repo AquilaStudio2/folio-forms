@@ -23,6 +23,10 @@ import {
 } from "../auth/identity";
 import { callbackFieldMetadata } from "../documents/office-values";
 import {
+  resolveSpreadsheetContract,
+  readSpreadsheetWorkbook,
+} from "../documents/spreadsheets/workbook";
+import {
   attachmentFollowUps,
   fenceAttachmentFollowUp,
   settleAttachmentFollowUp,
@@ -55,8 +59,14 @@ import { activeOperationForResponse } from "../operations/lifecycle";
 import type { OperationMetadata } from "../operations/model";
 import { operationTypeForAction } from "../operations/model";
 import { pdmsOperationContext } from "../pdms/catalog";
+import { hasSpreadsheetAttachments } from "../responses/attachment-data";
+import {
+  replayAttachmentOperation,
+  startAttachmentOperation,
+} from "../responses/attachment-operation";
 import { normalizeResponseData } from "../responses/data";
 import { correctionEditorConfig } from "../responses/editor";
+import { nativeResponseRequest } from "../responses/native-request";
 import {
   adminResultDate,
   adminResultSummary,
@@ -65,7 +75,7 @@ import {
   selectedSubmissionRevision,
 } from "../responses/query";
 import { resultAnswerValues } from "../responses/result-filters";
-import { objectExists, objectKey } from "../storage";
+import { objectExists, objectKey, readObject } from "../storage";
 import type { RouteDependencies } from "./dependencies";
 
 export function registerResultRoutes(
@@ -81,12 +91,10 @@ export function registerResultRoutes(
     async ({
       request,
       params,
-      body,
       set,
     }: {
       request: Request;
       params: { id: string };
-      body: unknown;
       set: { status?: number | string };
     }) => {
       const action = workspaceOnly
@@ -96,7 +104,6 @@ export function registerResultRoutes(
       const { actor: identity } = authorization;
       requireAdmin(identity);
       validateId(params.id, "Response");
-      const input = correctionInput(body, workspaceOnly);
       const response = await prisma.response.findUnique({
         include: {
           prefillSnapshot: true,
@@ -135,6 +142,61 @@ export function registerResultRoutes(
       const latest = submission.corrections[0];
       const currentRevision = latest?.revision ?? 0;
       const currentDocumentKey = latest?.documentKey ?? submission.documentKey;
+      const bindings =
+        form.documentKind === "xlsx"
+          ? await spreadsheetBindingsForTemplate(response.publishedTemplateId)
+          : undefined;
+      const workspace = await prisma.editorLease.findFirst({
+        where: {
+          holderUserId: identity.id,
+          id: authorization.capability.leaseId,
+          targetId: response.id,
+          targetType: "correction",
+        },
+      });
+      const attachmentBindings =
+        bindings && workspace?.workspaceObjectKey
+          ? resolveSpreadsheetContract(
+              bindings,
+              readSpreadsheetWorkbook(
+                await readObject(workspace.workspaceObjectKey)
+              )
+            )
+          : bindings;
+      const parsed = await nativeResponseRequest(
+        request,
+        [],
+        attachmentBindings
+      );
+      const input = correctionInput(
+        parsed.input,
+        workspaceOnly,
+        hasSpreadsheetAttachments(attachmentBindings) && !workspaceOnly
+      );
+      if (
+        workspaceOnly &&
+        (parsed.attachments.size ||
+          parsed.input.attachmentRemovals !== undefined)
+      ) {
+        fail(
+          400,
+          "invalid_attachment",
+          "บันทึกพื้นที่ทำงานไม่บันทึกไฟล์แนบ กรุณากดบันทึก Correction"
+        );
+      }
+      if (!workspaceOnly && hasSpreadsheetAttachments(attachmentBindings)) {
+        const replay = await replayAttachmentOperation(
+          authorization,
+          parsed.input,
+          form.id,
+          response.id,
+          "save-correction"
+        );
+        if (replay) {
+          set.status = 202;
+          return replay;
+        }
+      }
       const capabilityScope = {
         documentKey: input.documentKey,
         formId: form.id,
@@ -242,6 +304,23 @@ export function registerResultRoutes(
         workspaceLeaseId: authorization.capability.leaseId,
         workspaceObjectKey: workspaceLease.workspaceObjectKey,
       };
+      if (!workspaceOnly && hasSpreadsheetAttachments(attachmentBindings)) {
+        const accepted = await startAttachmentOperation({
+          action: "save-correction",
+          authorization,
+          bindings: attachmentBindings,
+          correctionMetadata: metadata,
+          ecm: dependencies.ecm,
+          files: parsed.attachments,
+          form,
+          input: parsed.input,
+          onlyOffice,
+          pdmsContext,
+          responseId: response.id,
+        });
+        set.status = 202;
+        return accepted;
+      }
 
       const operation = await createOperation({
         actorId: identity.id,
@@ -638,6 +717,10 @@ export function registerResultRoutes(
         );
       }
     )
-    .post("/api/admin/results/:id/correction", saveCorrection(false))
-    .post("/api/admin/results/:id/correction/workspace", saveCorrection(true));
+    .post("/api/admin/results/:id/correction", saveCorrection(false), {
+      parse: "none",
+    })
+    .post("/api/admin/results/:id/correction/workspace", saveCorrection(true), {
+      parse: "none",
+    });
 }

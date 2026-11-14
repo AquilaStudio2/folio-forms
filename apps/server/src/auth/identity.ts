@@ -21,10 +21,17 @@ export type Actor = Pick<
 export type EditorCapabilityIdentity = Actor &
   Pick<Identity, "expiresAt" | "isSso">;
 
-export async function identityFor(request: Request): Promise<Identity | null> {
+export function identityFor(request: Request): Promise<Identity | null> {
   if (!bearerTokenFor(request)) {
-    return null;
+    return Promise.resolve(null);
   }
+  return sessionIdentityFor(request);
+}
+
+/** Resolve Folio session credentials without enabling cookie-only access to bearer-only application APIs. */
+export async function sessionIdentityFor(
+  request: Request
+): Promise<Identity | null> {
   const result = await auth.api.getSession({ headers: request.headers });
   if (!result?.user || !result.session) {
     return null;

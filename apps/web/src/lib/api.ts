@@ -105,6 +105,7 @@ export interface SpreadsheetResultField {
   required: boolean;
   computed: boolean;
   options: string[];
+  attachment?: { category: string | null };
 }
 export interface SpreadsheetResultContract {
   version: 1;

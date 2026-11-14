@@ -2,7 +2,12 @@ import { prisma } from "@onlyoffice/db";
 
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { EditorCapabilityIdentity } from "../auth/identity";
-import { requireIdentity, requireResponseWriter } from "../auth/identity";
+import {
+  identityFor,
+  sessionIdentityFor,
+  requireIdentity,
+  requireResponseWriter,
+} from "../auth/identity";
 import { fail } from "../http/errors";
 import type {
   EditorCapabilityClaims,
@@ -11,6 +16,7 @@ import type {
 } from "../onlyoffice";
 import { verifyEditorCapability, createEditorCapability } from "../onlyoffice";
 import type { EditorLeaseGrant } from "./leases";
+import { editorLeaseProof } from "./leases";
 
 interface EditorAuthorization {
   actor: EditorCapabilityIdentity;
@@ -29,6 +35,49 @@ export interface EditorCapabilityScope {
   targetId: string;
   targetType: EditorCapabilityTarget;
 }
+const requireMatchingSessionCredentials = async (
+  request: Request,
+  capability: EditorCapabilityClaims
+): Promise<void> => {
+  for (const header of ["authorization", "cookie"]) {
+    const value = request.headers.get(header);
+    if (value === null) {
+      continue;
+    }
+    const credentialRequest = new Request(request.url, {
+      headers: { [header]: value },
+    });
+    const identity =
+      header === "authorization"
+        ? await identityFor(credentialRequest)
+        : await sessionIdentityFor(credentialRequest);
+    if (!identity) {
+      fail(401, "unauthorized", "Authentication is required");
+    }
+    if (identity.mustChangePassword && !identity.isSso) {
+      fail(403, "password_change_required", "Password replacement is required");
+    }
+    requireResponseWriter(identity);
+    if (
+      identity.id !== capability.actorId ||
+      identity.role !== capability.role ||
+      (capability.leaseProof !== undefined &&
+        capability.leaseProof !==
+          editorLeaseProof(
+            identity,
+            capability.targetType,
+            capability.targetId
+          ))
+    ) {
+      fail(
+        403,
+        "editor_capability_scope_mismatch",
+        "Editor capability does not belong to the authenticated account and session"
+      );
+    }
+  }
+};
+
 export async function editorAuthorization(
   request: Request
 ): Promise<EditorAuthorization> {
@@ -46,6 +95,7 @@ export async function editorAuthorization(
       "Editor capability is invalid or expired"
     );
   }
+  await requireMatchingSessionCredentials(request, capability);
   const user = await prisma.user.findUnique({
     select: {
       email: true,

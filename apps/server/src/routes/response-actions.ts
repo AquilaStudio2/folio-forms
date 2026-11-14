@@ -134,7 +134,10 @@ export function registerResponseActionRoutes(
               documentKey: batch.documentKey,
               formId: batch.formId,
               targetId: responseId,
-              targetType: "response",
+              targetType:
+                operation.targetType === "correction"
+                  ? "correction"
+                  : "response",
             },
             operation.id
           ),

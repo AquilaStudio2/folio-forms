@@ -47,6 +47,7 @@ import { activeOperationForResponse } from "../operations/lifecycle";
 import { deleteResponseData } from "../responses/deletion";
 import { responseSummary, correctionRevisionSummary } from "../responses/query";
 import type { CorrectionRevisionSummary } from "../responses/query";
+import { responseSpreadsheetExport } from "../responses/spreadsheet-document";
 import {
   DOCX_CONTENT_TYPE,
   objectExists,
@@ -284,6 +285,7 @@ export function registerResponseRoutes(
             draftDocumentKey: true,
             form: { select: { documentKind: true, version: true } },
             formId: true,
+            publishedTemplateId: true,
             publishedVersion: true,
             status: true,
             userId: true,
@@ -327,7 +329,7 @@ export function registerResponseRoutes(
         if (Object.keys(input).length !== 1) {
           fail(400, "invalid_request", "Only snapshotUrl is accepted");
         }
-        const workbook = await onlyOffice.downloadEditorWorkbook({
+        let workbook = await onlyOffice.downloadEditorWorkbook({
           documentServerKey: requireDocumentServerKey(authorization),
           signal: request.signal,
           snapshotUrl: requiredString(input, "snapshotUrl"),
@@ -342,6 +344,10 @@ export function registerResponseRoutes(
             "The workbook snapshot is not a supported Excel document"
           );
         }
+        workbook = await responseSpreadsheetExport(
+          workbook,
+          response.publishedTemplateId
+        );
         const headers = {
           "Cache-Control": "no-store",
           "Content-Disposition": `attachment; filename="response-${responseId}.${format}"`,
@@ -450,21 +456,39 @@ export function registerResponseRoutes(
           if (params.format !== response.form.documentKind) {
             fail(404, "not_found", "This document format is unavailable");
           }
-          return new Response(streamObject(response.draftObjectKey), {
-            headers: {
-              "Content-Disposition": `attachment; filename="response-${response.id}.${response.form.documentKind}"`,
-              "Content-Type":
-                response.form.documentKind === "xlsx"
-                  ? XLSX_CONTENT_TYPE
-                  : DOCX_CONTENT_TYPE,
-            },
-          });
+          return new Response(
+            response.form.documentKind === "xlsx"
+              ? await responseSpreadsheetExport(
+                  await readObject(response.draftObjectKey),
+                  response.publishedTemplateId
+                )
+              : streamObject(response.draftObjectKey),
+            {
+              headers: {
+                "Content-Disposition": `attachment; filename="response-${response.id}.${response.form.documentKind}"`,
+                "Content-Type":
+                  response.form.documentKind === "xlsx"
+                    ? XLSX_CONTENT_TYPE
+                    : DOCX_CONTENT_TYPE,
+              },
+            }
+          );
         }
-        const pdf = await onlyOffice.convertDocxToPdf(
-          response.draftDocumentKey,
-          true,
-          response.form.documentKind
-        );
+        const pdf =
+          response.form.documentKind === "xlsx"
+            ? await withSpreadsheetExportSnapshot(
+                await responseSpreadsheetExport(
+                  await readObject(response.draftObjectKey),
+                  response.publishedTemplateId
+                ),
+                (key) => onlyOffice.convertDocxToPdf(key, true, "xlsx"),
+                request.signal
+              )
+            : await onlyOffice.convertDocxToPdf(
+                response.draftDocumentKey,
+                true,
+                response.form.documentKind
+              );
         set.headers["Content-Disposition"] =
           `attachment; filename="response-${response.id}.pdf"`;
         set.headers["Content-Type"] = "application/pdf";

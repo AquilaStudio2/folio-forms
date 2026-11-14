@@ -303,6 +303,11 @@ export async function correctionEditorConfig(
           form.documentKind === "xlsx"
             ? await attachmentCleanupWarning(response.id)
             : null,
+        attachmentMutationNotice:
+          form.documentKind === "xlsx"
+            ? await attachmentMutationNotice(response.id)
+            : null,
+        attachmentSavedData: jsonRecord(latest?.data ?? submission.data),
         ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
         documentKind: form.documentKind,
         ...(opening ? { documentServerKey: opening.documentServerKey } : {}),

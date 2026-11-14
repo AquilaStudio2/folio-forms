@@ -29,6 +29,7 @@ import { finalizeCallback } from "../operations/callback";
 import { createOperation } from "../operations/create";
 import { updateOperationFailed } from "../operations/lifecycle";
 import type { OperationMetadata } from "../operations/model";
+import { operationTypeForAction } from "../operations/model";
 import { objectKey } from "../storage";
 import { attachmentSlotKey } from "./attachment-data";
 
@@ -43,20 +44,23 @@ const checkpoint = (input: JsonRecord): string => {
   }
   return result.data;
 };
-const scopeFor = (formId: string, responseId: string, documentKey: string) => ({
-  documentKey,
-  formId,
-  targetId: responseId,
-  targetType: "response" as const,
-});
+const scopeFor = (
+  formId: string,
+  responseId: string,
+  documentKey: string,
+  targetType: "response" | "correction" = "response"
+) => ({ documentKey, formId, targetId: responseId, targetType });
 export const attachmentOperationAction = (
   operation: Pick<Operation, "type">
-): "save-draft" | "submit" => {
+): "save-draft" | "submit" | "save-correction" => {
   if (operation.type === "save_draft") {
     return "save-draft";
   }
   if (operation.type === "submit_response") {
     return "submit";
+  }
+  if (operation.type === "save_correction") {
+    return "save-correction";
   }
   return fail(
     500,
@@ -76,7 +80,12 @@ const envelope = (
     action: attachmentOperationAction(operation),
     operationCapability: operationEditorCapability(
       authorization.actor,
-      scopeFor(operation.formId, operation.targetId, documentKey),
+      scopeFor(
+        operation.formId,
+        operation.targetId,
+        documentKey,
+        operation.targetType === "correction" ? "correction" : "response"
+      ),
       operation.id
     ),
     operationId: operation.id,
@@ -89,7 +98,7 @@ export const replayAttachmentOperation = async (
   input: JsonRecord,
   formId: string,
   responseId: string,
-  action: "save-draft" | "submit"
+  action: "save-draft" | "submit" | "save-correction"
 ) => {
   if (input.checkpoint === undefined) {
     return null;
@@ -107,7 +116,12 @@ export const replayAttachmentOperation = async (
     return null;
   }
   requireEditorScope(authorization, {
-    ...scopeFor(formId, responseId, batch.documentKey),
+    ...scopeFor(
+      formId,
+      responseId,
+      batch.documentKey,
+      action === "save-correction" ? "correction" : "response"
+    ),
     action,
   });
   const operation = await prisma.operation.findUniqueOrThrow({
@@ -115,8 +129,7 @@ export const replayAttachmentOperation = async (
   });
   if (
     operation.documentKey !== input.documentKey ||
-    operation.type !==
-      (action === "submit" ? "submit_response" : "save_draft") ||
+    operation.type !== operationTypeForAction[action] ||
     operation.formId !== formId ||
     batch.leaseId !== authorization.capability.leaseId
   ) {
@@ -133,7 +146,7 @@ export const recoverAttachmentAdmission = (
 ) => {
   const request = z
     .object({
-      action: z.enum(["save-draft", "submit"]),
+      action: z.enum(["save-draft", "submit", "save-correction"]),
       documentKey: z.string().min(1),
     })
     .strict()
@@ -141,7 +154,8 @@ export const recoverAttachmentAdmission = (
   const scope = scopeFor(
     authorization.capability.formId,
     responseId,
-    request.documentKey
+    request.documentKey,
+    request.action === "save-correction" ? "correction" : "response"
   );
   requireEditorScope(authorization, { ...scope, action: request.action });
   const revokedLeaseId = authorization.capability.leaseId;
@@ -159,7 +173,9 @@ export const recoverAttachmentAdmission = (
       where: {
         formId: scope.formId,
         id: responseId,
-        userId: authorization.actor.id,
+        ...(request.action === "save-correction"
+          ? { status: "submitted" }
+          : { userId: authorization.actor.id }),
       },
     });
     if (!response) {
@@ -181,8 +197,7 @@ export const recoverAttachmentAdmission = (
       if (
         batch.documentKey !== request.documentKey ||
         operation.formId !== scope.formId ||
-        operation.type !==
-          (request.action === "submit" ? "submit_response" : "save_draft")
+        operation.type !== operationTypeForAction[request.action]
       ) {
         fail(
           409,
@@ -198,7 +213,7 @@ export const recoverAttachmentAdmission = (
       where: {
         status: { in: ["pending", "processing"] },
         targetId: responseId,
-        targetType: "response",
+        targetType: scope.targetType,
       },
     });
     if (active) {
@@ -210,8 +225,20 @@ export const recoverAttachmentAdmission = (
     }
     await requireAttachmentMutationReady(responseId, tx);
     if (
-      response.status !== "draft" ||
-      response.draftDocumentKey !== request.documentKey
+      request.action === "save-correction"
+        ? authorization.actor.role !== "admin" ||
+          response.status !== "submitted" ||
+          !(await tx.editorLease.findFirst({
+            where: {
+              holderUserId: authorization.actor.id,
+              id: revokedLeaseId,
+              targetId: responseId,
+              targetType: "correction",
+              workspaceDocumentKey: request.documentKey,
+            },
+          }))
+        : response.status !== "draft" ||
+          response.draftDocumentKey !== request.documentKey
     ) {
       fail(409, "stale_document", "เอกสารเปลี่ยนแล้ว กรุณารักษาข้อมูลในตัวแก้ไขไว้");
     }
@@ -231,7 +258,7 @@ export const recoverAttachmentAdmission = (
 export const startAttachmentOperation = async (options: {
   authorization: ActionEditorAuthorization;
   input: JsonRecord;
-  action: "save-draft" | "submit";
+  action: "save-draft" | "submit" | "save-correction";
   form: { id: string; publicId: string; fillMethod: FillMethod };
   responseId: string;
   bindings: SpreadsheetBindings;
@@ -239,6 +266,7 @@ export const startAttachmentOperation = async (options: {
   onlyOffice: OnlyOfficeClient;
   ecm: EcmClient;
   pdmsContext: Partial<OperationMetadata>;
+  correctionMetadata?: OperationMetadata;
 }) => {
   const {
     authorization,
@@ -251,7 +279,12 @@ export const startAttachmentOperation = async (options: {
     ecm,
   } = options;
   const documentKey = requiredString(input, "documentKey");
-  const scope = scopeFor(form.id, responseId, documentKey);
+  const scope = scopeFor(
+    form.id,
+    responseId,
+    documentKey,
+    action === "save-correction" ? "correction" : "response"
+  );
   requireEditorScope(authorization, { ...scope, action });
   await requireActiveEditorLease(authorization, scope);
   await requireAttachmentMutationReady(responseId);
@@ -294,6 +327,7 @@ export const startAttachmentOperation = async (options: {
           submissionId,
         }
       : {}),
+    ...options.correctionMetadata,
   };
   let operation: Operation;
   try {
@@ -309,9 +343,12 @@ export const startAttachmentOperation = async (options: {
       ownerUserId: authorization.actor.id,
       responseId,
       stagingObjectKey: metadata.stagedObjectKey,
+      // Submit's planned identity is created atomically at completion; only Correction references an existing Submission.
+      submissionId:
+        action === "save-correction" ? metadata.submissionId : undefined,
       targetId: responseId,
-      targetType: "response",
-      type: action === "submit" ? "submit_response" : "save_draft",
+      targetType: scope.targetType,
+      type: operationTypeForAction[action],
     });
   } catch (error) {
     const original = await replayAttachmentOperation(

@@ -2,12 +2,13 @@
 import { afterAll, beforeAll, expect, test } from "bun:test";
 
 import { prisma } from "@onlyoffice/db";
-import { unzipSync, strFromU8 } from "fflate";
+import { unzipSync, zipSync, strFromU8, strToU8 } from "fflate";
 import { z } from "zod";
 
 import { createApp } from "../../src/app";
 import type { EditorCapabilityIdentity } from "../../src/auth/identity";
 import { requireIdentity } from "../../src/auth/identity";
+import { templateRelationshipPartPath } from "../../src/documents/package";
 import { spreadsheetBindingSchema } from "../../src/documents/spreadsheets/contract";
 import { processSpreadsheet } from "../../src/documents/spreadsheets/engine";
 import {
@@ -23,6 +24,7 @@ import {
   spreadsheetXmlChildren,
   serializeSpreadsheetXml,
 } from "../../src/documents/spreadsheets/xml";
+import type { SpreadsheetXmlNode } from "../../src/documents/spreadsheets/xml";
 import { actionEditorCapability } from "../../src/editor/authorization";
 import type { EditorLeaseGrant } from "../../src/editor/leases";
 import { claimEditorLease } from "../../src/editor/leases";
@@ -38,7 +40,7 @@ import {
 } from "../../src/responses/attachment-data";
 import { jsonValue } from "../../src/responses/data";
 import { putObject, readObject } from "../../src/storage";
-import { bearerFor, createCredentialFixture } from "../fixtures/http";
+import { bearerFor, createCredentialFixture, signIn } from "../fixtures/http";
 import { fixtureWorkbook, mutatePart } from "../spreadsheet-unit/fixture";
 
 const fixtureValue = <T>(value: T | null | undefined): T => {
@@ -47,6 +49,15 @@ const fixtureValue = <T>(value: T | null | undefined): T => {
   }
   return value;
 };
+const xmlElements = (
+  node: SpreadsheetXmlNode,
+  name: string
+): SpreadsheetXmlNode[] => [
+  ...(node.name.split(":").at(-1) === name ? [node] : []),
+  ...node.children.flatMap((child) =>
+    typeof child === "string" ? [] : xmlElements(child, name)
+  ),
+];
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -484,6 +495,7 @@ const replaceCell = (bytes: Uint8Array, address: string, value: string) =>
 interface Fixture {
   authSessionId: string;
   bearer: string;
+  cookie: string;
   form: { id: string; publicId: string };
   response: { id: string };
   identity: EditorCapabilityIdentity;
@@ -534,7 +546,23 @@ const fixture = async (
     password,
     role,
   });
-  const bearer = await bearerFor(app, user.email, password);
+  const login = await signIn(app, user.email, password);
+  expect(login.status).toBe(200);
+  const signedIn = z
+    .object({
+      session: z.object({ token: z.string().optional() }).optional(),
+      token: z.string().optional(),
+    })
+    .parse(await login.json());
+  const bearer = fixtureValue(
+    login.headers.get("set-auth-token")?.replace(/^Bearer\s+/iu, "") ??
+      signedIn.token ??
+      signedIn.session?.token
+  );
+  const cookie = login.headers
+    .getSetCookie()
+    .map((value) => value.split(";", 1)[0])
+    .join("; ");
   const documentKey = `scalar-${id}`;
   const responseId = crypto.randomUUID();
   const objectKey = `responses/${responseId}/draft/${id}.xlsx`;
@@ -691,6 +719,7 @@ const fixture = async (
   return {
     authSessionId: identity.sessionId,
     bearer,
+    cookie,
     documentKey,
     documentServerKey: native.documentServerKey,
     form,
@@ -869,6 +898,650 @@ const tableRowsSchema = z.array(
 );
 const file = (bytes = new Uint8Array([0, 255, 7, 1]), name = "Original.BIN") =>
   new File([bytes], name, { type: "application/x-encrypted-private" });
+interface CorrectionBridgeFixture {
+  capabilities: Record<string, string>;
+  documentKey: string;
+  uploadPoc: { savedData: Record<string, unknown> };
+}
+const openCorrection = async (owner: Fixture, admin: Fixture) => {
+  const opened = await app.handle(
+    new Request(
+      `http://test.local/api/admin/results/${owner.response.id}/correction/editor-config`,
+      { headers: { Authorization: `Bearer ${admin.bearer}` } }
+    )
+  );
+  expect(opened.status).toBe(200);
+  const config = z
+    .object({
+      bridge: z.object({
+        capabilities: z.record(z.string(), z.string()),
+        documentKey: z.string(),
+        uploadPoc: z.object({ savedData: z.record(z.string(), z.unknown()) }),
+      }),
+      config: z.object({ document: z.object({ key: z.string() }) }),
+    })
+    .parse(await opened.json());
+  const lease = await prisma.editorLease.findUniqueOrThrow({
+    where: {
+      targetType_targetId: {
+        targetId: owner.response.id,
+        targetType: "correction",
+      },
+    },
+  });
+  nativeSnapshotKeys.set(config.config.document.key, config.bridge.documentKey);
+  snapshots.set(
+    config.bridge.documentKey,
+    await readObject(fixtureValue(lease.workspaceObjectKey))
+  );
+  return config.bridge;
+};
+
+const postCorrection = (
+  owner: Fixture,
+  admin: Fixture,
+  bridge: CorrectionBridgeFixture,
+  files: Record<string, File> = {},
+  input: Record<string, unknown> = {},
+  workspaceOnly = false,
+  credentials?: Record<string, string>
+) => {
+  const body = new FormData();
+  body.set(
+    "payload",
+    JSON.stringify({
+      data: {},
+      documentKey: bridge.documentKey,
+      ...(workspaceOnly
+        ? {}
+        : {
+            checkpoint: crypto.randomUUID(),
+            reason: "Correct supporting evidence",
+            snapshotUrl: "http://office.test/cache/snapshot.xlsx",
+          }),
+      ...input,
+    })
+  );
+  for (const [binding, selected] of Object.entries(files)) {
+    body.set(
+      `attachment:${binding.startsWith("[") ? encodeURIComponent(binding) : binding}`,
+      selected
+    );
+  }
+  return app.handle(
+    new Request(
+      `http://test.local/api/admin/results/${owner.response.id}/correction${workspaceOnly ? "/workspace" : ""}`,
+      {
+        body,
+        headers: {
+          ...(credentials ?? { Authorization: `Bearer ${admin.bearer}` }),
+          "X-Editor-Capability": fixtureValue(
+            bridge.capabilities[
+              workspaceOnly ? "save-correction-workspace" : "save-correction"
+            ]
+          ),
+        },
+        method: "POST",
+      }
+    )
+  );
+};
+test("Correction authenticates independent bearer and cookie credentials while preserving native capability-only requests", async () => {
+  const owner = await fixture();
+  const admin = await fixture({ admin: true });
+  const viewer = await fixture({ viewer: true });
+  for (const [actor, role] of [
+    [owner, "user"],
+    [admin, "admin"],
+    [viewer, "viewer"],
+  ] as const) {
+    const session = await app.handle(
+      new Request("http://test.local/api/session", {
+        headers: { Authorization: `Bearer ${actor.bearer}` },
+      })
+    );
+    expect(session.status).toBe(200);
+    expect(await session.json()).toMatchObject({
+      user: { id: actor.identity.id, role },
+    });
+    expect(actor.cookie).not.toBe("");
+  }
+  const cookieOnlySession = await app.handle(
+    new Request("http://test.local/api/session", {
+      headers: { Cookie: viewer.cookie },
+    })
+  );
+  expect(cookieOnlySession.status).toBe(401);
+  const submitted = await poll(
+    owner,
+    await send(owner, { folio_proof: file() }, "submit")
+  );
+  expect(submitted.status).toBe("completed");
+  let bridge = await openCorrection(owner, admin);
+  const otherAdminBearer = await bearerFor(
+    app,
+    admin.identity.email,
+    "Scalar-isolated-fixture-password!"
+  );
+  const otherAdminLogin = await signIn(
+    app,
+    admin.identity.email,
+    "Scalar-isolated-fixture-password!"
+  );
+  expect(otherAdminLogin.status).toBe(200);
+  const otherAdminCookie = otherAdminLogin.headers
+    .getSetCookie()
+    .map((value) => value.split(";", 1)[0])
+    .join("; ");
+  expect(otherAdminCookie).not.toBe("");
+  expect(otherAdminCookie).not.toBe(admin.cookie);
+  const otherSession = await app.handle(
+    new Request("http://test.local/api/session", {
+      headers: { Authorization: `Bearer ${otherAdminBearer}` },
+    })
+  );
+  expect(otherSession.status).toBe(200);
+  expect(await otherSession.json()).toMatchObject({
+    user: { id: admin.identity.id, role: "admin" },
+  });
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const denied: { credentials: Record<string, string>; status: number }[] = [
+    { credentials: { Authorization: `Bearer ${viewer.bearer}` }, status: 403 },
+    { credentials: { Cookie: viewer.cookie }, status: 403 },
+    {
+      credentials: {
+        Authorization: `Bearer ${admin.bearer}`,
+        Cookie: viewer.cookie,
+      },
+      status: 403,
+    },
+    { credentials: { Authorization: `Bearer ${owner.bearer}` }, status: 403 },
+    { credentials: { Cookie: owner.cookie }, status: 403 },
+    {
+      credentials: { Authorization: `Bearer ${otherAdminBearer}` },
+      status: 403,
+    },
+    { credentials: { Cookie: otherAdminCookie }, status: 403 },
+    {
+      credentials: {
+        Authorization: "Bearer invalid-session",
+        Cookie: admin.cookie,
+      },
+      status: 401,
+    },
+    {
+      credentials: {
+        Authorization: `Bearer ${admin.bearer}`,
+        Cookie: admin.cookie.replaceAll(/[=][^;]*/gu, "=invalid-session"),
+      },
+      status: 401,
+    },
+  ];
+  for (const attempt of denied) {
+    const rejected = await postCorrection(
+      owner,
+      admin,
+      bridge,
+      {},
+      {},
+      true,
+      attempt.credentials
+    );
+    expect(rejected.status).toBe(attempt.status);
+  }
+  expect(received.length).toBe(uploads);
+  expect(deleted.length).toBe(deletes);
+  expect(
+    await prisma.correction.count({ where: { responseId: owner.response.id } })
+  ).toBe(0);
+  const allowed: Record<string, string>[] = [
+    {},
+    { Authorization: `Bearer ${admin.bearer}` },
+    { Cookie: admin.cookie },
+    { Authorization: `Bearer ${admin.bearer}`, Cookie: admin.cookie },
+  ];
+  for (const credentials of allowed) {
+    const saved = await poll(
+      admin,
+      await postCorrection(owner, admin, bridge, {}, {}, true, credentials)
+    );
+    expect(saved.status).toBe("completed");
+    bridge = await openCorrection(owner, admin);
+  }
+  expect(received.length).toBe(uploads);
+  expect(deleted.length).toBe(deletes);
+  const final = await poll(
+    admin,
+    await postCorrection(
+      owner,
+      admin,
+      bridge,
+      { folio_proof: file(new Uint8Array([9]), "verified.bin") },
+      {},
+      false,
+      { Authorization: `Bearer ${admin.bearer}`, Cookie: admin.cookie }
+    )
+  );
+  expect(final.status).toBe("completed");
+  expect(received.length).toBe(uploads + 1);
+  const correction = await prisma.correction.findFirstOrThrow({
+    where: { responseId: owner.response.id },
+  });
+  expect(correction.data).toMatchObject({
+    proof: { original_name: "verified.bin", size_bytes: 1 },
+  });
+});
+
+const resume = async (f: Fixture) => {
+  const saved = await prisma.response.findUniqueOrThrow({
+    where: { id: f.response.id },
+  });
+  f.documentKey = fixtureValue(saved.draftDocumentKey);
+  f.documentServerKey = xlsxEditorOpening(
+    f.documentKey,
+    JSON.stringify([f.identity.id, f.authSessionId])
+  ).documentServerKey;
+  nativeSnapshotKeys.set(f.documentServerKey, f.documentKey);
+  snapshots.set(
+    f.documentKey,
+    await readObject(fixtureValue(saved.draftObjectKey))
+  );
+};
+test("Correction validates reason, required physical slots and eligibility before provider writes", async () => {
+  const owner = await fixture({ tableAttachments: true });
+  const admin = await fixture({ admin: true });
+  const viewer = await fixture({ viewer: true });
+  const viewerSession = await app.handle(
+    new Request("http://test.local/api/session", {
+      headers: { Authorization: `Bearer ${viewer.bearer}` },
+    })
+  );
+  expect(viewerSession.status).toBe(200);
+  expect(await viewerSession.json()).toMatchObject({
+    user: { id: viewer.identity.id, role: "viewer" },
+  });
+  snapshots.set(
+    owner.documentKey,
+    replaceCell(
+      fixtureValue(snapshots.get(owner.documentKey)),
+      "B12",
+      "active ordinary row"
+    )
+  );
+  expect(
+    readSpreadsheetWorkbook(
+      fixtureValue(snapshots.get(owner.documentKey))
+    ).cells.get("B12")?.value
+  ).toBe("active ordinary row");
+  const submitted = await poll(
+    owner,
+    await send(
+      owner,
+      {
+        '["folio_row_proof",2]': file(new Uint8Array(), "required-row"),
+        folio_proof: file(),
+      },
+      "submit"
+    )
+  );
+  expect(submitted.status).toBe("completed");
+  const submittedSnapshot = await prisma.submission.findFirstOrThrow({
+    where: { responseId: owner.response.id },
+  });
+  expect(
+    z.record(z.string(), z.unknown()).parse(submittedSnapshot.data).rows
+  ).toEqual([
+    {
+      item: "active ordinary row",
+      other: null,
+      proof: {
+        file_link: expect.any(String),
+        file_token: expect.any(String),
+        original_name: "required-row",
+        row_index: 2,
+        size_bytes: 0,
+      },
+    },
+  ]);
+  const bridge = await openCorrection(owner, admin);
+  expect(bridge.uploadPoc.savedData).toMatchObject({
+    proof: { original_name: "Original.BIN" },
+  });
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const missingReason = await postCorrection(
+    owner,
+    admin,
+    bridge,
+    { folio_proof: file() },
+    { reason: " " }
+  );
+  expect(missingReason.status).toBe(400);
+  const requiredRemoval = await poll(
+    admin,
+    await postCorrection(
+      owner,
+      admin,
+      bridge,
+      {},
+      {
+        attachmentRemovals: [{ bindingId: "folio_row_proof", rowIndex: 2 }],
+      }
+    )
+  );
+  expect(requiredRemoval.status).toBe("failed");
+  expect(received.length).toBe(uploads);
+  const internalUpload = await postCorrection(
+    owner,
+    admin,
+    bridge,
+    { folio_proof: file() },
+    {},
+    true
+  );
+  expect(internalUpload.status).toBe(400);
+  const viewerMutation = await postCorrection(owner, viewer, bridge, {
+    folio_proof: file(),
+  });
+  expect(viewerMutation.status).toBe(403);
+  const foreignUserMutation = await postCorrection(owner, owner, bridge, {
+    folio_proof: file(),
+  });
+  expect(foreignUserMutation.status).toBe(403);
+  expect(received.length).toBe(uploads);
+  const reopened = await app.handle(
+    new Request(`http://test.local/api/forms/${owner.form.publicId}/start`, {
+      headers: { Authorization: `Bearer ${owner.bearer}` },
+      method: "POST",
+    })
+  );
+  expect(reopened.status).toBe(200);
+  const ineligible = await postCorrection(owner, admin, bridge, {
+    folio_proof: file(),
+  });
+  expect(ineligible.status).toBe(404);
+  expect(
+    await prisma.correction.count({ where: { responseId: owner.response.id } })
+  ).toBe(0);
+  expect(received.length).toBe(uploads);
+  expect(deleted.length).toBe(deletes);
+});
+
+test("Correction metadata and removal preserve older selected file versions and exports", async () => {
+  const owner = await fixture();
+  const admin = await fixture({ admin: true });
+  const viewer = await fixture({ viewer: true });
+  const submitted = await poll(
+    owner,
+    await send(
+      owner,
+      {
+        folio_other: file(new Uint8Array([3]), "optional"),
+        folio_proof: file(new Uint8Array([1, 2]), "proof.BIN"),
+      },
+      "submit"
+    )
+  );
+  expect(submitted.status).toBe("completed");
+  const submission = await prisma.submission.findFirstOrThrow({
+    where: { responseId: owner.response.id },
+  });
+  const original = z.record(z.string(), z.unknown()).parse(submission.data);
+  const bridge = await openCorrection(owner, admin);
+  snapshots.set(
+    bridge.documentKey,
+    replaceCell(
+      fixtureValue(snapshots.get(bridge.documentKey)),
+      "B2",
+      "CORRECTED.57"
+    )
+  );
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const corrected = await poll(
+    admin,
+    await postCorrection(owner, admin, bridge)
+  );
+  expect(corrected.status).toBe("completed");
+  expect(received.slice(uploads).map((entry) => [...entry.bytes])).toEqual([
+    [1, 2],
+    [3],
+  ]);
+  expect(received.slice(uploads).map((entry) => entry.number)).toEqual([
+    "CORRECTED.57",
+    "CORRECTED.57",
+  ]);
+  const first = await prisma.correction.findFirstOrThrow({
+    where: { submissionId: submission.id },
+  });
+  const firstData = z.record(z.string(), z.unknown()).parse(first.data);
+  const next = await openCorrection(owner, admin);
+  const stale = await postCorrection(owner, admin, bridge);
+  expect(stale.status).toBe(409);
+  const removed = await poll(
+    admin,
+    await postCorrection(
+      owner,
+      admin,
+      next,
+      {},
+      {
+        attachmentRemovals: [{ bindingId: "folio_other", rowIndex: null }],
+      }
+    )
+  );
+  expect(removed.status).toBe("completed");
+  const latest = await prisma.correction.findFirstOrThrow({
+    orderBy: { revision: "desc" },
+    where: { submissionId: submission.id },
+  });
+  expect(latest.data).toMatchObject({ other: null, proof: firstData.proof });
+  expect(received.length).toBe(uploads + 2);
+  expect(deleted.length).toBe(deletes);
+  for (const [revision, data] of [
+    ["original", original],
+    [String(first.revision), firstData],
+  ] as const) {
+    for (const actor of [owner, admin, viewer]) {
+      const response = await app.handle(
+        new Request(
+          `http://test.local/api/submissions/${submission.id}/xlsx?revision=${revision}`,
+          { headers: { Authorization: `Bearer ${actor.bearer}` } }
+        )
+      );
+      expect(response.status).toBe(200);
+      const artifact = new Uint8Array(await response.arrayBuffer());
+      const workbook = readSpreadsheetWorkbook(artifact);
+      expect(workbook.cells.get("B3")?.value).toBe(
+        attachmentSchema.parse(data.proof).file_link
+      );
+      expect(workbook.cells.get("B4")?.value).toBe(
+        attachmentSchema.parse(data.other).file_link
+      );
+      const parts = Object.values(unzipSync(artifact))
+        .map((part) => strFromU8(part))
+        .join("\n");
+      expect(parts).not.toContain(
+        attachmentSchema.parse(data.proof).file_token
+      );
+      expect(parts).not.toContain(
+        attachmentSchema.parse(data.other).file_token
+      );
+      expect(parts).not.toContain("scalar-test-service-token");
+      expect(
+        strFromU8(fixtureValue(workbook.archive[workbook.sheetPath]))
+      ).not.toContain("oleObject");
+      expect(
+        strFromU8(fixtureValue(workbook.archive[workbook.sheetPath]))
+      ).toContain("sheetProtection");
+    }
+    for (const attachment of [
+      attachmentSchema.parse(data.proof),
+      attachmentSchema.parse(data.other),
+    ]) {
+      const publicFile = await fetch(attachment.file_link);
+      expect(publicFile.status).toBe(200);
+    }
+  }
+  const historicalCorrection = await prisma.correction.findUniqueOrThrow({
+    where: { id: first.id },
+  });
+  expect(historicalCorrection.data).toEqual(first.data);
+  const historicalSubmission = await prisma.submission.findUniqueOrThrow({
+    where: { id: submission.id },
+  });
+  expect(historicalSubmission.data).toEqual(submission.data);
+});
+
+test("new XLSX round uses Published Template without copying old answers or files and keeps history readable", async () => {
+  const owner = await fixture({ number: "PREVIOUS.ROUND", year: "2599" });
+  snapshots.set(
+    owner.documentKey,
+    replaceCell(
+      fixtureValue(snapshots.get(owner.documentKey)),
+      "B5",
+      "previous ordinary answer"
+    )
+  );
+  const submitted = await poll(
+    owner,
+    await send(owner, { folio_proof: file() }, "submit")
+  );
+  expect(submitted.status).toBe("completed");
+  const submission = await prisma.submission.findFirstOrThrow({
+    where: { responseId: owner.response.id },
+  });
+  const oldData = z.record(z.string(), z.unknown()).parse(submission.data);
+  const oldBytes = await readObject(submission.objectKey);
+  const uploads = received.length;
+  const reopened = await app.handle(
+    new Request(`http://test.local/api/forms/${owner.form.publicId}/start`, {
+      headers: { Authorization: `Bearer ${owner.bearer}` },
+      method: "POST",
+    })
+  );
+  expect(reopened.status).toBe(200);
+  const draftState = await prisma.response.findUniqueOrThrow({
+    where: { id: owner.response.id },
+  });
+  expect(draftState.status).toBe("draft");
+  expect(draftState.draftData).toBeNull();
+  const workbook = readSpreadsheetWorkbook(
+    await readObject(fixtureValue(draftState.draftObjectKey))
+  );
+  expect(workbook.cells.get("B1")?.value).not.toBe("2599");
+  expect(workbook.cells.get("B2")?.value).not.toBe("PREVIOUS.ROUND");
+  expect(workbook.cells.get("B5")?.value ?? null).toBeNull();
+  expect(workbook.cells.get("B3")?.value ?? null).toBeNull();
+  const history = await app.handle(
+    new Request(
+      `http://test.local/api/submissions/${submission.id}/json?revision=original`,
+      { headers: { Authorization: `Bearer ${owner.bearer}` } }
+    )
+  );
+  expect(history.status).toBe(200);
+  expect(await history.json()).toEqual(oldData);
+  expect(await readObject(submission.objectKey)).toEqual(oldBytes);
+  expect(received.length).toBe(uploads);
+});
+
+test("current Fill Download projects saved URLs without controls and keeps unsaved ordinary edits, artwork and protection", async () => {
+  const owner = await fixture();
+  const saved = await poll(owner, await send(owner, { folio_proof: file() }));
+  expect(saved.status).toBe("completed");
+  await resume(owner);
+  const savedData = await draft(owner);
+  const canonical = fixtureValue(snapshots.get(owner.documentKey));
+  const archive = unzipSync(
+    replaceCell(canonical, "B5", "ordinary unsaved capture")
+  );
+  const drawingPath = fixtureValue(
+    Object.keys(archive).find((path) =>
+      /^xl\/drawings\/[^/]+\.xml$/u.test(path)
+    )
+  );
+  const drawing = spreadsheetXmlTree(
+    strFromU8(fixtureValue(archive[drawingPath]))
+  );
+  const art = spreadsheetXmlTree(
+    '<xdr:twoCellAnchor xmlns:xdr="http://schemas.openxmlformats.org/drawingml/2006/spreadsheetDrawing" xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><xdr:from><xdr:col>4</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>5</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:from><xdr:to><xdr:col>5</xdr:col><xdr:colOff>0</xdr:colOff><xdr:row>6</xdr:row><xdr:rowOff>0</xdr:rowOff></xdr:to><xdr:pic><xdr:nvPicPr><xdr:cNvPr id="90001" name="Unrelated artwork"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rIdOrdinaryArtwork"/><a:stretch><a:fillRect/></a:stretch></xdr:blipFill><xdr:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom></xdr:spPr></xdr:pic><xdr:clientData/></xdr:twoCellAnchor>'
+  );
+  drawing.children.push(art);
+  archive[drawingPath] = strToU8(serializeSpreadsheetXml(drawing));
+  const relPath = templateRelationshipPartPath(drawingPath);
+  const relations = spreadsheetXmlTree(
+    strFromU8(fixtureValue(archive[relPath]))
+  );
+  relations.children.push({
+    attributes: {
+      Id: "rIdOrdinaryArtwork",
+      Target: "../media/ordinary-proof.png",
+      Type: "http://schemas.openxmlformats.org/officeDocument/2006/relationships/image",
+    },
+    children: [],
+    name: "Relationship",
+  });
+  archive[relPath] = strToU8(serializeSpreadsheetXml(relations));
+  const artwork = new Uint8Array(
+    Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jH1sAAAAASUVORK5CYII=",
+      "base64"
+    )
+  );
+  archive["xl/media/ordinary-proof.png"] = artwork;
+  snapshots.set(owner.documentKey, zipSync(archive));
+  const uploads = received.length;
+  const response = await app.handle(
+    new Request(
+      `http://test.local/api/responses/${owner.response.id}/editor-export/xlsx`,
+      {
+        body: JSON.stringify({
+          snapshotUrl: "http://office.test/cache/snapshot.xlsx",
+        }),
+        headers: {
+          Authorization: `Bearer ${owner.bearer}`,
+          "Content-Type": "application/json",
+          "X-Editor-Capability": actionEditorCapability(
+            owner.identity,
+            {
+              documentKey: owner.documentKey,
+              documentServerKey: owner.documentServerKey,
+              formId: owner.form.id,
+              targetId: owner.response.id,
+              targetType: "response",
+            },
+            "export-workbook",
+            owner.lease
+          ),
+        },
+        method: "POST",
+      }
+    )
+  );
+  expect(response.status).toBe(200);
+  const exported = readSpreadsheetWorkbook(
+    new Uint8Array(await response.arrayBuffer())
+  );
+  expect(exported.cells.get("B5")?.value).toBe("ordinary unsaved capture");
+  expect(exported.cells.get("B3")?.value).toBe(
+    attachmentSchema.parse(savedData.proof).file_link
+  );
+  const sheet = strFromU8(fixtureValue(exported.archive[exported.sheetPath]));
+  expect(sheet).not.toContain("oleObject");
+  expect(sheet).toContain("sheetProtection");
+  expect(strFromU8(fixtureValue(exported.archive[drawingPath]))).toContain(
+    "Unrelated artwork"
+  );
+  expect(exported.archive["xl/media/ordinary-proof.png"]).toEqual(artwork);
+  const persisted = await prisma.response.findUniqueOrThrow({
+    where: { id: owner.response.id },
+  });
+  expect(await readObject(fixtureValue(persisted.draftObjectKey))).toEqual(
+    canonical
+  );
+  expect(received.length).toBe(uploads);
+});
 
 const followUpSchema = z.object({
   actorId: z.string().nullable(),
@@ -947,22 +1620,6 @@ const operatorAction = (
       }
     )
   );
-
-const resume = async (f: Fixture) => {
-  const saved = await prisma.response.findUniqueOrThrow({
-    where: { id: f.response.id },
-  });
-  f.documentKey = fixtureValue(saved.draftDocumentKey);
-  f.documentServerKey = xlsxEditorOpening(
-    f.documentKey,
-    JSON.stringify([f.identity.id, f.authSessionId])
-  ).documentServerKey;
-  nativeSnapshotKeys.set(f.documentServerKey, f.documentKey);
-  snapshots.set(
-    f.documentKey,
-    await readObject(fixtureValue(saved.draftObjectKey))
-  );
-};
 
 test("table attachments retain physical gaps and attachment-only zero-byte rows across multiple columns", async () => {
   const f = await fixture({ tableAttachments: true });
@@ -1486,10 +2143,44 @@ test("read-only saved Draft viewers use independent native caches and retain can
     const viewerBytes: Uint8Array = new Uint8Array(
       await response.arrayBuffer()
     );
-    expect(viewerBytes).toEqual(canonicalBytes);
+    const projection = readSpreadsheetWorkbook(viewerBytes);
+    const original = readSpreadsheetWorkbook(canonicalBytes);
+    expect([...projection.cells]).toEqual([...original.cells]);
+    const projectedSheet = spreadsheetXmlTree(
+      strFromU8(fixtureValue(projection.archive[projection.sheetPath]))
+    );
+    const canonicalSheet = spreadsheetXmlTree(
+      strFromU8(fixtureValue(original.archive[original.sheetPath]))
+    );
+    expect(xmlElements(projectedSheet, "oleObject")).toHaveLength(0);
+    expect(
+      xmlElements(projectedSheet, "sheetProtection").map(
+        (node) => node.attributes
+      )
+    ).toEqual(
+      xmlElements(canonicalSheet, "sheetProtection").map(
+        (node) => node.attributes
+      )
+    );
+    for (const [path, part] of Object.entries(projection.archive)) {
+      if (path.endsWith(".vml")) {
+        expect(
+          xmlElements(spreadsheetXmlTree(strFromU8(part)), "shape")
+        ).toHaveLength(0);
+      }
+      expect(strFromU8(part)).not.toContain(
+        attachmentSchema.parse(canonical.proof).file_token
+      );
+    }
   }
   const viewedData = await draft(f);
   expect(viewedData).toEqual(canonical);
+  const persisted = await prisma.response.findUniqueOrThrow({
+    where: { id: f.response.id },
+  });
+  expect(await readObject(fixtureValue(persisted.draftObjectKey))).toEqual(
+    canonicalBytes
+  );
   expect(received.length).toBe(uploads);
   expect(logins).toBe(authentication);
 });
@@ -2273,9 +2964,11 @@ test("workspace and immutable Correction transitions retain canonical files and 
         `http://test.local/api/admin/results/${f.response.id}/correction`,
         {
           body: JSON.stringify({
+            checkpoint: crypto.randomUUID(),
             data: {},
             documentKey: bridge.documentKey,
             reason: "Correct ordinary note only",
+            snapshotUrl: "http://office.test/cache/snapshot.xlsx",
           }),
           headers: {
             Authorization: `Bearer ${f.bearer}`,
@@ -2307,6 +3000,155 @@ test("workspace and immutable Correction transitions retain canonical files and 
   expect(received.length).toBe(uploads);
   expect(deleted.length).toBe(deletes);
   expect(logins).toBe(authentication);
+});
+
+test("final Admin Correction replaces scalar and table files while preserving the submitted snapshot", async () => {
+  const owner = await fixture({ tableAttachments: true });
+  const admin = await fixture({ admin: true });
+  const originalScalar = new Uint8Array([11, 22, 33]);
+  const originalRow = new Uint8Array([44, 55]);
+  const submitted = await poll(
+    owner,
+    await send(
+      owner,
+      {
+        '["folio_row_proof",2]': file(originalRow, "row.bin"),
+        folio_proof: file(originalScalar, "submitted.bin"),
+      },
+      "submit"
+    )
+  );
+  expect(submitted.status).toBe("completed");
+  const submission = await prisma.submission.findFirstOrThrow({
+    where: { responseId: owner.response.id },
+  });
+  const originalWorkbook = await readObject(submission.objectKey);
+  const originalData = z.record(z.string(), z.unknown()).parse(submission.data);
+  const scalar = attachmentSchema.parse(originalData.proof);
+  const row = tableAttachmentSchema.parse(
+    z.array(z.record(z.string(), z.unknown())).parse(originalData.rows)[0]
+      ?.proof
+  );
+  const opened = await app.handle(
+    new Request(
+      `http://test.local/api/admin/results/${owner.response.id}/correction/editor-config`,
+      { headers: { Authorization: `Bearer ${admin.bearer}` } }
+    )
+  );
+  expect(opened.status).toBe(200);
+  const config = z
+    .object({
+      bridge: z.object({
+        capabilities: z.record(z.string(), z.string()),
+        documentKey: z.string(),
+      }),
+      config: z.object({ document: z.object({ key: z.string() }) }),
+    })
+    .parse(await opened.json());
+  const workspace = await prisma.editorLease.findUniqueOrThrow({
+    where: {
+      targetType_targetId: {
+        targetId: owner.response.id,
+        targetType: "correction",
+      },
+    },
+  });
+  nativeSnapshotKeys.set(config.config.document.key, config.bridge.documentKey);
+  snapshots.set(
+    config.bridge.documentKey,
+    await readObject(fixtureValue(workspace.workspaceObjectKey))
+  );
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const replacementScalar = new Uint8Array([66, 77, 88, 99]);
+  const replacementRow = new Uint8Array();
+  const body = new FormData();
+  body.set(
+    "payload",
+    JSON.stringify({
+      checkpoint: crypto.randomUUID(),
+      data: {},
+      documentKey: config.bridge.documentKey,
+      reason: "Replace the supporting evidence",
+      snapshotUrl: "http://office.test/cache/snapshot.xlsx",
+    })
+  );
+  body.set("attachment:folio_proof", file(replacementScalar, "corrected.BIN"));
+  body.set(
+    `attachment:${encodeURIComponent('["folio_row_proof",2]')}`,
+    file(replacementRow, "corrected-row")
+  );
+  const corrected = await poll(
+    admin,
+    await app.handle(
+      new Request(
+        `http://test.local/api/admin/results/${owner.response.id}/correction`,
+        {
+          body,
+          headers: {
+            Authorization: `Bearer ${admin.bearer}`,
+            "X-Editor-Capability": fixtureValue(
+              config.bridge.capabilities["save-correction"]
+            ),
+          },
+          method: "POST",
+        }
+      )
+    )
+  );
+  expect(corrected.status).toBe("completed");
+  const correction = await prisma.correction.findFirstOrThrow({
+    where: { submissionId: submission.id },
+  });
+  const correctedData = z
+    .record(z.string(), z.unknown())
+    .parse(correction.data);
+  const correctedScalar = attachmentSchema.parse(correctedData.proof);
+  const correctedRow = tableAttachmentSchema.parse(
+    z.array(z.record(z.string(), z.unknown())).parse(correctedData.rows)[0]
+      ?.proof
+  );
+  expect(correctedScalar).toMatchObject({
+    original_name: "corrected.BIN",
+    size_bytes: 4,
+  });
+  expect(correctedRow).toMatchObject({
+    original_name: "corrected-row",
+    row_index: 2,
+    size_bytes: 0,
+  });
+  expect(correctedScalar.file_token).not.toBe(scalar.file_token);
+  expect(correctedRow.file_token).not.toBe(row.file_token);
+  expect(received.slice(uploads).map((upload) => upload.bytes)).toEqual([
+    replacementScalar,
+    replacementRow,
+  ]);
+  expect(deleted.length).toBe(deletes);
+  const unchanged = await prisma.submission.findUniqueOrThrow({
+    where: { id: submission.id },
+  });
+  expect(unchanged.data).toEqual(submission.data);
+  expect(await readObject(unchanged.objectKey)).toEqual(originalWorkbook);
+  for (const attachment of [scalar, row]) {
+    const response = await fetch(attachment.file_link);
+    expect(response.status).toBe(200);
+    expect(new Uint8Array(await response.arrayBuffer())).toEqual(
+      attachment.file_token === scalar.file_token ? originalScalar : originalRow
+    );
+    const version = await prisma.ecmAttachmentVersion.findUniqueOrThrow({
+      where: { fileToken: attachment.file_token },
+    });
+    expect(
+      await prisma.ecmAttachmentReference.count({
+        where: { snapshotId: submission.documentKey, versionId: version.id },
+      })
+    ).toBe(1);
+  }
+  const projected = readSpreadsheetWorkbook(
+    await readObject(correction.objectKey)
+  );
+  expect(projected.cells.get("B3")?.value).toBe(correctedScalar.file_link);
+  expect(projected.cells.get("C12")?.value).toBe(correctedRow.file_link);
 });
 
 test("negative checkpoint recovery fences a paused original sender before a retained File can save again", async () => {
@@ -2925,10 +3767,51 @@ test("Results exposes trusted unknown-upload follow-up without allowing an Admin
     })
   );
   expect(document.status).toBe(200);
-  const canonicalBytes: Uint8Array = new Uint8Array(
-    await document.arrayBuffer()
+  const projectionBytes = new Uint8Array(await document.arrayBuffer());
+  const projection = readSpreadsheetWorkbook(projectionBytes);
+  const original = readSpreadsheetWorkbook(nativeTemplate);
+  expect([...projection.cells]).toEqual([...original.cells]);
+  const projectedSheet = spreadsheetXmlTree(
+    strFromU8(fixtureValue(projection.archive[projection.sheetPath]))
   );
-  expect(canonicalBytes).toEqual(nativeTemplate);
+  const originalSheet = spreadsheetXmlTree(
+    strFromU8(fixtureValue(original.archive[original.sheetPath]))
+  );
+  expect(xmlElements(projectedSheet, "oleObject")).toHaveLength(0);
+  expect(
+    xmlElements(projectedSheet, "sheetProtection").map(
+      (node) => node.attributes
+    )
+  ).toEqual(
+    xmlElements(originalSheet, "sheetProtection").map((node) => node.attributes)
+  );
+  for (const [path, part] of Object.entries(projection.archive)) {
+    if (path.endsWith(".vml")) {
+      expect(
+        xmlElements(spreadsheetXmlTree(strFromU8(part)), "shape")
+      ).toHaveLength(0);
+    }
+    expect(strFromU8(part)).not.toContain("file_token");
+    expect(strFromU8(part)).not.toContain("scalar-test-service-token");
+    expect(strFromU8(part)).not.toContain(fixtureValue(received[start]).token);
+  }
+  const unchanged = await prisma.response.findUniqueOrThrow({
+    where: { id: f.response.id },
+  });
+  expect(unchanged.draftDocumentKey).toBe(f.documentKey);
+  expect(await readObject(fixtureValue(unchanged.draftObjectKey))).toEqual(
+    nativeTemplate
+  );
+  const held = await app.handle(
+    new Request(
+      `http://test.local/api/responses/${f.response.id}/attachment-status`,
+      { headers: { Authorization: `Bearer ${f.bearer}` } }
+    )
+  );
+  expect(held.status).toBe(200);
+  expect(await held.json()).toMatchObject({
+    mutationNotice: durable.mutationNotice,
+  });
   expect(received.length - start).toBe(1);
   expect(await draft(f)).toEqual({});
 });

@@ -12,7 +12,7 @@ import type { NegativeAdmissionProof } from "./attachment-admission-recovery";
 import type { EditorBridgeMessage } from "./editor-protocol";
 
 interface AcceptedAttachmentOperation {
-  action: "save-draft" | "submit";
+  action: "save-draft" | "submit" | "save-correction";
   operationId: string;
   operationCapability: string;
   status: string;
@@ -22,7 +22,7 @@ interface AcceptedAttachmentOperation {
 const requireOriginalAction = (
   operation: AcceptedAttachmentOperation
 ): void => {
-  if (!["save-draft", "submit"].includes(operation.action)) {
+  if (!["save-draft", "submit", "save-correction"].includes(operation.action)) {
     throw new Error("ยังยืนยันประเภทของการบันทึกรอบเดิมไม่ได้ กรุณาตรวจผลเดิมอีกครั้ง");
   }
 };
@@ -552,7 +552,7 @@ export class UploadPocPendingFiles {
     signal: AbortSignal
   ): Promise<boolean | SubmittedCheckpointRecovery> {
     if (
-      !["fill", "draft", "submit"].includes(options.action) ||
+      !["fill", "draft", "submit", "correction"].includes(options.action) ||
       !options.responseId
     ) {
       return false;
@@ -564,7 +564,12 @@ export class UploadPocPendingFiles {
     if (!checkpoint) {
       return false;
     }
-    const action = capabilities?.["save-draft"] ? "save-draft" : "submit";
+    let action: AcceptedAttachmentOperation["action"] = "submit";
+    if (options.action === "correction") {
+      action = "save-correction";
+    } else if (capabilities?.["save-draft"]) {
+      action = "save-draft";
+    }
     try {
       let terminal: Operation | undefined;
       let operation = await this.original(
@@ -637,8 +642,10 @@ export class UploadPocPendingFiles {
   ): Promise<Record<string, unknown>> {
     this.handle({ ...value, type: "pending-file-check" }, options);
     if (
-      !["fill", "draft", "submit"].includes(options.action) ||
-      !["save-draft", "submit"].includes(String(value.action)) ||
+      !["fill", "draft", "submit", "correction"].includes(options.action) ||
+      !(options.action === "correction"
+        ? value.action === "save-correction"
+        : ["save-draft", "submit"].includes(String(value.action))) ||
       !options.publicId ||
       !options.responseId ||
       typeof value.capability !== "string" ||
@@ -706,7 +713,9 @@ export class UploadPocPendingFiles {
     let accepted: AcceptedAttachmentOperation;
     try {
       accepted = await apiPostFormData<AcceptedAttachmentOperation>(
-        `/api/forms/${options.publicId}/${value.action === "submit" ? "submit" : "draft"}`,
+        options.action === "correction"
+          ? `/api/admin/results/${options.responseId}/correction`
+          : `/api/forms/${options.publicId}/${value.action === "submit" ? "submit" : "draft"}`,
         body,
         value.capability
       );
@@ -854,8 +863,16 @@ export class UploadPocPendingFiles {
     const hasPending = this.hasPending();
     if (value.type === "pending-file-check") {
       if (
+        value.action === "save-correction" &&
+        options.action !== "correction"
+      ) {
+        throw new Error("คำสั่ง Correction ไม่ตรงกับหน้าปัจจุบัน");
+      }
+      if (
         this.hasUnresolvedCommit() &&
-        !["save-draft", "submit"].includes(String(value.action))
+        !["save-draft", "submit", "save-correction"].includes(
+          String(value.action)
+        )
       ) {
         throw new Error(
           "ยังยืนยันผลรอบเดิมไม่ได้ กรุณากดบันทึกเพื่อตรวจผลเดิมก่อนเปลี่ยนเอกสาร"
@@ -912,6 +929,7 @@ export class UploadPocPendingFiles {
         ![
           "save-draft",
           "submit",
+          "save-correction",
           "change-project",
           "save-correction-workspace",
         ].includes(String(value.action))
@@ -968,8 +986,8 @@ export class UploadPocPendingFiles {
         unavailable: true,
       };
     }
-    if (options.action === "correction") {
-      throw new Error("POC ยังไม่รองรับการเปลี่ยนไฟล์ระหว่างแก้ไขข้อมูลที่ส่งแล้ว");
+    if (!["fill", "draft", "submit", "correction"].includes(options.action)) {
+      throw new Error("หน้านี้ไม่มีสิทธิ์เปลี่ยนไฟล์แนบ");
     }
     const key = JSON.stringify([value.bindingId, value.rowIndex]);
     const slotLabel = `ช่อง ${String(value.tag)}${value.rowIndex === null ? "" : ` / แถว ${Number(value.rowIndex) + 1}`}`;

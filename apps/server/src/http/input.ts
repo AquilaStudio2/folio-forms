@@ -315,7 +315,8 @@ interface CorrectionInput {
 
 export function correctionInput(
   body: unknown,
-  workspaceOnly = false
+  workspaceOnly = false,
+  attachments = false
 ): CorrectionInput {
   const input = asRecord(body);
   const allowed = new Set([
@@ -323,6 +324,9 @@ export function correctionInput(
     "documentKey",
     "pdmsCatalogSessionId",
     ...(workspaceOnly ? ["pdmsSelection"] : ["reason"]),
+    ...(attachments
+      ? ["checkpoint", "snapshotUrl", "responseId", "attachmentRemovals"]
+      : []),
   ]);
   if (
     Object.keys(input).some((key) => !allowed.has(key)) ||

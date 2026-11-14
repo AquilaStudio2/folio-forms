@@ -1,10 +1,12 @@
 import { Prisma, prisma } from "@onlyoffice/db";
+import type { EcmAttachmentBatch, EditorLease } from "@onlyoffice/db";
 
 import type { SpreadsheetContract } from "../documents/spreadsheets/contract";
 import { extractSpreadsheetData } from "../documents/spreadsheets/workbook";
 import type { SpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
 import { fail, HttpError } from "../http/errors";
 import type { Operation } from "../model-types";
+import { operationMetadata } from "../operations/model";
 import {
   attachmentSchema,
   canonicalAttachment,
@@ -75,6 +77,78 @@ export const requireAttachmentMutationReady = async (
   const notice = await attachmentMutationNotice(responseId, tx, ownOperation);
   if (notice) {
     fail(409, "attachment_outcome_unresolved", notice);
+  }
+};
+
+const requireCorrectionBatchDocument = async (
+  tx: Prisma.TransactionClient,
+  operation: Operation,
+  batch: EcmAttachmentBatch,
+  lease: EditorLease
+): Promise<void> => {
+  const metadata = operationMetadata(operation.metadata);
+  const submission = await tx.submission.findFirst({
+    include: { corrections: { orderBy: { revision: "desc" }, take: 1 } },
+    orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+    where: { responseId: batch.responseId },
+  });
+  const latest = submission?.corrections[0];
+  if (
+    !submission ||
+    submission.id !== metadata.submissionId ||
+    (latest?.documentKey ?? submission.documentKey) !==
+      metadata.baseDocumentKey ||
+    (latest?.revision ?? 0) !== metadata.baseRevision ||
+    lease.workspaceDocumentKey !== batch.documentKey ||
+    lease.workspaceObjectKey !== metadata.workspaceObjectKey ||
+    lease.workspaceBaseDocumentKey !== metadata.baseDocumentKey ||
+    lease.workspaceBaseRevision !== metadata.baseRevision
+  ) {
+    fail(409, "stale_operation", "สิทธิ์หรือเอกสารเปลี่ยนก่อนบันทึกไฟล์");
+  }
+};
+
+const requireBatchScope = async (
+  tx: Prisma.TransactionClient,
+  operation: Operation,
+  batch: EcmAttachmentBatch
+): Promise<void> => {
+  const correction = operation.targetType === "correction";
+  const actor = await tx.user.findFirst({
+    where: {
+      enabled: true,
+      id: batch.actorId,
+      role: correction ? "admin" : { not: "viewer" },
+    },
+  });
+  const lease = await tx.editorLease.findFirst({
+    where: {
+      expiresAt: { gt: new Date() },
+      holderSessionId: batch.authSessionId,
+      holderUserId: batch.actorId,
+      id: batch.leaseId,
+      targetId: batch.responseId,
+      targetType: correction ? "correction" : "response",
+    },
+  });
+  const response = await tx.response.findUnique({
+    where: { id: batch.responseId },
+  });
+  if (!actor || !lease || !response || response.formId !== batch.formId) {
+    fail(409, "stale_operation", "สิทธิ์หรือเอกสารเปลี่ยนก่อนบันทึกไฟล์");
+  }
+  if (correction) {
+    if (response.status !== "submitted") {
+      fail(409, "stale_operation", "สิทธิ์หรือเอกสารเปลี่ยนก่อนบันทึกไฟล์");
+    }
+    await requireCorrectionBatchDocument(tx, operation, batch, lease);
+  } else if (
+    response.userId !== batch.actorId ||
+    response.draftDocumentKey !== batch.documentKey ||
+    response.status !==
+      (operation.type === "submit_response" ? "submitting" : "draft")
+  ) {
+    fail(409, "stale_operation", "สิทธิ์หรือเอกสารเปลี่ยนก่อนบันทึกไฟล์");
   }
 };
 
@@ -274,11 +348,15 @@ const attachmentSnapshot = (
   const extracted = extractSpreadsheetData(
     input.workbook,
     contract,
-    input.operation.type === "submit_response",
+    input.operation.type === "submit_response" ||
+      input.operation.type === "save_correction",
     attachments,
     new Set(input.files.keys())
   );
-  if (input.operation.type === "submit_response" && extracted.errors.length) {
+  if (
+    ["submit_response", "save_correction"].includes(input.operation.type) &&
+    extracted.errors.length
+  ) {
     fail(
       422,
       "invalid_attachment",
@@ -411,32 +489,7 @@ export const uploadAttachments = async (
           ) {
             fail(409, "stale_operation", "รอบแนบไฟล์หยุดแล้ว");
           }
-          const actor = await tx.user.findFirst({
-            where: {
-              enabled: true,
-              id: batch.actorId,
-              role: { not: "viewer" },
-            },
-          });
-          const lease = await tx.editorLease.findFirst({
-            where: {
-              expiresAt: { gt: new Date() },
-              holderSessionId: batch.authSessionId,
-              holderUserId: batch.actorId,
-              id: batch.leaseId,
-            },
-          });
-          const response = await tx.response.findUnique({
-            where: { id: batch.responseId },
-          });
-          if (
-            !actor ||
-            !lease ||
-            response?.userId !== batch.actorId ||
-            response.draftDocumentKey !== batch.documentKey
-          ) {
-            fail(409, "stale_operation", "สิทธิ์หรือเอกสารเปลี่ยนก่อนส่งไฟล์");
-          }
+          await requireBatchScope(tx, operation, batch);
           const admitted = await tx.ecmAttachmentVersion.updateMany({
             data: {
               generation: { increment: 1 },
@@ -575,28 +628,12 @@ export const commitAttachmentBatch = async (
   }
   await requireAttachmentMutationReady(responseId, tx, operation.id);
   if (batch) {
-    const actor = await tx.user.findFirst({
-      where: { enabled: true, id: batch.actorId, role: { not: "viewer" } },
-    });
-    const lease = await tx.editorLease.findFirst({
-      where: {
-        expiresAt: { gt: new Date() },
-        holderSessionId: batch.authSessionId,
-        holderUserId: batch.actorId,
-        id: batch.leaseId,
-        targetId: responseId,
-        targetType: "response",
-      },
-    });
+    await requireBatchScope(tx, operation, batch);
     const active = await tx.operation.findUnique({
       where: { id: operation.id },
     });
     if (
-      response.userId !== batch.actorId ||
-      response.draftDocumentKey !== batch.documentKey ||
       response.formId !== batch.formId ||
-      !actor ||
-      !lease ||
       active?.status !== "processing" ||
       !["prepared", "sending"].includes(batch.state)
     ) {

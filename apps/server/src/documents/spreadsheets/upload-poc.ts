@@ -13,6 +13,7 @@ import { parseSpreadsheetRange } from "./contract";
 import { readUploadPocMetadata } from "./upload-poc-package";
 import { uploadPocGuid } from "./upload-poc-preview";
 import { readSpreadsheetWorkbook } from "./workbook";
+import type { SpreadsheetWorkbook } from "./workbook";
 import {
   serializeSpreadsheetXml,
   spreadsheetXmlTree,
@@ -399,6 +400,46 @@ export const savedSpreadsheetUploadPocBindingComplete = (
   );
 };
 
+const stripManagedRasterPreviews = (
+  workbook: SpreadsheetWorkbook,
+  sheet: SpreadsheetXmlNode,
+  relationships: ReadonlyMap<string, string | null>,
+  ids: ReadonlySet<string>,
+  previewTargets: ReadonlySet<string>
+): void => {
+  for (const drawing of nodes(sheet, "drawing")) {
+    const id = Object.entries(drawing.attributes).find(
+      ([key]) => key.split(":").at(-1) === "id"
+    )?.[1];
+    const path = id && relationships.get(id);
+    if (!path || !workbook.archive[path]) {
+      continue;
+    }
+    const tree = spreadsheetXmlTree(
+      templateArchiveText(workbook.archive, path)
+    );
+    const links = responsePictureRelationships(workbook.archive, path);
+    tree.children = tree.children.filter((child) => {
+      if (typeof child === "string") {
+        return true;
+      }
+      const ownedShape = nodes(child, "cNvPr").some(
+        (node) =>
+          ids.has(node.attributes.id ?? "") ||
+          ids.has((node.attributes.name ?? "").replace(/^_x0000_s/u, ""))
+      );
+      const ownedPreview = nodes(child, "blip").some((node) => {
+        const imageId = Object.entries(node.attributes).find(
+          ([key]) => key.split(":").at(-1) === "embed"
+        )?.[1];
+        return imageId && previewTargets.has(links.get(imageId) ?? "");
+      });
+      return !(ownedShape && ownedPreview);
+    });
+    workbook.archive[path] = strToU8(serializeSpreadsheetXml(tree));
+  }
+};
+
 /** Community 9.4 has no drawing Delete API. Remove only this POC's OLE nodes and VML previews before native regeneration. */
 export const stripSpreadsheetUploadPoc = (
   bytes: Uint8Array,
@@ -413,6 +454,7 @@ export const stripSpreadsheetUploadPoc = (
     workbook.sheetPath
   );
   const removedTargets = new Set<string>();
+  const previewTargets = new Set<string>();
   const ids = new Set(
     nodes(sheet, "oleObject")
       .filter((node) => {
@@ -431,9 +473,24 @@ export const stripSpreadsheetUploadPoc = (
           return false;
         }
         removedTargets.add(target);
+        for (const properties of nodes(node, "objectPr")) {
+          const imageId = Object.entries(properties.attributes).find(
+            ([key]) => key.split(":").at(-1) === "id"
+          )?.[1];
+          const image = imageId && relationships.get(imageId);
+          if (image) {
+            previewTargets.add(image);
+          }
+        }
         return true;
       })
-      .map((node) => node.attributes.shapeId)
+      .map((node) => {
+        const {shapeId} = node.attributes;
+        if (!shapeId) {
+          throw new Error("Missing POC object shape");
+        }
+        return shapeId;
+      })
   );
   if (!ids.size) {
     return bytes;
@@ -446,7 +503,7 @@ export const stripSpreadsheetUploadPoc = (
       const objects = nodes(child, "oleObject");
       if (
         objects.length &&
-        objects.every((object) => ids.has(object.attributes.shapeId))
+        objects.every((object) => ids.has(object.attributes.shapeId ?? ""))
       ) {
         return false;
       }
@@ -491,7 +548,70 @@ export const stripSpreadsheetUploadPoc = (
     );
     workbook.archive[name] = strToU8(serializeSpreadsheetXml(vml));
   }
-  const embedded = new Set<string>();
+  stripManagedRasterPreviews(
+    workbook,
+    sheet,
+    relationships,
+    ids,
+    previewTargets
+  );
+  // Remove only unused relationships to the verified managed previews, never shared artwork.
+  const remainingPreviews = new Set<string>();
+  for (const path of Object.keys(workbook.archive).filter(
+    (name) => name.endsWith(".xml") || name.endsWith(".vml")
+  )) {
+    const relPath = templateRelationshipPartPath(path);
+    if (!workbook.archive[relPath]) {
+      continue;
+    }
+    const owner = spreadsheetXmlTree(
+      templateArchiveText(workbook.archive, path)
+    );
+    const used = new Set<string>();
+    const collect = (node: SpreadsheetXmlNode): void => {
+      for (const [key, value] of Object.entries(node.attributes)) {
+        if (
+          key.includes(":") &&
+          ["id", "embed", "link"].includes(key.split(":").at(-1) ?? "")
+        ) {
+          used.add(value);
+        }
+      }
+      for (const child of node.children) {
+        if (typeof child !== "string") {
+          collect(child);
+        }
+      }
+    };
+    collect(owner);
+    const links = responsePictureRelationships(workbook.archive, path);
+    const rels = spreadsheetXmlTree(
+      templateArchiveText(workbook.archive, relPath)
+    );
+    rels.children = rels.children.filter((child) => {
+      if (typeof child === "string") {
+        return true;
+      }
+      const target = links.get(child.attributes.Id ?? "");
+      if (!target || !previewTargets.has(target)) {
+        return true;
+      }
+      if (used.has(child.attributes.Id ?? "")) {
+        remainingPreviews.add(target);
+        return true;
+      }
+      return false;
+    });
+    workbook.archive[relPath] = strToU8(serializeSpreadsheetXml(rels));
+  }
+  for (const target of previewTargets) {
+    if (!remainingPreviews.has(target)) {
+      Reflect.deleteProperty(workbook.archive, target);
+    }
+  }
+  const embedded = new Set(
+    [...previewTargets].filter((target) => !workbook.archive[target])
+  );
   const relationshipsPath = templateRelationshipPartPath(workbook.sheetPath);
   const relations = spreadsheetXmlTree(
     templateArchiveText(workbook.archive, relationshipsPath)

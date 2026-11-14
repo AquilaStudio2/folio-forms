@@ -786,10 +786,10 @@ describe("local POC pending files", () => {
     expect(store.handle(message(), options).filename).toBe("ok.txt");
     expect(() => store.snapshot()).toThrow(/10,000,000/u);
   });
-  it("keeps deferred correction editing unavailable but existing correction saves work with no pending file", () => {
+  it("allows Correction choices only through final Save Correction and preserves pending workspace choices", () => {
     const store = new UploadPocPendingFiles();
     const correction = { ...options, action: "correction" };
-    expect(() => store.handle(message(), correction)).toThrow(/แก้ไข/u);
+    expect(store.handle(message(), correction).filename).toBeNull();
     expect(
       store.handle(
         message({ action: "save-correction", type: "pending-file-check" }),
@@ -819,7 +819,7 @@ describe("local POC pending files", () => {
         file: new File(["pending"], "pending.txt"),
         type: "pending-file-set",
       }),
-      options
+      correction
     );
     expect(
       store.handle(
@@ -830,6 +830,32 @@ describe("local POC pending files", () => {
         correction
       )
     ).toMatchObject({ allowed: true, hasPending: true });
+    expect(
+      store.handle(
+        message({ action: "save-correction", type: "pending-file-check" }),
+        correction
+      )
+    ).toMatchObject({ allowed: true, hasPending: true });
+    expect(() =>
+      store.complete("workspace", correction, { documentKey: "draft-2" })
+    ).toThrow(/mapping/u);
+    expect(store.snapshot().get(JSON.stringify(["folio_file", 0]))?.name).toBe(
+      "pending.txt"
+    );
+    store.complete("workspace", correction, {
+      documentKey: "draft-2",
+      attachmentTransition: sameRowsTransition,
+    });
+    const transitioned = { ...correction, documentKey: "draft-2" };
+    expect(
+      store.handle(message({ documentKey: "draft-2" }), transitioned).filename
+    ).toBe("pending.txt");
+    expect(() =>
+      store.handle(message({ documentKey: "draft-2" }), {
+        ...transitioned,
+        scopeIdentity: "another-admin/response",
+      })
+    ).toThrow();
   });
   it("clears only accepted File objects and preserves a newer selection across document-key transition", () => {
     const store = new UploadPocPendingFiles();

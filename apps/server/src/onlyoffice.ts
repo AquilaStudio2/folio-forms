@@ -576,6 +576,7 @@ export function editorConfig(
             user.id,
             options.publicId,
             options.responseId ?? "template",
+            ...(options.action === "correction" ? ["correction"] : []),
           ]),
           spreadsheetBindings: options.spreadsheetBindings,
           ...(options.action === "template-edit"
@@ -702,7 +703,7 @@ export function readOnlyViewerConfig(
         review: false,
       },
       title: `submission-${publicId}.${documentKind}`,
-      url: documentUrl(documentKey),
+      url: `${documentUrl(documentKey)}${documentKind === "xlsx" ? "&readonly=1" : ""}`,
     },
     documentType: documentKind === "xlsx" ? "cell" : "word",
     editorConfig: {

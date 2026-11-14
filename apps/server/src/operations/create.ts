@@ -188,15 +188,16 @@ export async function createOperation(input: {
           where: {
             targetType_targetId: {
               targetId: input.responseId,
-              targetType: "response",
+              targetType: input.targetType,
             },
           },
         });
         if (
           !response ||
-          response.userId !== input.actorId ||
-          response.status !== "draft" ||
-          response.draftDocumentKey !== input.documentKey ||
+          (input.targetType !== "correction" &&
+            (response.userId !== input.actorId ||
+              response.status !== "draft" ||
+              response.draftDocumentKey !== input.documentKey)) ||
           !lease
         ) {
           fail(409, "stale_response", "คำตอบหรือสิทธิ์ตัวแก้ไขเปลี่ยนแล้ว");

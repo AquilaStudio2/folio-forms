@@ -37,7 +37,13 @@ import {
   pdmsPopupScriptResponse,
 } from "../plugin-assets";
 import { nativePdfDocument } from "../responses/native-document";
-import { DOCX_CONTENT_TYPE, objectExists, streamObject } from "../storage";
+import { responseSpreadsheetExport } from "../responses/spreadsheet-document";
+import {
+  DOCX_CONTENT_TYPE,
+  objectExists,
+  streamObject,
+  readObject,
+} from "../storage";
 import type { RouteDependencies } from "./dependencies";
 
 export function registerOnlyOfficeRoutes(
@@ -82,6 +88,35 @@ export function registerOnlyOfficeRoutes(
         return new Response(await nativePdfDocument(key), {
           headers: { "Content-Type": DOCX_CONTENT_TYPE },
         });
+      }
+      if (query.readonly === "1") {
+        const response = await prisma.response.findFirst({
+          select: {
+            form: { select: { documentKind: true } },
+            publishedTemplateId: true,
+          },
+          where: {
+            OR: [
+              { draftDocumentKey: key },
+              { submissions: { some: { documentKey: key } } },
+              { corrections: { some: { documentKey: key } } },
+            ],
+          },
+        });
+        if (response?.form.documentKind === "xlsx") {
+          return new Response(
+            await responseSpreadsheetExport(
+              await readObject(objectKey),
+              response.publishedTemplateId
+            ),
+            {
+              headers: {
+                "Cache-Control": "no-store",
+                "Content-Type": XLSX_CONTENT_TYPE,
+              },
+            }
+          );
+        }
       }
       return new Response(streamObject(objectKey), {
         headers: {

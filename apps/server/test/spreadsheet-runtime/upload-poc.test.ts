@@ -500,6 +500,13 @@ builder.SaveFile("xlsx","/work/placed.xlsx");builder.CloseFile();`);
       const sheetPart = "xl/worksheets/sheet1.xml";
       const sheetText = new TextDecoder().decode(packageEntries[sheetPart]);
       expect(() =>
+        stripSpreadsheetUploadPoc(
+          mutated({
+            [sheetPart]: strToU8(sheetText.replace(/\s+shapeId="[^"]*"/u, "")),
+          })
+        )
+      ).toThrow();
+      expect(() =>
         readSpreadsheetWorkbook(
           mutated({
             [sheetPart]: strToU8(

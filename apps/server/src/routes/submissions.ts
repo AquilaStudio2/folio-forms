@@ -5,6 +5,7 @@ import type { Elysia } from "elysia";
 import { createResponseAudit } from "../audit/events";
 import { requireIdentity } from "../auth/identity";
 import { responsePicturePresence } from "../documents/pictures";
+import { withSpreadsheetExportSnapshot } from "../documents/spreadsheets/export-snapshot";
 import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
 import { receiptField } from "../forms/query";
 import {
@@ -23,6 +24,7 @@ import {
   correctionRevisionSummary,
 } from "../responses/query";
 import type { CorrectionRevisionSummary } from "../responses/query";
+import { responseSpreadsheetExport } from "../responses/spreadsheet-document";
 import {
   DOCX_CONTENT_TYPE,
   objectExists,
@@ -241,7 +243,7 @@ export function registerSubmissionRoutes(
       }
       const identity = await requireIdentity(request);
       validateId(params.id, "Submission");
-      const submission = await findSubmissionWithRevisions(params.id);
+      const submission = await findSubmissionWithRevisions(params.id, true);
       if (!submission) {
         fail(404, "not_found", "Submission was not found");
       }
@@ -270,22 +272,30 @@ export function registerSubmissionRoutes(
       });
       const suffix =
         selected.revision === 0 ? "" : `-revision-${selected.revision}`;
-      return new Response(streamObject(selected.objectKey), {
-        headers: {
-          "Content-Disposition": `attachment; filename="submission-${submission.id}${suffix}.${submission.form.documentKind}"`,
-          "Content-Type":
-            submission.form.documentKind === "xlsx"
-              ? XLSX_CONTENT_TYPE
-              : DOCX_CONTENT_TYPE,
-        },
-      });
+      return new Response(
+        submission.form.documentKind === "xlsx"
+          ? await responseSpreadsheetExport(
+              await readObject(selected.objectKey),
+              submission.response.publishedTemplateId
+            )
+          : streamObject(selected.objectKey),
+        {
+          headers: {
+            "Content-Disposition": `attachment; filename="submission-${submission.id}${suffix}.${submission.form.documentKind}"`,
+            "Content-Type":
+              submission.form.documentKind === "xlsx"
+                ? XLSX_CONTENT_TYPE
+                : DOCX_CONTENT_TYPE,
+          },
+        }
+      );
     })
     .get(
       "/api/submissions/:id/pdf",
       async ({ request, params, query, set }) => {
         const identity = await requireIdentity(request);
         validateId(params.id, "Submission");
-        const submission = await findSubmissionWithRevisions(params.id);
+        const submission = await findSubmissionWithRevisions(params.id, true);
         if (!submission) {
           fail(404, "not_found", "Submission was not found");
         }
@@ -296,11 +306,21 @@ export function registerSubmissionRoutes(
         );
         let pdf: Uint8Array;
         try {
-          pdf = await onlyOffice.convertDocxToPdf(
-            selected.documentKey,
-            true,
-            submission.form.documentKind
-          );
+          pdf =
+            submission.form.documentKind === "xlsx"
+              ? await withSpreadsheetExportSnapshot(
+                  await responseSpreadsheetExport(
+                    await readObject(selected.objectKey),
+                    submission.response.publishedTemplateId
+                  ),
+                  (key) => onlyOffice.convertDocxToPdf(key, true, "xlsx"),
+                  request.signal
+                )
+              : await onlyOffice.convertDocxToPdf(
+                  selected.documentKey,
+                  true,
+                  submission.form.documentKind
+                );
         } catch (error) {
           await createResponseAudit({
             action: selected.correction

@@ -164,7 +164,9 @@ export function createOperations(
       hasAttachments &&
       !rowChange &&
       !requestContext?.pdmsSelection &&
-      [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT].includes(action)
+      [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT, ACTIONS.SAVE_CORRECTION].includes(
+        action
+      )
     ) {
       const snapshotUrl = await office.captureWorkbook();
       attachmentCommitUnresolved = true;
@@ -370,7 +372,9 @@ export function createOperations(
       hasAttachments &&
       !rowChange &&
       !saveContext?.pdmsSelection &&
-      [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT].includes(action);
+      [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT, ACTIONS.SAVE_CORRECTION].includes(
+        action
+      );
 
     try {
       if (
@@ -427,7 +431,13 @@ export function createOperations(
       if (recovery) {
         // Read the original result before minting any capability against a possibly superseded native key.
         attachmentCommitUnresolved = true;
-        if (![ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT].includes(recovery.action)) {
+        if (
+          ![
+            ACTIONS.SAVE_DRAFT,
+            ACTIONS.SUBMIT,
+            ACTIONS.SAVE_CORRECTION,
+          ].includes(recovery.action)
+        ) {
           throw new Error(
             "ยังยืนยันประเภทของการบันทึกรอบเดิมไม่ได้ กรุณาตรวจผลเดิมอีกครั้ง"
           );
@@ -498,7 +508,9 @@ export function createOperations(
       }
       if (
         attachmentSave &&
-        [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT].includes(response?.action)
+        [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT, ACTIONS.SAVE_CORRECTION].includes(
+          response?.action
+        )
       ) {
         resultAction = response.action;
         recoveredCheckpoint ||= resultAction !== action;
