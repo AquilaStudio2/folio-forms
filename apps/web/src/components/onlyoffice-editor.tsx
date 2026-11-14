@@ -60,6 +60,7 @@ const changedPdmsDocument = (
       recordOrEmpty(current.config?.document).key
   );
 
+// oxlint-disable-next-line complexity -- Coordinate native editor refs, lease scope and persistent notices without splitting their lifecycle ownership.
 export const OnlyOfficeEditor = ({
   captureWorkbookRef,
   clearDirtyRequest = 0,
@@ -168,6 +169,11 @@ export const OnlyOfficeEditor = ({
     return async () => {
       if (uploadPocFilesRef.current?.hasPending()) {
         throw new Error("มีไฟล์แนบที่ยังไม่บันทึก กรุณากดบันทึกฉบับร่างหรือส่งก่อนดาวน์โหลด");
+      }
+      if (uploadPocFilesRef.current?.hasUnresolvedCommit()) {
+        throw new Error(
+          "ยังยืนยันผลบันทึกไฟล์แนบรอบเดิมไม่ได้ กรุณาตรวจผลเดิมก่อนดาวน์โหลด"
+        );
       }
       const source = pinnedSourceRef.current;
       const scope = exportScopeRef.current;
@@ -859,12 +865,16 @@ export const OnlyOfficeEditor = ({
         onDirtyChangeRef.current?.(true);
       }
       if (!result.error) {
-        const slot = typeof data.tag === "string" ? ` ในช่อง ${data.tag}` : "";
-        setAttachmentNotice(
-          hasPending
-            ? `มีไฟล์แนบที่เลือกค้างไว้${slot} ยังไม่อัปโหลด กรุณากดบันทึกฉบับร่างหรือส่ง ไฟล์จะหายหากปิดหรือรีเฟรชหน้า`
-            : null
-        );
+        if (typeof result.validationError === "string") {
+          setAttachmentNotice(result.validationError);
+        } else if (hasPending) {
+          const slot = typeof data.tag === "string" ? ` ในช่อง ${data.tag}` : "";
+          setAttachmentNotice(
+            `มีการเปลี่ยนไฟล์แนบค้างไว้${slot} ยังไม่บันทึก กรุณากดบันทึกฉบับร่างหรือส่ง การปิดหรือรีเฟรชหน้าจะทิ้งการเปลี่ยนที่ยังไม่บันทึก`
+          );
+        } else {
+          setAttachmentNotice(null);
+        }
       }
     };
 
@@ -1214,6 +1224,16 @@ export const OnlyOfficeEditor = ({
           aria-live="polite"
         >
           {attachmentNotice ?? config?.attachmentNotice}
+        </p>
+      ) : null}
+      {typeof config?.bridge?.uploadPoc?.cleanupWarning === "string" &&
+      config.bridge.uploadPoc.cleanupWarning ? (
+        <p
+          className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
+          role="status"
+          aria-live="polite"
+        >
+          {config.bridge.uploadPoc.cleanupWarning}
         </p>
       ) : null}
       <EditorSurface

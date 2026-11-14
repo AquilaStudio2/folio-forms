@@ -71,6 +71,17 @@
         ไฟล์ที่เลือก: <strong id="filename">ยังไม่ได้เลือกไฟล์</strong>
         <span id="filesize"></span>
       </p>
+      <p id="removal" hidden>
+        รอนำไฟล์ออกเมื่อบันทึกฉบับร่างหรือส่ง ยังไม่ลบไฟล์ที่บันทึกแล้ว
+      </p>
+      <button id="cancel" type="button" disabled>
+        ยกเลิกการเปลี่ยนไฟล์ที่ยังไม่บันทึก
+      </button>
+      <button id="remove" type="button" disabled>นำไฟล์ออกเมื่อบันทึก</button>
+      <p>
+        การยกเลิกไม่ย้อนคืนรอบบันทึกที่ส่งไปแล้ว กรุณาตรวจผลรอบนั้นก่อนแก้ต่อ
+      </p>
+      <p id="cleanup-warning" class="notice" role="status" hidden></p>
     </div>
     <p id="status" role="status" aria-live="polite">
       กำลังเปิดหน้าต่างเลือกไฟล์…

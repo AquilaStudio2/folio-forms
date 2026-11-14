@@ -59,6 +59,7 @@ export interface UploadPocHostOptions {
   publicId?: string;
   responseId?: string;
   savedData?: unknown;
+  cleanupWarning?: string | null;
 }
 
 interface SubmittedCheckpointRecovery {
@@ -142,22 +143,27 @@ const settleCheckpointOperation = async (
     throw error;
   }
 };
+interface PendingAttachmentSnapshot {
+  files: Map<string, File>;
+  removals: Map<string, { tag: unknown }>;
+}
 
 /** Selected bytes stay in host memory; only scoped checkpoint identities survive reload. */
 export class UploadPocPendingFiles {
   private scopeIdentity = "";
   private readonly files = new Map<string, { file: File; tag: unknown }>();
   private readonly invalidFiles = new Map<string, string>();
-  private readonly accepted = new Map<string, Map<string, File>>();
+  private readonly removals = new Map<string, { tag: unknown }>();
+  private readonly accepted = new Map<string, PendingAttachmentSnapshot>();
   private readonly failedCheckpoints = new Set<string>();
   private checkpointStorageKey = "";
-  private readonly checkpoints = new Map<string, Map<string, File>>();
+  private readonly checkpoints = new Map<string, PendingAttachmentSnapshot>();
   private readonly operationCheckpoints = new Map<string, string>();
 
   complete(operationId: string): void {
     const snapshot = this.accepted.get(operationId);
     if (snapshot) {
-      this.accept(snapshot);
+      this.acceptSnapshot(snapshot);
     }
     this.accepted.delete(operationId);
     const checkpoint = this.operationCheckpoints.get(operationId);
@@ -360,7 +366,7 @@ export class UploadPocPendingFiles {
   prepareSubmittedRecovery(recovery: SubmittedCheckpointRecovery): void {
     const snapshot = this.accepted.get(recovery.operationId);
     if (snapshot) {
-      this.accept(snapshot);
+      this.acceptSnapshot(snapshot);
     }
     recovery.message.hasPendingAttachments = this.hasPending();
   }
@@ -489,20 +495,31 @@ export class UploadPocPendingFiles {
       this.operationCheckpoints.delete(original.operationId);
       this.clearCheckpoint(previous);
     }
-    const snapshot = this.snapshot();
+    const snapshot: PendingAttachmentSnapshot = {
+      files: this.snapshot(),
+      removals: new Map(this.removals),
+    };
+    const attachmentRemovals = [...snapshot.removals.keys()].map((key) => {
+      const [bindingId, rowIndex] = JSON.parse(key) as [string, number | null];
+      if (rowIndex !== null) {
+        throw new Error("ยังไม่รองรับการนำไฟล์รายแถวออก กรุณารักษาหน้านี้ไว้ก่อน");
+      }
+      return { bindingId, rowIndex };
+    });
     const checkpoint = crypto.randomUUID();
     const body = new FormData();
     body.set(
       "payload",
       JSON.stringify({
         ...value.body,
+        attachmentRemovals,
         checkpoint,
         documentKey: options.documentKey,
         responseId: options.responseId,
         snapshotUrl: value.snapshotUrl,
       })
     );
-    for (const [key, file] of snapshot) {
+    for (const [key, file] of snapshot.files) {
       const [bindingId, rowIndex] = JSON.parse(key) as [string, number | null];
       if (rowIndex !== null) {
         throw new Error("มีไฟล์รายแถวค้างอยู่ กรุณารักษาหน้านี้ไว้ก่อน");
@@ -533,7 +550,11 @@ export class UploadPocPendingFiles {
   }
 
   hasPending(): boolean {
-    return this.files.size > 0 || this.invalidFiles.size > 0;
+    return (
+      this.files.size > 0 ||
+      this.invalidFiles.size > 0 ||
+      this.removals.size > 0
+    );
   }
 
   snapshot(): Map<string, File> {
@@ -552,10 +573,20 @@ export class UploadPocPendingFiles {
     }
   }
 
+  private acceptSnapshot(snapshot: PendingAttachmentSnapshot): void {
+    this.accept(snapshot.files);
+    for (const [key, removal] of snapshot.removals) {
+      if (this.removals.get(key) === removal) {
+        this.removals.delete(key);
+      }
+    }
+  }
+
   setScope(scopeIdentity: string): void {
     if (scopeIdentity !== this.scopeIdentity) {
       this.files.clear();
       this.invalidFiles.clear();
+      this.removals.clear();
       this.checkpoints.clear();
       this.operationCheckpoints.clear();
       this.accepted.clear();
@@ -578,9 +609,13 @@ export class UploadPocPendingFiles {
       value.scopeIdentity !== options.scopeIdentity ||
       typeof value.requestId !== "string" ||
       !value.requestId ||
-      !["pending-file-get", "pending-file-set", "pending-file-check"].includes(
-        String(value.type)
-      )
+      ![
+        "pending-file-get",
+        "pending-file-set",
+        "pending-file-cancel",
+        "pending-file-remove",
+        "pending-file-check",
+      ].includes(String(value.type))
     ) {
       throw new Error("การเชื่อมต่อไฟล์ในหน้านี้ไม่ตรงกับเอกสารปัจจุบัน");
     }
@@ -608,6 +643,12 @@ export class UploadPocPendingFiles {
         this.files.delete(key);
       }
     }
+    for (const [key, pending] of this.removals) {
+      const [bindingId] = JSON.parse(key) as unknown[];
+      if (currentBindingTag(bindings, bindingId) !== pending.tag) {
+        this.removals.delete(key);
+      }
+    }
     const hasPending = this.hasPending();
     if (value.type === "pending-file-check") {
       if (
@@ -620,6 +661,7 @@ export class UploadPocPendingFiles {
       }
       if (
         ![
+          "change-project",
           "append-row",
           "delete-row",
           "save-draft",
@@ -697,6 +739,21 @@ export class UploadPocPendingFiles {
       throw new Error("POC ยังไม่รองรับการเปลี่ยนไฟล์ระหว่างแก้ไขข้อมูลที่ส่งแล้ว");
     }
     const key = JSON.stringify([value.bindingId, value.rowIndex]);
+    if (
+      ["pending-file-cancel", "pending-file-remove"].includes(
+        String(value.type)
+      )
+    ) {
+      if (value.rowIndex !== null) {
+        throw new Error("ยังไม่รองรับการเปลี่ยนไฟล์รายแถว กรุณารักษาหน้านี้ไว้ก่อน");
+      }
+      this.files.delete(key);
+      this.invalidFiles.delete(key);
+      this.removals.delete(key);
+      if (value.type === "pending-file-remove") {
+        this.removals.set(key, { tag: value.tag });
+      }
+    }
     if (value.type === "pending-file-set") {
       if (!(value.file instanceof File) || value.file.size > 10_000_000) {
         this.invalidFiles.set(
@@ -708,6 +765,7 @@ export class UploadPocPendingFiles {
         );
       }
       this.invalidFiles.delete(key);
+      this.removals.delete(key);
       this.files.set(key, { file: value.file, tag: value.tag });
     }
     const file = this.files.get(key)?.file;
@@ -715,8 +773,10 @@ export class UploadPocPendingFiles {
       ? options.savedData[String(value.tag)]
       : null;
     return {
+      cleanupWarning: options.cleanupWarning ?? null,
       filename: file?.name ?? null,
       hasPending: this.hasPending(),
+      removal: this.removals.has(key),
       saved: record(saved)
         ? {
             file_link: saved.file_link,
@@ -725,6 +785,7 @@ export class UploadPocPendingFiles {
           }
         : null,
       size: file?.size ?? null,
+      validationError: this.invalidFiles.get(key) ?? null,
     };
   }
 }

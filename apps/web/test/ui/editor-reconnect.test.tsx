@@ -1068,6 +1068,184 @@ it("keeps POC Files in the host across native remount and rejects messages outsi
   expect(transport.post).not.toHaveBeenCalled();
 });
 
+it("keeps removal dirty and export-blocking, rejects forged cancellation, and retains cleanup warning after successful saves and reopen", async () => {
+  const warning = "ข้อมูลใหม่บันทึกแล้ว แต่ URL เก่าอาจยังเปิดได้ กรุณาประสาน Admin";
+  const initial = {
+    ...exportConfig("document", "lease"),
+    bridge: {
+      ...exportConfig("document", "lease").bridge,
+      uploadPoc: {
+        ...uploadOptions("document", "editor-bridge"),
+        cleanupWarning: warning,
+        publicId: "form",
+        responseId: "response",
+        savedData: {
+          file: {
+            file_link: "https://files.test/old",
+            original_name: "old.bin",
+            size_bytes: 0,
+          },
+        },
+      },
+    },
+  };
+  transport.get.mockResolvedValue(initial);
+  transport.postForm.mockResolvedValue({
+    action: "save-draft",
+    operationCapability: "cap",
+    operationId: "remove-op",
+    status: "pending",
+  });
+  const capture = createRef<CaptureWorkbook>();
+  const dirty = vi.fn();
+  const view = render(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Draft attachments"
+      captureWorkbookRef={capture}
+      onDirtyChange={dirty}
+    />
+  );
+  const office = (await screen.findByTitle(
+    "Office sandbox"
+  )) as HTMLIFrameElement;
+  const picker = pluginFrame(office);
+  send(picker.source, { type: "bridge-ready" });
+  const slot = {
+    bindingId: "folio_file",
+    documentKey: "document",
+    requestId: "remove",
+    rowIndex: null,
+    scopeIdentity: "actor/response",
+    source: "folio-upload-poc",
+    tag: "file",
+  };
+  send(picker.source, { ...slot, type: "pending-file-remove" });
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  send(picker.source, { dirty: false, type: "dirty-state" });
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  await expect(capture.current?.()).rejects.toThrow(/ยังไม่บันทึก/u);
+  send(picker.source, {
+    ...slot,
+    documentKey: "stale",
+    type: "pending-file-cancel",
+  });
+  send(
+    picker.source,
+    { ...slot, type: "pending-file-cancel" },
+    "https://forged.test"
+  );
+  send(picker.source, { ...slot, type: "pending-file-get" });
+  expect(picker.send).toHaveBeenLastCalledWith(
+    expect.objectContaining({ removal: true }),
+    window.location.origin
+  );
+  expect(screen.getByText(warning)).toBeVisible();
+  send(picker.source, {
+    ...slot,
+    action: "save-draft",
+    body: {},
+    capability: "capability",
+    snapshotUrl: "http://office.test/snapshot.xlsx",
+    type: "pending-file-save",
+  });
+  await waitFor(() => expect(transport.postForm).toHaveBeenCalledTimes(1));
+  send(picker.source, {
+    action: "save-draft",
+    operationId: "remove-op",
+    status: "completed",
+    type: "operation",
+  });
+  expect(screen.getByText(warning)).toBeVisible();
+  send(picker.source, { ...slot, type: "pending-file-get" });
+  expect(picker.send).toHaveBeenLastCalledWith(
+    expect.objectContaining({ hasPending: false, removal: false }),
+    window.location.origin
+  );
+  view.rerender(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Draft attachments"
+      revision={1}
+      captureWorkbookRef={capture}
+      onDirtyChange={dirty}
+    />
+  );
+  await waitFor(() =>
+    expect(screen.getByTitle("Office sandbox")).not.toBe(office)
+  );
+  expect(screen.getByText(warning)).toBeVisible();
+  const reopened = pluginFrame(
+    screen.getByTitle("Office sandbox") as HTMLIFrameElement
+  );
+  send(reopened.source, { type: "bridge-ready" });
+  if (!capture.current) {
+    throw new Error("Workbook capture is unavailable");
+  }
+  expect(
+    await captureSnapshot(
+      capture.current,
+      reopened,
+      "http://office.test/export.xlsx"
+    )
+  ).toMatchObject({
+    snapshotUrl: "http://office.test/export.xlsx",
+  });
+  expect(transport.postForm).toHaveBeenCalledTimes(1);
+});
+
+it("blocks export during its own uncertain commit even when no File remains in memory", async () => {
+  const initial = {
+    ...exportConfig("document", "lease"),
+    bridge: {
+      ...exportConfig("document", "lease").bridge,
+      uploadPoc: {
+        ...uploadOptions("document", "editor-bridge"),
+        publicId: "form",
+        responseId: "response",
+      },
+    },
+  };
+  transport.get.mockResolvedValue(initial);
+  const capture = createRef<CaptureWorkbook>();
+  render(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Uncertain commit"
+      captureWorkbookRef={capture}
+    />
+  );
+  const picker = pluginFrame(
+    (await screen.findByTitle("Office sandbox")) as HTMLIFrameElement
+  );
+  send(picker.source, { type: "bridge-ready" });
+  transport.postForm.mockRejectedValue(new TypeError("response lost"));
+  transport.get.mockRejectedValue(new TypeError("checkpoint unavailable"));
+  send(picker.source, {
+    action: "save-draft",
+    body: {},
+    capability: "capability",
+    documentKey: "document",
+    requestId: "save",
+    scopeIdentity: "actor/response",
+    snapshotUrl: "http://office.test/snapshot.xlsx",
+    source: "folio-upload-poc",
+    type: "pending-file-save",
+  });
+  await waitFor(() =>
+    expect(picker.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        attachmentCommitUnresolved: true,
+        error: "checkpoint unavailable",
+        requestId: "save",
+      }),
+      window.location.origin
+    )
+  );
+  await expect(capture.current?.()).rejects.toThrow(/ยังยืนยันผลบันทึก/u);
+  expect(transport.postForm).toHaveBeenCalledTimes(1);
+});
+
 it.each(["draft", "correction"])(
   "old Published PoC %s picker explains unavailable upload without retaining Files or blocking ordinary saves",
   async (action) => {

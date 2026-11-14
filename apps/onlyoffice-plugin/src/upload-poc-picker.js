@@ -49,6 +49,11 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
   const savedFile = document.querySelector("#saved-file");
   const savedLink = document.querySelector("#saved-link");
   const savedSize = document.querySelector("#saved-size");
+  const cancel = document.querySelector("#cancel");
+  const remove = document.querySelector("#remove");
+  const removal = document.querySelector("#removal");
+  const cleanupWarning = document.querySelector("#cleanup-warning");
+  let hasSaved = false;
   let options;
   let target;
   let pending = null;
@@ -66,6 +71,8 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
     sequence += 1;
     const requestId = `picker-${sequence}`;
     input.disabled = true;
+    cancel.disabled = true;
+    remove.disabled = true;
     retry.hidden = true;
     const timeout = hostWindow.setTimeout(() => {
       pending = null;
@@ -93,7 +100,9 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
     }
     const { saved } = message;
     const url =
-      isRecord(saved) && typeof saved.file_link === "string"
+      isRecord(saved) &&
+      typeof saved.file_link === "string" &&
+      URL.canParse(saved.file_link)
         ? new URL(saved.file_link)
         : null;
     const valid =
@@ -101,6 +110,7 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
       ["http:", "https:"].includes(url.protocol) &&
       !url.username &&
       !url.password;
+    hasSaved = Boolean(valid);
     savedFile.hidden = !valid;
     if (valid) {
       savedLink.href = url.href;
@@ -111,6 +121,37 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
       savedSize.textContent = Number.isSafeInteger(saved.size_bytes)
         ? `${saved.size_bytes} ไบต์`
         : "";
+    }
+  };
+  const renderSelection = (message) => {
+    filename.textContent = message.filename || "ยังไม่ได้เลือกไฟล์";
+    filesize.textContent =
+      message.filename &&
+      Number.isSafeInteger(message.size) &&
+      message.size >= 0
+        ? `${message.size} ไบต์`
+        : "";
+    renderSavedAttachment(message);
+    removal.hidden = message.removal !== true;
+    cancel.disabled =
+      !message.filename && message.removal !== true && !message.validationError;
+    remove.disabled =
+      !hasSaved && !message.filename && !message.validationError;
+    cleanupWarning.hidden =
+      typeof message.cleanupWarning !== "string" || !message.cleanupWarning;
+    cleanupWarning.textContent =
+      typeof message.cleanupWarning === "string" ? message.cleanupWarning : "";
+    input.value = "";
+    selected = null;
+    input.disabled = false;
+    if (message.validationError) {
+      notify(String(message.validationError), true);
+    } else if (message.removal === true) {
+      notify("รอนำไฟล์ออกเมื่อบันทึกฉบับร่างหรือส่ง ยังไม่ลบไฟล์ที่บันทึกแล้ว");
+    } else if (message.filename) {
+      notify("เก็บไฟล์ไว้ในหน่วยความจำของหน้านี้แล้ว ยังไม่ได้อัปโหลดหรือบันทึกถาวร");
+    } else {
+      notify("เลือกไฟล์ได้หนึ่งไฟล์ และเลือกใหม่เพื่อเปลี่ยนไฟล์ได้");
     }
   };
   hostWindow.addEventListener("message", (event) => {
@@ -127,6 +168,8 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
       input.value = "";
       input.disabled = true;
       retry.disabled = true;
+      cancel.disabled = true;
+      remove.disabled = true;
       retry.hidden = true;
       selection.hidden = true;
       status.className = "notice";
@@ -146,6 +189,8 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
         input.value = "";
         input.disabled = false;
         retry.hidden = true;
+        cancel.disabled = false;
+        remove.disabled = false;
       } else {
         retry.hidden = false;
       }
@@ -164,21 +209,7 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
       notify("อ่านชื่อไฟล์ที่เลือกไม่ได้ กรุณาลองอีกครั้ง", true);
       return;
     }
-    filename.textContent = message.filename || "ยังไม่ได้เลือกไฟล์";
-    filesize.textContent =
-      message.filename &&
-      Number.isSafeInteger(message.size) &&
-      message.size >= 0
-        ? `${message.size} ไบต์`
-        : "";
-    renderSavedAttachment(message);
-    selected = null;
-    input.disabled = false;
-    notify(
-      message.filename
-        ? "เก็บไฟล์ไว้ในหน่วยความจำของหน้านี้แล้ว ยังไม่ได้อัปโหลดหรือบันทึกถาวร"
-        : "เลือกไฟล์ได้หนึ่งไฟล์ และเลือกใหม่เพื่อเปลี่ยนไฟล์ได้"
-    );
+    renderSelection(message);
   });
   input.addEventListener("change", () => {
     const [file] = input.files;
@@ -192,6 +223,18 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
   retry.addEventListener("click", () =>
     request(selected ? "pending-file-set" : "pending-file-get", selected)
   );
+  cancel.addEventListener("click", () => {
+    if (!cancel.disabled) {
+      selected = null;
+      request("pending-file-cancel");
+    }
+  });
+  remove.addEventListener("click", () => {
+    if (!remove.disabled) {
+      selected = null;
+      request("pending-file-remove");
+    }
+  });
   plugin.init = (data) => {
     try {
       options = plugin.info?.options || {};

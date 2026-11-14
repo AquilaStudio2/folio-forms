@@ -337,7 +337,7 @@ export function initializeSpreadsheet(options, setStatus) {
         pendingUploadPocChanges.clear();
       }
     },
-    beforeAction: async (action, rowChange) => {
+    beforeAction: async (action, rowChange, context) => {
       if (uploadPocDeleteNeedsSave && action !== ACTIONS.SAVE_TEMPLATE) {
         throw new Error(
           "การลบปุ่มยังรอบันทึกต้นแบบ กรุณากดบันทึกแบบร่างเพื่อลองอีกครั้งก่อนแก้ไขต่อ"
@@ -345,7 +345,12 @@ export function initializeSpreadsheet(options, setStatus) {
       }
       await ensureAuthoringReady();
       validatePanelDrafts();
-      return checkUploadPocPending(window, options, action, rowChange);
+      return checkUploadPocPending(
+        window,
+        options,
+        context?.pdmsSelection ? "change-project" : action,
+        rowChange
+      );
     },
     setActionBusy: (value) => {
       busy = value;

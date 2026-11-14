@@ -160,6 +160,7 @@ export function createOperations(
     if (
       scalarAttachments &&
       !rowChange &&
+      !requestContext?.pdmsSelection &&
       [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT].includes(action)
     ) {
       const snapshotUrl = await office.captureWorkbook();
@@ -365,6 +366,7 @@ export function createOperations(
     const scalarSave =
       scalarAttachments &&
       !rowChange &&
+      !saveContext?.pdmsSelection &&
       [ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT].includes(action);
 
     try {
@@ -397,7 +399,11 @@ export function createOperations(
       ) {
         throw new Error("ประเภทการบันทึกต้นแบบในตัวแก้ไขเดิมไม่ถูกต้อง");
       }
-      const pendingGuard = await callbacks.beforeAction?.(action, rowChange);
+      const pendingGuard = await callbacks.beforeAction?.(
+        action,
+        rowChange,
+        saveContext
+      );
       const needsData =
         action === ACTIONS.SAVE_DRAFT ||
         action === ACTIONS.SAVE_CORRECTION ||
