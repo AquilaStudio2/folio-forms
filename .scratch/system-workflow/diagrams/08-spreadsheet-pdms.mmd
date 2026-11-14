@@ -61,8 +61,17 @@ flowchart TD
         scalarPending -->|"explicit Save Draft / Submit เท่านั้น"| scalarCapture["GetFileToDownload: snapshot native ที่ freeze"]
         scalarPending -->|"Download ขณะมี pending"| scalarBlocked["หยุด export ไม่ upload"]
         scalarCapture --> scalarValidate["ตรวจ owner / lease / revision / button / native metadata"]
-        scalarValidate --> scalarIntent["transaction สั้น: Operation + scoped batch และ version intent"]
-        scalarIntent --> scalarUpload["ECM client เดิม: multipart bytes ส่งทีละไฟล์ ไม่ resend"]
+        scalarValidate --> scalarReuse{"ไม่มี File/removal ใหม่ และ metadata เดิม"}
+        scalarReuse -->|"ใช่: ไม่ login/upload"| scalarCommit
+        scalarReuse -->|"metadata เปลี่ยน ไม่มี replacement/removal"| scalarOriginal["อ่าน original จาก owned committed receipt: exact ECM origin / no redirect / no Bearer-cookie / actual size"]
+        scalarOriginal -->|"ครบทุก plan จึงส่ง"| scalarIntent
+        scalarOriginal -->|"อ่านไม่ได้ / size ไม่ตรง"| scalarOriginalFail["ไม่เริ่ม upload; canonical เดิมและ pending choice คงอยู่"]
+        scalarPick --> scalarRemove["Remove เป็น pending; Cancel คืน saved state ไม่ส่ง HTTP write"]
+        scalarRemove --> scalarPending
+        scalarReuse -->|"File/removal ใหม่"| scalarIntent["transaction สั้น: Operation + scoped batch และ version intent"]
+        scalarIntent --> scalarPlanned{"มีแผนส่งไฟล์ใหม่"}
+        scalarPlanned -->|"มี"| scalarUpload["ECM client เดิม: multipart bytes ส่งทีละไฟล์ ไม่ resend"]
+        scalarPlanned -->|"ไม่มี: removal"| scalarCommit
         scalarUpload --> scalarReceipt{"receipt URL/token ถูกต้อง"}
         scalarReceipt -->|"ใช่"| scalarDurable["persist receipt ทันที; ประกอบ URL-only workbook"]
         scalarDurable --> scalarCommit["recheck + atomic document / canonical JSON / references / Operation result"]
@@ -71,6 +80,15 @@ flowchart TD
         scalarDurable -->|"known failure / stale / JSON เกิน limit"| scalarCancel["cancel ทั้ง batch; cleanup เฉพาะ new unreferenced Folio files"]
         scalarCancel -->|"cleanup ไม่ยืนยัน"| scalarHold
         scalarCommit --> scalarResume["เปิด Draft กลับเห็น saved URL; clear เฉพาะ File snapshot ที่รับ"]
+        scalarCommit --> scalarOld["commit cleanup intent ของรอบนี้ พร้อม new references; retire เฉพาะ obsolete Draft refs"]
+        scalarOld --> scalarFence{"version-row fence และ global refs"}
+        scalarFence -->|"history / workspace / eligible operation ยังใช้"| scalarResume
+        scalarFence -->|"ไม่มี refs: claim ก่อน dispatch"| scalarDelete["DELETE canonical token ครั้งเดียว เฉพาะ initiating operation"]
+        scalarDelete -->|"ยืนยันแล้ว"| scalarResume
+        scalarDelete -->|"failed / unknown"| scalarWarning["ข้อมูลใหม่ saved ใช้และ export ได้; durable warning ว่า URL เก่าอาจยังเปิดได้"]
+        scalarWarning -->|"reopen / ordinary Save ไม่ retry หรือ clear"| scalarResume
+        scalarInternal["implicit Add row / project / workspace save"] --> scalarRefs["reconcile canonical references ใน transaction; ไม่ upload/delete"]
+        scalarRefs --> scalarResume
         scalarBoot["ก่อนเปิดแก้:ตรวจ checkpoint เดิมด้วย bounded poll พร้อม renew lease"] --> scalarCanonical["เปิด canonical ล่าสุดก่อนรับ ordinary edits ใหม่; ไม่อ้าง receipt เก่าว่าบันทึก snapshot ใหม่"]
         scalarCanonical --> scalarPick
         scalarCapture --> scalarFreeze["own commit ยังไม่ยุติ:คง native readOnly; ปุ่มตรวจผลเดิมยังใช้ได้"]

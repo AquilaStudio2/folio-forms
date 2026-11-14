@@ -8,10 +8,10 @@ sequenceDiagram
     User->>FormBridge: เลือก Save หรือ Submit
     FormBridge->>OnlyOffice: flush การแก้ไขปัจจุบัน
     FormBridge->>FolioAPI: ส่ง action พร้อม capability
-    FolioAPI->>PostgreSQL: ตรวจ lease และสร้าง Operation
+    FolioAPI->>PostgreSQL: ตรวจ lease และสร้าง Operation พร้อม canonical/native identity
     FolioAPI-->>FormBridge: 202 และ operationId
-    FolioAPI->>OnlyOffice: forceSave พร้อม callback claim
-    OnlyOffice-->>FolioAPI: callback พร้อม document key
+    FolioAPI->>OnlyOffice: forceSave ด้วย native key และ claim ผูก canonical/native
+    OnlyOffice-->>FolioAPI: callback พร้อม native key
     FolioAPI->>OnlyOffice: อ่านเอกสารจาก URL ที่อนุญาต
     FolioAPI->>FolioAPI: ตรวจ contract และสกัดข้อมูล
     FolioAPI->>RustFS: เก็บ staging และ final document

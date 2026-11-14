@@ -1,8 +1,8 @@
 {
-  "commit": "1362d403580ae0f0f027f19791db35a663feea2f",
-  "branch": "feat/ecm-attachments",
-  "source_fingerprint": "2f0f828aeb0a242d145289d65cf47712978f2252a4af1c37d31ee72310203747",
-  "source_files": 305,
+  "commit": "eaa95e8c91b040f397be151fe5b3ccf2a4dd8c99",
+  "branch": "feat/ecm-attachments-draft",
+  "source_fingerprint": "9bb73edffe50548cfc0a5fbeeb2553adce674295a40f250a46cea6edf17193f3",
+  "source_files": 306,
   "pages": [
     {
       "route": "__root",
@@ -273,37 +273,37 @@
       "method": "GET",
       "path": "/api/admin/forms/:publicId/schema",
       "file": "apps/server/src/routes/form-authoring.ts",
-      "line": 227
+      "line": 236
     },
     {
       "method": "GET",
       "path": "/api/admin/forms/:publicId/field-rules",
       "file": "apps/server/src/routes/form-authoring.ts",
-      "line": 235
+      "line": 244
     },
     {
       "method": "PATCH",
       "path": "/api/admin/forms/:publicId/field-rules",
       "file": "apps/server/src/routes/form-authoring.ts",
-      "line": 262
+      "line": 271
     },
     {
       "method": "POST",
       "path": "/api/admin/forms/:publicId/save",
       "file": "apps/server/src/routes/form-authoring.ts",
-      "line": 443
+      "line": 452
     },
     {
       "method": "POST",
       "path": "/api/admin/forms/:publicId/publish",
       "file": "apps/server/src/routes/form-authoring.ts",
-      "line": 575
+      "line": 584
     },
     {
       "method": "GET",
       "path": "/api/admin/forms/:publicId/submissions",
       "file": "apps/server/src/routes/form-authoring.ts",
-      "line": 699
+      "line": 708
     },
     {
       "method": "GET",
@@ -393,91 +393,91 @@
       "method": "GET",
       "path": "/onlyoffice/document/:key",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 52
+      "line": 53
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/config.json",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 93
+      "line": 94
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/pdms-project/config.json",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 133
+      "line": 134
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/pdms-project/index.html",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 161
+      "line": 162
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/pdms-project/popup.js",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 162
+      "line": 163
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/upload-poc/config.json",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 163
+      "line": 164
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/upload-poc/index.html",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 192
+      "line": 193
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/upload-poc/picker.js",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 193
+      "line": 194
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 194
+      "line": 195
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 195
+      "line": 196
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/index.html",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 196
+      "line": 197
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/plugin.js",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 197
+      "line": 198
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/resources/light/settings.svg",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 198
+      "line": 199
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/resources/dark/settings.svg",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 201
+      "line": 202
     },
     {
       "method": "POST",
       "path": "/onlyoffice/callback",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 204
+      "line": 205
     },
     {
       "method": "GET",
@@ -531,79 +531,79 @@
       "method": "GET",
       "path": "/api/forms/:publicId/my-submissions",
       "file": "apps/server/src/routes/public-forms.ts",
-      "line": 102
+      "line": 100
     },
     {
       "method": "GET",
       "path": "/api/forms/:publicId/my-submissions/export",
       "file": "apps/server/src/routes/public-forms.ts",
-      "line": 112
+      "line": 110
     },
     {
       "method": "POST",
       "path": "/api/forms/:publicId/start",
       "file": "apps/server/src/routes/public-forms.ts",
-      "line": 130
+      "line": 128
     },
     {
       "method": "GET",
       "path": "/api/responses/:id/attachment-operations/:checkpoint",
       "file": "apps/server/src/routes/response-actions.ts",
-      "line": 69
+      "line": 70
     },
     {
       "method": "POST",
       "path": "/api/responses/:id/attachment-operations/:checkpoint/recover",
       "file": "apps/server/src/routes/response-actions.ts",
-      "line": 113
+      "line": 114
     },
     {
       "method": "POST",
       "path": "/api/forms/:publicId/draft",
       "file": "apps/server/src/routes/response-actions.ts",
-      "line": 125
+      "line": 126
     },
     {
       "method": "POST",
       "path": "/api/forms/:publicId/submit",
       "file": "apps/server/src/routes/response-actions.ts",
-      "line": 340
+      "line": 342
     },
     {
       "method": "GET",
       "path": "/api/responses/me",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 61
+      "line": 62
     },
     {
       "method": "GET",
       "path": "/api/responses/:id/corrections",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 95
+      "line": 96
     },
     {
       "method": "POST",
       "path": "/api/responses/:id/editor-export/:format",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 227
+      "line": 228
     },
     {
       "method": "GET",
       "path": "/api/responses/:id/draft/:format",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 336
+      "line": 337
     },
     {
       "method": "DELETE",
       "path": "/api/admin/responses/:id",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 404
+      "line": 405
     },
     {
       "method": "DELETE",
       "path": "/api/responses/:id",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 448
+      "line": 449
     },
     {
       "method": "GET",
@@ -900,6 +900,12 @@
       "table": "ecm_attachment_references",
       "file": "packages/db/prisma/schema.prisma",
       "line": 725
+    },
+    {
+      "model": "EcmAttachmentCleanup",
+      "table": "ecm_attachment_cleanups",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 736
     }
   ],
   "relations": [
