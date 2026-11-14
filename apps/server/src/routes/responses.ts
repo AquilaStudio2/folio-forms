@@ -25,6 +25,7 @@ import {
 import {
   requireActionEditorAuthorization,
   requireEditorScope,
+  requireDocumentServerKey,
 } from "../editor/authorization";
 import { editorLeaseProof, requireActiveEditorLease } from "../editor/leases";
 import { spreadsheetPicturePresence } from "../forms/spreadsheet-fields";
@@ -297,7 +298,7 @@ export function registerResponseRoutes(
           fail(400, "invalid_request", "Only snapshotUrl is accepted");
         }
         const workbook = await onlyOffice.downloadEditorWorkbook({
-          documentKey,
+          documentServerKey: requireDocumentServerKey(authorization),
           signal: request.signal,
           snapshotUrl: requiredString(input, "snapshotUrl"),
         });

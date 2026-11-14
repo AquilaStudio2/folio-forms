@@ -15,6 +15,7 @@ import { validateResponseDocument } from "../documents/native-eligibility";
 import { callbackFieldMetadata } from "../documents/office-values";
 import {
   requireActionEditorAuthorization,
+  requireDocumentServerKey,
   requireEditorScope,
   operationEditorCapability,
 } from "../editor/authorization";
@@ -197,7 +198,8 @@ export function registerResponseActionRoutes(
             : {};
         if (
           attachmentBindings?.fields.some((field) => field.attachment) &&
-          input.rowChange === undefined
+          input.rowChange === undefined &&
+          input.pdmsSelection === undefined
         ) {
           const accepted = await startAttachmentOperation({
             action: "save-draft",
@@ -482,6 +484,9 @@ export function registerResponseActionRoutes(
           action: "submit",
           data,
           documentKind: form.documentKind,
+          ...(form.documentKind === "xlsx"
+            ? { documentServerKey: requireDocumentServerKey(authorization) }
+            : {}),
           finalObjectKey: objectKey(
             "submissions",
             submissionId,

@@ -645,7 +645,7 @@ test("restoring VIEWER to User never revives editor credentials from a revoked s
   );
   expect(editor.status).toBe(200);
   const config = (await editor.json()) as {
-    bridge: { capabilities: { "save-draft": string } };
+    bridge: { documentKey: string; capabilities: { "save-draft": string } };
     config: { document: { key: string } };
   };
   const save = () =>
@@ -653,7 +653,7 @@ test("restoring VIEWER to User never revives editor credentials from a revoked s
       new Request(`http://test.local/api/forms/${f.form.publicId}/draft`, {
         body: JSON.stringify({
           data: { name: "Unauthorized change" },
-          documentKey: config.config.document.key,
+          documentKey: config.bridge.documentKey,
           responseId: f.ownDraft.id,
         }),
         headers: {

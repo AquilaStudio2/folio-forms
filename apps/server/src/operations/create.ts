@@ -1,4 +1,5 @@
 import type {
+  DocumentKind,
   FillMethod,
   OperationTargetType,
   OperationType,
@@ -12,6 +13,7 @@ import type {
   ActionEditorAuthorization,
   EditorCapabilityScope,
 } from "../editor/authorization";
+import { requireDocumentServerKey } from "../editor/authorization";
 import { lockActiveEditorLease } from "../editor/leases";
 import { fail } from "../http/errors";
 import type { Operation } from "../model-types";
@@ -40,11 +42,12 @@ export async function createOperation(input: {
       const [lockedForm] = await tx.$queryRaw<
         {
           fillMethod: FillMethod;
+          documentKind: DocumentKind;
           id: string;
         }[]
       >(
         Prisma.sql`
-          SELECT "id", "fill_method" AS "fillMethod"
+          SELECT "id", "document_kind" AS "documentKind", "fill_method" AS "fillMethod"
           FROM "forms"
           WHERE "id" = ${input.formId}::uuid
           FOR UPDATE
@@ -152,13 +155,21 @@ export async function createOperation(input: {
       if (input.responseId) {
         await requireAttachmentMutationReady(input.responseId, tx);
       }
+      const metadata = {
+        ...input.metadata,
+        documentKind: lockedForm.documentKind,
+        documentServerKey:
+          lockedForm.documentKind === "xlsx"
+            ? requireDocumentServerKey(input.authorization)
+            : undefined,
+      };
       const operation = await tx.operation.create({
         data: {
           actorId: input.actorId,
           documentKey: input.documentKey,
           errorCode: null,
           formId: input.formId,
-          metadata: jsonValue(input.metadata),
+          metadata: jsonValue(metadata),
           ownerUserId: input.ownerUserId,
           responseId: input.responseId,
           stagingObjectKey: input.stagingObjectKey,

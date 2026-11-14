@@ -7,6 +7,7 @@ import type { SavedUploadPocButton } from "../documents/spreadsheets/upload-poc"
 import { fail } from "../http/errors";
 import { asRecord } from "../http/input";
 import type { JsonRecord } from "../model-types";
+import { isDocumentServerKey } from "../onlyoffice";
 import type { PdmsSelection } from "../pdms/catalog";
 import { pdmsSelectionSchema } from "../pdms/selection";
 
@@ -43,6 +44,7 @@ export interface OperationMetadata extends JsonRecord {
   pdmsCatalogSessionId?: string;
   spreadsheetAnchors?: SpreadsheetAnchorSnapshot;
   documentKind?: "docx" | "xlsx";
+  documentServerKey?: string;
   bindingRevision?: number;
   action: OperationAction;
   baseDocumentKey?: string;
@@ -139,7 +141,10 @@ export function operationMetadata(value: unknown): OperationMetadata {
         .success) ||
     (workspaceDocumentKey !== undefined &&
       typeof workspaceDocumentKey !== "string") ||
-    (workspaceObjectKey !== undefined && typeof workspaceObjectKey !== "string")
+    (workspaceObjectKey !== undefined &&
+      typeof workspaceObjectKey !== "string") ||
+    (metadata.documentServerKey !== undefined &&
+      !isDocumentServerKey(metadata.documentServerKey))
   ) {
     fail(500, "invalid_operation", "Operation metadata is invalid");
   }
@@ -152,4 +157,33 @@ export function operationMetadata(value: unknown): OperationMetadata {
     fail(500, "invalid_operation", "Operation picker metadata is invalid");
   }
   return metadata as unknown as OperationMetadata;
+}
+
+export function operationDocumentServerKey(operation: {
+  documentKey: string | null;
+  metadata: unknown;
+}): string {
+  const metadata = operation.metadata;
+  if (
+    metadata &&
+    typeof metadata === "object" &&
+    !Array.isArray(metadata) &&
+    "documentKind" in metadata &&
+    metadata.documentKind === "xlsx"
+  ) {
+    const key =
+      "documentServerKey" in metadata ? metadata.documentServerKey : undefined;
+    if (!isDocumentServerKey(key)) {
+      fail(
+        500,
+        "invalid_operation",
+        "The signed native editor opening is unavailable"
+      );
+    }
+    return key;
+  }
+  if (!operation.documentKey) {
+    fail(500, "invalid_operation", "Operation has no document key");
+  }
+  return operation.documentKey;
 }

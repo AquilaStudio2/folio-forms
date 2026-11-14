@@ -92,9 +92,7 @@ export function registerPublicFormRoutes(
           identity,
           responseId,
           requestedAction,
-          typeof query.pdmsOpeningId === "string"
-            ? query.pdmsOpeningId
-            : undefined,
+          query.pdmsOpeningId,
           dependencies.pdmsProjects
         );
       }

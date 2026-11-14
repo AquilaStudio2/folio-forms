@@ -23,6 +23,7 @@ interface Editor {
   pdmsProjectCatalog: Catalog;
   config: { document: { key: string } };
   bridge: {
+    documentKey: string;
     capabilities: Record<string, string>;
     lease: { id: string };
     pdmsProjectPopup?: unknown;
@@ -176,7 +177,7 @@ const fixture = async (
     request(
       "/api/editor/pdms-project-catalog/retry",
       {
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         sessionId,
       },
       editor.bridge.capabilities["save-draft"]
@@ -287,8 +288,8 @@ test("Retry loads the failed opening once without replacing the active editor or
     expect(await second.json()).toEqual(loaded);
     expect(f.requests).toBe(2);
     expect(
-      ((await (await f.config(opening)).json()) as Editor).config.document.key
-    ).toBe(editor.config.document.key);
+      ((await (await f.config(opening)).json()) as Editor).bridge.documentKey
+    ).toBe(editor.bridge.documentKey);
     expect(
       await (
         await f.request(`/api/responses/${f.responseId}/draft/json`)
@@ -319,7 +320,7 @@ test("a failed new opening cannot submit or Retry with the ready catalog from an
         `/api/forms/${f.publicId}/submit`,
         {
           responseId: f.responseId,
-          documentKey: second.config.document.key,
+          documentKey: second.bridge.documentKey,
           fillMethod: "onlyoffice",
           data: {},
           pdmsCatalogSessionId: sessionId,
@@ -437,7 +438,7 @@ test("ordinary source-free editors do not fetch or accept catalog Retry", async 
     const retried = await f.request(
       "/api/editor/pdms-project-catalog/retry",
       {
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         sessionId: crypto.randomUUID(),
       },
       editor.bridge.capabilities["save-draft"]
@@ -478,7 +479,7 @@ test("catalog Retry rejects unsigned, expired and cross-document requests withou
       await f.config(crypto.randomUUID())
     ).json()) as Editor;
     const body = {
-      documentKey: editor.config.document.key,
+      documentKey: editor.bridge.documentKey,
       sessionId: editor.pdmsProjectCatalog.sessionId,
     };
     expect(

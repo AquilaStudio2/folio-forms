@@ -5,6 +5,7 @@ import { z } from "zod";
 import type { SpreadsheetBindings } from "../documents/spreadsheets/contract";
 import {
   cancelAttachmentBatch,
+  cleanupCommittedAttachments,
   requireAttachmentMutationReady,
   uploadScalarAttachments,
 } from "../ecm/attachments";
@@ -13,6 +14,7 @@ import type { ActionEditorAuthorization } from "../editor/authorization";
 import {
   operationEditorCapability,
   requireEditorScope,
+  requireDocumentServerKey,
 } from "../editor/authorization";
 import {
   editorLeaseBridge,
@@ -253,9 +255,10 @@ export const startAttachmentOperation = async (options: {
   await requireActiveEditorLease(authorization, scope);
   await requireAttachmentMutationReady(responseId);
   const acceptedCheckpoint = checkpoint(input);
+  const documentServerKey = requireDocumentServerKey(authorization);
   // Capture is the same signed native snapshot download used by Excel Fill Download, never a client answer JSON.
   const snapshot = await onlyOffice.downloadEditorWorkbook({
-    documentKey,
+    documentServerKey,
     signal: AbortSignal.timeout(30_000),
     snapshotUrl: requiredString(input, "snapshotUrl"),
   });
@@ -340,7 +343,7 @@ export const startAttachmentOperation = async (options: {
     try {
       await finalizeCallback(
         operation.id,
-        { key: documentKey },
+        { key: documentServerKey },
         snapshot,
         new Set(),
         undefined,
@@ -351,9 +354,20 @@ export const startAttachmentOperation = async (options: {
             ecm,
             files,
             operation,
+            removals: new Set(
+              z
+                .array(
+                  z
+                    .object({ bindingId: z.string(), rowIndex: z.null() })
+                    .strict()
+                )
+                .parse(input.attachmentRemovals ?? [])
+                .map((removal) => removal.bindingId)
+            ),
             savedData,
           })
       );
+      await cleanupCommittedAttachments(operation.id, ecm);
     } catch (error) {
       // A lost commit acknowledgement must be resolved from this original Operation before deleting any provider file.
       const persisted = await prisma.operation.findUnique({

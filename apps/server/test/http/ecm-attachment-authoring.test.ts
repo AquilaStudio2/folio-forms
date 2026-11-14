@@ -12,6 +12,7 @@ import { XLSX_CONTENT_TYPE } from "../../src/documents/spreadsheets/workbook";
 import { actionEditorCapability } from "../../src/editor/authorization";
 import { claimEditorLease } from "../../src/editor/leases";
 import { spreadsheetDraftFieldData } from "../../src/forms/spreadsheet-fields";
+import { xlsxEditorOpening } from "../../src/onlyoffice";
 import { putObject, deleteObject } from "../../src/storage";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
 import { fixtureWorkbook, mutatePart } from "../spreadsheet-unit/fixture";
@@ -214,15 +215,31 @@ beforeAll(async () => {
     templateId,
     formId
   );
+  const { documentServerKey } = xlsxEditorOpening(
+    documentKey,
+    identity.sessionId
+  );
   capability = actionEditorCapability(
     identity,
-    { documentKey, formId, targetId: templateId, targetType: "template-draft" },
+    {
+      documentKey,
+      documentServerKey,
+      formId,
+      targetId: templateId,
+      targetType: "template-draft",
+    },
     "configure-fields",
     lease
   );
   publishCapability = actionEditorCapability(
     identity,
-    { documentKey, formId, targetId: templateId, targetType: "template-draft" },
+    {
+      documentKey,
+      documentServerKey,
+      formId,
+      targetId: templateId,
+      targetType: "template-draft",
+    },
     "publish",
     lease
   );
@@ -755,6 +772,8 @@ const isolatedPublication = async (
       identity,
       {
         documentKey: ownDocumentKey,
+        documentServerKey: xlsxEditorOpening(ownDocumentKey, identity.sessionId)
+          .documentServerKey,
         formId: ownFormId,
         targetId: ownTemplateId,
         targetType: "template-draft",

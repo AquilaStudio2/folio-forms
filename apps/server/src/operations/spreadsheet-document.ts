@@ -242,11 +242,29 @@ export const prepareSpreadsheetOperation = async (
     ? await spreadsheetPictureFramesForTemplate(response.publishedTemplateId)
     : [];
   const inputs = spreadsheetInputRanges(contract, locked);
+  let sourceData = response.draftData;
+  if (correction && contract.fields.some((field) => field.attachment)) {
+    const source = metadata.baseRevision
+      ? await prisma.correction.findFirst({
+          select: { data: true },
+          where: {
+            responseId: response.id,
+            revision: metadata.baseRevision,
+            submissionId: metadata.submissionId,
+          },
+        })
+      : await prisma.submission.findFirst({
+          select: { data: true },
+          where: { id: metadata.submissionId, responseId: response.id },
+        });
+    if (!source) {
+      fail(409, "stale_operation", "ไม่พบข้อมูลไฟล์ของฉบับที่กำลังแก้ไข");
+    }
+    sourceData = source.data;
+  }
   const savedData =
-    response.draftData &&
-    typeof response.draftData === "object" &&
-    !Array.isArray(response.draftData)
-      ? (response.draftData as Record<string, unknown>)
+    sourceData && typeof sourceData === "object" && !Array.isArray(sourceData)
+      ? (sourceData as Record<string, unknown>)
       : {};
   if (contract.fields.some((field) => field.attachment)) {
     validateSpreadsheetAttachmentButtons(

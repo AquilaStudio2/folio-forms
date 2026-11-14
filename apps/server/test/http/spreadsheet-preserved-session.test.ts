@@ -18,7 +18,10 @@ import { readSpreadsheetWorkbook } from "../../src/documents/spreadsheets/workbo
 import { actionEditorCapability } from "../../src/editor/authorization";
 import { claimEditorLease } from "../../src/editor/leases";
 import { spreadsheetDraftFieldData } from "../../src/forms/spreadsheet-fields";
-import { createOnlyOfficeAuthorization } from "../../src/onlyoffice";
+import {
+  createOnlyOfficeAuthorization,
+  xlsxEditorOpening,
+} from "../../src/onlyoffice";
 import { operationMetadata } from "../../src/operations/model";
 import { deleteObject, putObject, readObject } from "../../src/storage";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
@@ -182,6 +185,8 @@ builder.SaveFile("xlsx","/work/obsolete.xlsx");builder.CloseFile();`);
   leaseId = lease.id;
   const scope = {
     documentKey,
+    documentServerKey: xlsxEditorOpening(documentKey, identity.sessionId)
+      .documentServerKey,
     formId,
     targetId: draftId,
     targetType: "template-draft",
@@ -663,7 +668,14 @@ builder.CloseFile();`);
   );
   const token = actionEditorCapability(
     identity,
-    { documentKey: key, formId: id, targetId, targetType: "template-draft" },
+    {
+      documentKey: key,
+      documentServerKey: xlsxEditorOpening(key, identity.sessionId)
+        .documentServerKey,
+      formId: id,
+      targetId,
+      targetType: "template-draft",
+    },
     "save-template",
     lease
   );

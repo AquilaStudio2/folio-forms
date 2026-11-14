@@ -15,6 +15,7 @@ import {
   readSpreadsheetWorkbook,
   XLSX_CONTENT_TYPE,
 } from "../documents/spreadsheets/workbook";
+import { attachmentCleanupWarning } from "../ecm/attachments";
 import { actionEditorCapability } from "../editor/authorization";
 import type {
   EditorLeaseGrant,
@@ -36,7 +37,7 @@ import { spreadsheetPictureFramesForTemplate } from "../forms/spreadsheet-pictur
 import { fail } from "../http/errors";
 import { validateId, jsonRecord } from "../http/input";
 import type { FormWithDocuments } from "../model-types";
-import { editorConfig } from "../onlyoffice";
+import { editorConfig, xlsxEditorOpening } from "../onlyoffice";
 import { operationTimeoutMs } from "../operations/lifecycle";
 import { deleteObjectUnlessCanonical } from "../operations/object-cleanup";
 import { openPdmsProjectCatalog } from "../pdms/catalog";
@@ -57,7 +58,7 @@ import { initializeSpreadsheetResponse } from "./spreadsheet-document";
 export async function correctionEditorConfig(
   responseId: string,
   identity: Identity,
-  pdmsOpeningId?: string,
+  pdmsOpeningId?: unknown,
   pdmsProjects: PdmsProjectsConfiguration | null = null
 ): Promise<Record<string, unknown>> {
   validateId(responseId, "Response");
@@ -262,6 +263,14 @@ export async function correctionEditorConfig(
     targetId: response.id,
     targetType: "correction",
   } as const;
+  const opening =
+    form.documentKind === "xlsx"
+      ? xlsxEditorOpening(
+          capabilityScope.documentKey,
+          JSON.stringify([identity.id, identity.sessionId]),
+          pdmsOpeningId
+        )
+      : null;
   const pdmsProjectCatalog =
     form.documentKind === "xlsx"
       ? await openPdmsProjectCatalog({
@@ -271,12 +280,13 @@ export async function correctionEditorConfig(
           configuration: pdmsProjects,
           identity,
           lease,
-          openingId: pdmsOpeningId,
+          openingId: opening?.openingId,
           scope: capabilityScope,
         })
       : null;
   const catalogScope = {
     ...capabilityScope,
+    ...(opening ? { documentServerKey: opening.documentServerKey } : {}),
     ...(pdmsProjectCatalog
       ? { pdmsCatalogSessionId: pdmsProjectCatalog.sessionId }
       : {}),
@@ -286,8 +296,13 @@ export async function correctionEditorConfig(
     ...editorConfig(
       {
         action: "correction",
+        attachmentCleanupWarning:
+          form.documentKind === "xlsx"
+            ? await attachmentCleanupWarning(response.id)
+            : null,
         ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
         documentKind: form.documentKind,
+        ...(opening ? { documentServerKey: opening.documentServerKey } : {}),
         ...(form.documentKind === "xlsx"
           ? {
               spreadsheetBindings: await spreadsheetContractForTemplate(
@@ -338,7 +353,7 @@ export async function userEditorConfig(
   identity: Identity,
   responseId: string | undefined,
   requestedAction?: string,
-  pdmsOpeningId?: string,
+  pdmsOpeningId?: unknown,
   pdmsProjects: PdmsProjectsConfiguration | null = null
 ): Promise<Record<string, unknown>> {
   requireResponseWriter(identity);
@@ -426,6 +441,14 @@ export async function userEditorConfig(
       responseId: response.id,
     };
   }
+  const opening =
+    form.documentKind === "xlsx"
+      ? xlsxEditorOpening(
+          response.draftDocumentKey,
+          JSON.stringify([identity.id, identity.sessionId]),
+          pdmsOpeningId
+        )
+      : null;
   const pdmsProjectCatalog =
     form.documentKind === "xlsx"
       ? await openPdmsProjectCatalog({
@@ -435,13 +458,14 @@ export async function userEditorConfig(
           configuration: pdmsProjects,
           identity,
           lease,
-          openingId: pdmsOpeningId,
+          openingId: opening?.openingId,
           scope: { ...capabilityScope, documentKey: response.draftDocumentKey },
         })
       : null;
   const catalogScope = {
     ...capabilityScope,
     documentKey: response.draftDocumentKey,
+    ...(opening ? { documentServerKey: opening.documentServerKey } : {}),
     ...(pdmsProjectCatalog
       ? { pdmsCatalogSessionId: pdmsProjectCatalog.sessionId }
       : {}),
@@ -476,6 +500,10 @@ export async function userEditorConfig(
             : requestedAction === "fill"
               ? "fill"
               : "draft",
+        attachmentCleanupWarning:
+          form.documentKind === "xlsx"
+            ? await attachmentCleanupWarning(response.id)
+            : null,
         attachmentSavedData: response.draftData,
         capabilities: {
           ...(form.documentKind === "xlsx" && requestedAction !== "submit"
@@ -503,6 +531,7 @@ export async function userEditorConfig(
         },
         documentKey: response.draftDocumentKey as string,
         documentKind: form.documentKind,
+        ...(opening ? { documentServerKey: opening.documentServerKey } : {}),
         ...(form.documentKind === "xlsx"
           ? {
               spreadsheetBindings: await spreadsheetContractForTemplate(

@@ -101,6 +101,7 @@ export interface CallbackOperationFixture {
 export interface EditorConfigBody {
   apiUrl: string;
   bridge: {
+    documentKey: string;
     capabilities: Partial<Record<EditorCapabilityAction, string>>;
     id: string;
     lease: {

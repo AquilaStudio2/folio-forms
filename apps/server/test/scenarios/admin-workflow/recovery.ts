@@ -310,6 +310,7 @@ export const runRecoverableState = async (
   );
   const staleOperationUserdata = createCallbackUserdata({
     documentKey: templateDraft.documentKey,
+    documentServerKey: templateDraft.documentKey,
     expiresAt: Math.floor(Date.now() / 1000) - 1,
     operationId: staleOperationId,
     operationType: "save_template_draft",
@@ -386,6 +387,7 @@ export const runRecoverableState = async (
   const staleSubmissionId = crypto.randomUUID();
   const staleSubmitUserdata = createCallbackUserdata({
     documentKey: staleResponseDocumentKey,
+    documentServerKey: staleResponseDocumentKey,
     expiresAt: Math.floor(Date.now() / 1000) - 1,
     operationId: staleSubmitOperationId,
     operationType: "submit_response",

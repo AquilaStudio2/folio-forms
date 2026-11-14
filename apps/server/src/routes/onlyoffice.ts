@@ -23,6 +23,7 @@ import {
   consumeCallbackClaim,
 } from "../operations/lifecycle";
 import type { CallbackPayload } from "../operations/model";
+import { operationDocumentServerKey } from "../operations/model";
 import { cleanupTerminalOperationObjects } from "../operations/object-cleanup";
 import { SpreadsheetValidationError } from "../operations/spreadsheet-document";
 import {
@@ -181,7 +182,7 @@ export function registerOnlyOfficeRoutes(
             initDataType: "ole",
             isUpdateOleOnResize: false,
             isVisual: true,
-            size: [460, 240],
+            size: [460, 500],
             type: "window",
             url: "index.html",
           },
@@ -235,7 +236,8 @@ export function registerOnlyOfficeRoutes(
           claim.documentKey !== operation.documentKey ||
           claim.operationType !== operation.type ||
           typeof payload.key !== "string" ||
-          payload.key !== operation.documentKey
+          claim.documentServerKey !== operationDocumentServerKey(operation) ||
+          payload.key !== claim.documentServerKey
         ) {
           return { error: 1 };
         }

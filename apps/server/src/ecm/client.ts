@@ -494,6 +494,65 @@ export class EcmClient {
     return this.configured().accountKey;
   }
 
+  async originalBytes(link: string, expectedSize: number): Promise<Blob> {
+    const { origin } = new URL(this.configured().baseUrl);
+    let url: URL;
+    try {
+      url = new URL(link);
+    } catch {
+      return unavailable();
+    }
+    if (
+      url.origin !== origin ||
+      url.username ||
+      url.password ||
+      url.href.includes("#") ||
+      !Number.isSafeInteger(expectedSize) ||
+      expectedSize < 0 ||
+      expectedSize > 10_000_000
+    ) {
+      return unavailable();
+    }
+    try {
+      const response = await this.runtime.fetch(url.href, {
+        credentials: "omit",
+        redirect: "manual",
+        signal: this.runtime.timeoutSignal(90_000),
+      });
+      if (response.status !== 200) {
+        await response.body?.cancel();
+        return unavailable();
+      }
+      const reader = response.body?.getReader();
+      const chunks: Uint8Array[] = [];
+      let size = 0;
+      if (reader) {
+        try {
+          for (;;) {
+            // oxlint-disable-next-line no-await-in-loop -- Bound actual original bytes, never trust Content-Length.
+            const part = await reader.read();
+            if (part.done) {
+              break;
+            }
+            size += part.value.byteLength;
+            if (size > 10_000_000 || size > expectedSize) {
+              return unavailable();
+            }
+            chunks.push(part.value);
+          }
+        } finally {
+          await reader.cancel();
+        }
+      }
+      if (size !== expectedSize) {
+        return unavailable();
+      }
+      return new Blob(chunks);
+    } catch {
+      return unavailable();
+    }
+  }
+
   async upload(
     body: FormData,
     beforeSend: () => Promise<void>

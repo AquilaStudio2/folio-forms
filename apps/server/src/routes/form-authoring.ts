@@ -48,7 +48,7 @@ import {
   readDocumentKeyInput,
 } from "../http/input";
 import type { JsonRecord, DraftFieldRule } from "../model-types";
-import { editorConfig } from "../onlyoffice";
+import { editorConfig, xlsxEditorOpening } from "../onlyoffice";
 import { createOperation } from "../operations/create";
 import { launchForceSave } from "../operations/force-save";
 import { activeOperationForForm } from "../operations/lifecycle";
@@ -155,6 +155,14 @@ export function registerFormAuthoringRoutes(
           capabilityScope.targetId,
           form.id
         );
+        const opening =
+          form.documentKind === "xlsx"
+            ? xlsxEditorOpening(
+                templateDraft.documentKey,
+                JSON.stringify([identity.id, identity.sessionId]),
+                query.pdmsOpeningId
+              )
+            : null;
         const bindings =
           form.documentKind === "xlsx"
             ? await spreadsheetDraftBindings(templateDraft.id)
@@ -171,15 +179,13 @@ export function registerFormAuthoringRoutes(
               configuration: dependencies.pdmsProjects,
               identity,
               lease,
-              openingId:
-                typeof query.pdmsOpeningId === "string"
-                  ? query.pdmsOpeningId
-                  : undefined,
+              openingId: opening?.openingId,
               scope: capabilityScope,
             })
           : null;
         const catalogScope = {
           ...capabilityScope,
+          ...(opening ? { documentServerKey: opening.documentServerKey } : {}),
           ...(pdmsProjectCatalog
             ? { pdmsCatalogSessionId: pdmsProjectCatalog.sessionId }
             : {}),
@@ -190,6 +196,9 @@ export function registerFormAuthoringRoutes(
             pdmsProjectEnabled: pdmsProjectSourceEnabled(),
             ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
             documentKind: form.documentKind,
+            ...(opening
+              ? { documentServerKey: opening.documentServerKey }
+              : {}),
             ...(form.documentKind === "xlsx"
               ? {
                   spreadsheetBindings: bindings,

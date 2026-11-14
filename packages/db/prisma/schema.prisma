@@ -731,3 +731,19 @@ model EcmAttachmentReference {
   @@index([responseId])
   @@map("ecm_attachment_references")
 }
+
+/// One initial cleanup attempt belongs to the explicit operation that retired the reference.
+model EcmAttachmentCleanup {
+  operationId String   @map("operation_id") @db.Uuid
+  versionId   String   @map("version_id") @db.Uuid
+  responseId  String   @map("response_id") @db.Uuid
+  state       String   @default("pending")
+  attemptedAt DateTime? @map("attempted_at") @db.Timestamptz(3)
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([operationId, versionId])
+  @@index([responseId, state])
+  @@index([versionId, state])
+  @@map("ecm_attachment_cleanups")
+}

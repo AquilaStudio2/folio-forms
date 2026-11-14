@@ -340,6 +340,7 @@ export async function completeCorrectionWorkspaceOperation(
   ) {
     fail(500, "invalid_operation", "Correction preview metadata is incomplete");
   }
+  const nextDocumentKey = metadata.nextDocumentKey;
   const cleanupObjectKeys = [
     metadata.stagedObjectKey,
     metadata.workspaceObjectKey,
@@ -379,6 +380,12 @@ export async function completeCorrectionWorkspaceOperation(
       ) {
         fail(409, "stale_operation", "The Submission is no longer correctable");
       }
+      await commitAttachmentBatch(
+        tx,
+        operation,
+        metadata.data ?? {},
+        nextDocumentKey
+      );
       const updated = await tx.editorLease.updateMany({
         data: {
           workspaceDocumentKey: metadata.nextDocumentKey,
@@ -523,6 +530,7 @@ export async function completeCorrectionOperation(
         metadata
       );
       const previousData = jsonRecord(latest?.data ?? currentSubmission.data);
+      await commitAttachmentBatch(tx, operation, data, nextDocumentKey);
       const correction = await tx.correction.create({
         data: {
           actorId,

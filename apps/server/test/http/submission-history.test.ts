@@ -3,10 +3,12 @@ import { expect, test } from "bun:test";
 
 import { prisma } from "@onlyoffice/db";
 import { strToU8, unzipSync, zipSync } from "fflate";
+import { z } from "zod";
 
 import { createApp } from "../../src/app";
 import { blankSpreadsheet } from "../../src/documents/spreadsheets/blank";
 import { spreadsheetManifestFieldData } from "../../src/forms/spreadsheet-fields";
+import { createOnlyOfficeAuthorization } from "../../src/onlyoffice";
 import { operationMetadata } from "../../src/operations/model";
 import { completeCorrectionOperation } from "../../src/operations/response-completion";
 import { putObject, readObject } from "../../src/storage";
@@ -209,9 +211,48 @@ for (const kind of ["docx", "xlsx"] as const) {
         submissionId: second.id,
       },
     });
-    expect(await (await get(`${base}/viewer-config`)).json()).toMatchObject({
-      config: { document: { key: second.documentKey } },
+    const viewerSchema = z.object({
+      config: z.object({
+        document: z.object({ key: z.string(), url: z.string() }),
+      }),
     });
+    const readViewer = async () => {
+      const result = await get(`${base}/viewer-config`);
+      expect(result.status).toBe(200);
+      return viewerSchema.parse(await result.json());
+    };
+    const viewer = await readViewer();
+    const reopenedViewer = await readViewer();
+    if (kind === "xlsx") {
+      expect(viewer.config.document.key).not.toBe(second.documentKey);
+      expect(viewer.config.document.key).not.toBe(
+        oldEditor.config.document.key
+      );
+      expect(reopenedViewer.config.document.key).not.toBe(
+        viewer.config.document.key
+      );
+    } else {
+      expect(viewer.config.document.key).toBe(second.documentKey);
+      expect(reopenedViewer.config.document.key).toBe(second.documentKey);
+    }
+    expect(new URL(viewer.config.document.url).pathname).toBe(
+      `/onlyoffice/document/${second.documentKey}`
+    );
+    const selectedDocument = await app.handle(
+      new Request(viewer.config.document.url, {
+        headers: {
+          Authorization: createOnlyOfficeAuthorization({
+            url: viewer.config.document.url,
+          }),
+        },
+      })
+    );
+    expect(selectedDocument.status).toBe(200);
+    const selectedBytes: Uint8Array = await readObject(second.objectKey);
+    const downloadedBytes: Uint8Array = new Uint8Array(
+      await selectedDocument.arrayBuffer()
+    );
+    expect(downloadedBytes).toEqual(selectedBytes);
     expect((await get(`${base}?revision=1`)).status).toBe(404);
     expect((await get(`${base}/viewer-config?revision=1`)).status).toBe(404);
     expect(
@@ -248,7 +289,7 @@ for (const kind of ["docx", "xlsx"] as const) {
         new Request(`http://test.local${base}/correction`, {
           body: JSON.stringify({
             data: { name: "corrected second" },
-            documentKey: editor.config.document.key,
+            documentKey: editor.bridge.documentKey,
             reason: "Second correction",
           }),
           headers: {

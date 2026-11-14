@@ -9,6 +9,10 @@
 
 ตรวจ integration artifact เพิ่มหลัง merge: พบว่า manifest สำหรับ commit scalar ตกหล่น shared workbook attachment extraction แม้ implementation worktree ผ่านการตรวจ จึงนำ extraction ที่ตรวจ native แล้วมารวมใน integration และตรวจ native HTTP 39 tests/679 assertions, root type checks 5/5 และ build 3/3 บน integration โดยตรง เมื่อตรวจ spreadsheet-unit พบ test ที่ตรวจ mock renderer echo และ copied manifest/defaults จึงลบ assertion/fixture ที่ผูก implementation เหล่านั้นโดยไม่ re-pin ผล spreadsheet-unit 116 tests/301 assertions และ native ONLYOFFICE Picture 2 tests/16 assertions ผ่าน รวมการรักษาตำแหน่ง/ขนาดผ่าน publish/reopen และรูปจริงใน protected workbook ผ่าน replace/remove/PDF export นี่เป็นขอบเขตการตรวจที่ทำจริง ไม่ใช่ผลตรวจรับทั้งสเปกหรือ live ECM
 
+ทบทวน source วงจรเปลี่ยน/นำไฟล์ออกและ metadata ของ Draft วันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments-draft` จาก integration `b90fcfb0840e22609f6d0b5e02001e04e00ba4e7` พร้อม source changes ที่ยังไม่ commit: เพิ่ม trusted original-byte refetch, explicit removal, reconciliation ของ canonical references และ durable post-commit cleanup ต่อ initiating operation ผลตรวจส่วนกลางและ native/browser ของ change นี้ยังต้องยืนยัน ไม่ใช่ผลผ่านจากการเพิ่ม regression และไม่ใช่หลักฐาน live ECM
+
+การแก้ source ต่อในรอบ Draft นี้แยก canonical document key ของ Folio ออกจาก native cache key ต่อ editor opening ของ XLSX เพื่อไม่ให้การเปิดไฟล์ที่บันทึกแล้วสืบทอดสถานะ editor เก่า ส่วนนี้เป็นคำอธิบาย source ที่ยังไม่ commit ไม่ใช่ผลยืนยันการเปิดกลับผ่าน native browser
+
 เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
 รายการ source ครอบคลุมหน้าและ layout ฝั่งเว็บ, HTTP routes ของเซิร์ฟเวอร์หลัก, private document worker และ Prisma models
@@ -384,6 +388,10 @@ Prefill ของร่างเดิมเป็น snapshot ตอนเร�
 
 เมื่อ capability หรือ lease หมดอายุ หน้า fill ขอสิทธิ์ใหม่หนึ่งครั้งภายใต้ session เดิม แล้วใช้กับสำเนาที่จับไว้หากตัวแก้ไขและ document key ยังตรงกัน คำขอปกติใช้สิทธิ์จากการเปิด editor และอ่านสำเนาจาก ONLYOFFICE
 
+Canonical document key ไม่เปลี่ยนเพียงเพราะเปิด Draft เดิมกลับมา และเป็นค่า `bridge.documentKey` ที่ใช้กับ guard, capability, pending attachment และ Operation ส่วน XLSX `config.document.key` เป็น native key แบบ opaque ที่ผูกกับ canonical document, ผู้ใช้, Folio session และ opening UUID ที่ตรวจแล้ว การต่ออายุ capability หรือหมุน lease ภายใน opening เดิมไม่เปลี่ยน native key; การเปิด editor ใหม่ได้ key ใหม่ Read-only viewer ใช้ native cache แยกใหม่โดยยังอ่านไฟล์ canonical เดิม DOCX ไม่เปลี่ยนพฤติกรรม key เดิม
+
+อ้างอิง [การออกและตรวจ native identity](../../apps/server/src/onlyoffice.ts), [ขอบเขต capability](../../apps/server/src/editor/authorization.ts) และ [native identity ที่เก็บกับ Operation](../../apps/server/src/operations/model.ts)
+
 อ้างอิง [start และรูปแบบการเปิดใหม่](../../apps/server/src/routes/public-forms.ts#L260), [userEditorConfig](../../apps/server/src/responses/editor.ts#L336), [fill หลัง Submit](../../apps/web/src/routes/forms/$publicId/fill.tsx#L444), [native submit](../../apps/web/src/routes/forms/$publicId/fill.tsx#L623), [จับสำเนาในปลั๊กอิน](../../apps/onlyoffice-plugin/src/office.js#L52) และ [API ดาวน์โหลดจาก editor](../../apps/server/src/routes/responses.ts#L228)
 
 ## 07 การกดบันทึกหนึ่งครั้งเดินทางอย่างไร
@@ -401,10 +409,10 @@ sequenceDiagram
     User->>FormBridge: เลือก Save หรือ Submit
     FormBridge->>OnlyOffice: flush การแก้ไขปัจจุบัน
     FormBridge->>FolioAPI: ส่ง action พร้อม capability
-    FolioAPI->>PostgreSQL: ตรวจ lease และสร้าง Operation
+    FolioAPI->>PostgreSQL: ตรวจ lease และสร้าง Operation พร้อม canonical/native identity
     FolioAPI-->>FormBridge: 202 และ operationId
-    FolioAPI->>OnlyOffice: forceSave พร้อม callback claim
-    OnlyOffice-->>FolioAPI: callback พร้อม document key
+    FolioAPI->>OnlyOffice: forceSave ด้วย native key และ claim ผูก canonical/native
+    OnlyOffice-->>FolioAPI: callback พร้อม native key
     FolioAPI->>OnlyOffice: อ่านเอกสารจาก URL ที่อนุญาต
     FolioAPI->>FolioAPI: ตรวจ contract และสกัดข้อมูล
     FolioAPI->>RustFS: เก็บ staging และ final document
@@ -418,7 +426,9 @@ Native form ใช้ action API และ Operation เดียวกัน �
 
 การกด Save ใน editor หรือได้ HTTP 202 ยังไม่ใช่หลักฐานว่า Draft หรือ Submission สำเร็จ UI ต้องรอ Operation เป็น `completed` โดยเซิร์ฟเวอร์บันทึกทั้งข้อมูล JSON และไฟล์เอกสารที่สอดคล้องกันก่อน
 
-Callback มีการตรวจ JWT, document key, claim, operation และแหล่ง URL ใช้ claim กันการประมวลผลซ้ำ ถ้า ONLYOFFICE ตอบว่าไม่มีการเปลี่ยนไฟล์ มีเส้นทางใช้ snapshot ที่ตรวจความน่าเชื่อถือแทน callback ปกติ ส่วน Excel บางงานต้องมี checkpoint และหลักฐาน editor save เพิ่ม
+Callback มีการตรวจ JWT, canonical document key ใน claim, native key ที่ตรงกับ Operation และ payload, claim, operation และแหล่ง URL ก่อนใช้ claim กันการประมวลผลซ้ำ Native key จาก client ไม่ให้อำนาจเปลี่ยน canonical document หรือ Operation ถ้า ONLYOFFICE ตอบว่าไม่มีการเปลี่ยนไฟล์ มีเส้นทางใช้ snapshot ที่ตรวจความน่าเชื่อถือแทน callback ปกติ ส่วน Excel บางงานต้องมี checkpoint และหลักฐาน editor save เพิ่ม
+
+เมื่อ ONLYOFFICE ยืนยันว่าไม่มีการแก้ใหม่ การนำ capture จาก action ที่ล้มเหลวกลับมาใช้ต้องตรงกับ native opening key ของ Operation ปัจจุบันด้วย ไม่ใช่เพียง canonical document key เดียวกัน การเปิดใหม่เริ่มจากไฟล์ canonical ที่บันทึกแล้ว จึงห้ามนำค่าธรรมดาที่ยังไม่บันทึกของ opening เก่ากลับมา ส่วน retry ใน opening เดิมยังใช้ capture ที่ยืนยันไว้ของตนเองได้
 
 อ้างอิง [plugin operations](../../apps/onlyoffice-plugin/src/operations.js#L393), [createOperation](../../apps/server/src/operations/create.ts#L20), [force-save](../../apps/server/src/operations/force-save.ts#L147), [finalizeCallback](../../apps/server/src/operations/callback.ts#L155) และ [native processing](../../apps/server/src/operations/response-completion.ts#L192)
 
@@ -488,8 +498,17 @@ flowchart TD
         scalarPending -->|"explicit Save Draft / Submit เท่านั้น"| scalarCapture["GetFileToDownload: snapshot native ที่ freeze"]
         scalarPending -->|"Download ขณะมี pending"| scalarBlocked["หยุด export ไม่ upload"]
         scalarCapture --> scalarValidate["ตรวจ owner / lease / revision / button / native metadata"]
-        scalarValidate --> scalarIntent["transaction สั้น: Operation + scoped batch และ version intent"]
-        scalarIntent --> scalarUpload["ECM client เดิม: multipart bytes ส่งทีละไฟล์ ไม่ resend"]
+        scalarValidate --> scalarReuse{"ไม่มี File/removal ใหม่ และ metadata เดิม"}
+        scalarReuse -->|"ใช่: ไม่ login/upload"| scalarCommit
+        scalarReuse -->|"metadata เปลี่ยน ไม่มี replacement/removal"| scalarOriginal["อ่าน original จาก owned committed receipt: exact ECM origin / no redirect / no Bearer-cookie / actual size"]
+        scalarOriginal -->|"ครบทุก plan จึงส่ง"| scalarIntent
+        scalarOriginal -->|"อ่านไม่ได้ / size ไม่ตรง"| scalarOriginalFail["ไม่เริ่ม upload; canonical เดิมและ pending choice คงอยู่"]
+        scalarPick --> scalarRemove["Remove เป็น pending; Cancel คืน saved state ไม่ส่ง HTTP write"]
+        scalarRemove --> scalarPending
+        scalarReuse -->|"File/removal ใหม่"| scalarIntent["transaction สั้น: Operation + scoped batch และ version intent"]
+        scalarIntent --> scalarPlanned{"มีแผนส่งไฟล์ใหม่"}
+        scalarPlanned -->|"มี"| scalarUpload["ECM client เดิม: multipart bytes ส่งทีละไฟล์ ไม่ resend"]
+        scalarPlanned -->|"ไม่มี: removal"| scalarCommit
         scalarUpload --> scalarReceipt{"receipt URL/token ถูกต้อง"}
         scalarReceipt -->|"ใช่"| scalarDurable["persist receipt ทันที; ประกอบ URL-only workbook"]
         scalarDurable --> scalarCommit["recheck + atomic document / canonical JSON / references / Operation result"]
@@ -498,6 +517,15 @@ flowchart TD
         scalarDurable -->|"known failure / stale / JSON เกิน limit"| scalarCancel["cancel ทั้ง batch; cleanup เฉพาะ new unreferenced Folio files"]
         scalarCancel -->|"cleanup ไม่ยืนยัน"| scalarHold
         scalarCommit --> scalarResume["เปิด Draft กลับเห็น saved URL; clear เฉพาะ File snapshot ที่รับ"]
+        scalarCommit --> scalarOld["commit cleanup intent ของรอบนี้ พร้อม new references; retire เฉพาะ obsolete Draft refs"]
+        scalarOld --> scalarFence{"version-row fence และ global refs"}
+        scalarFence -->|"history / workspace / eligible operation ยังใช้"| scalarResume
+        scalarFence -->|"ไม่มี refs: claim ก่อน dispatch"| scalarDelete["DELETE canonical token ครั้งเดียว เฉพาะ initiating operation"]
+        scalarDelete -->|"ยืนยันแล้ว"| scalarResume
+        scalarDelete -->|"failed / unknown"| scalarWarning["ข้อมูลใหม่ saved ใช้และ export ได้; durable warning ว่า URL เก่าอาจยังเปิดได้"]
+        scalarWarning -->|"reopen / ordinary Save ไม่ retry หรือ clear"| scalarResume
+        scalarInternal["implicit Add row / project / workspace save"] --> scalarRefs["reconcile canonical references ใน transaction; ไม่ upload/delete"]
+        scalarRefs --> scalarResume
         scalarBoot["ก่อนเปิดแก้:ตรวจ checkpoint เดิมด้วย bounded poll พร้อม renew lease"] --> scalarCanonical["เปิด canonical ล่าสุดก่อนรับ ordinary edits ใหม่; ไม่อ้าง receipt เก่าว่าบันทึก snapshot ใหม่"]
         scalarCanonical --> scalarPick
         scalarCapture --> scalarFreeze["own commit ยังไม่ยุติ:คง native readOnly; ปุ่มตรวจผลเดิมยังใช้ได้"]
@@ -556,6 +584,14 @@ Canonical scalar เป็น `null` หรือ strict object สี่ค่�
 
 Batch/version intent ไม่มี cascading relation กับ Response จึงไม่เสียหลักฐานเมื่อ Operation failed/expired หรือ Response ถูกลบ Started ที่ไม่มี verified receipt รวม provider HTTP4xx หลังส่ง bytes ไม่มีหลักฐานว่าไม่เขียน และ canceled batch ที่ cleanup ไม่ครบ block mutation ต่อโดยอิสระจากสถานะ Operation การ cleanup claim lock version ร่วมกับ reference creation ก่อน HTTP DELETE และไม่ reuse canceled receipts คำตอบ canonical เดิมยังอ่านได้ หาก Folio response หาย host ตรวจ `GET /api/responses/:id/attachment-operations/:checkpoint` และ poll Operation เดิม ไม่ส่ง bytes ซ้ำ Session storage เก็บเฉพาะ checkpoint ไม่เก็บ File หรือชื่อไฟล์เพื่ออ้างว่ากู้ bytes ได้
 
+Draft ใช้ `attachmentRemovals: [{bindingId, rowIndex: null}]` ใน `payload` เดิม ต้องเป็น scalar slot ที่พิสูจน์จาก saved native button และ published binding แล้ว ไม่รับแถวตารางในขั้นนี้ ไม่รับ binding แปลก/ซ้ำ หรือ File กับ removal ของช่องเดียวกัน ทั้ง removals และ Files ถูกปฏิเสธใน internal row/project action การไม่ส่ง removal หมายถึงคงไฟล์เดิม การ cancel เกิดใน pending host state ไม่เปลี่ยน canonical หรือส่ง DELETE
+
+เมื่อปีหรือเลขเปลี่ยน server ใช้ paired receipt ของ Folio ที่ committed และเป็นของ Response/binding/category นั้นเท่านั้นอ่าน bytes เดิม Pending replacement ชนะ original refetch และ removal ไม่ refetch ช่องนั้น ใช้ `original_name` รักษานามสกุล ไม่เดาจาก URL Client ชั้นเดิม fetch เฉพาะ exact origin ของ `ECM_API_URL`, ปฏิเสธ credentials/fragment/redirect, ไม่ส่ง Bearer/cookies และอ่าน stream จริงภายใน 0–10,000,000 bytes พร้อมเทียบ canonical `size_bytes` ก่อนเริ่ม upload ทุกแผน หาก provider ใช้ file origin อื่นต้องทบทวนนโยบาย deployment ไม่เพิ่ม CDN fallback หรือ fetch arbitrary URL
+
+ทุก canonical Draft transition รวม implicit row/project save ย้าย references ไป document key ใหม่ใน transaction เดียว ไม่อาศัย reference ของ Draft เก่าที่ไม่ใช่ canonical แล้ว การ retire refs ไม่แตะ snapshot ที่ Submission/Correction/workspace/eligible Operation หรือ Draft อื่นยังใช้ และนับ surviving refs ทั่วระบบ การ acquire ref กับ deletion claim lock version row เดียวกัน จึง acquire ไปยัง deleting/deletion-unknown version ไม่ได้ Internal workspace/Correction completion รักษา canonical receipt ของ base revision และ references โดยไม่เริ่ม attachment writes
+
+`EcmAttachmentCleanup` บันทึก initiating operation/version/Response และสถานะก่อน dispatch ใน transaction ของ snapshot ใหม่ ไม่มี cascading relation กับ Response Initial cleanup อ่านเฉพาะ pending intents ของ explicit operation นั้น ไม่ sweep งานค้างทั้ง Response และไม่ resend failed/unknown DELETE รุ่นเก่าหลัง Save รอบถัดไป `bridge.uploadPoc.cleanupWarning` เป็น safe string หรือ null จาก durable pending/started/unknown records จึงเห็นหลัง reopen และคงอยู่แม้ Save ถัดไปสำเร็จ ข้อมูลใหม่ยังอ่าน/ส่งออกได้ ส่วน canceled-batch cleanup ไม่ครบคง independent mutation hold เดิม ไม่มี queue, daemon หรือสมมติฐานว่า HTTP error/not-found พิสูจน์ผลลบแล้ว
+
 Lookup404 ไม่ใช่หลักฐานว่าคำขอเก่าจะเริ่มไม่ได้ Host ใช้ `POST /api/responses/:id/attachment-operations/:checkpoint/recover` ภายใต้สิทธิ์ action เดิม โดย server lock Form แล้ว lease ตาม admission ของ `createOperation` หากพบ batch คืน Operation เดิม หากไม่พบและไม่มี active mutation จึง rotate UUID ของ lease เดิมใน transaction เพื่อให้ sender เก่าที่ค้างก่อน admission ผ่าน locked recheck ไม่ได้ คืน negative-admission proof พร้อม normal lease bridge แล้วจึงล้าง checkpoint เก่า คง File และ native edits ให้ผู้ใช้กด Save/Submit ใหม่ผ่าน capability renewal เดิม Host รับ bridge เฉพาะ expected old lease/scope ที่ยังตรงและไม่รับ stale renewal มาย้อน UUID ไม่มีการ resend ด้วยเวลา/404 หรือสร้าง save framework ใหม่
 
 ผลสำเร็จของ checkpoint เก่าเป็นหลักฐาน recovery ไม่ใช่หลักฐานว่า ordinary snapshot ที่เพิ่ง capture ถูกบันทึกแล้ว ก่อนสร้าง editable native frame ระบบตรวจ checkpoint ที่เก็บไว้ ใช้ bounded `waitForOperation` เดิมและ renew lease เดิมระหว่างรอ แล้วอ่าน canonical config ใหม่ก่อนเปิดแก้ หากผลยังยืนยันไม่ได้จะแสดง retry ที่มีขอบเขต ไม่ล้าง UUID หรือเปิดให้แก้ระหว่าง old commit ที่ยังอาจเกิดขึ้น ส่วน own request ที่ไม่ทราบผลจะคง native readOnly เดิม แต่เปิดปุ่มตรวจผลเดิม การ reconnect ของ plugin ตรวจ guard เดียวกันก่อนคืน editing ไม่อาศัย SDK edit counter หรือ hash ที่เดาเอง
@@ -564,7 +600,7 @@ Lookup404 ไม่ใช่หลักฐานว่าคำขอเก่�
 
 เมื่อ old outcome failed และ batch canceled ที่ยืนยันแล้ว จึงปล่อย checkpoint ให้ explicit Save/Submit ใหม่ได้ โดยคง File ที่ยังไม่ได้รับและใช้ version/UUID ใหม่ Known terminal failure หรือ negative-admission proof คืน native editing ตาม semantics เดิม ส่วน completed scalar ที่เปลี่ยน document key คง frozen จน host remount canonical เรียบร้อย Guard/identity-equal File clearing และ terminal replay dedupe เดิมยังอยู่
 
-Excel Fill Download ที่ไม่มี pending Files ยังคง ordinary unsaved edits ปัญหาเดิมเกิดจาก plugin อ่าน `window.parent.Asc` ข้าม origin ก่อนถึง export request แก้ผ่าน existing native command กับ pinned `Api.GetActiveSheet().worksheet.workbook.oApi` เพื่อยืนยัน active cell อย่างเข้มงวด แล้วใช้ `GetFileToDownload` เดิม ไม่ปลด worksheet/object protection ตาราง, replacement/removal, metadata-change reupload, Correction และ operator settlement มีตั๋วต่อเนื่องของตน ไม่ถือว่า source scalar นี้เป็นการยืนยันทั้งหมด
+Excel Fill Download ที่ไม่มี pending Files/removals ยังคง ordinary unsaved edits ปัญหาเดิมเกิดจาก plugin อ่าน `window.parent.Asc` ข้าม origin ก่อนถึง export request แก้ผ่าน existing native command กับ pinned `Api.GetActiveSheet().worksheet.workbook.oApi` เพื่อยืนยัน active cell อย่างเข้มงวด แล้วใช้ `GetFileToDownload` เดิม ไม่ปลด worksheet/object protection ตาราง, การแก้ไฟล์ผ่าน Correction, selected-history exports และ operator settlement ยังมีตั๋วต่อเนื่องของตน ไม่ถือว่า source Draft lifecycle นี้เป็นการยืนยันทั้งหมด
 
 อ้างอิง [scalar request/checkpoint](../../apps/server/src/responses/attachment-operation.ts), [durable attachment lifecycle](../../apps/server/src/ecm/attachments.ts), [strict canonical data](../../apps/server/src/responses/attachment-data.ts), [trusted native preparation](../../apps/server/src/operations/spreadsheet-document.ts), [original host pending Files](../../apps/web/src/features/onlyoffice/upload-poc-pending.ts), [original plugin save relay](../../apps/onlyoffice-plugin/src/upload-poc-save.js) และ [HTTP scalar acceptance](../../apps/server/test/http/ecm-scalar-save-submit.test.ts)
 
@@ -926,7 +962,7 @@ ER แสดงความสัมพันธ์หลักสำหรั�
 | การแก้เอกสาร | `EditorLease` กันหลาย session แก้ target เดียวกัน, `Operation` เก็บงาน asynchronous, `CallbackClaim` กัน callback ใช้ซ้ำ |
 | Catalog ต่อการเปิด editor | `PdmsProjectCatalogSession` ผูกรายชื่อโครงการกับผู้ใช้ auth session, lease, target และ document |
 | ECM auth และ Document Category | `EcmAuthState` เก็บ encrypted token, expiry, generation และ shared claim; `EcmCategoryCatalog` เก็บรายชื่อจริงที่มีอายุและผูก authoring scope ไม่เก็บ service credentials |
-| Scalar attachment lifecycle | `EcmAttachmentBatch` ผูก original checkpoint/actor/lease/document และ independent mutation hold; `EcmAttachmentVersion` เก็บ intent/paired receipt/cleanup state โดยไม่เก็บ bytes; `EcmAttachmentReference` fence references กับ deletion claim |
+| Scalar attachment lifecycle | `EcmAttachmentBatch` ผูก original checkpoint/actor/lease/document และ independent mutation hold; `EcmAttachmentVersion` เก็บ intent/paired receipt โดยไม่เก็บ bytes; `EcmAttachmentReference` fence references กับ deletion claim; `EcmAttachmentCleanup` เก็บ initiating operation/version และ durable old-file cleanup warning แยกจาก canceled batch |
 | การตรวจย้อนหลังและ cleanup | `AuditEvent` เก็บเหตุการณ์, `ObjectCleanupIntent` เก็บไฟล์ที่ต้องลบต่อ, `DeletionTombstone` กันข้อมูลที่ลบแล้วกลับมาจาก handoff เดิม |
 
 AI authoring sessions อยู่ใน workspace ชั่วคราวของบริการ ไม่ได้มี Prisma model ชื่อ AI session ใน schema นี้

@@ -3,6 +3,7 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
 import { env } from "@onlyoffice/env/server";
+import { z } from "zod";
 
 import { uploadPocGuid } from "./documents/spreadsheets/upload-poc-preview";
 import { fail } from "./http/errors";
@@ -79,6 +80,7 @@ export interface EditorCapabilityClaims {
   action: EditorCapabilityAction;
   actorId: string;
   documentKey: string;
+  documentServerKey?: string;
   expiresAt: number;
   formId: string;
   issuedAt: number;
@@ -98,6 +100,7 @@ export interface EditorCapabilityInput {
   action: EditorCapabilityAction;
   actorId: string;
   documentKey: string;
+  documentServerKey?: string;
   expiresAt?: number;
   formId: string;
   isSso?: boolean;
@@ -113,6 +116,7 @@ export interface EditorCapabilityInput {
 
 export interface CallbackClaim {
   documentKey: string;
+  documentServerKey: string;
   expiresAt: number;
   kind: "onlyoffice-callback";
   operationId: string;
@@ -121,6 +125,7 @@ export interface CallbackClaim {
 
 export interface CallbackClaimInput {
   documentKey: string;
+  documentServerKey: string;
   expiresAt?: number;
   operationId: string;
   operationType: string;
@@ -130,6 +135,7 @@ export interface EditorOptions {
   documentKind?: "docx" | "xlsx";
   spreadsheetBindings?: unknown;
   attachmentSavedData?: unknown;
+  attachmentCleanupWarning?: string | null;
   pdmsProjectCatalog?: PdmsProjectCatalog;
   pdmsProjectEnabled?: boolean;
   uploadPocSavedButtons?: {
@@ -147,6 +153,7 @@ export interface EditorOptions {
     renewUrl: string;
   };
   documentKey: string;
+  documentServerKey?: string;
   operationId?: string;
   prefill?: {
     data: Record<string, unknown>;
@@ -155,6 +162,33 @@ export interface EditorOptions {
   publicId: string;
   responseId?: string;
   tagAliases?: Record<string, string>;
+}
+
+const documentServerKeyPattern = /^folio-xlsx-[a-f0-9]{64}$/u;
+
+export function isDocumentServerKey(value: unknown): value is string {
+  return typeof value === "string" && documentServerKeyPattern.test(value);
+}
+
+/** One opening survives capability/lease refresh, never a closed native cache reuse. */
+export function xlsxEditorOpening(
+  documentKey: string,
+  ownerScope: string,
+  requestedOpeningId?: unknown
+): { documentServerKey: string; openingId: string } {
+  const opening = z.uuid().safeParse(requestedOpeningId ?? randomUUID());
+  if (!opening.success) {
+    fail(400, "invalid_editor_opening", "Editor opening identity is invalid");
+  }
+  return {
+    documentServerKey: `folio-xlsx-${createHmac(
+      "sha256",
+      env.EDITOR_CAPABILITY_SECRET
+    )
+      .update(JSON.stringify([documentKey, ownerScope, opening.data]))
+      .digest("hex")}`,
+    openingId: opening.data,
+  };
 }
 
 interface ConverterResponse {
@@ -306,7 +340,11 @@ function validPdmsCatalogScope(claims: JsonRecord): boolean {
 }
 
 function validOperationScope(claims: JsonRecord): boolean {
-  if (!validPdmsCatalogScope(claims)) {
+  if (
+    !validPdmsCatalogScope(claims) ||
+    (claims.documentServerKey !== undefined &&
+      !isDocumentServerKey(claims.documentServerKey))
+  ) {
     return false;
   }
   if (claims.action === "poll-operation") {
@@ -406,6 +444,7 @@ export function createCallbackUserdata(input: CallbackClaimInput): string {
   return signToken(
     {
       documentKey: input.documentKey,
+      documentServerKey: input.documentServerKey,
       expiresAt: input.expiresAt ?? expiresIn(tokenLifetimeSeconds),
       kind: "onlyoffice-callback",
       operationId: input.operationId,
@@ -426,6 +465,7 @@ export function callbackClaim(value: unknown): CallbackClaim | null {
     typeof claims.operationId !== "string" ||
     !uuidPattern.test(claims.operationId) ||
     typeof claims.operationType !== "string" ||
+    typeof claims.documentServerKey !== "string" ||
     !liveExpiry(claims.expiresAt)
   ) {
     return null;
@@ -498,7 +538,20 @@ export function editorConfig(
   const wordFileType = options.action === "template-edit" ? "docx" : "docxf";
   const documentFileType =
     options.documentKind === "xlsx" ? "xlsx" : wordFileType;
-  const { capabilities, lease, ...pluginOptions } = options;
+  const { capabilities, documentServerKey, lease, ...pluginOptions } = options;
+  const nativeKey =
+    options.documentKind === "xlsx" ? documentServerKey : options.documentKey;
+  if (
+    !nativeKey ||
+    (options.documentKind === "xlsx" &&
+      !documentServerKeyPattern.test(nativeKey))
+  ) {
+    fail(
+      500,
+      "invalid_editor_identity",
+      "The native editor identity is unavailable"
+    );
+  }
   const officeServerOrigin = trimOrigin(env.ONLYOFFICE_DOCUMENT_BASE_URL);
   const browserServerOrigin = trimOrigin(env.API_BASE);
   const bridgeId = crypto.randomUUID();
@@ -511,6 +564,7 @@ export function editorConfig(
       ? {
           action: options.action,
           bridgeId,
+          cleanupWarning: options.attachmentCleanupWarning ?? null,
           documentKey: options.documentKey,
           parentOrigin: exactOrigin(env.CORS_ORIGIN),
           publicId: options.publicId,
@@ -530,7 +584,7 @@ export function editorConfig(
   const config = {
     document: {
       fileType: documentFileType,
-      key: options.documentKey,
+      key: nativeKey,
       permissions: {
         comment: false,
         download: false,
@@ -614,6 +668,7 @@ export function editorConfig(
     apiUrl: trimOrigin(env.ONLYOFFICE_URL),
     bridge: {
       capabilities,
+      documentKey: options.documentKey,
       id: bridgeId,
       lease,
       pluginOrigin: exactOrigin(env.API_BASE),
@@ -633,7 +688,10 @@ export function readOnlyViewerConfig(
   const config = {
     document: {
       fileType: documentKind,
-      key: documentKey,
+      key:
+        documentKind === "xlsx"
+          ? xlsxEditorOpening(documentKey, "read-only").documentServerKey
+          : documentKey,
       permissions: {
         comment: false,
         download: false,
@@ -661,7 +719,7 @@ export function readOnlyViewerConfig(
 
 export interface OnlyOfficeClient {
   forceSave: (
-    documentKey: string,
+    documentServerKey: string,
     userdata: string
   ) => Promise<boolean | { url: string }>;
   convertDocxToPdf: (
@@ -670,7 +728,7 @@ export interface OnlyOfficeClient {
     documentKind?: "docx" | "xlsx"
   ) => Promise<Uint8Array>;
   downloadEditorWorkbook: (input: {
-    documentKey: string;
+    documentServerKey: string;
     signal: AbortSignal;
     snapshotUrl: string;
   }) => Promise<Uint8Array>;
@@ -768,10 +826,10 @@ const workbookCacheParameters = new Set([
 ]);
 
 // oxlint-disable-next-line complexity -- Validate the pinned editor's signed cache URL before making an upstream request.
-function workbookCachePath(value: string, documentKey: string): string {
+function workbookCachePath(value: string, documentServerKey: string): string {
   const publicOffice = new URL(env.ONLYOFFICE_URL);
   const publicPrefix = trimOrigin(publicOffice.pathname);
-  const expectedPrefix = `${publicPrefix}/cache/files/data/${documentKey}_`;
+  const expectedPrefix = `${publicPrefix}/cache/files/data/${documentServerKey}_`;
   const url = URL.canParse(value) ? new URL(value) : null;
   if (
     !url ||
@@ -799,7 +857,7 @@ function workbookCachePath(value: string, documentKey: string): string {
     !cacheSignature.test(searchParams.get("md5") ?? "") ||
     !cacheExpiration.test(expiration) ||
     Number(expiration) <= Math.floor(Date.now() / 1000) ||
-    shardKey !== documentKey
+    shardKey !== documentServerKey
   ) {
     fail(
       400,
@@ -878,8 +936,8 @@ export function createOnlyOfficeClient(
       return boundedResponseBytes(pdfResponse, maximumDownloadBytes);
     },
 
-    async downloadEditorWorkbook({ documentKey, signal, snapshotUrl }) {
-      const path = workbookCachePath(snapshotUrl, documentKey);
+    async downloadEditorWorkbook({ documentServerKey, signal, snapshotUrl }) {
+      const path = workbookCachePath(snapshotUrl, documentServerKey);
       try {
         const response = await request(`${trimOrigin(internalUrl)}${path}`, {
           redirect: "error",
@@ -900,9 +958,12 @@ export function createOnlyOfficeClient(
       }
     },
 
-    async forceSave(documentKey, userdata): Promise<boolean | { url: string }> {
-      const endpoint = `${trimOrigin(internalUrl)}/command?shardkey=${encodeURIComponent(documentKey)}`;
-      const command = { c: "forcesave", key: documentKey, userdata };
+    async forceSave(
+      documentServerKey,
+      userdata
+    ): Promise<boolean | { url: string }> {
+      const endpoint = `${trimOrigin(internalUrl)}/command?shardkey=${encodeURIComponent(documentServerKey)}`;
+      const command = { c: "forcesave", key: documentServerKey, userdata };
       const response = await request(endpoint, {
         body: JSON.stringify(command),
         headers: {

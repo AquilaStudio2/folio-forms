@@ -217,6 +217,7 @@ export const runCorrection = async (
   }
   const correctionReplayUserdata = createCallbackUserdata({
     documentKey: correctionDocumentKey,
+    documentServerKey: correctionDocumentKey,
     expiresAt: Math.floor(correctionReplayClaim.expiresAt.getTime() / 1000),
     operationId: correctionSaveBody.operationId,
     operationType: "save_correction",

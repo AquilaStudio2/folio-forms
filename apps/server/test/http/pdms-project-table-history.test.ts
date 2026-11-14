@@ -133,7 +133,7 @@ const names = {
 };
 interface Editor {
   config: { document: { key: string } };
-  bridge: { capabilities: Record<string, string> };
+  bridge: { documentKey: string; capabilities: Record<string, string> };
   pdmsProjectCatalog: { sessionId: string; status: string; names: string[] };
   openingId: string;
 }
@@ -317,7 +317,7 @@ const createFixture = async () => {
       `/api/forms/${publicId}/${submit ? "submit" : "draft"}`,
       editor.bridge.capabilities[submit ? "submit" : "save-draft"] as string,
       {
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         responseId: response.id,
         fillMethod: "onlyoffice",
         data: {},
@@ -342,7 +342,7 @@ const createFixture = async () => {
           name,
           ...(index === undefined
             ? {}
-            : { row: { index, documentKey: editor.config.document.key } }),
+            : { row: { index, documentKey: editor.bridge.documentKey } }),
         },
       })
     );
@@ -501,7 +501,7 @@ historyTest(
         sessionId: editor.pdmsProjectCatalog.sessionId,
         bindingId: "folio_project",
         name: oldName,
-        row: { index: 1, documentKey: editor.config.document.key },
+        row: { index: 1, documentKey: editor.bridge.documentKey },
       },
     });
     expect(rejected.status).toBe(422);
@@ -546,7 +546,7 @@ historyTest(
     const expected = await fixture.data();
     projectNames = [currentName];
     editor = await fixture.open();
-    const unchangedKey = editor.config.document.key;
+    const unchangedKey = editor.bridge.documentKey;
     const rejectedSnapshots = [
       // Copy to an empty physical row or another managed Field.
       callbackBytes(baseline, { A4: oldName, C4: "copied record A" }),
@@ -574,7 +574,7 @@ historyTest(
       expect(await fixture.bytes()).toEqual(baseline);
       expect(await fixture.data()).toEqual(expected);
       const retained = await fixture.open(editor.openingId);
-      expect(retained.config.document.key).toBe(unchangedKey);
+      expect(retained.bridge.documentKey).toBe(unchangedKey);
       expect(retained.pdmsProjectCatalog).toEqual(editor.pdmsProjectCatalog);
     }
     // A canonical worker failure must not commit ordinary inputs before the
@@ -589,7 +589,7 @@ historyTest(
     expect(invalidRow.errorMessage).toBeString();
     expect(await fixture.bytes()).toEqual(baseline);
     expect(await fixture.data()).toEqual(expected);
-    expect((await fixture.open(editor.openingId)).config.document.key).toBe(
+    expect((await fixture.open(editor.openingId)).bridge.documentKey).toBe(
       unchangedKey
     );
     // Supplying the same text as a picker choice does not confer history.
@@ -729,8 +729,8 @@ historyTest(
       projects: [],
     };
     expect(await fixture.data()).toEqual(expected);
-    const currentKey = editor.config.document.key;
-    expect(currentKey).not.toBe(deletedEditor.config.document.key);
+    const currentKey = editor.bridge.documentKey;
+    expect(currentKey).not.toBe(deletedEditor.bridge.documentKey);
     // The old action capability fails, even though physical row 4 exists again.
     expect((await fixture.action(deletedEditor)).status).toBe(409);
     expect(
@@ -740,7 +740,7 @@ historyTest(
             sessionId: editor.pdmsProjectCatalog.sessionId,
             bindingId: "folio_project",
             name: currentName,
-            row: { index: 0, documentKey: deletedEditor.config.document.key },
+            row: { index: 0, documentKey: deletedEditor.bridge.documentKey },
           },
         })
       ).status
@@ -770,7 +770,7 @@ historyTest(
     expect(await replay.json()).toEqual({ error: 0 });
     expect(await fixture.bytes()).toEqual(cleared);
     expect(await fixture.data()).toEqual(expected);
-    expect((await fixture.open(editor.openingId)).config.document.key).toBe(
+    expect((await fixture.open(editor.openingId)).bridge.documentKey).toBe(
       currentKey
     );
     // Native undo of the cleared row is an untrusted callback change.
@@ -789,7 +789,7 @@ historyTest(
             sessionId: editor.pdmsProjectCatalog.sessionId,
             bindingId: "folio_project",
             name: oldName,
-            row: { index: 0, documentKey: editor.config.document.key },
+            row: { index: 0, documentKey: editor.bridge.documentKey },
           },
         })
       ).status
@@ -824,7 +824,7 @@ historyTest(
             sessionId: editor.pdmsProjectCatalog.sessionId,
             bindingId: "folio_project",
             name: currentName,
-            row: { index: 0, documentKey: clearedEditor.config.document.key },
+            row: { index: 0, documentKey: clearedEditor.bridge.documentKey },
           },
         })
       ).status

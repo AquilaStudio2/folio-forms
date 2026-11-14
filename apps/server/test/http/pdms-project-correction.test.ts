@@ -143,7 +143,11 @@ const names = {
 };
 interface Editor {
   config: { document: { key: string; url: string } };
-  bridge: { capabilities: Record<string, string>; lease: { id: string } };
+  bridge: {
+    documentKey: string;
+    capabilities: Record<string, string>;
+    lease: { id: string };
+  };
   pdmsProjectCatalog: { sessionId: string; status: string; names: string[] };
   openingId: string;
 }
@@ -365,7 +369,7 @@ const fixture = async () => {
         final ? "save-correction" : "save-correction-workspace"
       ] as string,
       {
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         data: {},
         pdmsCatalogSessionId: editor.pdmsProjectCatalog.sessionId,
         ...body,
@@ -388,7 +392,7 @@ const fixture = async () => {
           name,
           ...(index === undefined
             ? {}
-            : { row: { index, documentKey: editor.config.document.key } }),
+            : { row: { index, documentKey: editor.bridge.documentKey } }),
         },
       })
     );
@@ -559,7 +563,7 @@ correctionTest(
             `/api/admin/results/${f.responseId}/correction${suffix}`,
             f.viewer,
             {
-              documentKey: editor.config.document.key,
+              documentKey: editor.bridge.documentKey,
               data: {},
               reason: "forbidden",
             }
@@ -619,7 +623,7 @@ correctionTest(
       "/api/editor/pdms-project-catalog/retry",
       editor.bridge.capabilities["save-correction"] as string,
       {
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         sessionId: editor.pdmsProjectCatalog.sessionId,
       },
       true
@@ -684,7 +688,7 @@ correctionTest(
       sessionId: current.pdmsProjectCatalog.sessionId,
       bindingId: "folio_project",
       name,
-      row: { index, documentKey: current.config.document.key },
+      row: { index, documentKey: current.bridge.documentKey },
     });
     expect(
       (await f.action(editor, { pdmsSelection: selection(foreign, 0) })).status
@@ -695,7 +699,7 @@ correctionTest(
           `/api/admin/results/${other.responseId}/correction/workspace`,
           editor.bridge.capabilities["save-correction-workspace"] as string,
           {
-            documentKey: editor.config.document.key,
+            documentKey: editor.bridge.documentKey,
             data: {},
             pdmsSelection: selection(editor, 0),
           },
@@ -738,7 +742,7 @@ correctionTest(
         await f.action(editor, {
           pdmsSelection: {
             ...selection(editor, 1),
-            row: { index: 1, documentKey: oldEditor.config.document.key },
+            row: { index: 1, documentKey: oldEditor.bridge.documentKey },
           },
         })
       ).status
@@ -777,7 +781,7 @@ correctionTest(
             `/api/forms/${f.publicId}/submit`,
             nextEditor.bridge.capabilities.submit as string,
             {
-              documentKey: nextEditor.config.document.key,
+              documentKey: nextEditor.bridge.documentKey,
               responseId: f.responseId,
               fillMethod: "onlyoffice",
               data: {},

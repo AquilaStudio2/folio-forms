@@ -168,7 +168,7 @@ interface Config {
       };
     };
   };
-  bridge: { capabilities: Record<string, string> };
+  bridge: { documentKey: string; capabilities: Record<string, string> };
   pdmsProjectCatalog?: { sessionId: string; status: string; names: string[] };
 }
 interface BindingState {
@@ -483,7 +483,7 @@ test("removing the last project source rejects a Retry that was waiting for the 
       "/api/editor/pdms-project-catalog/retry",
       editor.bridge.capabilities["configure-fields"] as string,
       {
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         sessionId: editor.pdmsProjectCatalog?.sessionId,
       },
       true
@@ -584,7 +584,7 @@ workflowTest(
       bindingId: "folio_kept_column",
       name: "Current project",
       sessionId: userEditor.pdmsProjectCatalog?.sessionId,
-      row: { index: 1, documentKey: userEditor.config.document.key },
+      row: { index: 1, documentKey: userEditor.bridge.documentKey },
     };
     expect(
       await poll(
@@ -592,7 +592,7 @@ workflowTest(
           `/api/forms/${f.publicId}/draft`,
           userEditor.bridge.capabilities["save-draft"] as string,
           {
-            documentKey: userEditor.config.document.key,
+            documentKey: userEditor.bridge.documentKey,
             responseId: response.id,
             fillMethod: "onlyoffice",
             data: {},
@@ -611,7 +611,7 @@ workflowTest(
           `/api/forms/${f.publicId}/submit`,
           userEditor.bridge.capabilities.submit as string,
           {
-            documentKey: userEditor.config.document.key,
+            documentKey: userEditor.bridge.documentKey,
             responseId: response.id,
             fillMethod: "onlyoffice",
             data: {},
@@ -713,7 +713,7 @@ workflowTest(
           "/api/editor/pdms-project-catalog/retry",
           editor.bridge.capabilities["configure-fields"] as string,
           {
-            documentKey: editor.config.document.key,
+            documentKey: editor.bridge.documentKey,
             sessionId: catalog?.sessionId,
           },
           true
@@ -728,7 +728,7 @@ workflowTest(
           `/api/admin/forms/${duplicateId}/publish`,
           editor.bridge.capabilities.publish as string,
           {
-            documentKey: editor.config.document.key,
+            documentKey: editor.bridge.documentKey,
             spreadsheetAnchors: anchors(snapshot, state.bindings),
           },
           true
@@ -769,7 +769,7 @@ workflowTest(
           `/api/forms/${duplicateId}/submit`,
           userEditor.bridge.capabilities.submit as string,
           {
-            documentKey: userEditor.config.document.key,
+            documentKey: userEditor.bridge.documentKey,
             responseId: duplicateStart.response.id,
             fillMethod: "onlyoffice",
             data: {},

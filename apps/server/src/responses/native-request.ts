@@ -1,3 +1,5 @@
+import { z } from "zod";
+
 import { maxTemplateArchiveExpandedBytes } from "../documents/package";
 import type {
   ResponsePictureDimensions,
@@ -40,6 +42,49 @@ interface NativeResponseRequest {
   attachments: Map<string, File>;
 }
 
+const validateAttachmentRemovals = (
+  input: JsonRecord,
+  bindings: SpreadsheetBindings | undefined,
+  files: ReadonlyMap<string, File>
+): void => {
+  const parsed = z
+    .array(
+      z
+        .object({
+          bindingId: z.string().min(1),
+          rowIndex: z.null(),
+        })
+        .strict()
+    )
+    .safeParse(input.attachmentRemovals ?? []);
+  if (!parsed.success || input.attachmentRemovals === null) {
+    fail(400, "invalid_attachment", "คำสั่งนำไฟล์ออกไม่ตรงกับช่องแนบ");
+  }
+  const seen = new Set<string>();
+  for (const removal of parsed.data) {
+    if (
+      seen.has(removal.bindingId) ||
+      files.has(removal.bindingId) ||
+      !bindings?.fields.some(
+        (field) => field.id === removal.bindingId && field.attachment
+      )
+    ) {
+      fail(400, "invalid_attachment", "ช่องนำไฟล์ออกไม่ถูกต้อง ซ้ำ หรือมีไฟล์ใหม่พร้อมกัน");
+    }
+    seen.add(removal.bindingId);
+  }
+  if (
+    (files.size || seen.size) &&
+    (input.rowChange !== undefined || input.pdmsSelection !== undefined)
+  ) {
+    fail(
+      400,
+      "invalid_attachment",
+      "คำสั่งภายในไม่ใช่การบันทึกไฟล์แนบ กรุณากดบันทึกฉบับร่างหรือส่งโดยตรง"
+    );
+  }
+};
+
 export async function nativeResponseRequest(
   request: Request,
   pictureFields: readonly ResponsePictureManifestField[],
@@ -47,14 +92,12 @@ export async function nativeResponseRequest(
 ): Promise<NativeResponseRequest> {
   const contentType = request.headers.get("content-type");
   if (!contentType || !/^multipart\/form-data(?:\s*;|$)/iu.test(contentType)) {
-    return {
-      attachments: new Map(),
-      input: await readJsonRecord(
-        request,
-        maxNativePictureMultipartOverheadBytes
-      ),
-      pictures: new Map(),
-    };
+    const input = await readJsonRecord(
+      request,
+      maxNativePictureMultipartOverheadBytes
+    );
+    validateAttachmentRemovals(input, bindings, new Map());
+    return { attachments: new Map(), input, pictures: new Map() };
   }
   const imageByteLimit = pictureFields.reduce(
     (total, field) => total + (field.pictureMaxBytes ?? 0),
@@ -162,12 +205,6 @@ export async function nativeResponseRequest(
   if (!input) {
     fail(400, "invalid_request", "payload is required");
   }
-  if (attachments.size && input.rowChange !== undefined) {
-    fail(
-      400,
-      "invalid_attachment",
-      "คำสั่งภายในตารางไม่ใช่การบันทึกไฟล์แนบ กรุณากดบันทึกฉบับร่างหรือส่งโดยตรง"
-    );
-  }
+  validateAttachmentRemovals(input, bindings, attachments);
   return { attachments, input, pictures };
 }
