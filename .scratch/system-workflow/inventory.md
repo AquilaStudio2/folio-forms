@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `22dbd6f9f6c8b055cc0ae50f960bb55e1eebac25`
+Commit: `1362d403580ae0f0f027f19791db35a663feea2f`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 

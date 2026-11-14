@@ -52,3 +52,9 @@
 หลัง merge พบว่า explicit source manifest ตกหล่น shared `workbook.ts` แม้ source worktree ที่ตรวจ native มี attachment extraction ครบ ส่งผลให้ initial scalar Save ใน worktree ของตั๋วถัดไปล้มเหลวก่อนทดสอบ metadata change ตรวจ actual tracked delta พบไฟล์ตกหล่นเพียงไฟล์นี้ และไม่พบ untracked source ที่ตกหล่น จึงนำ implementation ที่ตรวจแล้วมารวมใน integration
 
 ตรวจบน integration โดยตรงหลังคืน extraction: native HTTP 39 tests/679 assertions ผ่าน, scoped formatter/lint ผ่าน, root types 5/5 และ build 3/3 ผ่าน Full spreadsheet-unit ที่รันเพิ่มได้ 115 ผ่าน/2 ล้มเหลวจาก picture-editor mock ที่ยังไม่มี ECM model และ assertion ที่เปรียบเทียบ copied field manifest/defaults ทั้ง object บันทึกเป็นงานต้องแก้ก่อน final acceptance ไม่ถือเป็นผลผ่านทั้ง suite หลักฐาน `artifact://1104`, ผล types/build จาก parent job bg70 และ context pointer `local://ecm-integration-artifact-followup.md`
+
+แก้ full-unit follow-up โดยลบ assertion ที่เทียบ copied manifest/defaults และลบ editor mock-echo wrapper/harness ซึ่งแทน renderer ด้วยการคืน options เดิม ไม่เพิ่ม stub ของ ledger และไม่แก้ production เพื่อหลบ mock ที่ไม่ครบ คง round-trip/validation/picture-presence tests และตรวจ actual ONLYOFFICE Picture เพิ่ม ผล integration spreadsheet-unit 116 tests/301 assertions ผ่าน; native Picture 2 tests/16 assertions ผ่าน ครอบคลุม published/reopened geometry และ real protected-workbook insertion/replacement/removal/PDF export หลักฐาน `artifact://1125`
+
+Read-only CLI smoke บน integration ใช้ saved native XLSX จริงและ original completed Operation/Response ใน isolated browser DB ตรวจ exact canonical data/receipts, B10 URL, original size 49 bytes และ latest B6 note ผ่าน ไม่มี write และลบ throwaway script แล้ว
+
+Integration artifact correction commit `b90fcfb0840e22609f6d0b5e02001e04e00ba4e7`; obsolete test cleanup/evidence commit `1362d403580ae0f0f027f19791db35a663feea2f` ผลทดสอบข้างต้นตรวจบน integration ไม่ใช่การอนุมานจาก implementation worktree
