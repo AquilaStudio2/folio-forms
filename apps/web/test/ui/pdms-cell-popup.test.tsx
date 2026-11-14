@@ -12,11 +12,15 @@ vi.mock("@/lib/api", async (original) => ({
 beforeEach(() => {
   transport.get.mockResolvedValue({
     bridge: {
+      documentKey: "document",
       id: "opening-bridge",
       pdmsProjectPopup: { channelId: "opening-popup", documentKey: "document" },
       pluginOrigin: window.location.origin,
     },
-    config: { document: { key: "document" }, editorConfig: { mode: "edit" } },
+    config: {
+      document: { key: "native-document" },
+      editorConfig: { mode: "edit" },
+    },
   });
   vi.stubGlobal("DocsAPI", {
     DocEditor: class {

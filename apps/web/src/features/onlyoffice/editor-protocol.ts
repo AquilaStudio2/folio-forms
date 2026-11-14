@@ -62,6 +62,7 @@ export interface EditorConfig {
   apiScriptUrl?: string;
   apiUrl?: string;
   bridge?: {
+    documentKey?: string;
     capabilities?: Partial<Record<EditorAction | "export-workbook", string>>;
     id?: string;
     lease?: EditorLease;
