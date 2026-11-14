@@ -14,11 +14,16 @@ import { databaseErrorCode } from "../db-errors";
 import { validateResponseDocument } from "../documents/native-eligibility";
 import { callbackFieldMetadata } from "../documents/office-values";
 import {
+  readSpreadsheetWorkbook,
+  resolveSpreadsheetContract,
+} from "../documents/spreadsheets/workbook";
+import {
   requireActionEditorAuthorization,
   requireDocumentServerKey,
   requireEditorScope,
   operationEditorCapability,
 } from "../editor/authorization";
+import type { ActionEditorAuthorization } from "../editor/authorization";
 import {
   lockActiveEditorLease,
   requireActiveEditorLease,
@@ -41,6 +46,7 @@ import type { OperationMetadata } from "../operations/model";
 import { operationTypeForAction } from "../operations/model";
 import { processNativeResponseOperation } from "../operations/response-completion";
 import { pdmsOperationContext } from "../pdms/catalog";
+import { hasSpreadsheetAttachments } from "../responses/attachment-data";
 import {
   attachmentOperationAction,
   replayAttachmentOperation,
@@ -57,6 +63,33 @@ import { nativeResponseRequest } from "../responses/native-request";
 import { findOwnedResponse } from "../responses/query";
 import { DOCX_CONTENT_TYPE, readObject, objectKey } from "../storage";
 import type { RouteDependencies } from "./dependencies";
+
+const responseAttachmentBindings = async (
+  publishedTemplateId: string,
+  formId: string,
+  authorization: ActionEditorAuthorization
+) => {
+  const bindings = await spreadsheetBindingsForTemplate(publishedTemplateId);
+  if (!bindings.table?.columns.some((column) => column.attachment)) {
+    return bindings;
+  }
+  const response = await prisma.response.findFirst({
+    where: {
+      draftDocumentKey: authorization.capability.documentKey,
+      formId,
+      id: authorization.capability.targetId,
+      publishedTemplateId,
+      userId: authorization.actor.id,
+    },
+  });
+  if (!response?.draftObjectKey) {
+    fail(409, "stale_response", "ไม่พบเอกสารตารางปัจจุบันของคำตอบนี้");
+  }
+  return resolveSpreadsheetContract(
+    bindings,
+    readSpreadsheetWorkbook(await readObject(response.draftObjectKey))
+  );
+};
 
 export function registerResponseActionRoutes(
   app: Elysia,
@@ -135,7 +168,11 @@ export function registerResponseActionRoutes(
             : [];
         const attachmentBindings =
           form.documentKind === "xlsx" && form.publishedTemplate
-            ? await spreadsheetBindingsForTemplate(form.publishedTemplate.id)
+            ? await responseAttachmentBindings(
+                form.publishedTemplate.id,
+                form.id,
+                authorization
+              )
             : undefined;
         const nativeRequest = await nativeResponseRequest(
           request,
@@ -151,7 +188,7 @@ export function registerResponseActionRoutes(
           form.id,
           identity.id
         );
-        if (attachmentBindings?.fields.some((field) => field.attachment)) {
+        if (hasSpreadsheetAttachments(attachmentBindings)) {
           const replay = await replayAttachmentOperation(
             authorization,
             input,
@@ -197,7 +234,7 @@ export function registerResponseActionRoutes(
               })
             : {};
         if (
-          attachmentBindings?.fields.some((field) => field.attachment) &&
+          hasSpreadsheetAttachments(attachmentBindings) &&
           input.rowChange === undefined &&
           input.pdmsSelection === undefined
         ) {
@@ -351,7 +388,11 @@ export function registerResponseActionRoutes(
             : [];
         const attachmentBindings =
           form.documentKind === "xlsx" && form.publishedTemplate
-            ? await spreadsheetBindingsForTemplate(form.publishedTemplate.id)
+            ? await responseAttachmentBindings(
+                form.publishedTemplate.id,
+                form.id,
+                authorization
+              )
             : undefined;
         const nativeRequest = await nativeResponseRequest(
           request,
@@ -367,7 +408,7 @@ export function registerResponseActionRoutes(
           form.id,
           identity.id
         );
-        if (attachmentBindings?.fields.some((field) => field.attachment)) {
+        if (hasSpreadsheetAttachments(attachmentBindings)) {
           const replay = await replayAttachmentOperation(
             authorization,
             input,
@@ -411,7 +452,7 @@ export function registerResponseActionRoutes(
                 sessionId: input.pdmsCatalogSessionId,
               })
             : {};
-        if (attachmentBindings?.fields.some((field) => field.attachment)) {
+        if (hasSpreadsheetAttachments(attachmentBindings)) {
           const accepted = await startAttachmentOperation({
             action: "submit",
             authorization,

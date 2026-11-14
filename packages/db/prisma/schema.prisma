@@ -704,6 +704,7 @@ model EcmAttachmentVersion {
   accountKey     String    @map("account_key")
   bindingId      String    @map("binding_id")
   tag            String
+  rowIndex       Int?      @map("row_index")
   filename       String
   originalName   String    @map("original_name")
   sizeBytes      Int       @map("size_bytes")

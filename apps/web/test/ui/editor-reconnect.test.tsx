@@ -1025,7 +1025,11 @@ it("keeps POC Files in the host across native remount and rejects messages outsi
     bridge: {
       ...config().bridge,
       documentKey: "document-1",
-      uploadPoc: uploadOptions("document-1", "editor-bridge"),
+      uploadPoc: {
+        ...uploadOptions("document-1", "editor-bridge"),
+        publicId: "form",
+        responseId: "response",
+      },
     },
   };
   const nextConfig = {
@@ -1034,20 +1038,55 @@ it("keeps POC Files in the host across native remount and rejects messages outsi
       ...config().bridge,
       documentKey: "document-2",
       id: "next-bridge",
-      uploadPoc: uploadOptions("document-2", "next-bridge"),
+      uploadPoc: {
+        ...uploadOptions("document-2", "next-bridge"),
+        publicId: "form",
+        responseId: "response",
+      },
     },
   };
   transport.get
     .mockReset()
     .mockResolvedValueOnce(firstConfig)
-    .mockResolvedValue(nextConfig);
+    .mockImplementation((path: string) =>
+      Promise.resolve(
+        path === "/api/operations/project-operation"
+          ? {
+              operation: {
+                id: "project-operation",
+                responseId: "response",
+                result: {
+                  attachmentTransition: {
+                    fromDocumentKey: "document-1",
+                    newRowCount: 0,
+                    oldRowCount: 0,
+                    rowMapping: [],
+                    tableBindingId: null,
+                    toDocumentKey: "document-2",
+                  },
+                  documentKey: "document-2",
+                },
+                status: "completed",
+                type: "save_draft",
+              },
+            }
+          : nextConfig
+      )
+    );
+  const onBridge = vi.fn();
   const view = render(
-    <OnlyOfficeEditor configUrl="/editor-config" title="Excel files" />
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Excel files"
+      onBridgeMessage={onBridge}
+    />
   );
   const office = (await screen.findByTitle(
     "Office sandbox"
   )) as HTMLIFrameElement;
   const picker = pluginFrame(office);
+  send(picker.source, { type: "bridge-ready" });
+  picker.send.mockClear();
   const request = {
     bindingId: "folio_file",
     documentKey: "document-1",
@@ -1087,11 +1126,29 @@ it("keeps POC Files in the host across native remount and rejects messages outsi
     expect.objectContaining({ error: expect.any(String) }),
     window.location.origin
   );
+  send(picker.source, {
+    action: "save-draft",
+    operationId: "project-operation",
+    status: "completed",
+    type: "operation",
+  });
+  await waitFor(() =>
+    expect(onBridge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hasPendingAttachments: true,
+        operation: {
+          result: expect.objectContaining({ documentKey: "document-2" }),
+        },
+        status: "completed",
+      })
+    )
+  );
   view.rerender(
     <OnlyOfficeEditor
       configUrl="/editor-config"
       title="Excel files"
       revision={1}
+      onBridgeMessage={onBridge}
     />
   );
   await waitFor(() =>
@@ -1135,7 +1192,31 @@ it("keeps removal dirty and export-blocking, rejects forged cancellation, and re
       },
     },
   };
-  transport.get.mockResolvedValue(initial);
+  transport.get.mockImplementation((path: string) =>
+    Promise.resolve(
+      path === "/api/operations/remove-op"
+        ? {
+            operation: {
+              id: "remove-op",
+              responseId: "response",
+              result: {
+                attachmentTransition: {
+                  fromDocumentKey: "document",
+                  newRowCount: 0,
+                  oldRowCount: 0,
+                  rowMapping: [],
+                  tableBindingId: null,
+                  toDocumentKey: "document-2",
+                },
+                documentKey: "document-2",
+              },
+              status: "completed",
+              type: "save_draft",
+            },
+          }
+        : initial
+    )
+  );
   transport.postForm.mockResolvedValue({
     action: "save-draft",
     operationCapability: "cap",
@@ -1144,12 +1225,14 @@ it("keeps removal dirty and export-blocking, rejects forged cancellation, and re
   });
   const capture = createRef<CaptureWorkbook>();
   const dirty = vi.fn();
+  const onBridge = vi.fn();
   const view = render(
     <OnlyOfficeEditor
       configUrl="/editor-config"
       title="Draft attachments"
       captureWorkbookRef={capture}
       onDirtyChange={dirty}
+      onBridgeMessage={onBridge}
     />
   );
   const office = (await screen.findByTitle(
@@ -1196,18 +1279,51 @@ it("keeps removal dirty and export-blocking, rejects forged cancellation, and re
     type: "pending-file-save",
   });
   await waitFor(() => expect(transport.postForm).toHaveBeenCalledTimes(1));
+  await waitFor(() =>
+    expect(picker.send).toHaveBeenCalledWith(
+      expect.objectContaining({ operationId: "remove-op" }),
+      window.location.origin
+    )
+  );
   send(picker.source, {
     action: "save-draft",
     operationId: "remove-op",
     status: "completed",
     type: "operation",
   });
+  await waitFor(() =>
+    expect(onBridge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hasPendingAttachments: false,
+        operation: {
+          result: expect.objectContaining({ documentKey: "document-2" }),
+        },
+        status: "completed",
+      })
+    )
+  );
   expect(screen.getByText(warning)).toBeVisible();
   send(picker.source, { ...slot, type: "pending-file-get" });
   expect(picker.send).toHaveBeenLastCalledWith(
-    expect.objectContaining({ hasPending: false, removal: false }),
+    expect.objectContaining({
+      attachmentCommitUnresolved: false,
+      hasPending: false,
+      removal: false,
+    }),
     window.location.origin
   );
+  transport.get.mockResolvedValue({
+    ...initial,
+    bridge: {
+      ...initial.bridge,
+      documentKey: "document-2",
+      uploadPoc: {
+        ...initial.bridge.uploadPoc,
+        documentKey: "document-2",
+        savedData: { file: null },
+      },
+    },
+  });
   view.rerender(
     <OnlyOfficeEditor
       configUrl="/editor-config"
@@ -1215,6 +1331,7 @@ it("keeps removal dirty and export-blocking, rejects forged cancellation, and re
       revision={1}
       captureWorkbookRef={capture}
       onDirtyChange={dirty}
+      onBridgeMessage={onBridge}
     />
   );
   await waitFor(() =>
@@ -1787,4 +1904,162 @@ it("leaves pending state when the same failed attachment operation is replayed",
     status: "failed",
   });
   expect(screen.getByLabelText("Draft save status").textContent).toBe("failed");
+});
+
+const rowTransitionHostConfig = (documentKey: string, lastRow: number) => ({
+  ...config(),
+  bridge: {
+    ...config().bridge,
+    documentKey,
+    uploadPoc: {
+      ...uploadOptions(documentKey, "editor-bridge"),
+      publicId: "form",
+      responseId: "response",
+      spreadsheetBindings: {
+        fields: [],
+        locations: { folio_rows: { firstRow: 6, lastRow } },
+        table: {
+          anchor: "folio_rows",
+          columns: [
+            {
+              attachment: { category: "หลักฐาน" },
+              id: "folio_file",
+              key: "file",
+              type: "text",
+            },
+          ],
+          id: "folio_rows",
+          key: "items",
+        },
+      },
+    },
+  },
+});
+it("keeps pending table bytes through a real host remount only after reading the authoritative row Operation", async () => {
+  let current = rowTransitionHostConfig("document-1", 8);
+  const proof = createDeferred<unknown>();
+  transport.get.mockImplementation((path: string) =>
+    path === "/api/operations/row-operation"
+      ? proof.promise
+      : Promise.resolve(current)
+  );
+  const onBridge = vi.fn();
+  const view = render(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Row continuity"
+      onBridgeMessage={onBridge}
+    />
+  );
+  const office = await screen.findByTitle<HTMLIFrameElement>("Office sandbox");
+  const plugin = pluginFrame(office);
+  send(plugin.source, { type: "bridge-ready" });
+  const picker = pluginFrame(office);
+  const selected = new File([], "empty.TXT");
+  const request = {
+    bindingId: "folio_file",
+    documentKey: "document-1",
+    requestId: "row-file",
+    rowIndex: 2,
+    scopeIdentity: "actor/response",
+    source: "folio-upload-poc",
+    tag: "items.file",
+  };
+  send(picker.source, { ...request, file: selected, type: "pending-file-set" });
+  await waitFor(() =>
+    expect(picker.send).toHaveBeenCalledWith(
+      expect.objectContaining({ filename: "empty.TXT", size: 0 }),
+      window.location.origin
+    )
+  );
+  send(plugin.source, {
+    action: "save-draft",
+    operation: { result: { documentKey: "forged-document" } },
+    operationId: "row-operation",
+    status: "completed",
+    type: "operation",
+  });
+  await waitFor(() =>
+    expect(transport.get).toHaveBeenCalledWith("/api/operations/row-operation")
+  );
+  expect(onBridge).not.toHaveBeenCalledWith(
+    expect.objectContaining({ status: "completed" })
+  );
+  expect(screen.getByTitle("Office sandbox")).toBe(office);
+  await act(async () => {
+    proof.resolve({
+      operation: {
+        id: "row-operation",
+        responseId: "response",
+        result: {
+          attachmentTransition: {
+            fromDocumentKey: "document-1",
+            newRowCount: 2,
+            oldRowCount: 3,
+            rowMapping: [null, 0, 1],
+            tableBindingId: "folio_rows",
+            toDocumentKey: "document-2",
+          },
+          documentKey: "document-2",
+        },
+        status: "completed",
+        type: "save_draft",
+      },
+    });
+    await proof.promise;
+  });
+  await waitFor(() =>
+    expect(onBridge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hasPendingAttachments: true,
+        operation: {
+          result: expect.objectContaining({ documentKey: "document-2" }),
+        },
+        status: "completed",
+      })
+    )
+  );
+  current = rowTransitionHostConfig("document-2", 7);
+  view.rerender(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      revision={1}
+      title="Row continuity"
+      onBridgeMessage={onBridge}
+    />
+  );
+  await waitFor(() =>
+    expect(screen.getByTitle("Office sandbox")).not.toBe(office)
+  );
+  const nextOffice = screen.getByTitle<HTMLIFrameElement>("Office sandbox");
+  const nextPicker = pluginFrame(nextOffice);
+  send(nextPicker.source, {
+    ...request,
+    documentKey: "document-2",
+    rowIndex: 1,
+    type: "pending-file-get",
+  });
+  await waitFor(() =>
+    expect(nextPicker.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        filename: "empty.TXT",
+        hasPending: true,
+        size: 0,
+      }),
+      window.location.origin
+    )
+  );
+  send(nextPicker.source, {
+    ...request,
+    documentKey: "document-2",
+    rowIndex: 0,
+    type: "pending-file-get",
+  });
+  await waitFor(() =>
+    expect(nextPicker.send).toHaveBeenLastCalledWith(
+      expect.objectContaining({ filename: null, hasPending: true }),
+      window.location.origin
+    )
+  );
+  view.unmount();
 });

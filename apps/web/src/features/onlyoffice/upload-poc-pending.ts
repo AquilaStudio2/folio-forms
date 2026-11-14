@@ -151,6 +151,7 @@ interface PendingAttachmentSnapshot {
 /** Selected bytes stay in host memory; only scoped checkpoint identities survive reload. */
 export class UploadPocPendingFiles {
   private scopeIdentity = "";
+  private documentKey = "";
   private readonly files = new Map<string, { file: File; tag: unknown }>();
   private readonly invalidFiles = new Map<string, string>();
   private readonly removals = new Map<string, { tag: unknown }>();
@@ -160,10 +161,49 @@ export class UploadPocPendingFiles {
   private readonly checkpoints = new Map<string, PendingAttachmentSnapshot>();
   private readonly operationCheckpoints = new Map<string, string>();
 
-  complete(operationId: string): void {
+  complete(
+    operationId: string,
+    options?: UploadPocHostOptions,
+    result?: { documentKey?: string; attachmentTransition?: unknown }
+  ): void {
     const snapshot = this.accepted.get(operationId);
+    const hasRemaining =
+      this.invalidFiles.size > 0 ||
+      [...this.files].some(
+        ([key, value]) => snapshot?.files.get(key) !== value.file
+      ) ||
+      [...this.removals].some(
+        ([key, value]) => snapshot?.removals.get(key) !== value
+      );
+    let mapping: (number | null)[] | undefined;
+    if (
+      options &&
+      hasRemaining &&
+      typeof result?.documentKey === "string" &&
+      result.documentKey !== options.documentKey
+    ) {
+      if (this.documentKey && this.documentKey !== options.documentKey) {
+        throw new Error("ผลบันทึกเป็นของเอกสารเก่า กรุณารักษาไฟล์ในหน้าปัจจุบัน");
+      }
+      const transition = UploadPocPendingFiles.verifyTransitionScope(
+        options,
+        result.documentKey,
+        result.attachmentTransition
+      );
+      mapping = UploadPocPendingFiles.verifyRowDestinations(
+        transition.rowMapping,
+        transition.newRowCount
+      );
+      this.requirePendingRowsPreserved(mapping);
+    }
     if (snapshot) {
       this.acceptSnapshot(snapshot);
+    }
+    if (mapping) {
+      this.remapPendingRows(mapping);
+    }
+    if (result?.documentKey) {
+      this.documentKey = result.documentKey;
     }
     this.accepted.delete(operationId);
     const checkpoint = this.operationCheckpoints.get(operationId);
@@ -171,6 +211,115 @@ export class UploadPocPendingFiles {
       this.clearCheckpoint(checkpoint);
     }
     this.operationCheckpoints.delete(operationId);
+  }
+
+  private static verifyTransitionScope(
+    options: UploadPocHostOptions,
+    documentKey: string,
+    transition: unknown
+  ): { rowMapping: unknown[]; newRowCount: number } {
+    const bindings = record(options.spreadsheetBindings)
+      ? options.spreadsheetBindings
+      : {};
+    const table = record(bindings.table) ? bindings.table : null;
+    const locations = record(bindings.locations) ? bindings.locations : {};
+    const bodyValue =
+      table && typeof table.anchor === "string"
+        ? locations[table.anchor]
+        : null;
+    const body = record(bodyValue) ? bodyValue : null;
+    const oldRowCount = body
+      ? Number(body.lastRow) - Number(body.firstRow) + 1
+      : 0;
+    if (
+      !record(transition) ||
+      transition.fromDocumentKey !== options.documentKey ||
+      transition.toDocumentKey !== documentKey ||
+      transition.tableBindingId !== (table?.id ?? null) ||
+      transition.oldRowCount !== oldRowCount ||
+      !Number.isSafeInteger(transition.newRowCount) ||
+      Number(transition.newRowCount) < 0 ||
+      !Array.isArray(transition.rowMapping) ||
+      transition.rowMapping.length !== oldRowCount
+    ) {
+      throw new Error(
+        "ยังยืนยัน mapping ของไฟล์กับเอกสารใหม่ไม่ได้ กรุณารักษาหน้านี้ไว้ ไม่ต้องโหลดหน้าใหม่"
+      );
+    }
+    return {
+      newRowCount: Number(transition.newRowCount),
+      rowMapping: transition.rowMapping,
+    };
+  }
+
+  private static verifyRowDestinations(
+    rows: unknown[],
+    newRowCount: number
+  ): (number | null)[] {
+    const mapping: (number | null)[] = [];
+    const destinations = new Set<number>();
+    for (const row of rows) {
+      if (
+        row !== null &&
+        (typeof row !== "number" ||
+          !Number.isSafeInteger(row) ||
+          row < 0 ||
+          row >= newRowCount ||
+          destinations.has(row))
+      ) {
+        throw new Error("ตำแหน่งแถวใหม่ไม่ถูกต้อง กรุณารักษาไฟล์ในหน้าปัจจุบัน");
+      }
+      mapping.push(row);
+      if (row !== null) {
+        destinations.add(row);
+      }
+    }
+    return mapping;
+  }
+
+  private requirePendingRowsPreserved(
+    mapping: readonly (number | null)[]
+  ): void {
+    for (const key of [
+      ...this.files.keys(),
+      ...this.removals.keys(),
+      ...this.invalidFiles.keys(),
+    ]) {
+      const [, rowIndex] = JSON.parse(key) as [string, number | null];
+      if (
+        rowIndex !== null &&
+        (mapping[rowIndex] === null || mapping[rowIndex] === undefined)
+      ) {
+        throw new Error(
+          "แถวที่มีไฟล์ค้างถูกนำออก จึงยังเปลี่ยนเอกสารไม่ได้ กรุณารักษาหน้านี้ไว้"
+        );
+      }
+    }
+  }
+
+  private remapPendingRows(rowMapping: readonly (number | null)[]): void {
+    const remap = <T>(entries: Map<string, T>): void => {
+      const next = [...entries].map(([key, value]) => {
+        const [bindingId, rowIndex] = JSON.parse(key) as [
+          string,
+          number | null,
+        ];
+        return [
+          JSON.stringify([
+            bindingId,
+            rowIndex === null ? null : rowMapping[rowIndex],
+          ]),
+          value,
+        ] as const;
+      });
+      entries.clear();
+      for (const [key, value] of next) {
+        entries.set(key, value);
+      }
+    };
+    remap(this.files);
+    remap(this.removals);
+    remap(this.invalidFiles);
   }
 
   private clearCheckpoint(
@@ -390,6 +539,7 @@ export class UploadPocPendingFiles {
       return false;
     }
     this.setScope(options.scopeIdentity);
+    this.bindDocument(options);
     this.checkpointStorageKey = `${checkpointStoragePrefix}${options.scopeIdentity}`;
     const checkpoint = sessionStorage.getItem(this.checkpointStorageKey);
     if (!checkpoint) {
@@ -501,8 +651,11 @@ export class UploadPocPendingFiles {
     };
     const attachmentRemovals = [...snapshot.removals.keys()].map((key) => {
       const [bindingId, rowIndex] = JSON.parse(key) as [string, number | null];
-      if (rowIndex !== null) {
-        throw new Error("ยังไม่รองรับการนำไฟล์รายแถวออก กรุณารักษาหน้านี้ไว้ก่อน");
+      if (
+        typeof bindingId !== "string" ||
+        (rowIndex !== null && !Number.isSafeInteger(rowIndex))
+      ) {
+        throw new Error("ตำแหน่งไฟล์แนบไม่ถูกต้อง กรุณารักษาหน้านี้ไว้");
       }
       return { bindingId, rowIndex };
     });
@@ -521,12 +674,10 @@ export class UploadPocPendingFiles {
     );
     for (const [key, file] of snapshot.files) {
       const [bindingId, rowIndex] = JSON.parse(key) as [string, number | null];
-      if (rowIndex !== null) {
-        throw new Error("มีไฟล์รายแถวค้างอยู่ กรุณารักษาหน้านี้ไว้ก่อน");
-      }
       // A relayed disk File's renderer grant cannot serialize directly; this Blob part preserves bytes without replacing pending File identity.
+      // Multipart field names escape quotes; encode only the wire name, not the pending slot key.
       body.set(
-        `attachment:${bindingId}`,
+        `attachment:${rowIndex === null ? bindingId : encodeURIComponent(key)}`,
         new Blob([file], { type: file.type }),
         file.name
       );
@@ -583,6 +734,9 @@ export class UploadPocPendingFiles {
   }
 
   setScope(scopeIdentity: string): void {
+    if (scopeIdentity !== this.scopeIdentity && this.hasPending()) {
+      throw new Error("มีไฟล์ค้างในเอกสารเดิม กรุณาบันทึกหรือยกเลิกก่อนเปลี่ยนขอบเขต");
+    }
     if (scopeIdentity !== this.scopeIdentity) {
       this.files.clear();
       this.invalidFiles.clear();
@@ -593,7 +747,19 @@ export class UploadPocPendingFiles {
       this.failedCheckpoints.clear();
       this.checkpointStorageKey = "";
       this.scopeIdentity = scopeIdentity;
+      this.documentKey = "";
     }
+  }
+
+  private bindDocument(options: UploadPocHostOptions): void {
+    if (
+      this.documentKey &&
+      this.documentKey !== options.documentKey &&
+      this.hasPending()
+    ) {
+      throw new Error("ยังยืนยันการย้ายไฟล์ไปเอกสารนี้ไม่ได้ กรุณารักษาหน้าปัจจุบันไว้");
+    }
+    this.documentKey = options.documentKey;
   }
 
   // oxlint-disable-next-line complexity -- Validate every scope, binding, row and File at this browser-only message boundary.
@@ -620,6 +786,7 @@ export class UploadPocPendingFiles {
       throw new Error("การเชื่อมต่อไฟล์ในหน้านี้ไม่ตรงกับเอกสารปัจจุบัน");
     }
     this.setScope(options.scopeIdentity);
+    this.bindDocument(options);
     const bindings = record(options.spreadsheetBindings)
       ? options.spreadsheetBindings
       : {};
@@ -636,17 +803,23 @@ export class UploadPocPendingFiles {
       Number.isSafeInteger(body.lastRow)
         ? Number(body.lastRow) - Number(body.firstRow) + 1
         : null;
-    // A trusted refreshed authoring contract invalidates removed/renamed mappings.
+    // A changed contract cannot discard selected bytes or silently retarget a pending removal.
     for (const [key, pending] of this.files) {
-      const [bindingId] = JSON.parse(key) as unknown[];
-      if (currentBindingTag(bindings, bindingId) !== pending.tag) {
-        this.files.delete(key);
+      const [bindingId, rowIndex] = JSON.parse(key) as [string, number | null];
+      if (
+        currentBindingTag(bindings, bindingId) !== pending.tag ||
+        (rowIndex !== null && (rowCount === null || rowIndex >= rowCount))
+      ) {
+        throw new Error("ตำแหน่งไฟล์ที่เลือกเปลี่ยนแล้ว กรุณารักษาหน้าปัจจุบันไว้");
       }
     }
     for (const [key, pending] of this.removals) {
-      const [bindingId] = JSON.parse(key) as unknown[];
-      if (currentBindingTag(bindings, bindingId) !== pending.tag) {
-        this.removals.delete(key);
+      const [bindingId, rowIndex] = JSON.parse(key) as [string, number | null];
+      if (
+        currentBindingTag(bindings, bindingId) !== pending.tag ||
+        (rowIndex !== null && (rowCount === null || rowIndex >= rowCount))
+      ) {
+        throw new Error("ตำแหน่งนำไฟล์ออกเปลี่ยนแล้ว กรุณารักษาหน้าปัจจุบันไว้");
       }
     }
     const hasPending = this.hasPending();
@@ -681,15 +854,40 @@ export class UploadPocPendingFiles {
         if (rowCount === null || value.rowIndex !== rowCount) {
           throw new Error("POC เพิ่มแถวได้เฉพาะท้ายตาราง เพื่อรักษาไฟล์ที่เลือกไว้");
         }
+      } else if (value.action === "delete-row") {
+        if (
+          rowCount === null ||
+          !Number.isSafeInteger(value.rowIndex) ||
+          Number(value.rowIndex) < 0 ||
+          Number(value.rowIndex) >= rowCount
+        ) {
+          throw new Error("ตำแหน่งแถวที่จะลบไม่ตรงกับตารางปัจจุบัน");
+        }
+        const pendingKeys = [
+          ...this.files.keys(),
+          ...this.removals.keys(),
+          ...this.invalidFiles.keys(),
+        ];
+        if (
+          pendingKeys.some(
+            (key) =>
+              (JSON.parse(key) as [string, number | null])[1] === value.rowIndex
+          )
+        ) {
+          throw new Error(
+            "แถวนี้มีไฟล์หรือการนำไฟล์ออกที่ยังไม่บันทึก กรุณาบันทึกหรือยกเลิกก่อนลบแถว"
+          );
+        }
       } else if (
         hasPending &&
-        !["save-draft", "submit"].includes(String(value.action))
+        ![
+          "save-draft",
+          "submit",
+          "change-project",
+          "save-correction-workspace",
+        ].includes(String(value.action))
       ) {
-        throw new Error(
-          value.action === "delete-row"
-            ? "มีไฟล์ที่เลือกค้างไว้ในหน้านี้ POC ยังลบแถวไม่ได้ กรุณาเปิดหน้าใหม่เพื่อทิ้งไฟล์ที่เลือกก่อน"
-            : "ไฟล์ที่เลือกยังอยู่เฉพาะหน้านี้ ยังไม่อัปโหลดหรือบันทึกถาวร POC จึงยังบันทึกหรือส่งข้อมูลพร้อมไฟล์ไม่ได้"
-        );
+        throw new Error("มีไฟล์ค้างที่ยังไม่ได้บันทึก กรุณารักษาหน้านี้ไว้");
       }
       return { allowed: true, hasPending };
     }
@@ -739,14 +937,12 @@ export class UploadPocPendingFiles {
       throw new Error("POC ยังไม่รองรับการเปลี่ยนไฟล์ระหว่างแก้ไขข้อมูลที่ส่งแล้ว");
     }
     const key = JSON.stringify([value.bindingId, value.rowIndex]);
+    const slotLabel = `ช่อง ${String(value.tag)}${value.rowIndex === null ? "" : ` / แถว ${Number(value.rowIndex) + 1}`}`;
     if (
       ["pending-file-cancel", "pending-file-remove"].includes(
         String(value.type)
       )
     ) {
-      if (value.rowIndex !== null) {
-        throw new Error("ยังไม่รองรับการเปลี่ยนไฟล์รายแถว กรุณารักษาหน้านี้ไว้ก่อน");
-      }
       this.files.delete(key);
       this.invalidFiles.delete(key);
       this.removals.delete(key);
@@ -758,10 +954,10 @@ export class UploadPocPendingFiles {
       if (!(value.file instanceof File) || value.file.size > 10_000_000) {
         this.invalidFiles.set(
           key,
-          `ช่อง ${String(value.tag)}: กรุณาเลือกไฟล์จริงขนาดไม่เกิน 10,000,000 ไบต์ใหม่ก่อนบันทึก`
+          `${slotLabel}: กรุณาเลือกไฟล์จริงขนาดไม่เกิน 10,000,000 ไบต์ใหม่ก่อนบันทึก`
         );
         throw new Error(
-          `ช่อง ${String(value.tag)}: ไฟล์ ${value.file instanceof File ? value.file.size : "ไม่ทราบ"} ไบต์ เกินขนาด 10,000,000 ไบต์หรือไม่ใช่ไฟล์จริง`
+          `${slotLabel}: ไฟล์ ${value.file instanceof File ? value.file.size : "ไม่ทราบ"} ไบต์ เกินขนาด 10,000,000 ไบต์หรือไม่ใช่ไฟล์จริง`
         );
       }
       this.invalidFiles.delete(key);
@@ -769,9 +965,24 @@ export class UploadPocPendingFiles {
       this.files.set(key, { file: value.file, tag: value.tag });
     }
     const file = this.files.get(key)?.file;
-    const saved = record(options.savedData)
-      ? options.savedData[String(value.tag)]
-      : null;
+    const savedData = record(options.savedData) ? options.savedData : {};
+    const savedRows =
+      table &&
+      typeof table.key === "string" &&
+      Array.isArray(savedData[table.key])
+        ? savedData[table.key]
+        : [];
+    const saved = record(scalar)
+      ? savedData[String(value.tag)]
+      : ((savedRows as unknown[]).flatMap((row) => {
+          if (!record(row)) {
+            return [];
+          }
+          const attachment = row[String(field.key)];
+          return record(attachment) && attachment.row_index === value.rowIndex
+            ? [attachment]
+            : [];
+        })[0] ?? null);
     return {
       cleanupWarning: options.cleanupWarning ?? null,
       filename: file?.name ?? null,

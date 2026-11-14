@@ -893,7 +893,7 @@ export const OnlyOfficeEditor = ({
     };
 
     // oxlint-disable-next-line complexity -- Dispatches the trusted bridge protocol and capability renewal in one handler.
-    const handleBridgeMessage = (event: MessageEvent<unknown>) => {
+    const handleBridgeMessage = async (event: MessageEvent<unknown>) => {
       if (event.origin !== pluginOrigin) {
         return;
       }
@@ -1069,7 +1069,73 @@ export const OnlyOfficeEditor = ({
         terminalOperationIdsRef.current.add(message.operationId);
       }
       if (message.status === "completed" && message.operationId) {
-        uploadPocFilesRef.current?.complete(message.operationId);
+        const completedOperationId = message.operationId;
+        try {
+          const options = config.bridge?.uploadPoc;
+          if (
+            options &&
+            uploadPocFilesRef.current?.hasPending() &&
+            ["save-draft", "save-correction-workspace"].includes(message.action)
+          ) {
+            const verified = await apiGet<{
+              operation: {
+                id: string;
+                responseId: string;
+                status: string;
+                type: string;
+                result: unknown;
+              };
+            }>(`/api/operations/${message.operationId}`);
+            if (cancelled || pinnedSourceRef.current !== event.source) {
+              return;
+            }
+            if (
+              verified.operation.id !== message.operationId ||
+              verified.operation.responseId !== options.responseId ||
+              verified.operation.status !== "completed" ||
+              verified.operation.type !==
+                (message.action === "save-draft"
+                  ? "save_draft"
+                  : "save_correction")
+            ) {
+              throw new Error(
+                "ยังยืนยัน Operation ที่เปลี่ยนตำแหน่งไฟล์ไม่ได้ กรุณารักษาหน้านี้ไว้"
+              );
+            }
+            const trusted = parseOperationMessage(
+              {
+                ...message,
+                operation: { result: verified.operation.result },
+              },
+              bridgeId
+            );
+            if (!trusted) {
+              throw new Error(
+                "ผล mapping ของเอกสารใหม่ไม่ถูกต้อง กรุณารักษาไฟล์ในหน้าปัจจุบัน"
+              );
+            }
+            message = trusted;
+          }
+          uploadPocFilesRef.current?.complete(
+            completedOperationId,
+            config.bridge?.uploadPoc,
+            message.operation?.result
+          );
+        } catch (transitionError) {
+          const detail =
+            transitionError instanceof Error
+              ? transitionError.message
+              : "ยังยืนยันตำแหน่งไฟล์หลังบันทึกไม่ได้ กรุณารักษาหน้านี้ไว้";
+          setAttachmentNotice(detail);
+          terminalOperationIdsRef.current.delete(completedOperationId);
+          onBridgeMessageRef.current?.({
+            ...message,
+            error: detail,
+            hasPendingAttachments: true,
+            status: "failed",
+          });
+          return;
+        }
         setAttachmentNotice(
           uploadPocFilesRef.current?.hasPending()
             ? "มีไฟล์ที่เลือกใหม่ยังไม่อยู่ในรอบบันทึกที่สำเร็จ กรุณารักษาหน้านี้ไว้"

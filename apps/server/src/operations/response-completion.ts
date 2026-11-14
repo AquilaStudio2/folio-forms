@@ -52,6 +52,9 @@ export async function completeDraftOperation(
   const nextDocumentKey = metadata.nextDocumentKey ?? documentKey;
   const result = {
     documentKey: nextDocumentKey,
+    ...(metadata.attachmentTransition
+      ? { attachmentTransition: metadata.attachmentTransition }
+      : {}),
     publicId: metadata.publicId,
     responseId: response.id,
   };
@@ -416,6 +419,9 @@ export async function completeCorrectionWorkspaceOperation(
         operation.id,
         {
           documentKey: metadata.nextDocumentKey,
+          ...(metadata.attachmentTransition
+            ? { attachmentTransition: metadata.attachmentTransition }
+            : {}),
           responseId: current.id,
           submissionId: submission.id,
           workspaceSaved: true,

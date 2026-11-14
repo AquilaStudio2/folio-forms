@@ -29,6 +29,7 @@ import {
   stripSpreadsheetUploadPoc,
   validateSpreadsheetAttachmentButtons,
 } from "../documents/spreadsheets/upload-poc";
+import type { SpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
 import {
   extractSpreadsheetData,
   readSpreadsheetWorkbook,
@@ -44,9 +45,12 @@ import { spreadsheetPictureFramesForTemplate } from "../forms/spreadsheet-pictur
 import { fail } from "../http/errors";
 import { pdmsSelectionValue } from "../pdms/selection";
 import {
-  canonicalAttachment,
+  canonicalTableAttachments,
+  spreadsheetAttachmentSlots,
+  hasSpreadsheetAttachments,
   checkAttachmentJsonBytes,
 } from "../responses/attachment-data";
+import type { TableAttachment } from "../responses/attachment-data";
 import { readObject } from "../storage";
 import type { OperationMetadata } from "./model";
 
@@ -64,8 +68,8 @@ const rangeAddress = (range: SpreadsheetRange): string =>
 
 export type PrepareAttachments = (
   contract: SpreadsheetContract,
-  data: Record<string, unknown>,
-  savedData: Record<string, unknown>
+  savedData: Record<string, unknown>,
+  workbook: SpreadsheetWorkbook
 ) => Promise<Record<string, unknown>>;
 
 // oxlint-disable-next-line complexity -- Actions share the trusted-workbook processing boundary.
@@ -243,7 +247,7 @@ export const prepareSpreadsheetOperation = async (
     : [];
   const inputs = spreadsheetInputRanges(contract, locked);
   let sourceData = response.draftData;
-  if (correction && contract.fields.some((field) => field.attachment)) {
+  if (correction && hasSpreadsheetAttachments(contract)) {
     const source = metadata.baseRevision
       ? await prisma.correction.findFirst({
           select: { data: true },
@@ -266,7 +270,7 @@ export const prepareSpreadsheetOperation = async (
     sourceData && typeof sourceData === "object" && !Array.isArray(sourceData)
       ? (sourceData as Record<string, unknown>)
       : {};
-  if (contract.fields.some((field) => field.attachment)) {
+  if (hasSpreadsheetAttachments(contract)) {
     validateSpreadsheetAttachmentButtons(
       baseBytes,
       storedSpreadsheetBindings(contract)
@@ -278,39 +282,10 @@ export const prepareSpreadsheetOperation = async (
   }
   let attachmentData = savedData;
   if (prepareAttachments) {
-    const native = extractSpreadsheetData(
-      current,
-      contract,
-      metadata.action === "submit",
-      savedData
-    );
-    const ordinaryErrors = native.errors.filter(
-      (error) =>
-        !contract.fields.some(
-          (field) =>
-            field.attachment &&
-            error.message === `Required attachment: ${field.label}`
-        )
-    );
-    if (ordinaryErrors.length && metadata.action === "submit") {
-      throw new SpreadsheetValidationError(ordinaryErrors);
-    }
-    attachmentData = await prepareAttachments(contract, native.data, savedData);
+    attachmentData = await prepareAttachments(contract, savedData, current);
   }
   const attachmentAddresses = new Set(
-    contract.fields
-      .filter((field) => field.attachment)
-      .map((field) => {
-        const range = contract.locations[field.anchor];
-        if (!range) {
-          fail(
-            422,
-            "invalid_attachment",
-            `ตำแหน่งช่อง ${field.key} ไม่ตรงกับเอกสาร`
-          );
-        }
-        return `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`;
-      })
+    [...spreadsheetAttachmentSlots(contract)].map((slot) => slot.address)
   );
   const values = [...current.cells.values()]
     .filter(
@@ -389,18 +364,30 @@ export const prepareSpreadsheetOperation = async (
       throw new Error("Upload POC supports appending table rows only");
     }
   }
-  for (const field of contract.fields.filter(
-    (candidate) => candidate.attachment
-  )) {
-    const range = contract.locations[field.anchor];
-    if (!range) {
-      fail(422, "invalid_attachment", `ตำแหน่งช่อง ${field.key} ไม่ตรงกับเอกสาร`);
-    }
-    const attachment = canonicalAttachment(attachmentData[field.key]);
-    values.push({
-      address: `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`,
-      value: attachment?.file_link ?? "",
-    });
+  const tableBody = contract.table
+    ? contract.locations[contract.table.anchor]
+    : undefined;
+  const attachedRows =
+    contract.table && tableBody
+      ? canonicalTableAttachments(
+          attachmentData,
+          contract.table.key,
+          contract.table.columns
+            .filter((column) => column.attachment)
+            .map((column) => column.key),
+          tableBody.lastRow - tableBody.firstRow + 1
+        )
+      : new Map<number, Record<string, TableAttachment>>();
+  for (const slot of spreadsheetAttachmentSlots(contract)) {
+    const value =
+      slot.rowIndex === null
+        ? attachmentData[slot.field.key]
+        : attachedRows.get(slot.rowIndex)?.[slot.field.key];
+    const link =
+      value && typeof value === "object" && "file_link" in value
+        ? String(value.file_link)
+        : "";
+    values.push({ address: slot.address, value: link });
   }
   const result = await processSpreadsheet(unprotectSpreadsheet(baseBytes), {
     bindings: storedSpreadsheetBindings(contract),
@@ -425,6 +412,122 @@ export const prepareSpreadsheetOperation = async (
     storedSpreadsheetBindings(contract),
     workbook
   );
+  if (hasSpreadsheetAttachments(contract)) {
+    const nextBody = nextContract.table
+      ? nextContract.locations[nextContract.table.anchor]
+      : undefined;
+    validateSpreadsheetAttachmentButtons(
+      result.workbook,
+      storedSpreadsheetBindings(nextContract)
+    );
+    const oldRowCount = tableBody
+      ? tableBody.lastRow - tableBody.firstRow + 1
+      : 0;
+    const newRowCount = nextBody ? nextBody.lastRow - nextBody.firstRow + 1 : 0;
+    if (
+      rowChange &&
+      (!tableBody ||
+        !nextBody ||
+        rowChange.index > oldRowCount ||
+        (rowChange.action === "delete" && rowChange.index >= oldRowCount) ||
+        newRowCount !== oldRowCount + (rowChange.action === "insert" ? 1 : -1))
+    ) {
+      fail(
+        409,
+        "attachment_row_mapping_unproven",
+        "ยืนยันตำแหน่งแถวหลังเปลี่ยนตารางไม่ได้ ข้อมูลและไฟล์เดิมยังอยู่"
+      );
+    }
+    if (!rowChange && newRowCount !== oldRowCount) {
+      fail(
+        409,
+        "attachment_row_mapping_unproven",
+        "จำนวนแถวเปลี่ยนโดยไม่มีคำสั่งที่รองรับ"
+      );
+    }
+    const rowMapping = Array.from({ length: oldRowCount }, (_, index) => {
+      if (!rowChange) {
+        return index;
+      }
+      if (rowChange.action === "insert") {
+        return index >= rowChange.index ? index + 1 : index;
+      }
+      if (index === rowChange.index) {
+        return null;
+      }
+      return index > rowChange.index ? index - 1 : index;
+    });
+    if (tableBody && nextBody && contract.table && nextContract.table) {
+      const expected = new Map(
+        values.map((value) => [value.address, value.value])
+      );
+      for (const column of contract.table.columns.filter(
+        (candidate) => !candidate.computed
+      )) {
+        const nextColumn = nextContract.table.columns.find(
+          (candidate) => candidate.id === column.id
+        );
+        if (
+          !nextColumn ||
+          nextColumn.offset !== column.offset ||
+          tableBody.firstColumn !== nextBody.firstColumn ||
+          tableBody.firstRow !== nextBody.firstRow
+        ) {
+          fail(
+            409,
+            "attachment_row_mapping_unproven",
+            "ตำแหน่งคอลัมน์เปลี่ยนระหว่างเปลี่ยนแถว"
+          );
+        }
+        for (let oldIndex = 0; oldIndex < oldRowCount; oldIndex += 1) {
+          const newIndex = rowMapping[oldIndex];
+          if (newIndex === null || newIndex === undefined) {
+            continue;
+          }
+          const before = `${spreadsheetColumnName(tableBody.firstColumn + column.offset)}${tableBody.firstRow + oldIndex + 1}`;
+          const after = `${spreadsheetColumnName(nextBody.firstColumn + nextColumn.offset)}${nextBody.firstRow + newIndex + 1}`;
+          const expectedValue = expected.get(before) ?? null;
+          const actualValue = workbook.cells.get(after)?.value ?? null;
+          if (
+            (expectedValue === "" ? null : expectedValue) !==
+            (actualValue === "" ? null : actualValue)
+          ) {
+            fail(
+              409,
+              "attachment_row_mapping_unproven",
+              `ยืนยันข้อมูลแถว ${oldIndex + 1} หลังเปลี่ยนตารางไม่ได้`
+            );
+          }
+        }
+      }
+      if (rowChange) {
+        attachmentData = {
+          ...attachmentData,
+          [contract.table.key]: [...attachedRows].flatMap(([oldIndex, row]) => {
+            const newIndex = rowMapping[oldIndex];
+            return newIndex === null || newIndex === undefined
+              ? []
+              : [
+                  Object.fromEntries(
+                    Object.entries(row).map(([key, value]) => [
+                      key,
+                      { ...value, row_index: newIndex },
+                    ])
+                  ),
+                ];
+          }),
+        };
+      }
+    }
+    metadata.attachmentTransition = {
+      fromDocumentKey: currentDocumentKey,
+      newRowCount,
+      oldRowCount,
+      rowMapping,
+      tableBindingId: contract.table?.id ?? null,
+      toDocumentKey: metadata.nextDocumentKey ?? currentDocumentKey,
+    };
+  }
   const withPictures = overlaySpreadsheetPictures(
     result.workbook,
     nextContract,
@@ -444,7 +547,7 @@ export const prepareSpreadsheetOperation = async (
   ) {
     throw new SpreadsheetValidationError(extracted.errors);
   }
-  if (contract.fields.some((field) => field.attachment)) {
+  if (hasSpreadsheetAttachments(contract)) {
     checkAttachmentJsonBytes(extracted.data);
   }
   metadata.data = extracted.data;

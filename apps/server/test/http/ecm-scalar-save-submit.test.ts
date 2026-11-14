@@ -18,6 +18,11 @@ import {
   readSpreadsheetWorkbook,
   resolveSpreadsheetContract,
 } from "../../src/documents/spreadsheets/workbook";
+import {
+  spreadsheetXmlTree,
+  spreadsheetXmlChildren,
+  serializeSpreadsheetXml,
+} from "../../src/documents/spreadsheets/xml";
 import { actionEditorCapability } from "../../src/editor/authorization";
 import type { EditorLeaseGrant } from "../../src/editor/leases";
 import { claimEditorLease } from "../../src/editor/leases";
@@ -27,7 +32,10 @@ import {
   createOnlyOfficeAuthorization,
   createCallbackUserdata,
 } from "../../src/onlyoffice";
-import { attachmentSchema } from "../../src/responses/attachment-data";
+import {
+  attachmentSchema,
+  tableAttachmentSchema,
+} from "../../src/responses/attachment-data";
 import { jsonValue } from "../../src/responses/data";
 import { putObject, readObject } from "../../src/storage";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
@@ -126,6 +134,7 @@ let deleteFails = false;
 let deleteMalformed = false;
 let logins = 0;
 let nextMode: "ok" | "malformed" | "body-failure" | "store-then-reject" = "ok";
+let rejectUploadAt: number | null = null;
 let customLink: string | null = null;
 let customToken: string | null = null;
 let receiveBarrier: { enter: () => void; release: Promise<void> } | null = null;
@@ -266,6 +275,12 @@ const provider = Bun.serve({
           where: { operationId: intent.operationId },
         })
       ).toMatchObject({ responseId: intent.responseId, state: "sending" });
+      if (received.length === rejectUploadAt) {
+        return Response.json(
+          { data: null, msg: "fixture rejected this file", status: 422 },
+          { status: 422 }
+        );
+      }
       const barrier = receiveBarrier;
       if (barrier) {
         receiveBarrier = null;
@@ -468,6 +483,8 @@ const fixture = async (
     year?: string;
     number?: string;
     table?: boolean;
+    tableAttachments?: boolean;
+    tableItemRequired?: boolean;
     project?: boolean;
     admin?: boolean;
   } = {}
@@ -477,6 +494,7 @@ const fixture = async (
   customToken = null;
   deleteFails = false;
   deleteMalformed = false;
+  rejectUploadAt = null;
   originalReadMode = "ok";
   const id = crypto.randomUUID();
   const password = "Scalar-isolated-fixture-password!";
@@ -492,7 +510,7 @@ const fixture = async (
   const templateObjectKey = `tests/scalar/${id}/template.xlsx`;
   let template = nativeTemplate;
   let publishedBindings = bindings;
-  if (values.table) {
+  if (values.table || values.tableAttachments) {
     publishedBindings = spreadsheetBindingSchema.parse({
       ...bindings,
       table: {
@@ -503,8 +521,30 @@ const fixture = async (
             key: "item",
             label: "รายการ",
             offset: 0,
+            required: values.tableItemRequired ?? false,
             type: "text",
           },
+          ...(values.tableAttachments
+            ? [
+                {
+                  attachment: { category: "หลักฐาน" },
+                  id: "folio_row_proof",
+                  key: "proof",
+                  label: "หลักฐานรายแถว",
+                  offset: 1,
+                  required: true,
+                  type: "text",
+                },
+                {
+                  attachment: { category: "อื่น" },
+                  id: "folio_row_other",
+                  key: "other",
+                  label: "เอกสารอื่นรายแถว",
+                  offset: 2,
+                  type: "text",
+                },
+              ]
+            : []),
         ],
         id: "folio_rows",
         key: "rows",
@@ -514,7 +554,9 @@ const fixture = async (
     const withTable = mutatePart(nativeTemplate, "xl/workbook.xml", (xml) =>
       xml.replace(
         "</definedNames>",
-        "<definedName name=\"folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_columns_folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_column_folio_item\">'Form'!$B$10:$B$11</definedName></definedNames>"
+        values.tableAttachments
+          ? "<definedName name=\"folio_rows\">'Form'!$B$10:$D$13</definedName><definedName name=\"folio_columns_folio_rows\">'Form'!$B$10:$D$13</definedName><definedName name=\"folio_column_folio_item\">'Form'!$B$10:$B$13</definedName><definedName name=\"folio_column_folio_row_proof\">'Form'!$C$10:$C$13</definedName><definedName name=\"folio_column_folio_row_other\">'Form'!$D$10:$D$13</definedName><definedName name=\"_folio_upload_poc_folio_row_proof\">'Form'!$C$10:$C$13</definedName><definedName name=\"_folio_upload_poc_folio_row_other\">'Form'!$D$10:$D$13</definedName></definedNames>"
+          : "<definedName name=\"folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_columns_folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_column_folio_item\">'Form'!$B$10:$B$11</definedName></definedNames>"
       )
     );
     const prepared = await processSpreadsheet(unprotectSpreadsheet(withTable), {
@@ -645,7 +687,10 @@ const send = (
     })
   );
   for (const [binding, file] of Object.entries(files)) {
-    body.set(`attachment:${binding}`, file);
+    body.set(
+      `attachment:${binding.startsWith("[") ? encodeURIComponent(binding) : binding}`,
+      file
+    );
   }
   const capability = actionEditorCapability(
     f.identity,
@@ -703,7 +748,19 @@ const recover = (f: Fixture, checkpoint: string) =>
     )
   );
 const poll = async (f: Fixture, accepted: Response) => {
-  expect(accepted.status).toBe(202);
+  let admissionError: string | undefined;
+  if (accepted.status !== 202) {
+    const body = z.object({ error: z.string(), message: z.string() }).safeParse(
+      await accepted
+        .clone()
+        .json()
+        .catch(() => null)
+    );
+    admissionError = body.success
+      ? `${body.data.error.slice(0, 128)}: ${body.data.message.slice(0, 512)}`
+      : "Admission returned no safe application error envelope";
+  }
+  expect(accepted.status, admissionError).toBe(202);
   const envelope = envelopeSchema.parse(await accepted.json());
   const deadline = Date.now() + 90_000;
   for (;;) {
@@ -771,6 +828,13 @@ const draft = async (f: Fixture) => {
   expect(result.status).toBe(200);
   return z.record(z.string(), z.unknown()).parse(await result.json());
 };
+const tableRowsSchema = z.array(
+  z.object({
+    item: z.string().nullable(),
+    other: tableAttachmentSchema.nullable(),
+    proof: tableAttachmentSchema.nullable(),
+  })
+);
 const file = (bytes = new Uint8Array([0, 255, 7, 1]), name = "Original.BIN") =>
   new File([bytes], name, { type: "application/x-encrypted-private" });
 
@@ -789,6 +853,418 @@ const resume = async (f: Fixture) => {
     await readObject(fixtureValue(saved.draftObjectKey))
   );
 };
+
+test("table attachments retain physical gaps and attachment-only zero-byte rows across multiple columns", async () => {
+  const f = await fixture({ tableAttachments: true });
+  const uploads = received.length;
+  const completed = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 2])]: file(
+        new Uint8Array(),
+        "empty.TXT"
+      ),
+      [JSON.stringify(["folio_row_other", 2])]: file(
+        new Uint8Array([7]),
+        "other.BIN"
+      ),
+      [JSON.stringify(["folio_row_other", 3])]: file(
+        new Uint8Array([9]),
+        "last.BIN"
+      ),
+    })
+  );
+  expect(completed.status).toBe("completed");
+  const saved = await draft(f);
+  expect(saved.rows).toEqual([
+    {
+      item: null,
+      other: {
+        file_link: expect.any(String),
+        file_token: expect.any(String),
+        original_name: "other.BIN",
+        row_index: 2,
+        size_bytes: 1,
+      },
+      proof: {
+        file_link: expect.any(String),
+        file_token: expect.any(String),
+        original_name: "empty.TXT",
+        row_index: 2,
+        size_bytes: 0,
+      },
+    },
+    {
+      item: null,
+      other: {
+        file_link: expect.any(String),
+        file_token: expect.any(String),
+        original_name: "last.BIN",
+        row_index: 3,
+        size_bytes: 1,
+      },
+      proof: null,
+    },
+  ]);
+  expect(received.slice(uploads).map((entry) => [...entry.bytes])).toEqual([
+    [],
+    [7],
+    [9],
+  ]);
+  await resume(f);
+  const workbook = readSpreadsheetWorkbook(
+    fixtureValue(snapshots.get(f.documentKey))
+  );
+  expect(workbook.cells.get("C10")?.value ?? null).toBeNull();
+  expect(workbook.cells.get("C12")?.value).toBe(
+    tableRowsSchema.parse(saved.rows)[0]?.proof?.file_link
+  );
+});
+
+test("table attachment-only selected rows validate other required columns before any upload", async () => {
+  const f = await fixture({ tableAttachments: true, tableItemRequired: true });
+  const uploads = received.length;
+  const result = await poll(
+    f,
+    await send(
+      f,
+      {
+        folio_proof: file(),
+        [JSON.stringify(["folio_row_proof", 2])]: file(
+          new Uint8Array(),
+          "empty.TXT"
+        ),
+      },
+      "submit"
+    )
+  );
+  expect(result.status).toBe("failed");
+  expect(received.length).toBe(uploads);
+  expect(await draft(f)).toEqual({});
+});
+
+test("table fully empty rows need no attachments but active ordinary rows require their column attachment", async () => {
+  const empty = await fixture({
+    tableAttachments: true,
+    tableItemRequired: true,
+  });
+  const emptySubmission = await poll(
+    empty,
+    await send(empty, { folio_proof: file() }, "submit")
+  );
+  expect(emptySubmission.status).toBe("completed");
+  const active = await fixture({
+    tableAttachments: true,
+    tableItemRequired: true,
+  });
+  snapshots.set(
+    active.documentKey,
+    replaceCell(
+      fixtureValue(snapshots.get(active.documentKey)),
+      "B12",
+      "รายการจริง"
+    )
+  );
+  const uploads = received.length;
+  const activeSubmission = await poll(
+    active,
+    await send(active, { folio_proof: file() }, "submit")
+  );
+  expect(activeSubmission.status).toBe("failed");
+  expect(received.length).toBe(uploads);
+});
+
+test("table zero-byte required files submit with valid ordinary input at physical not compact indices", async () => {
+  const f = await fixture({ tableAttachments: true, tableItemRequired: true });
+  snapshots.set(
+    f.documentKey,
+    replaceCell(fixtureValue(snapshots.get(f.documentKey)), "B12", "รายการจริง")
+  );
+  const result = await poll(
+    f,
+    await send(
+      f,
+      {
+        folio_proof: file(),
+        [JSON.stringify(["folio_row_proof", 2])]: file(
+          new Uint8Array(),
+          "empty.TXT"
+        ),
+      },
+      "submit"
+    )
+  );
+  expect(result.status).toBe("completed");
+  const submission = await prisma.submission.findUniqueOrThrow({
+    where: { id: String(result.result?.submissionId) },
+  });
+  expect(
+    z.object({ rows: tableRowsSchema }).parse(submission.data).rows
+  ).toEqual([
+    {
+      item: "รายการจริง",
+      other: null,
+      proof: {
+        file_link: expect.any(String),
+        file_token: expect.any(String),
+        original_name: "empty.TXT",
+        row_index: 2,
+        size_bytes: 0,
+      },
+    },
+  ]);
+});
+
+test("table row shifts preserve exact versions and immutable send positions without ECM writes", async () => {
+  const f = await fixture({ tableAttachments: true });
+  const initial = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 2])]: file(
+        new Uint8Array(),
+        "empty.TXT"
+      ),
+      [JSON.stringify(["folio_row_other", 3])]: file(
+        new Uint8Array([9]),
+        "last.BIN"
+      ),
+    })
+  );
+  expect(initial.status).toBe("completed");
+  const before = await draft(f);
+  await resume(f);
+  const oldDocumentKey = f.documentKey;
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const result = await poll(
+    f,
+    await send(f, {}, "draft", crypto.randomUUID(), {
+      rowChange: { action: "delete", index: 0 },
+    })
+  );
+  expect(result.status).toBe("completed");
+  expect(result.result?.attachmentTransition).toEqual({
+    fromDocumentKey: oldDocumentKey,
+    newRowCount: 3,
+    oldRowCount: 4,
+    rowMapping: [null, 0, 1, 2],
+    tableBindingId: "folio_rows",
+    toDocumentKey: result.result?.documentKey,
+  });
+  const saved = await draft(f);
+  const previous = tableRowsSchema.parse(before.rows);
+  expect(saved.rows).toEqual([
+    { item: null, other: null, proof: { ...previous[0]?.proof, row_index: 1 } },
+    { item: null, other: { ...previous[1]?.other, row_index: 2 }, proof: null },
+  ]);
+  const original = await prisma.ecmAttachmentVersion.findFirstOrThrow({
+    where: { fileToken: String(previous[0]?.proof?.file_token) },
+  });
+  expect(original.rowIndex).toBe(2);
+  expect(received.length).toBe(uploads);
+  expect(deleted.length).toBe(deletes);
+  await resume(f);
+  const unchanged = await poll(f, await send(f, {}));
+  expect(unchanged.status).toBe("completed");
+  expect(await draft(f)).toEqual(saved);
+  expect(received.length).toBe(uploads);
+});
+
+test("table append preserves saved file slots and returns verified remount mapping without upload", async () => {
+  const f = await fixture({ tableAttachments: true });
+  const initial = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 2])]: file(),
+    })
+  );
+  expect(initial.status).toBe("completed");
+  const before = await draft(f);
+  await resume(f);
+  const uploads = received.length;
+  const result = await poll(
+    f,
+    await send(f, {}, "draft", crypto.randomUUID(), {
+      rowChange: { action: "insert", index: 4 },
+    })
+  );
+  expect(result.status).toBe("completed");
+  expect(result.result?.attachmentTransition).toMatchObject({
+    newRowCount: 5,
+    oldRowCount: 4,
+    rowMapping: [0, 1, 2, 3],
+  });
+  expect(await draft(f)).toEqual(before);
+  expect(received.length).toBe(uploads);
+});
+
+test("table stale snapshots and forged physical slots stop before external writes", async () => {
+  const f = await fixture({ tableAttachments: true });
+  const uploads = received.length;
+  const forged = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 4])]: file(),
+    })
+  );
+  expect(forged.status).toBe("failed");
+  expect(received.length).toBe(uploads);
+  const current = fixtureValue(snapshots.get(f.documentKey));
+  expect(
+    readSpreadsheetWorkbook(current).names.get("folio_rows")
+  ).toMatchObject({
+    firstRow: 9,
+    lastRow: 12,
+  });
+  const altered = mutatePart(current, "xl/workbook.xml", (xml) => {
+    const workbook = spreadsheetXmlTree(xml);
+    const names = fixtureValue(
+      spreadsheetXmlChildren(workbook, "definedNames")[0]
+    );
+    const table = fixtureValue(
+      spreadsheetXmlChildren(names, "definedName").find(
+        (name) => name.attributes.name === "folio_rows"
+      )
+    );
+    table.children = ["'Form'!$B$10:$D$14"];
+    return serializeSpreadsheetXml(workbook);
+  });
+  expect(
+    readSpreadsheetWorkbook(altered).names.get("folio_rows")
+  ).toMatchObject({
+    firstRow: 9,
+    lastRow: 13,
+  });
+  snapshots.set(f.documentKey, altered);
+  const stale = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 2])]: file(),
+    })
+  );
+  expect(stale.status).toBe("failed");
+  expect(received.length).toBe(uploads);
+  expect(await draft(f)).toEqual({});
+});
+
+test("table removals compact only empty rows and never cross-wire another attachment column", async () => {
+  const f = await fixture({ tableAttachments: true });
+  const initial = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 2])]: file(
+        new Uint8Array(),
+        "empty.TXT"
+      ),
+      [JSON.stringify(["folio_row_other", 2])]: file(
+        new Uint8Array([7]),
+        "other.BIN"
+      ),
+      [JSON.stringify(["folio_row_other", 3])]: file(
+        new Uint8Array([9]),
+        "last.BIN"
+      ),
+    })
+  );
+  expect(initial.status).toBe("completed");
+  const before = await draft(f);
+  await resume(f);
+  const uploads = received.length;
+  const removed = await poll(
+    f,
+    await send(f, {}, "draft", crypto.randomUUID(), {
+      attachmentRemovals: [
+        { bindingId: "folio_row_proof", rowIndex: 2 },
+        { bindingId: "folio_row_other", rowIndex: 2 },
+      ],
+    })
+  );
+  expect(removed.status).toBe("completed");
+  const after = await draft(f);
+  expect(after.rows).toEqual([tableRowsSchema.parse(before.rows)[1]]);
+  expect(received.length).toBe(uploads);
+});
+test("table multi-column failure leaves the complete old Draft and never sends the next physical slot", async () => {
+  const f = await fixture({ tableAttachments: true });
+  const initial = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 2])]: file(
+        new Uint8Array([1]),
+        "old.TXT"
+      ),
+    })
+  );
+  expect(initial.status).toBe("completed");
+  const before = await draft(f);
+  await resume(f);
+  const uploads = received.length;
+  rejectUploadAt = uploads + 2;
+  const result = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 2])]: file(
+        new Uint8Array([2]),
+        "replace.TXT"
+      ),
+      [JSON.stringify(["folio_row_other", 2])]: file(
+        new Uint8Array([3]),
+        "reject.BIN"
+      ),
+      [JSON.stringify(["folio_row_other", 3])]: file(
+        new Uint8Array([4]),
+        "not-sent.BIN"
+      ),
+    })
+  );
+  expect(result.status).toBe("failed");
+  expect(received.slice(uploads).map((entry) => [...entry.bytes])).toEqual([
+    [2],
+    [3],
+  ]);
+  expect(await draft(f)).toEqual(before);
+});
+
+test("table metadata changes reupload saved original bytes for every physical slot using one root number and year", async () => {
+  const f = await fixture({ tableAttachments: true });
+  const initial = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 2])]: file(
+        new Uint8Array(),
+        "empty.TXT"
+      ),
+      [JSON.stringify(["folio_row_other", 3])]: file(
+        new Uint8Array([8]),
+        "last.BIN"
+      ),
+    })
+  );
+  expect(initial.status).toBe("completed");
+  await resume(f);
+  snapshots.set(
+    f.documentKey,
+    replaceCell(fixtureValue(snapshots.get(f.documentKey)), "B2", "DOC.43")
+  );
+  const uploads = received.length;
+  const changed = await poll(f, await send(f, {}));
+  expect(changed.status).toBe("completed");
+  expect(
+    received.slice(uploads).map((entry) => ({
+      bytes: [...entry.bytes],
+      category: entry.category,
+      number: entry.number,
+      year: entry.year,
+    }))
+  ).toEqual([
+    { bytes: [], category: "หลักฐาน", number: "DOC.43", year: "2570" },
+    { bytes: [8], category: "อื่น", number: "DOC.43", year: "2570" },
+  ]);
+  const saved = await draft(f);
+  const rows = tableRowsSchema.parse(saved.rows);
+  expect(rows[0]?.proof?.row_index).toBe(2);
+  expect(rows[1]?.other?.row_index).toBe(3);
+});
 
 test("saved Draft reopen separates native opening keys without changing canonical bytes or attachments", async () => {
   const f = await fixture();

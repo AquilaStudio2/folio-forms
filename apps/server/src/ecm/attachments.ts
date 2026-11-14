@@ -1,17 +1,23 @@
 import { Prisma, prisma } from "@onlyoffice/db";
 
-import type {
-  SpreadsheetContract,
-  SpreadsheetField,
-} from "../documents/spreadsheets/contract";
+import type { SpreadsheetContract } from "../documents/spreadsheets/contract";
+import { extractSpreadsheetData } from "../documents/spreadsheets/workbook";
+import type { SpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
 import { fail, HttpError } from "../http/errors";
 import type { Operation } from "../model-types";
 import {
   attachmentSchema,
   canonicalAttachment,
   checkAttachmentJsonBytes,
+  spreadsheetAttachmentSlots,
+  canonicalTableAttachments,
+  tableAttachmentSchema,
 } from "../responses/attachment-data";
-import type { Attachment } from "../responses/attachment-data";
+import type {
+  Attachment,
+  AttachmentSlot,
+  TableAttachment,
+} from "../responses/attachment-data";
 import type { EcmClient } from "./client";
 
 export const lockBatch = async (
@@ -67,19 +73,20 @@ const safeFilenamePart = (value: string, label: string): string => {
   return value;
 };
 
-interface ScalarAttachmentInput {
+interface AttachmentInput {
   operation: Operation;
   contract: SpreadsheetContract;
-  data: Record<string, unknown>;
+  workbook: SpreadsheetWorkbook;
   savedData: Record<string, unknown>;
   files: ReadonlyMap<string, File>;
   removals: ReadonlySet<string>;
   ecm: EcmClient;
 }
 
-interface ScalarAttachmentPlan {
+interface AttachmentPlan {
   category: string;
-  field: SpreadsheetField;
+  slot: AttachmentSlot;
+  target: Record<string, unknown>;
   file: File;
   filename: string;
   id: string;
@@ -87,11 +94,14 @@ interface ScalarAttachmentPlan {
   year: string;
 }
 
-const planScalarFile = (
-  field: SpreadsheetField,
+const planAttachmentFile = (
+  slot: AttachmentSlot,
+  target: Record<string, unknown>,
   file: File,
   data: Record<string, unknown>
-): ScalarAttachmentPlan => {
+): AttachmentPlan => {
+  const { field } = slot;
+  const label = `${field.label}${slot.rowIndex === null ? "" : ` / แถว ${slot.rowIndex + 1}`}`;
   const year = String(data.fiscal_year ?? "");
   const number = String(data.docs_number ?? "");
   if (!/^\d{4}$/u.test(year)) {
@@ -116,35 +126,37 @@ const planScalarFile = (
       size_bytes: file.size,
     });
   if (!original.success) {
-    fail(422, "invalid_attachment", `${field.label}: ชื่อหรือขนาดไฟล์ไม่ถูกต้อง`);
+    fail(422, "invalid_attachment", `${label}: ชื่อหรือขนาดไฟล์ไม่ถูกต้อง`);
   }
   const id = crypto.randomUUID();
   const dot = file.name.lastIndexOf(".");
   const extension = dot > 0 ? file.name.slice(dot) : "";
   if (extension) {
-    safeFilenamePart(extension.slice(1), field.label);
+    safeFilenamePart(extension.slice(1), label);
   }
   const filename = safeFilenamePart(
     `${number}-${id}-${category}${extension}`,
-    field.label
+    label
   );
   if (filename.trim() !== filename || /[. ]$/u.test(filename)) {
     fail(
       422,
       "invalid_attachment_metadata",
-      `${field.label}: ชื่อไฟล์รวมไม่ปลอดภัย กรุณาตรวจ docs_number และให้ Admin ตรวจหมวดเอกสาร`
+      `${label}: ชื่อไฟล์รวมไม่ปลอดภัย กรุณาตรวจ docs_number และให้ Admin ตรวจหมวดเอกสาร`
     );
   }
-  return { category, field, file, filename, id, number, year };
+  return { category, file, filename, id, number, slot, target, year };
 };
 
 const originalForChangedMetadata = async (
-  field: SpreadsheetField,
+  slot: AttachmentSlot,
   saved: Attachment,
   responseId: string,
   data: Record<string, unknown>,
   ecm: EcmClient
 ): Promise<File | undefined> => {
+  const { field } = slot;
+  const label = `${field.label}${slot.rowIndex === null ? "" : ` / แถว ${slot.rowIndex + 1}`}`;
   const version = await prisma.ecmAttachmentVersion.findFirst({
     where: {
       bindingId: field.id,
@@ -153,13 +165,14 @@ const originalForChangedMetadata = async (
       fileToken: saved.file_token,
       originalName: saved.original_name,
       responseId,
+      rowIndex: slot.rowIndex === null ? null : { not: null },
       sizeBytes: saved.size_bytes,
       state: "committed",
-      tag: field.key,
+      tag: slot.tag,
     },
   });
   if (!version) {
-    fail(409, "invalid_attachment", `${field.label}: ไม่พบหลักฐานไฟล์เดิมที่บันทึกแล้ว`);
+    fail(409, "invalid_attachment", `${label}: ไม่พบหลักฐานไฟล์เดิมที่บันทึกแล้ว`);
   }
   if (
     version.fiscalYear === String(data.fiscal_year ?? "") &&
@@ -177,61 +190,130 @@ const originalForChangedMetadata = async (
     fail(
       502,
       "attachment_original_unavailable",
-      `${field.label}: อ่านไฟล์ต้นฉบับเดิมไม่ได้ ข้อมูลเดิมยังอยู่ กรุณาติดต่อผู้ดูแล`
+      `${label}: อ่านไฟล์ต้นฉบับเดิมไม่ได้ ข้อมูลเดิมยังอยู่ กรุณาติดต่อผู้ดูแล`
     );
   }
 };
 
-/** Request-local bytes; all external effects and ownership live in PostgreSQL. */
-export const uploadScalarAttachments = async (
-  input: ScalarAttachmentInput
-): Promise<Record<string, unknown>> => {
-  const { operation, contract, files, ecm } = input;
-  const batch = await prisma.ecmAttachmentBatch.findUniqueOrThrow({
-    where: { operationId: operation.id },
-  });
-  const fields = contract.fields.filter((field) => field.attachment);
-  const data = { ...input.data };
-  const plans: ScalarAttachmentPlan[] = [];
-  for (const [bindingId] of files) {
-    if (!fields.some((field) => field.id === bindingId)) {
-      fail(422, "invalid_attachment", "ช่องแนบไม่ตรงกับเอกสารที่ตรวจแล้ว");
+const attachmentSnapshot = (
+  input: AttachmentInput,
+  slots: readonly AttachmentSlot[]
+) => {
+  const { contract } = input;
+  const attachments: Record<string, unknown> = {};
+  const { table } = contract;
+  const tableBody = table ? contract.locations[table.anchor] : undefined;
+  const savedRows: Map<
+    number,
+    Record<string, TableAttachment | null>
+  > = table && tableBody
+    ? canonicalTableAttachments(
+        input.savedData,
+        table.key,
+        table.columns
+          .filter((column) => column.attachment)
+          .map((column) => column.key),
+        tableBody.lastRow - tableBody.firstRow + 1
+      )
+    : new Map<number, Record<string, TableAttachment | null>>();
+  for (const slot of slots) {
+    if (slot.rowIndex === null) {
+      attachments[slot.field.key] = input.removals.has(slot.key)
+        ? null
+        : canonicalAttachment(input.savedData[slot.field.key]);
+    } else if (input.removals.has(slot.key)) {
+      const row = savedRows.get(slot.rowIndex);
+      if (row) {
+        row[slot.field.key] = null;
+      }
     }
   }
-  for (const field of fields) {
-    const saved = canonicalAttachment(input.savedData[field.key]);
-    data[field.key] = saved;
-    if (input.removals.has(field.id)) {
-      data[field.key] = null;
+  if (table) {
+    attachments[table.key] = [...savedRows.values()];
+  }
+  const extracted = extractSpreadsheetData(
+    input.workbook,
+    contract,
+    input.operation.type === "submit_response",
+    attachments,
+    new Set(input.files.keys())
+  );
+  if (input.operation.type === "submit_response" && extracted.errors.length) {
+    fail(
+      422,
+      "invalid_attachment",
+      extracted.errors.map((error) => error.message).join("\n")
+    );
+  }
+  return extracted;
+};
+
+const planAttachmentUploads = async (
+  input: AttachmentInput,
+  responseId: string
+): Promise<{ data: Record<string, unknown>; plans: AttachmentPlan[] }> => {
+  const { contract, files, ecm } = input;
+  const slots = [...spreadsheetAttachmentSlots(contract)];
+  const byKey = new Map(slots.map((slot) => [slot.key, slot]));
+  for (const key of [...files.keys(), ...input.removals]) {
+    if (!byKey.has(key)) {
+      fail(422, "invalid_attachment", "ช่องแนบหรือแถวไม่ตรงกับเอกสารที่ตรวจแล้ว");
+    }
+  }
+  const extracted = attachmentSnapshot(input, slots);
+  const { data } = extracted;
+  const rows = contract.table
+    ? (data[contract.table.key] as Record<string, unknown>[])
+    : [];
+  const targets = new Map(
+    extracted.rowIndices.map((rowIndex, index) => {
+      const target = rows[index];
+      if (!target) {
+        fail(409, "invalid_attachment", "ข้อมูลแถวไม่ตรงกับตำแหน่งที่ตรวจแล้ว");
+      }
+      return [rowIndex, target] as const;
+    })
+  );
+  const plans: AttachmentPlan[] = [];
+  for (const slot of slots) {
+    const target = slot.rowIndex === null ? data : targets.get(slot.rowIndex);
+    if (!target || input.removals.has(slot.key)) {
       continue;
     }
-    let file = files.get(field.id);
+    const value = target[slot.field.key];
+    const schema =
+      slot.rowIndex === null ? attachmentSchema : tableAttachmentSchema;
+    const saved =
+      value === null || value === undefined ? null : schema.parse(value);
+    let file = files.get(slot.key);
     if (!file && saved) {
       // Only an owned committed receipt can supply original bytes or metadata.
       // oxlint-disable-next-line no-await-in-loop -- Fetch and validate every original before the first external write.
       file = await originalForChangedMetadata(
-        field,
+        slot,
         saved,
-        batch.responseId,
+        responseId,
         data,
         ecm
       );
     }
     if (file) {
-      plans.push(planScalarFile(field, file, data));
-    }
-  }
-  for (const field of fields) {
-    if (
-      operation.type === "submit_response" &&
-      field.required &&
-      !data[field.key] &&
-      !files.has(field.id)
-    ) {
-      fail(422, "invalid_attachment", `${field.label}: กรุณาแนบไฟล์ก่อนส่ง`);
+      plans.push(planAttachmentFile(slot, target, file, data));
     }
   }
   checkAttachmentJsonBytes(data);
+  return { data, plans };
+};
+
+/** Request-local bytes; all external effects and ownership live in PostgreSQL. */
+export const uploadAttachments = async (
+  input: AttachmentInput
+): Promise<Record<string, unknown>> => {
+  const { operation, ecm } = input;
+  const batch = await prisma.ecmAttachmentBatch.findUniqueOrThrow({
+    where: { operationId: operation.id },
+  });
+  const { data, plans } = await planAttachmentUploads(input, batch.responseId);
   await prisma.$transaction(async (tx) => {
     await lockBatch(tx, operation.id);
     await requireAttachmentMutationReady(batch.responseId, tx, operation.id);
@@ -246,7 +328,7 @@ export const uploadScalarAttachments = async (
       await tx.ecmAttachmentVersion.create({
         data: {
           accountKey: ecm.accountKey(),
-          bindingId: plan.field.id,
+          bindingId: plan.slot.field.id,
           category: plan.category,
           documentNumber: plan.number,
           filename: plan.filename,
@@ -255,8 +337,9 @@ export const uploadScalarAttachments = async (
           operationId: operation.id,
           originalName: plan.file.name,
           responseId: batch.responseId,
+          rowIndex: plan.slot.rowIndex,
           sizeBytes: plan.file.size,
-          tag: plan.field.key,
+          tag: plan.slot.tag,
         },
       });
     }
@@ -339,10 +422,13 @@ export const uploadScalarAttachments = async (
       if (active?.status !== "processing") {
         fail(409, "stale_operation", "การบันทึกรอบนี้หมดอายุแล้ว ไฟล์ใหม่รอจัดการ");
       }
-      data[plan.field.key] = {
+      plan.target[plan.slot.field.key] = {
         ...receipt,
         original_name: plan.file.name,
         size_bytes: plan.file.size,
+        ...(plan.slot.rowIndex === null
+          ? {}
+          : { row_index: plan.slot.rowIndex }),
       };
       checkAttachmentJsonBytes(data);
     } catch (error) {
@@ -350,13 +436,13 @@ export const uploadScalarAttachments = async (
         fail(
           error.httpStatus,
           error.code,
-          `${plan.field.label} / หมวด ${plan.category}: ${error.message}`
+          `${plan.slot.field.label}${plan.slot.rowIndex === null ? "" : ` / แถว ${plan.slot.rowIndex + 1}`} / หมวด ${plan.category}: ${error.message}`
         );
       }
       fail(
         502,
         "attachment_upload_failed",
-        `${plan.field.label} / หมวด ${plan.category}: ยังยืนยันผลการแนบไฟล์รอบนี้ไม่ได้ ข้อมูลเดิมยังอยู่`
+        `${plan.slot.field.label}${plan.slot.rowIndex === null ? "" : ` / แถว ${plan.slot.rowIndex + 1}`} / หมวด ${plan.category}: ยังยืนยันผลการแนบไฟล์รอบนี้ไม่ได้ ข้อมูลเดิมยังอยู่`
       );
     }
   }
@@ -441,10 +527,6 @@ export const commitAttachmentBatch = async (
   checkAttachmentJsonBytes(data);
   const versions: string[] = [];
   for (const field of fields) {
-    const attachment = canonicalAttachment(data[field.tag]);
-    if (!attachment) {
-      continue;
-    }
     const { binding } = field;
     if (
       !binding ||
@@ -454,27 +536,54 @@ export const commitAttachmentBatch = async (
     ) {
       fail(409, "invalid_attachment", "สัญญาตำแหน่งช่องแนบเปลี่ยนแล้ว");
     }
-    // oxlint-disable-next-line no-await-in-loop -- Resolve all trusted receipts before locking their versions in one order.
-    const version = await tx.ecmAttachmentVersion.findFirst({
-      where: {
-        bindingId: binding.id,
-        category: field.attachmentCategory ?? "",
-        fileLink: attachment.file_link,
-        fileToken: attachment.file_token,
-        originalName: attachment.original_name,
-        responseId,
-        sizeBytes: attachment.size_bytes,
-        state: { in: ["received", "committed"] },
-        tag: field.tag,
-      },
-    });
-    if (
-      !version ||
-      (version.state === "received" && version.operationId !== operation.id)
-    ) {
-      fail(409, "invalid_attachment", "ไม่พบหลักฐานไฟล์ของคำตอบรอบนี้");
+    const column = typeof binding.offset === "number";
+    const separator = field.tag.indexOf(".");
+    const tableKey = column ? field.tag.slice(0, separator) : "";
+    const columnKey = column ? field.tag.slice(separator + 1) : "";
+    if (column && (separator < 1 || !Array.isArray(data[tableKey]))) {
+      fail(409, "invalid_attachment", "ไม่พบตารางของช่องแนบ");
     }
-    versions.push(version.id);
+    const values = column
+      ? (data[tableKey] as Record<string, unknown>[]).map(
+          (row) => row[columnKey]
+        )
+      : [data[field.tag]];
+    for (const value of values) {
+      let attachment: Attachment | null;
+      if (column) {
+        attachment =
+          value === null || value === undefined
+            ? null
+            : tableAttachmentSchema.parse(value);
+      } else {
+        attachment = canonicalAttachment(value);
+      }
+      if (!attachment) {
+        continue;
+      }
+      // oxlint-disable-next-line no-await-in-loop -- Resolve all trusted receipts before locking their versions in one order.
+      const version = await tx.ecmAttachmentVersion.findFirst({
+        where: {
+          bindingId: binding.id,
+          category: field.attachmentCategory ?? "",
+          fileLink: attachment.file_link,
+          fileToken: attachment.file_token,
+          originalName: attachment.original_name,
+          responseId,
+          rowIndex: column ? { not: null } : null,
+          sizeBytes: attachment.size_bytes,
+          state: { in: ["received", "committed"] },
+          tag: field.tag,
+        },
+      });
+      if (
+        !version ||
+        (version.state === "received" && version.operationId !== operation.id)
+      ) {
+        fail(409, "invalid_attachment", "ไม่พบหลักฐานไฟล์ของคำตอบรอบนี้");
+      }
+      versions.push(version.id);
+    }
   }
   const references = await tx.ecmAttachmentReference.findMany({
     where: { responseId },
