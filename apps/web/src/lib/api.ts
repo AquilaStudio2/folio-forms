@@ -105,7 +105,15 @@ export interface SpreadsheetResultField {
   required: boolean;
   computed: boolean;
   options: string[];
-  attachment?: { category: string | null };
+  attachment?:
+    | { mode: "legacy"; category: string | null }
+    | {
+        mode: "template";
+        category: null;
+        document_category_id: number | null;
+        storage_template_id: string | null;
+        template_name: string | null;
+      };
 }
 export interface SpreadsheetResultContract {
   version: 1;

@@ -358,11 +358,15 @@ export function registerOnlyOfficeRoutes(
         } catch (error) {
           await updateOperationFailed(
             operation.id,
-            error instanceof HttpError && error.code === "invalid_template"
-              ? "invalid_template"
+            error instanceof HttpError &&
+              (error.code === "invalid_template" ||
+                error.code === "attachment_template_stale")
+              ? error.code
               : "callback_processing_failed",
             undefined,
-            error instanceof HttpError && error.code === "invalid_template"
+            error instanceof HttpError &&
+              (error.code === "invalid_template" ||
+                error.code === "attachment_template_stale")
               ? { errorMessage: error.message }
               : error instanceof SpreadsheetValidationError
                 ? {
@@ -374,7 +378,14 @@ export function registerOnlyOfficeRoutes(
           // Validation is a completed application decision. Acknowledge receipt
           // so ONLYOFFICE does not replay this failed action's cached userdata
           // for the next force-save; the operation still reports failure.
-          return { error: error instanceof SpreadsheetValidationError ? 0 : 1 };
+          return {
+            error:
+              error instanceof SpreadsheetValidationError ||
+              (error instanceof HttpError &&
+                error.code === "attachment_template_stale")
+                ? 0
+                : 1,
+          };
         }
       },
       { parse: "none" }

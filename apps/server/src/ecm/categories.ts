@@ -1,69 +1,75 @@
 import { Prisma, prisma } from "@onlyoffice/db";
 
 import type { SpreadsheetBindings } from "../documents/spreadsheets/contract";
-import type { FieldRuleContext } from "../forms/field-rules";
 import { fail } from "../http/errors";
 import type { EcmClient } from "./client";
 
-const catalogScope = (ecm: EcmClient, context: FieldRuleContext): string =>
-  ecm.categoryScope(
-    JSON.stringify([
-      context.form.id,
-      context.authorization.actor.id,
-      context.authorization.capability.leaseId,
-      context.templateDraft.documentKey,
-    ])
-  );
-
-export const loadAttachmentCategories = async (
-  ecm: EcmClient,
-  context: FieldRuleContext
-): Promise<string[]> => {
-  const scope = catalogScope(ecm, context);
-  const categories = await ecm.categories();
-  await prisma.$executeRaw(
-    Prisma.sql`INSERT INTO "ecm_category_catalogs" ("scope_key", "names", "expires_at") VALUES (${scope}, ${JSON.stringify(categories)}::jsonb, ${new Date(Date.now() + 15 * 60_000)}) ON CONFLICT ("scope_key") DO UPDATE SET "names" = EXCLUDED."names", "expires_at" = EXCLUDED."expires_at"`
-  );
-  return categories;
+export const loadAttachmentCategories = async (ecm: EcmClient) => {
+  const categories = await ecm.categoryEntries();
+  const templates = await prisma.storageTemplate.findMany({
+    orderBy: [{ template_name: "asc" }, { id: "asc" }],
+  });
+  return { categories, templates };
 };
 
-export const validateAttachmentCategoryChanges = async (
+/** Lock current local mappings until the Field write or publication commits. No provider lookup changes a frozen contract. */
+export const validateAttachmentStorageMappings = async (
   tx: Prisma.TransactionClient,
-  ecm: EcmClient,
-  context: FieldRuleContext,
-  before: SpreadsheetBindings,
-  after: SpreadsheetBindings
+  bindings: SpreadsheetBindings
 ): Promise<void> => {
-  const previous = new Map(
-    [...before.fields, ...(before.table?.columns ?? [])].map((field) => [
-      field.id,
-      field,
-    ])
-  );
-  const changed = [...after.fields, ...(after.table?.columns ?? [])].filter(
-    (field) =>
-      field.attachment?.category &&
-      previous.get(field.id)?.attachment?.category !== field.attachment.category
-  );
-  if (!changed.length) {
-    return;
+  const choices = [
+    ...bindings.fields,
+    ...(bindings.table?.columns ?? []),
+  ].flatMap((field) => (field.attachment ? [field.attachment] : []));
+  for (const choice of choices) {
+    if (choice.mode !== "template") {
+      fail(
+        422,
+        "attachment_template_required",
+        "กรุณาเลือกแม่แบบจัดเก็บเอกสารสำหรับแบบฟอร์มใหม่"
+      );
+    }
   }
-  const scope = catalogScope(ecm, context);
-  const [catalog] = await tx.$queryRaw<{ names: unknown }[]>(
-    Prisma.sql`SELECT "names" FROM "ecm_category_catalogs" WHERE "scope_key" = ${scope} AND "expires_at" > ${new Date()}`
-  );
-  if (
-    !catalog ||
-    !Array.isArray(catalog.names) ||
-    changed.some(
-      (field) =>
-        !(catalog.names as unknown[]).includes(field.attachment?.category)
-    )
-  ) {
-    fail(
-      422,
-      "attachment_category_unavailable",
-      "โหลดรายการ Document Category ให้สำเร็จ แล้วเลือกหมวดจากรายการจริงก่อนบันทึก"
+  const ids = [
+    ...new Set(
+      choices.flatMap((choice) =>
+        choice.mode === "template" && choice.storage_template_id
+          ? [choice.storage_template_id]
+          : []
+      )
+    ),
+  ].toSorted();
+  const mappings = ids.length
+    ? await tx.$queryRaw<
+        {
+          id: string;
+          document_category_id: number;
+          template_name: string;
+        }[]
+      >(
+        Prisma.sql`SELECT "id", "document_category_id", "template_name" FROM "storage_templates" WHERE "id" IN (${Prisma.join(ids.map((id) => Prisma.sql`${id}::uuid`))}) ORDER BY "id" FOR SHARE`
+      )
+    : [];
+  for (const choice of choices) {
+    if (choice.mode !== "template") {
+      continue;
+    }
+    if (!choice.storage_template_id && !choice.template_name) {
+      continue;
+    }
+    const mapping = mappings.find(
+      (entry) => entry.id === choice.storage_template_id
     );
+    if (
+      !mapping ||
+      mapping.document_category_id !== choice.document_category_id ||
+      mapping.template_name !== choice.template_name
+    ) {
+      fail(
+        422,
+        "attachment_template_stale",
+        "แม่แบบจัดเก็บเอกสารเปลี่ยนแล้ว กรุณาเลือกใหม่ ข้อมูลร่างเดิมยังคงอยู่"
+      );
+    }
   }
 };

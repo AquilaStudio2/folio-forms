@@ -1478,13 +1478,7 @@ export function initializeSpreadsheet(options, setStatus) {
         { method: "GET" },
         capability
       );
-      if (
-        !Array.isArray(result?.categories) ||
-        result.categories.some((name) => typeof name !== "string")
-      ) {
-        throw new Error("อ่านรายการหมวดหมู่จัดเก็บเอกสารไม่ได้");
-      }
-      return result.categories;
+      return result;
     };
     const saveAttachmentTemplate = async (bindingId) => {
       uploadPocSaveInFlight = true;
@@ -1517,7 +1511,7 @@ export function initializeSpreadsheet(options, setStatus) {
       const category = await chooseAttachmentCategory({
         options,
         loadCategories,
-        currentCategory: field.attachment.category,
+        currentChoice: field.attachment,
         target: `${field.label} (${field.key})`,
       });
       if (category === null) {
@@ -1531,7 +1525,7 @@ export function initializeSpreadsheet(options, setStatus) {
         );
       }
       loadEntry([targetKind, current]);
-      attachmentConfiguration = { category };
+      attachmentConfiguration = category;
       panelChanged();
       await saveBinding();
       await saveAttachmentTemplate(field.id);
@@ -1643,7 +1637,7 @@ export function initializeSpreadsheet(options, setStatus) {
       show(type, !table);
       show(required, !table);
       categorySummary.hidden = table || !attachmentConfiguration;
-      categorySummary.textContent = `หมวดหมู่จัดเก็บเอกสาร: ${attachmentConfiguration?.category || "ยังไม่ได้เลือกหมวด"}`;
+      categorySummary.textContent = `แม่แบบจัดเก็บเอกสาร: ${attachmentConfiguration?.template_name || "ยังไม่ได้เลือกแม่แบบ"}`;
       changeCategory.hidden = table || !attachmentConfiguration;
       type.disabled = !table && Boolean(attachmentConfiguration);
       show(placeholder, !table);
@@ -1802,7 +1796,7 @@ export function initializeSpreadsheet(options, setStatus) {
       const category = await chooseAttachmentCategory({
         options,
         loadCategories,
-        currentCategory: entry?.[1]?.attachment?.category,
+        currentChoice: entry?.[1]?.attachment,
         target: `${entry?.[1]?.label || "ช่องแนบใหม่"} · ${current.sheet}!${current.address}`,
       });
       if (category === null) {
@@ -1824,7 +1818,7 @@ export function initializeSpreadsheet(options, setStatus) {
       await checkTarget();
       if (!entry) {
         const value = automaticUploadPocField(bindings, id());
-        value.attachment.category = category;
+        value.attachment = category;
         const savedDraftKey = draftKey();
         await mutateBinding(
           { action: "upsert", kind: "field", value },
@@ -1914,12 +1908,12 @@ export function initializeSpreadsheet(options, setStatus) {
         }
         selected = await selection();
         loadEntry(existingUploadPocEntry(selected, bindings));
-        if (entry && entry[1].attachment?.category !== category) {
+        if (entry && !sameValue(entry[1].attachment, category)) {
           if (!entry[1].attachment) {
             // Prove the saved button before converting an existing text mapping.
             await saveAttachmentTemplate(target.bindingId);
           }
-          attachmentConfiguration = { category };
+          attachmentConfiguration = category;
           panelChanged();
           await saveBinding();
         }

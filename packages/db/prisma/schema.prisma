@@ -255,25 +255,29 @@ model TemplateDraft {
 }
 
 model DraftFieldRule {
-  id                 String        @id @default(uuid()) @db.Uuid
-  templateDraftId    String        @map("template_draft_id") @db.Uuid
-  tag                String
+  id                     String        @id @default(uuid()) @db.Uuid
+  templateDraftId        String        @map("template_draft_id") @db.Uuid
+  tag                    String
   /// XLSX display/type metadata; DOCX metadata continues to come from content controls.
-  label              String?
-  type               FieldType?
-  source             String?
-  attachment         Boolean       @default(false)
-  attachmentCategory String?       @map("attachment_category")
-  options            Json?
-  position           Int?
+  label                  String?
+  type                   FieldType?
+  source                 String?
+  attachment             Boolean       @default(false)
+  attachmentCategory     String?       @map("attachment_category")
+  attachmentStorageMode  String        @default("legacy") @map("attachment_storage_mode")
+  attachmentCategoryId   Int?          @map("attachment_category_id")
+  attachmentTemplateId   String?       @map("attachment_template_id")
+  attachmentTemplateName String?       @map("attachment_template_name")
+  options                Json?
+  position               Int?
   /// ExcelBinding JSON: scalar, table or column placement; shared with ManifestField.binding.
   /// Types and validation: apps/server/src/forms/excel-binding.ts. DOCX uses null.
-  binding            Json?
-  required           Boolean       @default(false)
-  prefillPointer     String?       @map("prefill_pointer")
-  prefillPolicy      PrefillPolicy @default(editable) @map("prefill_policy")
-  createdAt          DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt          DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  binding                Json?
+  required               Boolean       @default(false)
+  prefillPointer         String?       @map("prefill_pointer")
+  prefillPolicy          PrefillPolicy @default(editable) @map("prefill_policy")
+  createdAt              DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   templateDraft TemplateDraft @relation(fields: [templateDraftId], references: [id], onDelete: Cascade)
 
@@ -314,25 +318,29 @@ model FieldManifest {
 }
 
 model ManifestField {
-  id                 String        @id @default(uuid()) @db.Uuid
-  manifestId         String        @map("manifest_id") @db.Uuid
-  tag                String
-  label              String
-  placeholder        String?
-  position           Int
-  type               FieldType
-  required           Boolean       @default(false)
-  prefillPolicy      PrefillPolicy @default(editable) @map("prefill_policy")
-  source             String?
-  attachment         Boolean       @default(false)
-  attachmentCategory String?       @map("attachment_category")
-  options            Json?
+  id                     String        @id @default(uuid()) @db.Uuid
+  manifestId             String        @map("manifest_id") @db.Uuid
+  tag                    String
+  label                  String
+  placeholder            String?
+  position               Int
+  type                   FieldType
+  required               Boolean       @default(false)
+  prefillPolicy          PrefillPolicy @default(editable) @map("prefill_policy")
+  source                 String?
+  attachment             Boolean       @default(false)
+  attachmentCategory     String?       @map("attachment_category")
+  attachmentStorageMode  String        @default("legacy") @map("attachment_storage_mode")
+  attachmentCategoryId   Int?          @map("attachment_category_id")
+  attachmentTemplateId   String?       @map("attachment_template_id")
+  attachmentTemplateName String?       @map("attachment_template_name")
+  options                Json?
   /// ExcelBinding JSON: scalar, table or column placement; shared with DraftFieldRule.binding.
   /// Types and validation: apps/server/src/forms/excel-binding.ts. DOCX uses null.
-  binding            Json?
-  pictureMaxBytes    Int?          @map("picture_max_bytes")
-  pictureMaxWidth    Int?          @map("picture_max_width")
-  pictureMaxHeight   Int?          @map("picture_max_height")
+  binding                Json?
+  pictureMaxBytes        Int?          @map("picture_max_bytes")
+  pictureMaxWidth        Int?          @map("picture_max_width")
+  pictureMaxHeight       Int?          @map("picture_max_height")
 
   manifest FieldManifest @relation(fields: [manifestId], references: [id], onDelete: Restrict)
 
@@ -711,27 +719,27 @@ model EcmAttachmentBatch {
 }
 
 model EcmAttachmentVersion {
-  id             String    @id @db.Uuid
-  operationId    String    @map("operation_id") @db.Uuid
-  responseId     String    @map("response_id") @db.Uuid
-  accountKey     String    @map("account_key")
-  bindingId      String    @map("binding_id")
-  tag            String
-  rowIndex       Int?      @map("row_index")
-  filename       String
-  originalName   String    @map("original_name")
-  sizeBytes      Int       @map("size_bytes")
-  fiscalYear     String    @map("fiscal_year")
-  documentNumber String    @map("document_number")
-  category       String
-  state          String    @default("prepared")
-  fileLink       String?   @map("file_link")
-  fileToken      String?   @unique @map("file_token")
-  sentAt         DateTime? @map("sent_at") @db.Timestamptz(3)
-  receivedAt     DateTime? @map("received_at") @db.Timestamptz(3)
+  id               String    @id @db.Uuid
+  operationId      String    @map("operation_id") @db.Uuid
+  responseId       String    @map("response_id") @db.Uuid
+  accountKey       String    @map("account_key")
+  bindingId        String    @map("binding_id")
+  tag              String
+  rowIndex         Int?      @map("row_index")
+  filename         String
+  originalName     String    @map("original_name")
+  sizeBytes        Int       @map("size_bytes")
+  fiscalYear       String    @map("fiscal_year")
+  documentNumber   String    @map("document_number")
+  category         String
+  state            String    @default("prepared")
+  fileLink         String?   @map("file_link")
+  fileToken        String?   @unique @map("file_token")
+  sentAt           DateTime? @map("sent_at") @db.Timestamptz(3)
+  receivedAt       DateTime? @map("received_at") @db.Timestamptz(3)
   requestSettledAt DateTime? @map("request_settled_at") @db.Timestamptz(3)
   generation       Int       @default(0)
-  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@index([operationId, state])
   @@index([responseId])
@@ -750,19 +758,19 @@ model EcmAttachmentReference {
 
 /// One initial cleanup attempt belongs to the explicit operation that retired the reference.
 model EcmAttachmentCleanup {
-  operationId String   @map("operation_id") @db.Uuid
-  versionId   String   @map("version_id") @db.Uuid
-  responseId  String   @map("response_id") @db.Uuid
-  formId      String?  @map("form_id") @db.Uuid
-  deletionCaseId String? @map("deletion_case_id") @db.Uuid
-  state       String   @default("pending")
-  attemptedAt DateTime? @map("attempted_at") @db.Timestamptz(3)
-  generation  Int      @default(0)
-  confirmedBy String?  @map("confirmed_by")
-  confirmedAt DateTime? @map("confirmed_at") @db.Timestamptz(3)
-  evidence    Json?
-  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt   DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  operationId    String    @map("operation_id") @db.Uuid
+  versionId      String    @map("version_id") @db.Uuid
+  responseId     String    @map("response_id") @db.Uuid
+  formId         String?   @map("form_id") @db.Uuid
+  deletionCaseId String?   @map("deletion_case_id") @db.Uuid
+  state          String    @default("pending")
+  attemptedAt    DateTime? @map("attempted_at") @db.Timestamptz(3)
+  generation     Int       @default(0)
+  confirmedBy    String?   @map("confirmed_by")
+  confirmedAt    DateTime? @map("confirmed_at") @db.Timestamptz(3)
+  evidence       Json?
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   @@id([operationId, versionId])
   @@index([responseId, state])

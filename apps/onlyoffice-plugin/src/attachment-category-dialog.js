@@ -2,7 +2,7 @@
 export const chooseAttachmentCategory = ({
   options,
   loadCategories,
-  currentCategory,
+  currentChoice,
   target,
 }) => {
   if (!options?.attachmentCategoryPopupChannelId) {
@@ -13,6 +13,7 @@ export const chooseAttachmentCategory = ({
   let closed = false;
   let generation = 0;
   let categories = [];
+  let templates = [];
   let status = "loading";
   let categoryError = null;
   let shown = false;
@@ -33,10 +34,11 @@ export const chooseAttachmentCategory = ({
     post("attachment-category-popup-state", {
       state: {
         categories,
-        currentCategory: currentCategory || null,
+        currentChoice: currentChoice || null,
         error: categoryError,
         status,
         target,
+        templates,
       },
     });
   const finish = (value, failure) => {
@@ -59,6 +61,7 @@ export const chooseAttachmentCategory = ({
     generation += 1;
     const current = generation;
     categories = [];
+    templates = [];
     status = "loading";
     categoryError = null;
     send();
@@ -68,12 +71,31 @@ export const chooseAttachmentCategory = ({
         return;
       }
       if (
-        !Array.isArray(result) ||
-        result.some((name) => typeof name !== "string" || !name.trim())
+        !Array.isArray(result?.categories) ||
+        !Array.isArray(result?.templates) ||
+        result.categories.some(
+          (entry) =>
+            !Number.isSafeInteger(entry.id) || typeof entry.type !== "string"
+        ) ||
+        result.templates.some(
+          (entry) =>
+            typeof entry.id !== "string" ||
+            !Number.isSafeInteger(entry.document_category_id) ||
+            typeof entry.template_name !== "string"
+        )
       ) {
         throw new Error("รายการหมวดหมู่ไม่ถูกต้อง");
       }
-      categories = result;
+      categories = result.categories.filter((category) =>
+        result.templates.some(
+          (entry) => entry.document_category_id === category.id
+        )
+      );
+      templates = result.templates.filter((entry) =>
+        categories.some(
+          (category) => category.id === entry.document_category_id
+        )
+      );
       status = categories.length ? "ready" : "empty";
     } catch (error) {
       if (closed || generation !== current) {
@@ -109,9 +131,17 @@ export const chooseAttachmentCategory = ({
       message.type === "choose" &&
       shown &&
       status === "ready" &&
-      categories.includes(message.category)
+      categories.some(
+        (entry) => entry.id === message.choice?.document_category_id
+      ) &&
+      templates.some(
+        (entry) =>
+          entry.id === message.choice?.storage_template_id &&
+          entry.document_category_id === message.choice.document_category_id &&
+          entry.template_name === message.choice.template_name
+      )
     ) {
-      finish(message.category);
+      finish({ category: null, mode: "template", ...message.choice });
     }
   };
   const unload = () => finish(null);

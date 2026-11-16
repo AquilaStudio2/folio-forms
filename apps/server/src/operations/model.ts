@@ -27,6 +27,7 @@ export const operationTypeForAction: Record<OperationAction, OperationType> = {
   submit: "submit_response",
 };
 export type OperationErrorCode =
+  | "attachment_template_stale"
   | "callback_claim_invalid"
   | "callback_document_unavailable"
   | "callback_key_mismatch"

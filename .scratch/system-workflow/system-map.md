@@ -35,6 +35,8 @@
 
 ทบทวน Storage Template catalog วันที่ 17 พฤศจิกายน 2026 บน `feat/storage-templates-01` จาก integration baseline `7d4859c`: เพิ่มหน้า Admin และ persisted CRUD แยกจาก Form/Response ใช้ numeric category ID กับ shared ECM auth เดิม ไม่แก้ข้อมูลหรือไฟล์เดิม ไม่เรียก provider file mutation ผลตรวจของตั๋วระบุใน ticket 01; ไม่ใช่หลักฐาน live DCM routing ส่วน generated artifacts สร้างหลังรวม source โดย integration owner
 
+ทบทวน Storage Template authoring วันที่ 17 พฤศจิกายน 2026 บน `feat/storage-templates-02` จาก integration `03c4906`: normal Field metadata เก็บ storage mode/category ID/catalog identity/name; publication ตรวจ local mapping ภายใน transaction แล้วตรึง snapshot ส่วน upload lifecycle ของ mode ใหม่เป็นงานตั๋ว 03 ไม่ถือว่าเปิดใช้ upload ได้จาก authoring ที่เสร็จแล้ว
+
 เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
 รายการ source ครอบคลุมหน้าและ layout ฝั่งเว็บ, HTTP routes ของเซิร์ฟเวอร์หลัก, private document worker และ Prisma models
@@ -497,8 +499,8 @@ flowchart TD
     author --> select --> settings --> native --> patch --> known
     known -->|"ได้"| rules
     known -->|"ไม่ได้"| block --> recover --> known
-    rules --> attachment["ช่องแนบ: category ต่อ scalar หรือ column"]
-    attachment --> complete{"category ครบ และมี root fiscal_year/docs_number"}
+    rules --> attachment["ช่องแนบ: category ID และ Storage Template ต่อ scalar หรือ column"]
+    attachment --> complete{"current mapping ครบ และมี root docs_number หนึ่งช่อง"}
     complete -->|"ครบ"| publish
     complete -->|"ไม่ครบ"| draftOnly["บันทึก Template Draft ได้ แต่เผยแพร่ไม่ได้"]
     rules -->|"ordinary Fields ไม่มีปุ่มแนบ"| publish
@@ -623,15 +625,15 @@ Catalog ที่โหลดสำเร็จเป็น snapshot ของ�
 
 Production จะเปิดความสามารถนี้เมื่อ `PDMS_PROJECT_NAME_SOURCE_ENABLED` เป็นจริงและมี configuration ที่ใช้ได้ แผนผังนี้ไม่ได้ยืนยันว่าระบบปลายทางเปิด flag แล้ว
 
-ปุ่มเดิมต่อยอดผ่านคำสั่ง **เพิ่มช่องแนบไฟล์** และปุ่มในชีต **แนบไฟล์** ไม่มี checkbox “ช่องแนบไฟล์จากปุ่มเดิม” หรือคำว่า POC ในข้อความใช้งาน flow นี้ คง GUID, stable binding, marker และ protocol identifiers เดิม Admin แก้ Title, Tag และ required ในแผง Field เดิม หมวดหมู่จัดเก็บเอกสารกำหนดต่อ scalar หรือ column ทุกแถวใน column ใช้หมวดเดียวกัน ค่า type ยังคงเป็น text แต่สัญญาแนบระบุด้วย `attachment` อย่างชัดเจน ไม่เดาจาก Tag หรือข้อความ ใช้คอลัมน์ DraftFieldRule/ManifestField เดิม ไม่เพิ่ม schema migration หรือ config สำเนาใน binding JSON
+ปุ่มเดิมต่อยอดผ่าน **เพิ่มช่องแนบไฟล์** และปุ่มในชีต **แนบไฟล์** คง GUID, stable binding, marker และ protocol identifiers เดิม Admin แก้ Title, Tag และ required ในแผง Field เดิม Storage Template กำหนดต่อ scalar หรือ column ทุกแถวใช้ตัวเลือกเดียวกัน type ยังคง text แต่สัญญาแนบระบุด้วย `attachment` ไม่เดาจาก Tag/ข้อความ Migration เพิ่ม `attachmentStorageMode`, `attachmentCategoryId`, `attachmentTemplateId`, `attachmentTemplateName` ใน normal DraftFieldRule/ManifestField ไม่ใส่ routing metadata ใน placement-only Excel Binding
 
 ก่อนเผยแพร่ทุก managed PoC OLE ต้องมีหลักฐาน saved-button ที่ตรวจจริงตรงกับ marker, binding, Tag และตำแหน่ง/แถว ไม่มี orphan หรือปุ่มซ้ำ และทุก declared attachment ต้องมีปุ่มจริงครบช่อง scalar หรือทุกแถวของ column การมี marker อย่างเดียวไม่พอ ระบบปฏิเสธก่อน engine เปลี่ยน workbook ไม่ strip ปุ่มที่ยังไม่ได้ตั้งค่าเพื่อทำให้ Publish ผ่าน และไม่เพิ่มการลบ foreign objects หรือบังคับให้ Template Draft ตั้งค่าครบ
 
 การเปลี่ยน Field/column เดิมจาก ordinary เป็น attachment ต้องเป็นคำสั่ง Admin ใน Template Draft และตรวจ canonical XLSX ที่บันทึกแล้วด้วย saved-button proof เดียวกัน โดยใช้ binding/Tag/ตำแหน่งก่อน PATCH ไม่เดาจาก `attachment_N`, label หรือ URL หากไม่มี marker/OLE ตรงกัน มี mapping ขัดแย้ง หรือ rules ปัจจุบันไม่ตรงต้นแบบที่บันทึก ให้หยุดโดยไม่เปลี่ยน revision/ข้อมูล และให้ Admin บันทึกต้นแบบเดิมให้สำเร็จก่อนตั้งค่าใหม่ การ rename Tag ใน PATCH ที่มีหลักฐานเดิมถูกต้องยังใช้ machinery เดิมและคง stable binding/placement
 
-การเพิ่มช่องเปิด native dialog **เลือกหมวดหมู่จัดเก็บเอกสาร** ก่อนสร้าง Field/ปุ่ม แล้วโหลดรายการใหม่ทันที ปุ่มยืนยันใช้ได้เมื่อเลือกรายการจริงที่โหลดสำเร็จ ไม่มี fallback เมื่อ loading, error หรือรายการว่าง มีลองใหม่/ยกเลิก ยกเลิกหรือ Escape ก่อนยืนยันไม่เปลี่ยน Field/ปุ่ม และหลังจบ action คืน keyboard focus ให้ปุ่มเดิมโดยไม่แย่ง focus จาก editor ที่ผู้ใช้ย้ายไป เมื่อยืนยันแล้วจึงสร้าง `attachment_N` หรือใช้ช่อง/column เดิมโดยไม่สร้าง Tag ซ้ำ การแปลง ordinary mapping บันทึกปุ่มเดิมก่อนเพื่อตรวจ canonical proof แล้ว PATCH attachment/category และบันทึกต้นแบบอีกครั้ง ล็อก authoring ตลอดทั้ง action รวมช่วงคั่นระหว่างการบันทึก หากล้มเหลวไม่รายงานสำเร็จและลองใหม่ที่ช่องเดิมเพื่อใช้ id/Tag เดิม
+การเพิ่มช่องเปิด external popup เดิมผ่าน ONLYOFFICE `ShowInputHelper` ก่อนสร้าง Field/ปุ่ม แล้วโหลด numeric categories และ Storage Templates ใหม่ เลือกหมวดก่อนแล้วเลือก template ของหมวดนั้น หมวดไม่มี template ไม่เป็น option เปลี่ยนหมวดล้าง template เดิม Confirm ปิดระหว่าง loading/error/empty และจนทั้งคู่ valid Cancel/Escape ไม่เปลี่ยน Field/ปุ่มและคืน focus ตาม machinery เดิม Confirm จึงสร้าง `attachment_N` หรือใช้ช่อง/column เดิม การแปลง ordinary mapping บันทึกปุ่มเดิมเพื่อตรวจ canonical proof แล้ว PATCH config และบันทึกต้นแบบอีกครั้ง ล็อก authoring ตลอด multi-step save; lease/revision, dirty/navigation guards และ native proof เดิมยังใช้ทั้งหมด ไม่เริ่ม upload
 
-ช่องแนบที่ตั้งไว้แล้วแสดงหมวดที่บันทึกพร้อม **เปลี่ยนหมวด** ซึ่งเปิด dialog เดียวกันและโหลดรายการใหม่ การเปลี่ยนหมวดคงปุ่ม/id/Tag/rules ไม่วางปุ่มอีกชุด ถ้า API ล่มหรือชื่อเดิมไม่อยู่ในรายการใหม่ ให้แสดงชื่อที่บันทึกไว้แยกต่างหากและไม่เปลี่ยนเอง การแก้ Title/Tag/required ยังเก็บ attachment/category เดิม การตั้งค่าหรือบันทึกต้นแบบไม่ทำให้ไฟล์ถูก upload; ใช้ explicit User Save Draft/Submit หรือ final Admin Correction ตาม lifecycle เดิม
+ช่องแนบแสดงชื่อ Storage Template ที่บันทึกพร้อม **เปลี่ยนหมวด** เปิด popup เดียวกัน การเปลี่ยน choice คงปุ่ม/id/Tag/rules ถ้า provider ล่มหรือ mapping ถูก rename/move/delete แสดงชื่อเดิมแยกและไม่เปลี่ยนตาม master Backend ตรวจ UUID/category ID/name ตรง local catalog ภายใต้ row lock ก่อนเขียน Field; stale selection ไม่ทิ้ง Draft หรือเพิ่ม revision Title/Tag/required edits เก็บ choice เดิมที่ยัง valid ไม่มี template answer Tag และ User เลือกปลายทางไม่ได้
 
 Published PoC เก่าคง manifest/type/required และคำตอบ text/URL ตามเดิม รวม Save Draft, Submit และประวัติ ไม่สร้าง attachment object, receipt หรือสิทธิ์ลบจาก string ปุ่มเดิมคืนข้อความถาวรให้ประสาน Admin ทำสำเนา/ตั้งค่า Form ใหม่ โดย popup ปิด choose/retry และไม่รับ File เข้า memory เป็น fallback พร้อมซ่อนคำอธิบาย memory-only และส่วนเลือกไฟล์ที่ใช้ไม่ได้ เพื่อให้ข้อความแนะนำอ่านได้ชัดเจนภายใน dialog โดยไม่ถูก footer บัง หน้า Template Draft ใช้ตั้งค่าเท่านั้น ไม่รับไฟล์ตัวอย่าง ปุ่ม Duplicate เดิมคัด template/การตั้งค่า ไม่คัด Responses, answers หรือไฟล์ User และไม่ archive/delete/redirect/หา successor ให้ต้นฉบับ
 
@@ -639,11 +641,11 @@ pending Files ของช่องที่ตั้งค่าจริงร
 
 Native OOXML อาจแทนปุ่มเดียวด้วย anchored `Choice` และ empty `Fallback` ภายใน `AlternateContent` เดียวกัน ระบบนับ alias เป็นปุ่มเดียวเฉพาะเมื่อ shape ID/relationship ตรงกันและแต่ละด้านมีหนึ่งรายการเท่านั้น ปุ่มซ้ำหรือ orphan นอกโครงสร้างที่พิสูจน์นี้ยังต้องถูกปฏิเสธ
 
-Template Draft เก็บหมวดที่ยังไม่ครบได้ ก่อน Publish ต้องมีหมวดทุกช่อง มี root scalar `fiscal_year` และ `docs_number` อย่างละหนึ่ง Field และไม่มีปุ่มเก่าที่ไม่ได้ตั้งค่า หรือช่องแนบที่ไม่มี marker ตำแหน่งเดิม ไม่ต้องกรอกค่าคำตอบของ User ในต้นแบบ Tag เปลี่ยนก่อนเผยแพร่ได้โดยใช้ binding เดิม หลังเผยแพร่แก้ contract ไม่ได้ ต้อง Duplicate Form
+Template Draft เก็บ mode `template` ที่ choice ยังไม่ครบได้ Publish ต้องมี current local mapping ทุก attachment Field/column และ exactly one root scalar `docs_number` ที่ไม่ใช่ attachment/computed ไม่บังคับ `fiscal_year` จาก attachment prerequisite หรือค่าคำตอบในต้นแบบ ตรวจ revision และ lock mapping อีกครั้งภายใน publication transaction จน Manifest commit; provider outage ไม่ขัดขวาง saved valid mapping ไม่ live lookup มาเปลี่ยน published routing ภายหลัง
 
-หากตั้งค่าช่องแนบไม่ครบ ข้อความเผยแพร่ระบุชื่อและ Tag ของช่องที่ยังไม่มี Document Category พร้อม Tag `fiscal_year` หรือ `docs_number` เฉพาะรายการที่ยังไม่มีช่องกรอกเดี่ยวที่ใช้ได้ โดยแสดงปัญหาทั้งสองกลุ่มพร้อมกันแบบสั้น ไม่รวมขั้นตอนตั้งค่าในข้อความ ช่อง metadata ต้องไม่ใช่ช่องแนบหรือช่องสูตร และยังไม่ต้องมีค่าคำตอบในต้นแบบ คง HTTP 422 และรหัส `attachment_category_required` ก่อน `attachment_metadata_required` เมื่อขาดทั้งสองกลุ่ม
+Publish errors ระบุชื่อ/Tag ที่ยังไม่มีแม่แบบและ `docs_number` เฉพาะเมื่อขาด คง HTTP 422 และ `attachment_category_required` ก่อน `attachment_metadata_required` เมื่อขาดทั้งคู่ Mapping ที่เปลี่ยนแล้วคืน `attachment_template_stale` ให้เลือกใหม่ ไม่ follow rename/move Published legacy contracts คง `mode: legacy` และ category name เดิม ไม่เดาจาก `fiscal_year`; migration ไม่แก้ Responses/answers/files
 
-Admin โหลดหมวดจริงด้วย `GET /api/admin/forms/:publicId/attachment-categories` ทุกครั้งที่เปิด popup ภายนอก sidebar และเมื่อกดลองใหม่ ภายใต้ configure-fields capability และ active editor lease เซิร์ฟเวอร์เรียก `GET /api/beeecm/public/document/category` พร้อม ECM Bearer จาก shared login coordinator โดย reuse token generation ที่เหลือเกิน 12 ชั่วโมงและพอสำหรับ request budget/skew ไม่บังคับ login ใหม่ทุกครั้ง อ่าน root array ของ `id`/`type` ตาม response example ทางการแล้วคืนชื่อจาก `type` เท่านั้น ไม่ส่ง ECM Bearer ไป browser รายการสำเร็จถูกผูกกับบัญชี ECM, Form, actor, lease และ document เป็นเวลา 15 นาที การเลือกหมวดใหม่ต้องตรงรายการนี้ ส่วนชื่อที่บันทึกไว้คงเดิมเมื่อหมวดเปลี่ยนชื่อหรือ API ล่ม Publish ไม่เรียก API ซ้ำและไม่บังคับให้ User เลือกหมวด
+`GET /api/admin/forms/:publicId/attachment-categories` ภายใต้ configure-fields capability/active lease คืน `{categories:[{id,type}],templates:[{id,document_category_id,template_name}]}` จาก `categoryEntries()` และ local catalog ไม่ส่ง ECM Bearer ไป browser Popup/bridge ตรวจ scoped request/pinned frame/current tuple Backend ตรวจ catalog ซ้ำอย่าง race-safe ไม่ใช้ label เป็น identity Duplicate ได้ Form/link ใหม่ คัดเฉพาะ template/config ไม่คัด Responses/answers/files และไม่เปลี่ยนต้นฉบับ สำเนา legacy ล้าง destination choice ต้องเลือกใหม่โดยชัดแจ้ง สำเนา new-mode คัด snapshot แต่ต้องตรวจ current catalog ก่อนเผยแพร่
 
 ECM ใช้เฉพาะ `ECM_API_URL`, `ECM_USERNAME`, `ECM_PASSWORD` ของ Folio และ `ECM_TOKEN_ENCRYPTION_KEY` ที่ส่งผ่าน secret management เป็น key 32 bytes แบบ Base64 ห้าม login บัญชีนี้นอก coordinator เดียวกัน HTTPS จำเป็นนอก loopback ห้ามตาม redirect พร้อม credentials และไม่ fallback ไป Ongoing Configuration ผิดกระทบเฉพาะงาน ECM ไม่ทำให้ Forms ปกติหรือ Folio login ใช้ไม่ได้
 
@@ -1107,7 +1109,7 @@ ER แสดงความสัมพันธ์หลักสำหรั�
 | การนำข้อมูลเข้า | `Handoff` และ `PendingClaim` ควบคุมการนำ Prefill เข้าใช้ครั้งเดียว |
 | การแก้เอกสาร | `EditorLease` กันหลาย session แก้ target เดียวกัน, `Operation` เก็บงาน asynchronous, `CallbackClaim` กัน callback ใช้ซ้ำ |
 | Catalog ต่อการเปิด editor | `PdmsProjectCatalogSession` ผูกรายชื่อโครงการกับผู้ใช้ auth session, lease, target และ document |
-| ECM auth และ Document Category | `EcmAuthState` เก็บ encrypted token, expiry, generation และ shared claim; `EcmCategoryCatalog` เก็บรายชื่อจริงที่มีอายุและผูก authoring scope ไม่เก็บ service credentials |
+| ECM auth และ Document Category | `EcmAuthState` เก็บ encrypted token, expiry, generation และ shared claim; authoring ใช้ numeric category IDs และ local `StorageTemplate` ไม่เก็บ credentials ใน browser |
 | Scalar/table attachment lifecycle และ recovery | `EcmAttachmentBatch` ผูก original checkpoint/actor/lease/document, generation และ independent mutation hold; `EcmAttachmentVersion` เก็บ immutable original intent/paired receipt/request settlement รวม original physical `rowIndex` โดยไม่เก็บ bytes; current canonical `row_index` ย้ายได้ผ่าน trusted mapping; `EcmAttachmentReference` fence references ทุก nested table/scalar snapshot กับ deletion claim; `EcmAttachmentCleanup` เก็บ initiating operation/version/retained form scope, attempt generation, verified actor/evidence และ durable cleanup warning แยกจาก canceled batch โดยไม่มี cascading relations |
 | การตรวจย้อนหลังและ cleanup | `AuditEvent` เก็บเหตุการณ์, `ObjectCleanupIntent` เก็บไฟล์หลักที่ต้องลบต่อ, `DeletionTombstone` กันข้อมูลกลับจาก handoff และเก็บ owner จริง/pre-cascade attachment context; `EcmAttachmentCleanup.deletionCaseId` ผูก pending external cleanup กับ case หลัง rows gone โดยไม่พึ่ง upload actor |
 

@@ -15,6 +15,7 @@ import { reconcileSpreadsheetColumns } from "../documents/spreadsheets/columns";
 import { validatePreservedSpreadsheetEditorSave } from "../documents/spreadsheets/editor-save-proof";
 import { validateSpreadsheetAttachmentButtons } from "../documents/spreadsheets/upload-poc";
 import { readSpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
+import { validateAttachmentStorageMappings } from "../ecm/categories";
 import { excelBindingSchema } from "../forms/excel-binding";
 import { validateFieldRulePointer } from "../forms/field-rules";
 import {
@@ -370,6 +371,7 @@ export async function completePublishOperation(
       }
       if (bindings) {
         validateSpreadsheetPublication(bindings);
+        await validateAttachmentStorageMappings(tx, bindings);
         validateSpreadsheetAttachmentButtons(bytes, bindings);
         draftRules = bindings.fields.map((field) => ({
           prefillPointer: field.prefillPointer,

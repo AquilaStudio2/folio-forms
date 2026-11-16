@@ -68,12 +68,24 @@ const popup = {
   instanceId: "instance",
   source: "folio-attachment-category-popup",
 };
+const choice = {
+  document_category_id: 1,
+  storage_template_id: "new-template",
+  template_name: "new",
+};
 const state = {
-  categories: ["new"],
-  currentCategory: "saved",
+  categories: [{ id: 1, type: "category" }],
+  currentChoice: {
+    document_category_id: 1,
+    storage_template_id: "saved-template",
+    template_name: "saved",
+  },
   error: null,
   status: "ready",
   target: "field:receipt",
+  templates: [
+    { document_category_id: 1, id: "new-template", template_name: "new" },
+  ],
 };
 const primaryState = (requestId: string, overrides = {}) => ({
   requestId,
@@ -117,7 +129,7 @@ it("buffers fresh category state, relays only current choices and closes on unmo
   send(category.source, {
     ...popup,
     capability: "never-forward",
-    category: "new",
+    choice,
     requestId: "second",
     type: "choose",
   });
@@ -140,8 +152,8 @@ it("buffers fresh category state, relays only current choices and closes on unmo
     },
     {
       bridgeId: "bridge",
-      category: "new",
       channelId: "category-channel",
+      choice,
       documentKey: "document",
       requestId: "second",
       source: "folio-attachment-category-popup-host",
@@ -187,32 +199,37 @@ it("rejects forged frames, scope, instances, requests and popup action authority
   primary.receive.mockClear();
   category.receive.mockClear();
   for (const forged of [
-    { ...popup, category: "new", requestId: "old", type: "choose" },
-    { ...popup, category: "saved", requestId: "active", type: "choose" },
+    { ...popup, choice, requestId: "old", type: "choose" },
+    {
+      ...popup,
+      choice: { ...choice, template_name: "saved" },
+      requestId: "active",
+      type: "choose",
+    },
     {
       ...popup,
       bridgeId: "other",
-      category: "new",
+      choice,
       requestId: "active",
       type: "choose",
     },
     {
       ...popup,
-      category: "new",
       channelId: "other",
+      choice,
       requestId: "active",
       type: "choose",
     },
     {
       ...popup,
-      category: "new",
+      choice,
       documentKey: "other",
       requestId: "active",
       type: "choose",
     },
     {
       ...popup,
-      category: "new",
+      choice,
       instanceId: "other",
       requestId: "active",
       type: "choose",
@@ -238,7 +255,7 @@ it("rejects forged frames, scope, instances, requests and popup action authority
   send(sibling.source, primaryState("forged"));
   send(
     category.source,
-    { ...popup, category: "new", requestId: "active", type: "choose" },
+    { ...popup, choice, requestId: "active", type: "choose" },
     "https://foreign.example"
   );
   expect(primary.receive).not.toHaveBeenCalled();
@@ -299,7 +316,7 @@ it("retires closed requests, validates display state and cancels a replaced comm
   send(primary.source, primaryState("first"));
   send(category.source, {
     ...popup,
-    category: "new",
+    choice,
     requestId: "first",
     type: "choose",
   });
@@ -347,7 +364,7 @@ it("retires closed requests, validates display state and cancels a replaced comm
   replacement.receive.mockClear();
   send(category.source, {
     ...popup,
-    category: "new",
+    choice,
     requestId: "third",
     type: "choose",
   });

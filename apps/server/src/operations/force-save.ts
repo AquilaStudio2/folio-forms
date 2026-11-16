@@ -284,11 +284,15 @@ export function launchForceSave(
     } catch (error) {
       await updateOperationFailed(
         operation.id,
-        error instanceof HttpError && error.code === "invalid_template"
-          ? "invalid_template"
+        error instanceof HttpError &&
+          (error.code === "invalid_template" ||
+            error.code === "attachment_template_stale")
+          ? error.code
           : "force_save_failed",
         undefined,
-        error instanceof HttpError && error.code === "invalid_template"
+        error instanceof HttpError &&
+          (error.code === "invalid_template" ||
+            error.code === "attachment_template_stale")
           ? { errorMessage: error.message }
           : error instanceof SpreadsheetValidationError
             ? {

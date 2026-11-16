@@ -43,10 +43,14 @@ export const validateSpreadsheetPublication = (
     ...(bindings.table?.columns ?? []),
   ].filter((field) => field.attachment);
   const missingCategories = attachments.filter(
-    (field) => !field.attachment?.category
+    (field) =>
+      field.attachment?.mode !== "template" ||
+      field.attachment.document_category_id === null ||
+      !field.attachment.storage_template_id ||
+      !field.attachment.template_name
   );
   const missingMetadata = attachments.length
-    ? ["fiscal_year", "docs_number"].filter(
+    ? ["docs_number"].filter(
         (key) =>
           bindings.fields.filter(
             (field) => field.key === key && !field.attachment && !field.computed
@@ -57,7 +61,7 @@ export const validateSpreadsheetPublication = (
     const problems: string[] = [];
     if (missingCategories.length) {
       problems.push(
-        `ยังไม่ได้เลือก Document Category ให้ช่อง ${missingCategories.map((field) => `${field.label} (Tag: ${field.key})`).join(", ")}`
+        `ยังไม่ได้เลือกแม่แบบจัดเก็บเอกสารให้ช่อง ${missingCategories.map((field) => `${field.label} (Tag: ${field.key})`).join(", ")}`
       );
     }
     if (missingMetadata.length) {
@@ -96,6 +100,10 @@ interface SpreadsheetStoredField {
   binding: unknown;
   attachment?: boolean;
   attachmentCategory?: string | null;
+  attachmentStorageMode?: string;
+  attachmentCategoryId?: number | null;
+  attachmentTemplateId?: string | null;
+  attachmentTemplateName?: string | null;
   label: string | null;
   options: unknown;
   position: number | null;
@@ -176,7 +184,18 @@ export const spreadsheetBindingsFromFields = (
     }
     const base = {
       ...(row.attachment
-        ? { attachment: { category: row.attachmentCategory ?? null } }
+        ? {
+            attachment:
+              row.attachmentStorageMode === "template"
+                ? {
+                    category: null,
+                    document_category_id: row.attachmentCategoryId ?? null,
+                    mode: "template",
+                    storage_template_id: row.attachmentTemplateId ?? null,
+                    template_name: row.attachmentTemplateName ?? null,
+                  }
+                : { category: row.attachmentCategory ?? null, mode: "legacy" },
+          }
         : {}),
       key: row.tag,
       label: row.label,
@@ -246,6 +265,19 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
   const rows = bindings.fields.map((field) => ({
     attachment: Boolean(field.attachment),
     attachmentCategory: field.attachment?.category ?? null,
+    attachmentCategoryId:
+      field.attachment?.mode === "template"
+        ? field.attachment.document_category_id
+        : null,
+    attachmentStorageMode: field.attachment?.mode ?? "legacy",
+    attachmentTemplateId:
+      field.attachment?.mode === "template"
+        ? field.attachment.storage_template_id
+        : null,
+    attachmentTemplateName:
+      field.attachment?.mode === "template"
+        ? field.attachment.template_name
+        : null,
     binding: excelBindingSchema.parse({
       anchor: field.anchor,
       computed: field.computed,
@@ -268,6 +300,10 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
     rows.push({
       attachment: false,
       attachmentCategory: null,
+      attachmentCategoryId: null,
+      attachmentStorageMode: "legacy",
+      attachmentTemplateId: null,
+      attachmentTemplateName: null,
       binding: excelBindingSchema.parse({
         anchor: bindings.table.anchor,
         id: bindings.table.id,
@@ -285,6 +321,19 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
       rows.push({
         attachment: Boolean(column.attachment),
         attachmentCategory: column.attachment?.category ?? null,
+        attachmentCategoryId:
+          column.attachment?.mode === "template"
+            ? column.attachment.document_category_id
+            : null,
+        attachmentStorageMode: column.attachment?.mode ?? "legacy",
+        attachmentTemplateId:
+          column.attachment?.mode === "template"
+            ? column.attachment.storage_template_id
+            : null,
+        attachmentTemplateName:
+          column.attachment?.mode === "template"
+            ? column.attachment.template_name
+            : null,
         binding: excelBindingSchema.parse({
           computed: column.computed,
           id: column.id,

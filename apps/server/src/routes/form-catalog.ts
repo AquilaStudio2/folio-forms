@@ -302,6 +302,17 @@ export function registerFormCatalogRoutes(
                       [],
                     source.publishedTemplate ? sourcePrefillFields : undefined
                   )
+                ).map((row) =>
+                  row.attachmentStorageMode === "legacy" && row.attachment
+                    ? {
+                        ...row,
+                        attachmentCategory: null,
+                        attachmentCategoryId: null,
+                        attachmentStorageMode: "template",
+                        attachmentTemplateId: null,
+                        attachmentTemplateName: null,
+                      }
+                    : row
                 )
               : (source.publishedTemplate?.manifest?.fields.map((field) => {
                   const prefill = sourcePrefillFields.find(
