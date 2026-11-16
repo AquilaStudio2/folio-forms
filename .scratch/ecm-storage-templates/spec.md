@@ -365,3 +365,11 @@ Cross-cutting validation/authorization/accessibility/legacy compatibility ต้
 - อนุญาต live DCM เฉพาะ filename stem `กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45)` ซึ่งคาดปลายทาง `2. มติและการก่อหนี้`; หากใช้ไม่ได้จึงพิจารณา `กทอ.67-00-0001-ขอเบิก1-นำส่ง` ซึ่งคาดปลายทาง `3. บันทึกตรวจเบิก` เลือกเพียงหนึ่ง scenario ถ้าใช้ได้ ไม่ขยายเป็นการทดสอบชื่ออื่น
 - ใช้ synthetic file, ตรวจ collision ก่อนเขียน, ไม่เขียนทับไฟล์ที่มีอยู่ก่อน และไม่ retry/switch หลัง write outcome ไม่แน่นอน ผู้ใช้แจ้งว่าจะตามลบ จึงไม่ DELETE live artifacts เองหรือสร้างไฟล์เพิ่มโดยไม่จำเป็น
 - Parent เป็นเจ้าของ live test เพียงรายเดียว Subagents ใช้ provider double เพื่อไม่ให้หลาย agent login/upload พร้อมกัน ผล accepted ชื่อซ้ำ/shared URL ยังไม่ใช่การรับรอง independence ของไฟล์แต่ละช่องหรือสิทธิ์ทำลายประวัติ
+
+### Authorized DCM runtime sample — 2026-11-17
+
+- ทดสอบ primary scenario เพียงหนึ่งครั้งด้วย `กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).pdf` หลัง search ไม่พบเป้าหมายเดิม ส่ง multipart สอง fieldตาม contract และ original PDF สังเคราะห์ 629 bytes
+- POST ตอบ HTTP 200/status 200 โดย `data` เป็น object; provider รายงานปลายทาง `DMS/ShareFiles/2567/กทอ.67-00-0001/2. มติและการก่อหนี้` ตรง scenario ที่ผู้ใช้ระบุ ไม่ทดลองชื่อสำรอง
+- Original fixture SHA-256: `4293a5cdab0808afc75f3e0e985f6f3cb5c7cfd457f9bb094d4c178375a8e21d` เปิด public file_link ผ่าน native viewer แล้วเห็นข้อความสังเคราะห์และ PDF หนึ่งหน้า แต่ Download control ไม่ให้ captured download ภายในเวลารอของเครื่องมือ จึงยังไม่อ้าง exact original-byte backend retrieval
+- ไม่ทดสอบ overwrite, ชนิดไฟล์อื่น, zero/10 MB หรือ extensionless เพิ่ม และไม่ DELETE live file ผู้ใช้ต้องตามลบ synthetic PDF หนึ่งไฟล์ที่ปลายทางข้างต้น ไม่มี token/URL/credentials จริงในเอกสารนี้
+- ผลนี้ supported เฉพาะ request/object receipt/ปลายทาง/การแสดง PDF ของตัวอย่าง ไม่ใช่ all-type download หรือ same-identity recovery proof; external provider semantic/deployed revision ยังไม่ทราบ
