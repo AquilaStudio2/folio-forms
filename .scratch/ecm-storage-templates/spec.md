@@ -2,8 +2,8 @@
 
 Status: ready-for-agent
 Decision baseline: ข้อสรุปล่าสุดใน planning.md ณ 2026-11-17
-Delivery scope รอบนี้: สเปคและตั๋วเท่านั้น ยังไม่อนุมัติให้เริ่ม implementation, migration หรือเรียก live API เพิ่ม
-Human review: pending
+Delivery scope: ผู้ใช้อนุมัติ implementation บน integration branch และ isolated test database เมื่อ 2026-11-17; ไม่อนุมัติ deploy หรือ migration ข้อมูลใช้งานจริง
+Human review: implementation authorized; final behavior/provider acceptance pending
 
 ## Problem Statement
 
@@ -357,3 +357,11 @@ Cross-cutting validation/authorization/accessibility/legacy compatibility ต้
 - ตั๋ว 8 ใบมี `ready-for-agent`, parent reference, acceptance criteria และ Comments ครบ รวม 135 acceptance criteria; stories 112/112 ถูกจัดสรรเป็น primary coverage อย่างละหนึ่งตั๋ว
 - ตรวจ blocking edges ตรงกับตารางในสเปค อ้างถึงตั๋วที่มีอยู่ก่อน ไม่มี dependency cycle และ local links 16 จุด resolve ได้
 - เป็น structural validation ของเอกสารเท่านั้น ไม่ใช่ application tests, native smoke หรือ provider acceptance รอบนี้ไม่ได้เปลี่ยน application/DB/environment ไม่เรียก live API ไม่ commit/push/deploy และยังรอคำสั่งถัดไป
+
+### Implementation authorization — 2026-11-17
+
+- ผู้ใช้สั่งเริ่ม implementation ตาม implement-spec; ข้อความ planning-only ก่อนหน้านี้เป็นประวัติของรอบสร้างสเปค ไม่ใช่ blocker ปัจจุบัน
+- Integration branch `feat/ecm-storage-templates` มี isolated checkout และ snapshot baseline `fc11a9d46914a5a62063f710f464515e67a819bf`; checkout ต้นฉบับและงานที่ยังไม่ commit คงเดิม
+- อนุญาต live DCM เฉพาะ filename stem `กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45)` ซึ่งคาดปลายทาง `2. มติและการก่อหนี้`; หากใช้ไม่ได้จึงพิจารณา `กทอ.67-00-0001-ขอเบิก1-นำส่ง` ซึ่งคาดปลายทาง `3. บันทึกตรวจเบิก` เลือกเพียงหนึ่ง scenario ถ้าใช้ได้ ไม่ขยายเป็นการทดสอบชื่ออื่น
+- ใช้ synthetic file, ตรวจ collision ก่อนเขียน, ไม่เขียนทับไฟล์ที่มีอยู่ก่อน และไม่ retry/switch หลัง write outcome ไม่แน่นอน ผู้ใช้แจ้งว่าจะตามลบ จึงไม่ DELETE live artifacts เองหรือสร้างไฟล์เพิ่มโดยไม่จำเป็น
+- Parent เป็นเจ้าของ live test เพียงรายเดียว Subagents ใช้ provider double เพื่อไม่ให้หลาย agent login/upload พร้อมกัน ผล accepted ชื่อซ้ำ/shared URL ยังไม่ใช่การรับรอง independence ของไฟล์แต่ละช่องหรือสิทธิ์ทำลายประวัติ
