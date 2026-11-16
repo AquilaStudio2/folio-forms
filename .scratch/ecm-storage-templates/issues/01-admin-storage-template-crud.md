@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 **Parent:** [Storage Templates spec](../spec.md)
 
@@ -35,3 +35,20 @@
 ตั๋วถูกสร้างเพื่อรอคำสั่ง implementation; triage label ไม่ใช่สิทธิ์เรียก live API หรือเริ่ม migration ในรอบจัดเอกสาร
 
 ## Comments
+
+### Implementation and acceptance evidence — 2026-11-17
+
+Implemented on `feat/storage-templates-01`, worktree `/tmp/folio-storage-templates-01`, from integration `7d4859c`. Acceptance remains pending integration-owner review and generated workflow build/check; this entry does not close the ticket.
+
+- Additive migration `20261117000000_storage_templates` deployed successfully only to isolated database `folio_storage_templates_20261117_c1db2ece`; Prisma generation succeeded. No reset, Response migration or original-file change.
+- Real page `/admin/storage-templates` is linked in Admin navigation. Persisted UUID catalog identity, globally unique exact `template_name`, numeric `document_category_id`, CRUD/filter, enabled-Admin server authorization, provider-backed category validation and database duplicate protection implemented.
+- Shared interface for ticket 02: `EcmClient.categoryEntries(): Promise<{id:number;type:string}[]>` returns the actual provider entries through existing auth/coordinator/renewal. Duplicate labels remain distinct; duplicate IDs reject the response. Legacy `categories(): Promise<string[]>` still returns deduplicated labels. New endpoint `GET /api/admin/storage-templates/categories` returns `{categories}`; `GET /api/admin/storage-templates?document_category_id=<integer>` returns `{templates:[{id,template_name,document_category_id}]}`. POST and PATCH `/:id` accept the complete `{template_name,document_category_id}` mapping and return `{template}`. DELETE `/:id` requires `{confirm:true}` and returns `{ok:true}`. Rename in the same category and delete do not require provider availability; create/category changes read current provider evidence.
+- New-route SSO return allowlists updated on FE and BE without changing role policy. HTTP regression verifies start accepts the route and rejects added path/query metadata.
+- Regression was written before production changes. Per assignment, checks ran only in final verification; no executed pre-change RED result is claimed.
+- Final HTTP verification: `bun test --timeout 120000 test/http/storage-templates.test.ts test/http/ecm-auth.test.ts` passed **23 tests**, including the new **3 catalog tests**, against isolated persistence and localhost provider doubles. Covered persisted CRUD/filter, duplicate-label IDs, unknown/type-invalid IDs, unsafe names, global create race/update duplicates, name preservation, provider outage, local-only rename/delete, rejected unconfirmed delete, all unauthorized roles and disabled Admin, and zero provider file writes.
+- `bun test --timeout 120000 -t 'SSO start accepts the Storage Template page' apps/server/test/http/legacy-session.test.ts` passed **1 test** after correcting the test-only secret length. `bun test apps/web/test/form-lifecycle.test.ts` passed **12 tests**. Server and web `check-types` passed. Root `bun run check` passed for all 11 changed TypeScript/TSX/package files; root `bun run fix` formatted scoped changes.
+- Actual Chromium smoke used the real checked-out React page and server on isolated ports **15174/18185**, with a localhost provider double on **18186**, not a mock page. Verified Admin navigation; both identical-label category IDs; empty category; create, full reload, filter, rename/move and old/new category lists; Cancel and Escape without mutation; initial modal focus on Cancel and restoration to Delete; Tab/Enter confirmed delete; provider-error state and failed-save input/category preservation; global duplicate error with retained input. Provider write counter remained **0**. Browser-created catalog fixtures were deleted through the actual page.
+- Services created for smoke: `storage-catalog01-server`, `storage-catalog01-web`, `storage-catalog01-web-node`, `storage-catalog01-web-real`; all stopped afterward. Vite needed canonical `/private/tmp` root resolution on macOS; the initial `/tmp` root served untransformed TSX. This was isolated launcher setup, not an application change.
+- `CONTEXT.md` already defines Document Category identity and Storage Template catalog semantics, so it is intentionally unchanged. Updated workflow map source, page diagram/table and catalog/API/auth/failure explanations. Integration owner must regenerate workflow artifacts and run `docs:workflow:build` / `docs:workflow:check` after merging all source changes.
+- No live DCM/PDMS contact, `.env` change, DCM template/folder mutation, upload, rename or file DELETE. Provider routing acceptance is separate and is not established by catalog CRUD.
+

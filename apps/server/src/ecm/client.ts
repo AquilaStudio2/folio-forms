@@ -631,7 +631,7 @@ export class EcmClient {
     }
   }
 
-  async categories(): Promise<string[]> {
+  async categoryEntries(): Promise<{ id: number; type: string }[]> {
     try {
       const response = await this.request("document/category");
       const parsed = z
@@ -652,9 +652,20 @@ export class EcmClient {
       if (!parsed.success) {
         return unavailable();
       }
-      return [...new Set(parsed.data.map((category) => category.type))];
+      if (
+        new Set(parsed.data.map((category) => category.id)).size !==
+        parsed.data.length
+      ) {
+        return unavailable();
+      }
+      return parsed.data;
     } catch {
       return unavailable();
     }
+  }
+
+  async categories(): Promise<string[]> {
+    const categories = await this.categoryEntries();
+    return [...new Set(categories.map((category) => category.type))];
   }
 }
