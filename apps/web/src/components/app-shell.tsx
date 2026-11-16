@@ -86,6 +86,15 @@ const AdminNavigation = ({
         จัดการผู้ใช้
       </Link>
       <Link
+        to="/admin/storage-templates"
+        className={navigationLinkClassName}
+        activeProps={{ className: "bg-[var(--accent-soft)] text-[var(--ink)]" }}
+        onClick={onNavigate}
+      >
+        <FileText size={16} />
+        แม่แบบจัดเก็บเอกสาร
+      </Link>
+      <Link
         to="/admin/ai-authoring"
         className={`${navigationLinkClassName} ${
           authoringIsActive ? "bg-[var(--accent-soft)] text-[var(--ink)]" : ""

@@ -509,6 +509,7 @@ const legacySsoAdminPaths = new Set([
   "/admin/forms/new",
   "/admin/results",
   "/admin/users",
+  "/admin/storage-templates",
 ]);
 const legacySsoAdminFormPattern =
   /^\/admin\/forms\/[0-9a-f]{32}(?:\/submissions(?:\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})?)?$/u;

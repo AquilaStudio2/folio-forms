@@ -33,6 +33,8 @@
 
 เพิ่มเติมการต่ออายุ ECM วันที่ 16 พฤศจิกายน 2026 บน baseline/Working Tree เดิม: ผู้ใช้เลือกตรวจเมื่อมีคำขอ ไม่ทำ cron เมื่อ token cache เหลือไม่เกิน 12 ชั่วโมงจะ claim shared login job ก่อนโหลดหมวด/อัปโหลด/ลบ สำหรับอายุ 15 วันตรงกับประมาณวันที่ 14 ครึ่งเมื่อมีงาน ใช้ `expire` จริง ไม่สร้าง login timestamp หรือ schema ใหม่ Token ที่เพิ่ง login ยังผ่าน request-budget/skew validation เดิม การ login ใหม่อาจตัดคำขอที่ยังใช้ token เก่า จึงคง generation fence และไม่ resend mutation อัตโนมัติ
 
+ทบทวน Storage Template catalog วันที่ 17 พฤศจิกายน 2026 บน `feat/storage-templates-01` จาก integration baseline `7d4859c`: เพิ่มหน้า Admin และ persisted CRUD แยกจาก Form/Response ใช้ numeric category ID กับ shared ECM auth เดิม ไม่แก้ข้อมูลหรือไฟล์เดิม ไม่เรียก provider file mutation ผลตรวจของตั๋วระบุใน ticket 01; ไม่ใช่หลักฐาน live DCM routing ส่วน generated artifacts สร้างหลังรวม source โดย integration owner
+
 เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
 รายการ source ครอบคลุมหน้าและ layout ฝั่งเว็บ, HTTP routes ของเซิร์ฟเวอร์หลัก, private document worker และ Prisma models
@@ -132,6 +134,7 @@ flowchart LR
     detail["/admin/results/:responseId"]
     correction[".../:responseId/correction"]
     users["/admin/users"]
+    storageTemplates["/admin/storage-templates"]
     audit["/admin/audit"]
     ai["/admin/ai-authoring"]
     dashboard["/dashboard"]
@@ -150,6 +153,7 @@ flowchart LR
     form --> submissions --> submission
     admin --> results --> detail -->|"Admin เท่านั้น"| correction
     admin --> users
+    admin --> storageTemplates
     admin --> audit
     admin --> ai -->|"นำ DOCX ไปสร้าง Form"| form
     dashboard --> fill
@@ -176,11 +180,23 @@ flowchart LR
 | `/admin/results/:responseId`, Admin และ Viewer | อ่านร่างที่บันทึก หรือ Submission ล่าสุดพร้อม Correction | มีแท็บ Document / Fields และปุ่มดาวน์โหลดชุดเดียวด้านขวาเฉพาะ submitted: Excel สำหรับ XLSX หรือ DOCX สำหรับ DOCX รวม PDF ตาม revision ที่เลือก Admin ไป Correction หรือลบ Response ได้ |
 | `/admin/results/:responseId/correction`, Admin | แก้ Submission ล่าสุดผ่าน editor แยก | กรอกเหตุผลแล้วบันทึก Correction ใหม่; กลับรายละเอียดเมื่อไม่มี pending File/removal ใหม่ หากมีให้คง editor และเตือนก่อน explicit discard ไม่บันทึกซ้ำด้วย workspace เดิม |
 | `/admin/users`, Admin | ค้นหาและจัดการบัญชี กับคำขอเชื่อมบัญชี PDMS | สร้างบัญชี เปลี่ยนอีเมล บทบาท เปิดปิดบัญชี reset รหัส ลบบัญชีหลังลบ Responses แล้ว และอนุมัติหรือปฏิเสธการเชื่อม |
+| `/admin/storage-templates`, enabled Admin | เลือกหัวข้อเอกสาร ดู/กรอง แม่แบบจัดเก็บเอกสาร | เพิ่ม แก้ชื่อ/ย้ายหมวด และยืนยันลบ local catalog; Cancel/Escape ไม่เปลี่ยนข้อมูล ไม่แตะไฟล์หรือ Published Template |
 | `/admin/audit`, Admin | อ่าน Audit Trail ที่ระบบบันทึก | กรองผู้กระทำ action เป้าหมาย outcome และช่วงเวลา หน้านี้ไม่แก้หรือลบ event |
 | `/admin/ai-authoring`, Admin | สร้าง DOCX จากคำอธิบายหรือ PDF แล้วคุยเพื่อแก้ฉบับปัจจุบัน | ดูตัวอย่าง ดาวน์โหลด จบ session หรือกดนำไปสร้าง Template Draft จากนั้นยังต้องตรวจและ Publish |
 | `/forms/:publicId/fill`, User และ Admin | เริ่มกรอกหรือกลับมาร่างเดิม ใช้ Native form หรือ ONLYOFFICE | กรอก บันทึกร่าง และส่ง XLSX ดาวน์โหลดจากสมุดงานในตัวแก้ไข DOCX บันทึกก่อนดาวน์โหลด เมื่อมีงานค้างจะเตือนก่อนออกหรือเปลี่ยน session ส่งสำเร็จแล้วเปิดร่างรอบถัดไป |
 | `/forms/:publicId/submissions`, เจ้าของ Response | ดูประวัติที่ตนเคยส่งของฟอร์มนั้น | เปิดใบรับแต่ละ Submission หรือกลับ Dashboard |
 | `/receipt/:submissionId`, เจ้าของและ Admin | ใบรับคำตอบของ Submission หนึ่งครั้ง | อ่านข้อมูล เลือก Correction revision ดาวน์โหลดเอกสารหรือ PDF และกลับระบบต้นทางตาม URL ที่เซิร์ฟเวอร์กำหนด |
+
+### Storage Template catalog
+
+หน้า **แม่แบบจัดเก็บเอกสาร** ใช้ **หัวข้อเอกสาร** แสดง `type` แต่ผูกด้วย numeric `id`; ป้ายชื่อซ้ำไม่ยุบ identity เก็บ `StorageTemplate` ใน `storage_templates` มี UUID `id`, globally unique `template_name` และ `document_category_id` พร้อม index ของหมวด Migration เพิ่มตารางเท่านั้น ไม่ reset หรือเปลี่ยน Responses
+
+`apps/server/src/routes/storage-templates.ts` ตรวจ enabled Admin ก่อนทุก action รวม GET categories: `GET /api/admin/storage-templates` อ่าน persisted catalog และกรองด้วย `document_category_id`; `POST` เพิ่ม, `PATCH /:id` แก้ชื่อ/หมวด และ `DELETE /:id` รับ `{confirm:true}` เท่านั้น ชื่อไม่ trim/rewrite และปฏิเสธ blank/control/unsafe filename characters; unique index ป้องกัน concurrent duplicates ด้วย error ที่แก้ได้
+
+`GET /api/admin/storage-templates/categories` คืน `{categories:[{id,type}]}` จาก `EcmClient.categoryEntries()` ซึ่งใช้ request/coordinator/renewal เดิม ไม่ส่ง Bearer ไป browser interface นี้เก็บ ID และ label ตาม provider และปฏิเสธ duplicate IDs; legacy `EcmClient.categories()` ยังคืน deduplicated `string[]` เพื่อคง contract เดิม
+
+การเพิ่มหรือเปลี่ยน category ต้องตรวจ provider list จริง Rename ในหมวดเดิมและ delete ไม่เรียก provider; outage ไม่ล้าง catalog หรือ input หน้าแยก loading/empty/error และ reload หลัง mutation ไม่แสดง optimistic success Native modal จัด focus/Cancel/Escape ของ delete การลบ choice ไม่ลบ DCM file/template/folder และไม่แก้ immutable Form contracts, canonical answers หรือ receipts ขอบเขตนี้ยังไม่ต่อ chooser/publish ใหม่ และไม่พิสูจน์ routing หรือ physical folder ของ DCM
+
 
 Viewer ถูก UI จำกัดไว้ที่ `/admin/results` และ `/admin/results/:responseId` แม้ API อ่าน Submission จะยอมรับบทบาท Viewer ด้วย
 

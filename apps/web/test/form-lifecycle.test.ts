@@ -257,6 +257,7 @@ test("SSO returns preserve only known admin routes and opaque identifiers", () =
   for (const path of [
     "/admin",
     "/admin/users",
+    "/admin/storage-templates",
     "/admin/audit",
     "/admin/ai-authoring",
     "/admin/forms/new",
@@ -283,6 +284,8 @@ test("SSO returns preserve only known admin routes and opaque identifiers", () =
     `/admin/results?form=${formId}&form=${formId}`,
     `/admin/results?form=${responseId}`,
     `/admin/users?form=${formId}`,
+    "/admin/storage-templates?token=secret",
+    "/admin/storage-templates/delete",
     "/admin?token=secret",
     "/admin#secret",
     "//attacker.example/admin",

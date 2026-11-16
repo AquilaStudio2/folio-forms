@@ -50,6 +50,7 @@ import { registerResponseActionRoutes } from "./routes/response-actions";
 import { registerResponseRoutes } from "./routes/responses";
 import { registerResultRoutes } from "./routes/results";
 import { registerSpreadsheetAuthoringRoutes } from "./routes/spreadsheet-authoring";
+import { registerStorageTemplateRoutes } from "./routes/storage-templates";
 import { registerSubmissionRoutes } from "./routes/submissions";
 import { putObject, deleteObject } from "./storage";
 
@@ -208,6 +209,7 @@ export function createApp(options: AppOptions = {}) {
   registerFormCatalogRoutes(app, dependencies);
   registerFormAuthoringRoutes(app, dependencies);
   registerSpreadsheetAuthoringRoutes(app, dependencies.ecm);
+  registerStorageTemplateRoutes(app, dependencies.ecm);
   registerAuditRoutes(app, dependencies);
   registerResultRoutes(app, dependencies);
   registerPublicFormRoutes(app, dependencies);

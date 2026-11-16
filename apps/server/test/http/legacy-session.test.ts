@@ -60,6 +60,45 @@ afterEach(() => {
   legacySsoMock = undefined;
 });
 
+test("SSO start accepts the Storage Template page but rejects extra paths and query metadata", async () => {
+  legacySsoMock = startLegacySsoMock({
+    authorizationCode: "catalog-return-code",
+    callbackUrl: legacySsoCallbackUrl,
+    clientId: "catalog-return-client",
+    clientSecret: "catalog-return-isolated-test-secret-2026",
+    codeLifetimeMs: 60_000,
+    identity: {
+      email: "catalog-return@example.test",
+      email_verified: false,
+      name: "Catalog Admin",
+      roles: ["admin (กปม.)"],
+      sub: "catalog-return",
+    },
+  });
+  const ssoApp = createLegacySsoTestApp({
+    authorizeUrl: legacySsoMock.authorizeUrl,
+    callbackUrl: legacySsoCallbackUrl,
+    clientId: "catalog-return-client",
+    clientSecret: "catalog-return-isolated-test-secret-2026",
+    exchangeUrl: legacySsoMock.exchangeUrl,
+    providerId: `catalog-return-${crypto.randomUUID()}`,
+  });
+  for (const [returnTo, status] of [
+    ["/admin/storage-templates", 200],
+    ["/admin/storage-templates?token=secret", 400],
+    ["/admin/storage-templates/delete", 400],
+  ] as const) {
+    const response = await ssoApp.handle(
+      new Request("https://folio.example.test/api/legacy-sso/start", {
+        body: JSON.stringify({ returnTo }),
+        headers: jsonHeaders,
+        method: "POST",
+      })
+    );
+    expect(response.status).toBe(status);
+  }
+});
+
 test("linked role=user completes browser-bound SSO and receives a normal session", async () => {
   const email = `ticket-12-linked-${crypto.randomUUID()}@example.com`;
   const password = "Ticket12-local-password";
