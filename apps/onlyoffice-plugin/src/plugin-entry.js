@@ -92,6 +92,9 @@ function normalizeRuntimeOptions() {
     documentKind: options.documentKind === "xlsx" ? "xlsx" : "docx",
     pdmsProjectEnabled: options.pdmsProjectEnabled === true,
     pdmsPopupChannelId: firstString(options.pdmsPopupChannelId),
+    attachmentCategoryPopupChannelId: firstString(
+      options.attachmentCategoryPopupChannelId
+    ),
     pdmsProjectCatalog: isRecord(options.pdmsProjectCatalog)
       ? options.pdmsProjectCatalog
       : null,

@@ -1,8 +1,8 @@
 {
-  "commit": "530410f7527bbe66d369a0359c57ec1c0898f600",
+  "commit": "3ec718a5c7ec34549c0c8c5521310a38f66ee00c",
   "branch": "feat/ecm-attachments",
-  "source_fingerprint": "22c016288f5dd2a474e38ae24e95a2f61433485e12af24fd8a47e7b6dfde079a",
-  "source_files": 310,
+  "source_fingerprint": "7e1162bed15d3c6b892458e53d3048486a508dff8c03e372a6355b87de6fc4a1",
+  "source_files": 315,
   "pages": [
     {
       "route": "__root",
@@ -393,91 +393,109 @@
       "method": "GET",
       "path": "/onlyoffice/document/:key",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 59
+      "line": 62
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/config.json",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 129
+      "line": 132
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/pdms-project/config.json",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 169
+      "line": 172
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/pdms-project/index.html",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 197
+      "line": 200
     },
     {
       "method": "GET",
       "path": "/onlyoffice-plugin/pdms-project/popup.js",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 198
+      "line": 201
     },
     {
       "method": "GET",
-      "path": "/onlyoffice-plugin/upload-poc/config.json",
+      "path": "/onlyoffice-plugin/attachment-category/config.json",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 199
+      "line": 202
     },
     {
       "method": "GET",
-      "path": "/onlyoffice-plugin/upload-poc/index.html",
-      "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 228
-    },
-    {
-      "method": "GET",
-      "path": "/onlyoffice-plugin/upload-poc/picker.js",
-      "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 229
-    },
-    {
-      "method": "GET",
-      "path": "/onlyoffice-plugin",
-      "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 230
-    },
-    {
-      "method": "GET",
-      "path": "/onlyoffice-plugin/",
-      "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 231
-    },
-    {
-      "method": "GET",
-      "path": "/onlyoffice-plugin/index.html",
-      "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 232
-    },
-    {
-      "method": "GET",
-      "path": "/onlyoffice-plugin/plugin.js",
-      "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 233
-    },
-    {
-      "method": "GET",
-      "path": "/onlyoffice-plugin/resources/light/settings.svg",
+      "path": "/onlyoffice-plugin/attachment-category/index.html",
       "file": "apps/server/src/routes/onlyoffice.ts",
       "line": 234
     },
     {
       "method": "GET",
+      "path": "/onlyoffice-plugin/attachment-category/popup.js",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 238
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/upload-poc/config.json",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 242
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/upload-poc/index.html",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 271
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/upload-poc/picker.js",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 272
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 273
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 274
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/index.html",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 275
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/plugin.js",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 276
+    },
+    {
+      "method": "GET",
+      "path": "/onlyoffice-plugin/resources/light/settings.svg",
+      "file": "apps/server/src/routes/onlyoffice.ts",
+      "line": 277
+    },
+    {
+      "method": "GET",
       "path": "/onlyoffice-plugin/resources/dark/settings.svg",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 237
+      "line": 280
     },
     {
       "method": "POST",
       "path": "/onlyoffice/callback",
       "file": "apps/server/src/routes/onlyoffice.ts",
-      "line": 240
+      "line": 283
     },
     {
       "method": "GET",

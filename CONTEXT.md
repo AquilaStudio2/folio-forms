@@ -108,7 +108,11 @@ The owner can still read a pending deletion warning after leaving Fill or reload
 
 ## Document Category
 
-An ECM-provided destination name selected by an Admin for an Attachment Field or column. Folio saves the exact `type` string, not the category ID, and does not follow upstream renames or substitute a fallback. Users cannot select or change the destination.
+An ECM-provided document classification, shown in authoring as **หมวดหมู่จัดเก็บเอกสาร**, whose identity is separate from its display name; it groups Storage Templates for selection rather than proving a physical DCM folder. Existing category-based Published Templates retain their saved category names, and Users cannot change the selected category or template.
+
+## Storage Template (แม่แบบจัดเก็บเอกสาร)
+
+An Admin-managed named document-storage choice belonging to one Document Category, unique within Folio's catalog and selected for an Attachment Field or table column rather than a Form's Template Draft or User answer. Its catalog entry may be added, edited or removed, while choices already fixed in Published Templates remain part of those immutable contracts.
 
 ## ECM Service Account
 

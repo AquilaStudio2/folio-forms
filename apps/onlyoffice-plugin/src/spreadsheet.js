@@ -9,6 +9,7 @@ import {
   uploadPocPreview,
 } from "../../server/src/documents/spreadsheets/upload-poc-preview.ts";
 import { createApi } from "./api.js";
+import { chooseAttachmentCategory } from "./attachment-category-dialog.js";
 import { createBridge } from "./bridge.js";
 import { ACTIONS } from "./constants.js";
 import { createOffice } from "./office.js";
@@ -271,6 +272,7 @@ export function initializeSpreadsheet(options, setStatus) {
   let revision;
   let editing = null;
   let busy = false;
+  let authoringActionInFlight = false;
   let pictureSavePending = false;
   let authoringMismatch = false;
   let pendingRecovery = null;
@@ -353,13 +355,13 @@ export function initializeSpreadsheet(options, setStatus) {
       );
     },
     setActionBusy: (value) => {
-      busy = value;
+      busy = value || authoringActionInFlight;
       for (const item of buttons) {
-        item.disabled = value;
+        item.disabled = busy;
       }
-      disableAuthoringControls(value);
-      pdmsPicker?.setBusy(value);
-      if (!value) {
+      disableAuthoringControls(busy);
+      pdmsPicker?.setBusy(busy);
+      if (!busy) {
         void refreshAfterAction();
       }
     },
@@ -458,6 +460,7 @@ export function initializeSpreadsheet(options, setStatus) {
         setStatus("ยังยืนยันผลการตั้งค่าไม่ได้ กรุณากด ลองยืนยันอีกครั้ง ก่อนแก้ไขต่อ", "error");
         return;
       }
+      authoringActionInFlight = true;
       busy = true;
       for (const item of buttons) {
         item.disabled = true;
@@ -469,11 +472,16 @@ export function initializeSpreadsheet(options, setStatus) {
           setStatus(error.message || "ดำเนินการไม่สำเร็จ", "error")
         )
         .finally(() => {
+          authoringActionInFlight = false;
           busy = false;
           for (const item of buttons) {
             item.disabled = false;
           }
           disableAuthoringControls(false);
+          // Dialog triggers become focusable only after the outer action finishes.
+          if (document.activeElement === document.body && document.hasFocus()) {
+            node.focus();
+          }
           void refreshAfterAction();
         });
     });
@@ -551,7 +559,7 @@ export function initializeSpreadsheet(options, setStatus) {
       );
       const result = typeof raw === "string" ? JSON.parse(raw) : raw;
       if (!result?.ok || !Array.isArray(result.targets)) {
-        throw new Error(result?.error || "อ่านข้อมูลปุ่ม POC ก่อนบันทึกไม่ได้");
+        throw new Error(result?.error || "อ่านข้อมูลปุ่มแนบไฟล์ก่อนบันทึกไม่ได้");
       }
       window.Asc.scope.folioSpreadsheetAnchors =
         spreadsheetBindingAnchors(sourceBindings);
@@ -578,12 +586,12 @@ export function initializeSpreadsheet(options, setStatus) {
           uploadPocGuid
         );
         if (resolved?.entry[1].id !== target.bindingId) {
-          throw new Error("ปุ่ม POC ไม่ตรงกับช่องที่กำลังบันทึก");
+          throw new Error("ปุ่มแนบไฟล์ไม่ตรงกับช่องที่กำลังบันทึก");
         }
         const data = JSON.parse(target.data);
         const slot = `${target.bindingId}:${data.rowIndex ?? "scalar"}`;
         if (slots.has(slot)) {
-          throw new Error("ตำแหน่งปุ่ม POC ซ้ำกัน จึงยังบันทึกโดยไม่เปิดตัวแก้ไขใหม่ไม่ได้");
+          throw new Error("ตำแหน่งปุ่มแนบไฟล์ซ้ำกัน จึงยังบันทึกโดยไม่เปิดตัวแก้ไขใหม่ไม่ได้");
         }
         slots.add(slot);
       }
@@ -637,7 +645,7 @@ export function initializeSpreadsheet(options, setStatus) {
         );
         const result = typeof raw === "string" ? JSON.parse(raw) : raw;
         if (!result?.ok) {
-          throw new Error(result?.error || "ยังยืนยันข้อมูลปุ่ม POC ไม่ได้");
+          throw new Error(result?.error || "ยังยืนยันข้อมูลปุ่มแนบไฟล์ไม่ได้");
         }
       } finally {
         delete window.Asc.scope.folioUploadPocDelete;
@@ -722,7 +730,7 @@ export function initializeSpreadsheet(options, setStatus) {
           );
           const result = typeof raw === "string" ? JSON.parse(raw) : raw;
           if (!result?.ok) {
-            throw new Error(result?.error || "ปรับข้อมูลปุ่ม POC ไม่สำเร็จ");
+            throw new Error(result?.error || "ปรับข้อมูลปุ่มแนบไฟล์ไม่สำเร็จ");
           }
         } finally {
           delete window.Asc.scope.folioSpreadsheetUploadPoc;
@@ -754,7 +762,7 @@ export function initializeSpreadsheet(options, setStatus) {
     }
     const targets = await captureUploadPocTargets(activeUploadPocBindingIds());
     if (targets.length > 4096) {
-      throw new Error("จำนวนปุ่ม POC เกินขอบเขตการบันทึกในตัวแก้ไขเดิม");
+      throw new Error("จำนวนปุ่มแนบไฟล์เกินขอบเขตการบันทึกในตัวแก้ไขเดิม");
     }
     const spreadsheetUploadPocSnapshot = targets.map((target) => {
       const data = JSON.parse(target.data);
@@ -1139,7 +1147,7 @@ export function initializeSpreadsheet(options, setStatus) {
               spreadsheetUploadPocCleanupCommand
             )) !== true
           ) {
-            throw new Error("ยังยืนยันการล้างตำแหน่งปุ่ม POC ไม่ได้ กรุณาลองอีกครั้ง");
+            throw new Error("ยังยืนยันการล้างตำแหน่งปุ่มแนบไฟล์ไม่ได้ กรุณาลองอีกครั้ง");
           }
         } finally {
           delete window.Asc.scope.folioSpreadsheetUploadPocCleanup;
@@ -1458,23 +1466,10 @@ export function initializeSpreadsheet(options, setStatus) {
       ["picture", "รูปภาพ (JPEG / PNG)"],
     ]);
     const required = input("บังคับกรอก", "checkbox");
-    const attachment = input("ช่องแนบไฟล์จากปุ่มเดิม", "checkbox");
-    const category = select("Document Category", [["", "ยังไม่ได้เลือกหมวด"]]);
-    let categoryNames = [];
-    const renderCategories = (saved = category.value) => {
-      category.replaceChildren();
-      for (const name of [
-        "",
-        ...new Set([...categoryNames, ...(saved ? [saved] : [])]),
-      ]) {
-        const option = document.createElement("option");
-        option.value = name;
-        option.textContent = name || "ยังไม่ได้เลือกหมวด";
-        category.append(option);
-      }
-      category.value = saved;
-    };
-    const loadCategories = button("โหลด Document Category", async () => {
+    let attachmentConfiguration = null;
+    const categorySummary = document.createElement("p");
+    panel.append(categorySummary);
+    const loadCategories = async () => {
       const capability = await bridge.requestActionCapability(
         ACTIONS.CONFIGURE_FIELDS
       );
@@ -1487,11 +1482,60 @@ export function initializeSpreadsheet(options, setStatus) {
         !Array.isArray(result?.categories) ||
         result.categories.some((name) => typeof name !== "string")
       ) {
-        throw new Error("อ่านรายการ Document Category ไม่ได้ ค่าที่บันทึกไว้ยังคงเดิม");
+        throw new Error("อ่านรายการหมวดหมู่จัดเก็บเอกสารไม่ได้");
       }
-      categoryNames = result.categories;
-      renderCategories();
-      setStatus("โหลด Document Category แล้ว เลือกหมวดและบันทึกการแก้ไข", "success");
+      return result.categories;
+    };
+    const saveAttachmentTemplate = async (bindingId) => {
+      uploadPocSaveInFlight = true;
+      let saved;
+      try {
+        saved = await operations.runAction(ACTIONS.SAVE_TEMPLATE, "", null, {
+          preserveEditorSession: true,
+          preserveEditorSessionPurpose: "placement",
+          uploadPocBindingId: bindingId,
+        });
+      } finally {
+        uploadPocSaveInFlight = false;
+      }
+      if (!saved?.ok) {
+        throw new Error(
+          `บันทึกต้นแบบยังไม่สำเร็จ: ${saved?.error || "ยังยืนยันผลไม่ได้"} กรุณาลองอีกครั้งที่ช่องเดิม ระบบจะใช้ปุ่มและ Tag เดิม ยังยืนยันการตั้งค่าช่องแนบไม่ได้`
+        );
+      }
+    };
+    const changeCategory = button("เปลี่ยนหมวด", async () => {
+      await ensureAuthoringReady();
+      validatePanelDrafts();
+      await checkUploadPocPending(window, options, ACTIONS.SAVE_TEMPLATE);
+      await readBindings();
+      const targetKind = editingKind;
+      const field = editing && bindingValue(bindings, targetKind, editing.id);
+      if (!field?.attachment) {
+        throw new Error("เลือกช่องแนบที่บันทึกไว้ก่อนเปลี่ยนหมวด");
+      }
+      const category = await chooseAttachmentCategory({
+        options,
+        loadCategories,
+        currentCategory: field.attachment.category,
+        target: `${field.label} (${field.key})`,
+      });
+      if (category === null) {
+        return;
+      }
+      await readBindings();
+      const current = bindingValue(bindings, targetKind, field.id);
+      if (!sameValue(field, current)) {
+        throw new Error(
+          "การตั้งค่าช่องเปลี่ยนระหว่างเลือกหมวด กรุณาเลือกช่องเดิมแล้วลองอีกครั้ง"
+        );
+      }
+      loadEntry([targetKind, current]);
+      attachmentConfiguration = { category };
+      panelChanged();
+      await saveBinding();
+      await saveAttachmentTemplate(field.id);
+      setStatus("บันทึกหมวดหมู่จัดเก็บเอกสารและต้นแบบแล้ว", "success");
     });
     const placeholder = input("คำแนะนำในเซลล์ · Placeholder (ไม่บังคับ)");
     let panelChanged = () => {};
@@ -1517,8 +1561,7 @@ export function initializeSpreadsheet(options, setStatus) {
       key: key.value,
       type: type.value,
       required: required.checked,
-      attachment: attachment.checked,
-      category: category.value,
+      attachment: attachmentConfiguration,
       placeholder: placeholder.value,
       choices: optionsField.getOptions(),
       optionEntry: optionsField.getEntry(),
@@ -1555,8 +1598,6 @@ export function initializeSpreadsheet(options, setStatus) {
       key,
       type,
       required,
-      attachment,
-      category,
       placeholder,
       headers,
       kind,
@@ -1601,10 +1642,10 @@ export function initializeSpreadsheet(options, setStatus) {
       }
       show(type, !table);
       show(required, !table);
-      show(attachment, !table);
-      show(category, !table && attachment.checked);
-      loadCategories.hidden = table || !attachment.checked;
-      type.disabled = !table && attachment.checked;
+      categorySummary.hidden = table || !attachmentConfiguration;
+      categorySummary.textContent = `หมวดหมู่จัดเก็บเอกสาร: ${attachmentConfiguration?.category || "ยังไม่ได้เลือกหมวด"}`;
+      changeCategory.hidden = table || !attachmentConfiguration;
+      type.disabled = !table && Boolean(attachmentConfiguration);
       show(placeholder, !table);
       optionsField.element.hidden = table || type.value !== "dropdown";
       show(headers, table && !editing);
@@ -1654,8 +1695,9 @@ export function initializeSpreadsheet(options, setStatus) {
           ? "pdms-project-name"
           : editing?.type || "text";
       required.checked = Boolean(editing?.required);
-      attachment.checked = Boolean(editing?.attachment);
-      renderCategories(editing?.attachment?.category || "");
+      attachmentConfiguration = editing?.attachment
+        ? { ...editing.attachment }
+        : null;
       placeholder.value = editing?.placeholder || "";
       optionsField.setOptions(editing?.options || []);
       headers.checked = false;
@@ -1668,8 +1710,9 @@ export function initializeSpreadsheet(options, setStatus) {
         key.value = draft.key;
         type.value = draft.type;
         required.checked = draft.required;
-        attachment.checked = draft.attachment;
-        renderCategories(draft.category);
+        attachmentConfiguration = draft.attachment
+          ? { ...draft.attachment }
+          : null;
         placeholder.value = draft.placeholder;
         optionsField.setOptions(draft.choices);
         optionsField.setEditorState(
@@ -1680,12 +1723,6 @@ export function initializeSpreadsheet(options, setStatus) {
       updateControls();
     };
     type.addEventListener("change", updateControls);
-    attachment.addEventListener("change", () => {
-      if (attachment.checked) {
-        type.value = "text";
-      }
-      updateControls();
-    });
     headers.addEventListener("change", updateControls);
     kind.addEventListener("change", () => {
       if (editing) {
@@ -1703,10 +1740,10 @@ export function initializeSpreadsheet(options, setStatus) {
     });
     const uploadPocHelp = document.createElement("p");
     uploadPocHelp.textContent =
-      "เลือกเซลล์ว่างแล้วกดวางปุ่มและบันทึกต้นแบบ ระบบสร้าง Title และ Tag และบันทึกปุ่มก่อนเลือกไฟล์ ถ้าเป็นช่องข้อความหรือคอลัมน์ตารางเดิมจะใช้ข้อมูลเดิม หลังบันทึกสำเร็จจึงดับเบิลคลิกเลือกไฟล์ ไฟล์ยังไม่อัปโหลดหรือบันทึกถาวร";
+      "เลือกเซลล์ว่างหรือช่องข้อความเดิม แล้วกดเพิ่มช่องแนบไฟล์ เลือกหมวดหมู่จัดเก็บเอกสารและยืนยัน ระบบสร้างหรือตั้งค่าช่องแนบและบันทึกต้นแบบให้อัตโนมัติ ยกเลิกก่อนยืนยันจะไม่เปลี่ยนช่องหรือปุ่ม หน้าต้นแบบใช้ตั้งค่าเท่านั้น ผู้ใช้แนบไฟล์ในฟอร์มที่เผยแพร่แล้ว";
     uploadPocHelp.id = "spreadsheet-upload-poc-help";
     panel.append(uploadPocHelp);
-    const placeUploadPoc = button("วางปุ่มและบันทึกต้นแบบ (POC)", async () => {
+    const placeUploadPoc = button("เพิ่มช่องแนบไฟล์", async () => {
       const clickedSelection = await selection();
       // Initial identity is only a movement check. Authorize against fresh metadata below.
       const clickedEntry = selectedBinding(clickedSelection, bindings);
@@ -1730,25 +1767,64 @@ export function initializeSpreadsheet(options, setStatus) {
       ) {
         throw new Error("ตำแหน่งช่องเปลี่ยนระหว่างวางปุ่ม กรุณาเลือกเซลล์ใหม่แล้วลองอีกครั้ง");
       }
-      window.Asc.scope.folioUploadPocSelection = {
-        ...current,
-        column: entry?.[0] === "column",
-        requireBlank: !entry,
-      };
-      const preflightRaw = await office.callCommandResult(
-        spreadsheetUploadPocSelectionCommand
-      );
-      const preflight =
-        typeof preflightRaw === "string"
-          ? JSON.parse(preflightRaw)
-          : preflightRaw;
-      if (!preflight?.ok) {
-        throw new Error(preflight?.error || "ตรวจสอบเซลล์ที่เลือกไม่ได้");
+      if (entry) {
+        selectedUploadPocTarget(current, bindings);
+        if (
+          entry[1].prefillPointer ||
+          (entry[1].prefillPolicy && entry[1].prefillPolicy !== "editable")
+        ) {
+          throw new Error(
+            "ช่องแนบต้องเป็นข้อความที่กรอกเองและไม่ใช้ข้อมูลเริ่มต้น กรุณาแก้กฎเดิมก่อน"
+          );
+        }
       }
-      current = { ...current, address: preflight.address };
-      entry = existingUploadPocEntry(current, bindings);
+      const checkTarget = async () => {
+        window.Asc.scope.folioUploadPocSelection = {
+          ...current,
+          column: entry?.[0] === "column",
+          requireBlank: !entry,
+        };
+        try {
+          const raw = await office.callCommandResult(
+            spreadsheetUploadPocSelectionCommand
+          );
+          const checked = typeof raw === "string" ? JSON.parse(raw) : raw;
+          if (!checked?.ok) {
+            throw new Error(checked?.error || "ตรวจสอบเซลล์ที่เลือกไม่ได้");
+          }
+          current = { ...current, address: checked.address };
+          entry = existingUploadPocEntry(current, bindings);
+        } finally {
+          delete window.Asc.scope.folioUploadPocSelection;
+        }
+      };
+      await checkTarget();
+      const category = await chooseAttachmentCategory({
+        options,
+        loadCategories,
+        currentCategory: entry?.[1]?.attachment?.category,
+        target: `${entry?.[1]?.label || "ช่องแนบใหม่"} · ${current.sheet}!${current.address}`,
+      });
+      if (category === null) {
+        return;
+      }
+      await readBindings();
+      current = {
+        ...(await selection()),
+        sheet: current.sheet,
+        address: current.address,
+      };
+      const latestEntry = existingUploadPocEntry(current, bindings);
+      if (!sameValue(entry, latestEntry)) {
+        throw new Error(
+          "ตำแหน่งหรือการตั้งค่าช่องเปลี่ยนระหว่างเลือกหมวด กรุณาเลือกเซลล์ใหม่แล้วลองอีกครั้ง"
+        );
+      }
+      entry = latestEntry;
+      await checkTarget();
       if (!entry) {
         const value = automaticUploadPocField(bindings, id());
+        value.attachment.category = category;
         const savedDraftKey = draftKey();
         await mutateBinding(
           { action: "upsert", kind: "field", value },
@@ -1817,7 +1893,7 @@ export function initializeSpreadsheet(options, setStatus) {
         const result = typeof raw === "string" ? JSON.parse(raw) : raw;
         if (!result?.ok) {
           throw new Error(
-            result?.error || "ยังยืนยันการวางปุ่ม POC ไม่ได้ กรุณาลองวางซ้ำ"
+            result?.error || "ยังยืนยันการวางปุ่มแนบไฟล์ไม่ได้ กรุณาลองวางซ้ำ"
           );
         }
         window.Asc.scope.folioUploadPocSelection = {
@@ -1838,25 +1914,18 @@ export function initializeSpreadsheet(options, setStatus) {
         }
         selected = await selection();
         loadEntry(existingUploadPocEntry(selected, bindings));
-        // mutateBinding has confirmed its commit and released the native edit lock.
-        uploadPocSaveInFlight = true;
-        let saved;
-        try {
-          saved = await operations.runAction(ACTIONS.SAVE_TEMPLATE, "", null, {
-            preserveEditorSession: true,
-            preserveEditorSessionPurpose: "placement",
-            uploadPocBindingId: target.bindingId,
-          });
-        } finally {
-          uploadPocSaveInFlight = false;
+        if (entry && entry[1].attachment?.category !== category) {
+          if (!entry[1].attachment) {
+            // Prove the saved button before converting an existing text mapping.
+            await saveAttachmentTemplate(target.bindingId);
+          }
+          attachmentConfiguration = { category };
+          panelChanged();
+          await saveBinding();
         }
-        if (!saved?.ok) {
-          throw new Error(
-            `วางปุ่มแล้ว แต่บันทึกต้นแบบยังไม่สำเร็จ: ${saved?.error || "ยังยืนยันผลไม่ได้"} กรุณากด “วางปุ่มและบันทึกต้นแบบ (POC)” ที่เซลล์เดิมเพื่อลองบันทึกซ้ำ ปุ่มและ Tag เดิมจะถูกใช้ต่อ ยังเลือกไฟล์ไม่ได้จนกว่าจะบันทึกสำเร็จ`
-          );
-        }
+        await saveAttachmentTemplate(target.bindingId);
         setStatus(
-          "วางปุ่มและบันทึกต้นแบบ POC สำเร็จในตัวแก้ไขเดิมแล้ว ดับเบิลคลิกปุ่มเพื่อเลือกไฟล์ได้ ไฟล์ยังไม่อัปโหลดหรือบันทึกถาวร",
+          "เพิ่มช่องแนบไฟล์และบันทึกต้นแบบแล้ว เผยแพร่ฟอร์มเพื่อให้ผู้ใช้แนบไฟล์ได้ ไฟล์จะอัปโหลดเมื่อผู้ใช้บันทึกร่างหรือส่งคำตอบ",
           "success"
         );
       } finally {
@@ -1919,7 +1988,7 @@ export function initializeSpreadsheet(options, setStatus) {
         computed: false,
         options: type.value === "dropdown" ? optionsField.getOptions() : [],
       };
-      if (attachment.checked && kind.value !== "table") {
+      if (attachmentConfiguration && kind.value !== "table") {
         if (
           value.type !== "text" ||
           editing?.prefillPointer ||
@@ -1929,7 +1998,7 @@ export function initializeSpreadsheet(options, setStatus) {
             "ช่องแนบต้องเป็นข้อความที่ไม่ใช้ข้อมูลเริ่มต้นหรือสูตร กรุณาแก้กฎเดิมก่อน"
           );
         }
-        value.attachment = { category: category.value || null };
+        value.attachment = { ...attachmentConfiguration };
       } else {
         delete value.attachment;
       }
@@ -2274,7 +2343,7 @@ export function initializeSpreadsheet(options, setStatus) {
         }
         setStatus(
           deletingPoc
-            ? "ลบช่องและปุ่ม POC พร้อมบันทึกต้นแบบแล้ว"
+            ? "ลบช่องและปุ่มแนบไฟล์พร้อมบันทึกต้นแบบแล้ว"
             : "ลบช่องและบันทึกต้นแบบในตัวแก้ไขเดิมแล้ว",
           "success"
         );
@@ -2619,14 +2688,14 @@ export function initializeSpreadsheet(options, setStatus) {
             const result = typeof raw === "string" ? JSON.parse(raw) : raw;
             if (!result?.ok) {
               throw new Error(
-                result?.error || "ONLYOFFICE รุ่นนี้ยังเปิดปุ่มเลือกไฟล์ POC ไม่ได้"
+                result?.error || "ONLYOFFICE รุ่นนี้ยังเปิดปุ่มแนบไฟล์ไม่ได้"
               );
             }
             if (result.count > 0) {
               setStatus(
                 configuredAttachments
                   ? "พร้อมเปิดช่องแนบไฟล์ ดูไฟล์ที่บันทึกแล้วหรือเลือกไฟล์ใหม่ การเลือกจะมีผลเมื่อบันทึกฟอร์มสำเร็จ"
-                  : "ปุ่ม POC เดิมแสดงคำแนะนำติดต่อ Admin เพื่อตั้งค่าฟอร์มใหม่ ไม่รับการเลือกไฟล์",
+                  : "ปุ่มแนบไฟล์เดิมแสดงคำแนะนำติดต่อ Admin เพื่อตั้งค่าฟอร์มใหม่ ไม่รับการเลือกไฟล์",
                 "success"
               );
             }

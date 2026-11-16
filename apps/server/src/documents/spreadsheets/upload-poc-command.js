@@ -9,7 +9,7 @@ export function spreadsheetUploadPocCommand(supplied) {
       !input.preview ||
       !input.guid
     ) {
-      throw new Error("Invalid upload POC projection");
+      throw new Error("Invalid attachment button projection");
     }
     var count = 0;
     for (var target of input.targets) {
@@ -17,12 +17,12 @@ export function spreadsheetUploadPocCommand(supplied) {
         !/^folio_[A-Za-z0-9_]+$/u.test(target.bindingId) ||
         !["field", "column"].includes(target.kind)
       ) {
-        throw new Error("Invalid upload POC binding");
+        throw new Error("Invalid attachment button binding");
       }
       var source = Api.GetDefName(target.bodyAnchor || target.anchor);
       var range = source && source.GetRefersToRange();
       if (!range || range.GetWorksheet().GetName() !== target.sheet) {
-        throw new Error("Upload POC position is unavailable");
+        throw new Error("Attachment button position is unavailable");
       }
       var sheet = range.GetWorksheet();
       var firstRow = range.GetRow() - 1;
@@ -57,7 +57,7 @@ export function spreadsheetUploadPocCommand(supplied) {
         if (existingMarker) {
           existingMarker.SetRefersTo(reference);
         } else if (!Api.AddDefName(marker, reference, false)) {
-          throw new Error("Could not mark upload POC position");
+          throw new Error("Could not mark attachment button position");
         }
       }
       var existing = sheet.GetAllOleObjects().filter((object) => {
@@ -76,7 +76,7 @@ export function spreadsheetUploadPocCommand(supplied) {
         }
       });
       if (existing.length > rows) {
-        throw new Error("Upload POC positions need a saved rebuild");
+        throw new Error("Attachment button positions need a saved rebuild");
       }
       for (var index = 0; index < rows; index += 1) {
         var cell =
@@ -103,7 +103,7 @@ export function spreadsheetUploadPocCommand(supplied) {
         // Natural preview is 110 x 24 pixels. Fit inside the mapped cell without stretching.
         var scale = Math.min(1, cell.Width / 110, (heightPoints * 4) / 3 / 24);
         if (!Number.isFinite(scale) || scale <= 0) {
-          throw new Error("Upload POC cell has no visible space");
+          throw new Error("Attachment button cell has no visible space");
         }
         var width = Math.max(1, Math.round(110 * scale * 9525));
         var height = Math.max(1, Math.round(24 * scale * 9525));
@@ -133,7 +133,7 @@ export function spreadsheetUploadPocCommand(supplied) {
           );
         }
         if (!object) {
-          throw new Error("Could not place upload POC button");
+          throw new Error("Could not place attachment button");
         }
         object.SetName(`folio_upload_poc_${target.bindingId}_${index}`);
         object.SetLockValue("noSelect", false);
@@ -145,7 +145,7 @@ export function spreadsheetUploadPocCommand(supplied) {
     return JSON.stringify({ count, ok: true });
   } catch (error) {
     return JSON.stringify({
-      error: error.message || "Could not display upload POC button",
+      error: error.message || "Could not display attachment button",
       ok: false,
     });
   }

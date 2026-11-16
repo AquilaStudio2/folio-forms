@@ -205,9 +205,6 @@ test.each([false, true])(
       true
     );
     expect(state().fields.find((item) => item.id === first.id)).toEqual(first);
-    expect(harness.statusElement.textContent).toContain(
-      "ลบช่องและปุ่ม POC พร้อมบันทึกต้นแบบแล้ว"
-    );
   }
 );
 

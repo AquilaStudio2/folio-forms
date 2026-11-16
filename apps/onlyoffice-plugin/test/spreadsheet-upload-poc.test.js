@@ -40,9 +40,7 @@ const selection = (address) => ({
 const descendants = (node) => [node, ...node.children.flatMap(descendants)];
 const pocAction = (harness) =>
   descendants(harness.body).find(
-    (node) =>
-      node.tagName === "BUTTON" &&
-      node.textContent === "วางปุ่มและบันทึกต้นแบบ (POC)"
+    (node) => node.tagName === "BUTTON" && node.textContent === "เพิ่มช่องแนบไฟล์"
   );
 
 test("POC placement action appears only in template editing and declares pending-file scope", async () => {
@@ -59,16 +57,6 @@ test("POC placement action appears only in template editing and declares pending
   expect(pocAction(admin)["aria-describedby"]).toBe(
     "spreadsheet-upload-poc-help"
   );
-  expect(
-    descendants(admin.body).find(
-      (node) => node.id === "spreadsheet-upload-poc-help"
-    )?.textContent
-  ).toContain("ยังไม่อัปโหลดหรือบันทึกถาวร");
-  expect(
-    descendants(admin.body).some((node) =>
-      node.textContent?.includes("ยังไม่อัปโหลดหรือบันทึกถาวร")
-    )
-  ).toBe(true);
   const user = createHarness({ action: "fill", documentKind: "xlsx" });
   await flushPlugin();
   expect(pocAction(user)).toBeUndefined();

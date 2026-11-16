@@ -211,7 +211,7 @@ export const spreadsheetUploadPocCleanupCommand = () => {
       defined = null;
     }
     if (defined && defined.Delete() !== true) {
-      throw new Error("ล้างตำแหน่งปุ่ม POC ไม่สำเร็จ กรุณาลองอีกครั้ง");
+      throw new Error("ล้างตำแหน่งปุ่มแนบไฟล์ไม่สำเร็จ กรุณาลองอีกครั้ง");
     }
   }
   return true;
@@ -221,12 +221,12 @@ export const spreadsheetUploadPocCleanupCommand = () => {
 export const selectedUploadPocTarget = (selection, bindings) => {
   const entry = existingUploadPocEntry(selection, bindings);
   if (!entry || !["field", "column"].includes(entry[0])) {
-    throw new Error("เลือกเซลล์ของช่องข้อความหรือคอลัมน์ข้อความที่ตั้งค่าไว้ก่อนวางปุ่ม POC");
+    throw new Error("เลือกเซลล์ของช่องข้อความหรือคอลัมน์ข้อความที่ตั้งค่าไว้ก่อนวางปุ่มแนบไฟล์");
   }
   const [kind, field] = entry;
   if (field.type !== "text" || field.computed) {
     throw new Error(
-      "ปุ่ม POC ใช้ได้กับช่องข้อความที่กรอกเองเท่านั้น กรุณาเลือกช่องข้อความที่ตั้งค่าไว้"
+      "ปุ่มแนบไฟล์ใช้ได้กับช่องข้อความที่กรอกเองเท่านั้น กรุณาเลือกช่องข้อความที่ตั้งค่าไว้"
     );
   }
   return {
@@ -249,7 +249,7 @@ export const selectedUploadPocBinding = (selection, bindings, guid) => {
   if (!drawing) {
     return null;
   }
-  const unsupported = "เลือกปุ่มแนบไฟล์ POC เพียงปุ่มเดียว หรือคลิกเซลล์เพื่อแก้ไขช่องกรอก";
+  const unsupported = "เลือกปุ่มแนบไฟล์เพียงปุ่มเดียว หรือคลิกเซลล์เพื่อแก้ไขช่องกรอก";
   if (
     drawing.count !== 1 ||
     drawing.applicationId !== guid ||

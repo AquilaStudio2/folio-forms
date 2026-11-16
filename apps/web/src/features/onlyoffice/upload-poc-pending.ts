@@ -894,11 +894,11 @@ export class UploadPocPendingFiles {
           options.action === "correction"
         )
       ) {
-        throw new Error("คำสั่ง POC ไม่ถูกต้อง");
+        throw new Error("คำสั่งแนบไฟล์ไม่ถูกต้อง");
       }
       if (value.action === "append-row") {
         if (rowCount === null || value.rowIndex !== rowCount) {
-          throw new Error("POC เพิ่มแถวได้เฉพาะท้ายตาราง เพื่อรักษาไฟล์ที่เลือกไว้");
+          throw new Error("เพิ่มแถวได้เฉพาะท้ายตาราง เพื่อรักษาไฟล์ที่เลือกไว้");
         }
       } else if (value.action === "delete-row") {
         if (
@@ -982,7 +982,7 @@ export class UploadPocPendingFiles {
     if (options.action === "template-edit") {
       return {
         error:
-          "เลือกไฟล์ได้เฉพาะหน้ากรอก Form เท่านั้น ต้นแบบใช้สำหรับตั้งค่าช่องแนบและ Document Category ไม่อัปโหลดไฟล์",
+          "เลือกไฟล์ได้เฉพาะหน้ากรอก Form เท่านั้น ต้นแบบใช้สำหรับตั้งค่าช่องแนบและหมวดหมู่จัดเก็บเอกสาร ไม่อัปโหลดไฟล์",
         unavailable: true,
       };
     }

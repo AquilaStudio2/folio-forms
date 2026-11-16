@@ -25,9 +25,11 @@ import {
 } from "../../src/forms/spreadsheet-fields";
 import {
   createOnlyOfficeAuthorization,
+  attachmentCategoryPopupGuid,
   documentUrl,
   editorConfig,
   pluginGuid,
+  readOnlyViewerConfig,
   xlsxEditorOpening,
 } from "../../src/onlyoffice";
 import type { OperationMetadata } from "../../src/operations/model";
@@ -585,13 +587,81 @@ test("Excel and DOCX field panels share supported autostart configuration", asyn
   );
   expect(response.status).toBe(200);
   const payload = (await response.json()) as {
+    bridge: {
+      id: string;
+      documentKey: string;
+      attachmentCategoryPopup?: { channelId: string; documentKey: string };
+    };
     config: {
       documentType: string;
-      editorConfig: { plugins: { autostart: string[] } };
+      editorConfig: {
+        plugins: {
+          autostart: string[];
+          options: Record<string, Record<string, unknown>>;
+          pluginsData: string[];
+        };
+      };
     };
   };
   expect(payload.config.documentType).toBe("cell");
-  expect(payload.config.editorConfig.plugins.autostart).toEqual([pluginGuid]);
+  expect(payload.config.editorConfig.plugins.autostart).toEqual([
+    pluginGuid,
+    attachmentCategoryPopupGuid,
+  ]);
+  const scope = payload.bridge.attachmentCategoryPopup;
+  expect(scope).toEqual({
+    channelId: expect.any(String),
+    documentKey: payload.bridge.documentKey,
+  });
+  const popupOptions =
+    payload.config.editorConfig.plugins.options[attachmentCategoryPopupGuid];
+  expect(popupOptions).toEqual({
+    attachmentCategoryPopupChannelId: scope?.channelId,
+    bridgeId: payload.bridge.id,
+    documentKey: payload.bridge.documentKey,
+    parentOrigin: expect.any(String),
+  });
+  expect(
+    payload.config.editorConfig.plugins.options[pluginGuid]
+      ?.attachmentCategoryPopupChannelId
+  ).toBe(scope?.channelId);
+  expect(payload.config.editorConfig.plugins.pluginsData).toContain(
+    expect.stringContaining(
+      "/onlyoffice-plugin/attachment-category/config.json"
+    )
+  );
+  const popupManifest = await request(
+    "/onlyoffice-plugin/attachment-category/config.json",
+    bearer
+  );
+  expect(await popupManifest.json()).toMatchObject({
+    guid: attachmentCategoryPopupGuid,
+    variations: [
+      { EditorsSupport: ["cell"], isActivated: true, type: "background" },
+    ],
+  });
+  const popupPage = await request(
+    "/onlyoffice-plugin/attachment-category/index.html",
+    bearer
+  );
+  expect(popupPage.status).toBe(200);
+  expect(await popupPage.text()).not.toContain("__ONLYOFFICE_PLUGIN_SDK_URL__");
+  expect(
+    (await request("/onlyoffice-plugin/attachment-category/popup.js", bearer))
+      .status
+  ).toBe(200);
+  expect(
+    (
+      await app.handle(
+        new Request(
+          "http://test.local/onlyoffice-plugin/attachment-category/config.json",
+          {
+            headers: { Origin: "https://forged.example" },
+          }
+        )
+      )
+    ).status
+  ).toBe(403);
   const docx = editorConfig(
     {
       action: "template-edit",
@@ -608,9 +678,8 @@ test("Excel and DOCX field panels share supported autostart configuration", asyn
     },
     { id: adminId, name: "Admin" }
   ) as unknown as typeof payload;
-  expect(docx.config.editorConfig.plugins.autostart).toEqual(
-    payload.config.editorConfig.plugins.autostart
-  );
+  expect(docx.config.editorConfig.plugins.autostart).toEqual([pluginGuid]);
+  expect(docx.bridge.attachmentCategoryPopup).toBeUndefined();
   const manifest = await request("/onlyoffice-plugin/config.json", bearer);
   expect(await manifest.json()).toMatchObject({
     variations: [
@@ -1285,4 +1354,77 @@ test("publication freezes shared Excel fields, preserves scoped keys and Prefill
     completePublishOperation(operation, metadata, workbook)
   ).rejects.toThrow("Published Template already exists");
   await prisma.operation.delete({ where: { id: operation.id } });
+});
+
+test("attachment category background scope is XLSX authoring-only and coexists with PDMS", () => {
+  const base = {
+    capabilities: {},
+    documentKey,
+    documentServerKey: xlsxEditorOpening(documentKey, "category-config-test")
+      .documentServerKey,
+    lease: {
+      expiresAt: new Date(Date.now() + 60_000).toISOString(),
+      id: fixtureId,
+      releaseUrl: "/release",
+      renewUrl: "/renew",
+    },
+    publicId,
+  };
+  const user = { id: adminId, name: "Admin" };
+  for (const action of ["template-edit", "fill", "correction"] as const) {
+    for (const documentKind of ["xlsx", "docx"] as const) {
+      for (const pdms of [false, true]) {
+        const result = editorConfig(
+          {
+            ...base,
+            action,
+            documentKind,
+            pdmsProjectEnabled: pdms,
+            ...(pdms
+              ? {
+                  pdmsProjectCatalog: {
+                    names: ["โครงการ"],
+                    sessionId: fixtureId,
+                    status: "ready" as const,
+                  },
+                }
+              : {}),
+          },
+          user
+        ) as {
+          bridge: { attachmentCategoryPopup?: unknown };
+          config: {
+            editorConfig: {
+              plugins: {
+                autostart: string[];
+                options: Record<string, unknown>;
+              };
+            };
+          };
+        };
+        const expected = action === "template-edit" && documentKind === "xlsx";
+        expect(Boolean(result.bridge.attachmentCategoryPopup)).toBe(expected);
+        expect(
+          result.config.editorConfig.plugins.autostart.includes(
+            attachmentCategoryPopupGuid
+          )
+        ).toBe(expected);
+        expect(
+          Boolean(
+            result.config.editorConfig.plugins.options[
+              attachmentCategoryPopupGuid
+            ]
+          )
+        ).toBe(expected);
+      }
+    }
+  }
+  const viewer = readOnlyViewerConfig(documentKey, publicId, user, "xlsx") as {
+    bridge?: { attachmentCategoryPopup?: unknown };
+    config: { editorConfig: { plugins?: { autostart?: string[] } } };
+  };
+  expect(viewer.bridge?.attachmentCategoryPopup).toBeUndefined();
+  expect(viewer.config.editorConfig.plugins?.autostart || []).not.toContain(
+    attachmentCategoryPopupGuid
+  );
 });

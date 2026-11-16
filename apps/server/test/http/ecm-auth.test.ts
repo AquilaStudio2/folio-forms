@@ -118,12 +118,12 @@ const requestBindings = (app: Pick<Elysia, "handle">) =>
 const success = (
   token = "provider-token",
   now = Date.now(),
-  lifetime = 3_600_000
+  lifetime = 15 * 24 * 60 * 60 * 1000
 ) =>
   Response.json({
     data: { expire: new Date(now + lifetime).toISOString(), token },
   });
-const categories = () => Response.json({ data: [{ id: 5, type: "หลักฐาน" }] });
+const categories = () => Response.json([{ id: 5, type: "หลักฐาน" }]);
 const scenario = (
   handler: (request: Request) => Response | Promise<Response>,
   runtime: Partial<EcmRuntime> = {}
@@ -297,7 +297,7 @@ test("one shared auth job retries transient failures at 1s and 2s, never a fourt
   expect((await requestCategories(fixture.app())).status).toBe(200);
   expect(times).toEqual([0, 1000, 3000]);
   permitSuccess = false;
-  now += 3_600_000;
+  now += 14 * 24 * 60 * 60 * 1000 + 12 * 60 * 60 * 1000;
   const failed = await requestCategories(fixture.app());
   expect(failed.status).toBe(503);
   expect(times).toHaveLength(6);
@@ -329,7 +329,8 @@ for (const status of [400, 401, 403]) {
 }
 
 for (const expire of [
-  "2026-12-01 12:00:00",
+  "2030-02-30 12:00:00",
+  "2030-01-01T10:00:00",
   "2027-02-30T12:00:00Z",
   "not-a-date",
 ]) {
@@ -416,14 +417,14 @@ test("valid Retry-After is respected inside the shared deadline", async () => {
   expect(times).toEqual([0, 2000]);
 });
 
-test("expiry must cover the request budget plus skew; unchanged safe token needs no new login", async () => {
+test("fresh tokens within the renewal window still require the request budget plus skew", async () => {
   let now = Date.now();
   let logins = 0;
   const fixture = scenario(
     (request) => {
       if (new URL(request.url).pathname.endsWith("/login")) {
         logins += 1;
-        return success(`short-${logins}`, now, 46_000);
+        return success(`short-${logins}`, now, logins < 3 ? 46_000 : 45_000);
       }
       return categories();
     },
@@ -432,8 +433,52 @@ test("expiry must cover the request budget plus skew; unchanged safe token needs
   const app = fixture.app();
   expect((await requestCategories(app)).status).toBe(200);
   expect((await requestCategories(app)).status).toBe(200);
-  expect(logins).toBe(1);
+  expect(logins).toBe(2);
   now += 2000;
+  expect((await requestCategories(app)).status).toBe(503);
+  expect(logins).toBe(3);
+});
+
+test("Thai 15-day token is shared across instances and renewed only on demand at twelve hours remaining", async () => {
+  const futureYear = new Date().getUTCFullYear() + 1;
+  let now = Date.parse(`${futureYear}-01-01T03:00:00Z`);
+  let logins = 0;
+  const fixture = scenario(
+    (request) => {
+      if (new URL(request.url).pathname.endsWith("/login")) {
+        logins += 1;
+        return Response.json({
+          data: {
+            expire:
+              logins === 1
+                ? `${futureYear}-01-16 10:00:00`
+                : `${futureYear}-01-30 22:00:00`,
+            token: `thai-${logins}`,
+          },
+          status: 200,
+        });
+      }
+      if (request.headers.get("Authorization") !== `Bearer thai-${logins}`) {
+        return new Response(null, { status: 401 });
+      }
+      return categories();
+    },
+    { now: () => now }
+  );
+  const app = fixture.app();
+  const first = await requestCategories(app);
+  expect(first.status).toBe(200);
+  expect(await first.json()).toEqual({ categories: ["หลักฐาน"] });
+  now = Date.parse(`${futureYear}-01-15T14:59:59Z`);
+  expect((await requestCategories(app)).status).toBe(200);
+  expect(logins).toBe(1);
+  now += 1000;
+  const responses = await Promise.all([
+    requestCategories(fixture.app()),
+    requestCategories(fixture.app()),
+  ]);
+  expect(responses.map((response) => response.status)).toEqual([200, 200]);
+  expect(logins).toBe(2);
   expect((await requestCategories(app)).status).toBe(200);
   expect(logins).toBe(2);
 });
@@ -463,7 +508,7 @@ test("late category 401 cannot clear a newer generation and never resends the re
   );
   const oldRequest = requestCategories(fixture.app());
   await entered.promise;
-  now += 3_600_000;
+  now += 14 * 24 * 60 * 60 * 1000 + 12 * 60 * 60 * 1000;
   expect((await requestCategories(fixture.app())).status).toBe(200);
   release.resolve();
   expect((await oldRequest).status).toBe(503);

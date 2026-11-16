@@ -14,7 +14,7 @@ export function spreadsheetUploadPocDeleteCommand(supplied) {
           (input.phase === "remove" && !/^folio_[A-Za-z0-9_]+$/u.test(id))
       )
     ) {
-      throw new Error("ข้อมูลลบปุ่ม POC ไม่ถูกต้อง");
+      throw new Error("ข้อมูลลบปุ่มแนบไฟล์ไม่ถูกต้อง");
     }
     const sheet = Api.GetActiveSheet();
     const objects = sheet.GetAllOleObjects();
@@ -54,7 +54,7 @@ export function spreadsheetUploadPocDeleteCommand(supplied) {
         !Number.isSafeInteger(from.col) ||
         typeof drawing.deleteDrawingBase !== "function"
       ) {
-        throw new Error("ONLYOFFICE รุ่นนี้ยังยืนยันการลบปุ่ม POC อย่างปลอดภัยไม่ได้");
+        throw new Error("ONLYOFFICE รุ่นนี้ยังยืนยันการลบปุ่มแนบไฟล์อย่างปลอดภัยไม่ได้");
       }
       let marker = null;
       try {
@@ -114,7 +114,7 @@ export function spreadsheetUploadPocDeleteCommand(supplied) {
       new Set(captured.map((target) => target.nativeId)).size !==
       captured.length
     ) {
-      throw new Error("รหัสปุ่ม POC ซ้ำกัน จึงยังลบอย่างปลอดภัยไม่ได้");
+      throw new Error("รหัสปุ่มแนบไฟล์ซ้ำกัน จึงยังลบอย่างปลอดภัยไม่ได้");
     }
     const removal = [];
     for (const target of captured) {
@@ -179,7 +179,7 @@ export function spreadsheetUploadPocDeleteCommand(supplied) {
     return JSON.stringify({ count: removal.length, ok: true });
   } catch (error) {
     return JSON.stringify({
-      error: error.message || "ยังยืนยันการลบปุ่ม POC ไม่ได้",
+      error: error.message || "ยังยืนยันการลบปุ่มแนบไฟล์ไม่ได้",
       ok: false,
     });
   }

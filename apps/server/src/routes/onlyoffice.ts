@@ -14,6 +14,7 @@ import {
   verifyOnlyOfficeAuthorization,
   pluginGuid,
   pdmsPopupGuid,
+  attachmentCategoryPopupGuid,
   callbackClaim,
 } from "../onlyoffice";
 import { maxCallbackBodyBytes, finalizeCallback } from "../operations/callback";
@@ -35,6 +36,8 @@ import {
   pluginSettingsIconResponse,
   pdmsPopupIndexResponse,
   pdmsPopupScriptResponse,
+  attachmentCategoryPopupIndexResponse,
+  attachmentCategoryPopupScriptResponse,
 } from "../plugin-assets";
 import { nativePdfDocument } from "../responses/native-document";
 import { responseSpreadsheetExport } from "../responses/spreadsheet-document";
@@ -196,6 +199,46 @@ export function registerOnlyOfficeRoutes(
     })
     .get("/onlyoffice-plugin/pdms-project/index.html", pdmsPopupIndexResponse)
     .get("/onlyoffice-plugin/pdms-project/popup.js", pdmsPopupScriptResponse)
+    .get(
+      "/onlyoffice-plugin/attachment-category/config.json",
+      ({ request, set }) => {
+        const origin = request.headers.get("origin");
+        if (origin && !pluginOrigins.has(origin)) {
+          fail(403, "forbidden_origin", "Origin is not allowed");
+        }
+        if (origin && origin !== corsOrigin) {
+          set.headers["Access-Control-Allow-Origin"] = origin;
+          set.headers.Vary = "Origin";
+        }
+        return {
+          guid: attachmentCategoryPopupGuid,
+          name: "เลือกหมวดหมู่จัดเก็บเอกสาร",
+          variations: [
+            {
+              EditorsSupport: ["cell"],
+              buttons: [],
+              description: "เลือกหมวดหมู่จัดเก็บเอกสารแนบ",
+              initData: "",
+              initDataType: "none",
+              initOnSelectionChanged: false,
+              isActivated: true,
+              isViewer: false,
+              type: "background",
+              url: "index.html",
+            },
+          ],
+          version: "1.0.0",
+        };
+      }
+    )
+    .get(
+      "/onlyoffice-plugin/attachment-category/index.html",
+      attachmentCategoryPopupIndexResponse
+    )
+    .get(
+      "/onlyoffice-plugin/attachment-category/popup.js",
+      attachmentCategoryPopupScriptResponse
+    )
     .get("/onlyoffice-plugin/upload-poc/config.json", ({ request, set }) => {
       const origin = request.headers.get("origin");
       if (origin && !pluginOrigins.has(origin)) {
@@ -207,7 +250,7 @@ export function registerOnlyOfficeRoutes(
       }
       return {
         guid: uploadPocGuid,
-        name: "เลือกไฟล์ (POC)",
+        name: "แนบไฟล์",
         variations: [
           {
             EditorsSupport: ["cell"],

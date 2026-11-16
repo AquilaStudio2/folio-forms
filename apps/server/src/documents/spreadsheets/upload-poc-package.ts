@@ -16,7 +16,7 @@ const descendants = (
 ];
 
 const invalid = (): never => {
-  throw new Error("Invalid embedded upload POC metadata");
+  throw new Error("Invalid embedded attachment button metadata");
 };
 
 /** Only the tiny native JSON package emitted for this POC is accepted, never a general embedded file. */

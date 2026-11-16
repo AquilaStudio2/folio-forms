@@ -20,6 +20,7 @@ export const createHarness = ({
   pdmsProjectEnabled = false,
   pdmsProjectCatalog,
   pdmsPopupChannelId,
+  attachmentCategoryPopupChannelId,
   spreadsheetSelection = {},
   browserGlobals = {},
   bodyDataset = {},
@@ -148,6 +149,16 @@ export const createHarness = ({
       textContent: "",
       value: "",
     };
+    if (element.tagName === "DIALOG") {
+      element.open = false;
+      element.showModal = function showModal() {
+        this.open = true;
+      };
+      element.close = function close() {
+        this.open = false;
+        this.dispatchEvent({ type: "close" });
+      };
+    }
     if (id) {
       elements.set(id, element);
     }
@@ -267,6 +278,7 @@ export const createHarness = ({
       options: {
         action,
         apiBase: "https://api.example.test/",
+        attachmentCategoryPopupChannelId,
         bridgeId,
         documentKey: "document-key",
         documentKind,
@@ -728,9 +740,9 @@ export const createHarness = ({
         callback(value);
       }
     },
-    emitWindowEvent(type) {
+    emitWindowEvent(type, event = {}) {
       for (const listener of windowEventListeners.get(type) || []) {
-        listener();
+        listener(event);
       }
     },
     expireCapabilityRequests() {

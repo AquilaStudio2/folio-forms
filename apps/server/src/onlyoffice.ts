@@ -11,6 +11,8 @@ import type { PdmsProjectCatalog } from "./pdms/catalog";
 
 export const pluginGuid = "asc.{E0B14962-3B9D-4E82-923E-89A93E8A1A51}";
 export const pdmsPopupGuid = "asc.{1ABF6AE1-DB72-42D2-A8EC-9056A50EFB94}";
+export const attachmentCategoryPopupGuid =
+  "asc.{0C8FD452-D078-4A2E-A973-83F927C76CE3}";
 
 const tokenLifetimeSeconds = 5 * 60;
 const operationCapabilityLifetimeSeconds = tokenLifetimeSeconds + 60;
@@ -556,6 +558,10 @@ export function editorConfig(
   const officeServerOrigin = trimOrigin(env.ONLYOFFICE_DOCUMENT_BASE_URL);
   const browserServerOrigin = trimOrigin(env.API_BASE);
   const bridgeId = crypto.randomUUID();
+  const attachmentCategoryPopup =
+    options.documentKind === "xlsx" && options.action === "template-edit"
+      ? { channelId: randomUUID(), documentKey: options.documentKey }
+      : undefined;
   const pdmsProjectPopup =
     options.documentKind === "xlsx" && options.pdmsProjectCatalog
       ? { channelId: randomUUID(), documentKey: options.documentKey }
@@ -615,9 +621,24 @@ export function editorConfig(
       callbackUrl: `${officeServerOrigin}/onlyoffice/callback`,
       mode: "edit",
       plugins: {
-        autostart: [pluginGuid, ...(pdmsProjectPopup ? [pdmsPopupGuid] : [])],
+        autostart: [
+          pluginGuid,
+          ...(pdmsProjectPopup ? [pdmsPopupGuid] : []),
+          ...(attachmentCategoryPopup ? [attachmentCategoryPopupGuid] : []),
+        ],
         disable: ["asc.{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}"],
         options: {
+          ...(attachmentCategoryPopup
+            ? {
+                [attachmentCategoryPopupGuid]: {
+                  attachmentCategoryPopupChannelId:
+                    attachmentCategoryPopup.channelId,
+                  bridgeId,
+                  documentKey: options.documentKey,
+                  parentOrigin: exactOrigin(env.CORS_ORIGIN),
+                },
+              }
+            : {}),
           ...(pdmsProjectPopup
             ? {
                 [pdmsPopupGuid]: {
@@ -631,6 +652,12 @@ export function editorConfig(
           ...(uploadPocOptions ? { [uploadPocGuid]: uploadPocOptions } : {}),
           [pluginGuid]: {
             ...pluginOptions,
+            ...(attachmentCategoryPopup
+              ? {
+                  attachmentCategoryPopupChannelId:
+                    attachmentCategoryPopup.channelId,
+                }
+              : {}),
             ...(pdmsProjectPopup
               ? { pdmsPopupChannelId: pdmsProjectPopup.channelId }
               : {}),
@@ -644,6 +671,11 @@ export function editorConfig(
         },
         pluginsData: [
           `${browserServerOrigin}/onlyoffice-plugin/config.json`,
+          ...(attachmentCategoryPopup
+            ? [
+                `${browserServerOrigin}/onlyoffice-plugin/attachment-category/config.json`,
+              ]
+            : []),
           ...(pdmsProjectPopup
             ? [
                 `${browserServerOrigin}/onlyoffice-plugin/pdms-project/config.json`,
@@ -676,6 +708,7 @@ export function editorConfig(
       lease,
       pluginOrigin: exactOrigin(env.API_BASE),
       ...(pdmsProjectPopup ? { pdmsProjectPopup } : {}),
+      ...(attachmentCategoryPopup ? { attachmentCategoryPopup } : {}),
       ...(uploadPocOptions ? { uploadPoc: uploadPocOptions } : {}),
     },
     config: { ...config, token: signToken(config, env.ONLYOFFICE_JWT_SECRET) },

@@ -1,5 +1,6 @@
 import { API_ORIGIN } from "@/lib/api";
 
+import type { AttachmentCategoryPopupScope } from "./attachment-category-popup-relay";
 import type { PdmsProjectPopupScope } from "./pdms-popup-relay";
 import type { UploadPocHostOptions } from "./upload-poc-pending";
 
@@ -62,6 +63,7 @@ export interface EditorConfig {
   apiScriptUrl?: string;
   apiUrl?: string;
   bridge?: {
+    attachmentCategoryPopup?: AttachmentCategoryPopupScope;
     documentKey?: string;
     capabilities?: Partial<Record<EditorAction | "export-workbook", string>>;
     id?: string;

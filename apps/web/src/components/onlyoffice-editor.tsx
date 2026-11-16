@@ -10,6 +10,7 @@ import {
 
 import { Button } from "@/components/ui";
 import { recoveredAttachmentLease } from "@/features/onlyoffice/attachment-admission-recovery";
+import { createAttachmentCategoryPopupRelay } from "@/features/onlyoffice/attachment-category-popup-relay";
 import {
   acknowledgeBridge,
   editorConfigPath,
@@ -637,6 +638,14 @@ export const OnlyOfficeEditor = ({
       pluginOrigin,
       scope: readOnly ? undefined : config.bridge?.pdmsProjectPopup,
     });
+    const attachmentCategoryPopupRelay = createAttachmentCategoryPopupRelay({
+      bridgeId,
+      getPrimary: () => pinnedSourceRef.current,
+      isLive: (source): source is Window =>
+        !cancelled && isEditorWindowSource(source, surfaceRef.current),
+      pluginOrigin,
+      scope: readOnly ? undefined : config.bridge?.attachmentCategoryPopup,
+    });
     const respondToEditorSave = (saveFailure?: string) => {
       const requestId = pendingEditorSaveId;
       const source = pinnedSourceRef.current;
@@ -934,7 +943,12 @@ export const OnlyOfficeEditor = ({
 
       const { data } = event;
       pdmsPopupRelay.handle(event);
-      if (pdmsPopupRelay.isPopupSource(event.source)) {
+      attachmentCategoryPopupRelay.handle(event);
+      if (
+        pdmsPopupRelay.isPopupSource(event.source) ||
+        attachmentCategoryPopupRelay.isPopupSource(event.source) ||
+        (isRecord(data) && data.source === "folio-attachment-category-popup")
+      ) {
         return;
       }
       if (isRecord(data) && data.source === "folio-upload-poc") {
@@ -977,6 +991,7 @@ export const OnlyOfficeEditor = ({
           !config.editorUrl && !readOnly
         );
         pdmsPopupRelay.primaryReady();
+        attachmentCategoryPopupRelay.primaryReady();
         setBridgeReadyVersion((value) => value + 1);
         return;
       }
@@ -1206,6 +1221,7 @@ export const OnlyOfficeEditor = ({
         new Error("The workbook editor closed during capture")
       );
       respondToEditorSave("The native editor closed before changes were saved");
+      attachmentCategoryPopupRelay.close();
       cancelled = true;
       pdmsPopupRelay.close();
       window.removeEventListener("message", handleBridgeMessage);

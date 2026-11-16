@@ -198,7 +198,7 @@ const provider = Bun.serve({
       logins += 1;
       return Response.json({
         data: {
-          expire: new Date(Date.now() + 3_600_000).toISOString(),
+          expire: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
           token: "scalar-test-service-token",
         },
         msg: "ok",

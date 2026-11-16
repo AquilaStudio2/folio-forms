@@ -31,6 +31,7 @@ const runtime: EcmRuntime = {
   timeoutSignal: AbortSignal.timeout,
 };
 const skewMs = 30_000;
+const renewAheadMs = 12 * 60 * 60 * 1000;
 const authBudgetMs = 30_000;
 const persistenceAllowanceMs = 5000;
 const unavailable = (): never =>
@@ -67,7 +68,15 @@ const configurationSchema = z.object({
 });
 const loginResponse = z.object({
   data: z.object({
-    expire: z.iso.datetime({ offset: true }),
+    expire: z
+      .string()
+      .transform((value) =>
+        // DCM's local timestamps are UTC+7, not the Folio host timezone.
+        /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}$/u.test(value)
+          ? `${value.replace(" ", "T")}+07:00`
+          : value
+      )
+      .pipe(z.iso.datetime({ offset: true })),
     token: z
       .string()
       .min(1)
@@ -401,16 +410,17 @@ export class EcmClient {
       return unavailable();
     }
     const sufficient = (
-      value: AuthState
+      value: AuthState,
+      minimumRemainingMs = requestBudgetMs + skewMs
     ): value is AuthState & { encrypted_token: string } =>
       Boolean(
         value.status === "ready" &&
         value.encrypted_token &&
         value.expires_at &&
-        value.expires_at.getTime() >
-          this.runtime.now() + requestBudgetMs + skewMs
+        value.expires_at.getTime() > this.runtime.now() + minimumRemainingMs
       );
-    if (sufficient(state)) {
+    // Early renewal applies to cached tokens, not fresh login validation.
+    if (sufficient(state, Math.max(renewAheadMs, requestBudgetMs + skewMs))) {
       return {
         generation: state.generation,
         token: this.open(state.encrypted_token),
@@ -625,27 +635,24 @@ export class EcmClient {
     try {
       const response = await this.request("document/category");
       const parsed = z
-        .object({
-          data: z
-            .array(
-              z.object({
-                id: z.number().int(),
-                type: z
-                  .string()
-                  .min(1)
-                  .max(255)
-                  .refine(
-                    (name) => name.trim().length > 0 && !/\p{Cc}/u.test(name)
-                  ),
-              })
-            )
-            .max(10_000),
-        })
+        .array(
+          z.object({
+            id: z.number().int(),
+            type: z
+              .string()
+              .min(1)
+              .max(255)
+              .refine(
+                (name) => name.trim().length > 0 && !/\p{Cc}/u.test(name)
+              ),
+          })
+        )
+        .max(10_000)
         .safeParse(await jsonBody(response));
       if (!parsed.success) {
         return unavailable();
       }
-      return [...new Set(parsed.data.data.map((category) => category.type))];
+      return [...new Set(parsed.data.map((category) => category.type))];
     } catch {
       return unavailable();
     }

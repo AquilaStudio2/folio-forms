@@ -7,7 +7,7 @@ export function spreadsheetUploadPocActivationCommand(supplied) {
       input?.guid !== "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}" ||
       !Array.isArray(input.bindings?.fields)
     ) {
-      throw new Error("ข้อมูลตรวจสอบปุ่ม POC ไม่ครบ");
+      throw new Error("ข้อมูลตรวจสอบปุ่มแนบไฟล์ไม่ครบ");
     }
     const sheet = Api.GetActiveSheet();
     const targets = [];
@@ -18,7 +18,7 @@ export function spreadsheetUploadPocActivationCommand(supplied) {
       }
       const raw = object.GetData();
       if (typeof raw !== "string" || raw.length > 4096) {
-        throw new Error("ข้อมูลปุ่ม POC ไม่ถูกต้อง");
+        throw new Error("ข้อมูลปุ่มแนบไฟล์ไม่ถูกต้อง");
       }
       const data = JSON.parse(raw);
       if (
@@ -33,7 +33,7 @@ export function spreadsheetUploadPocActivationCommand(supplied) {
             !["bindingId", "kind", "rowIndex", "tag", "version"].includes(key)
         )
       ) {
-        throw new Error("ข้อมูลปุ่ม POC ไม่ถูกต้อง");
+        throw new Error("ข้อมูลปุ่มแนบไฟล์ไม่ถูกต้อง");
       }
       const scalar = input.bindings.fields.find(
         (field) => field.id === data.bindingId
@@ -52,7 +52,7 @@ export function spreadsheetUploadPocActivationCommand(supplied) {
           ? rowIndex !== null
           : !Number.isSafeInteger(rowIndex) || rowIndex < 0)
       ) {
-        throw new Error("ปุ่ม POC ไม่ตรงกับช่องหรือแถวปัจจุบัน");
+        throw new Error("ปุ่มแนบไฟล์ไม่ตรงกับช่องหรือแถวปัจจุบัน");
       }
       const position = Api.GetDefName(
         scalar ? field.anchor : table.anchor
@@ -73,7 +73,7 @@ export function spreadsheetUploadPocActivationCommand(supplied) {
           (tracked.GetWorksheet().GetName() !== sheet.GetName() ||
             rowIndex >= position.GetRowsCount()))
       ) {
-        throw new Error("ไม่พบตำแหน่งปุ่ม POC ที่ยืนยันได้");
+        throw new Error("ไม่พบตำแหน่งปุ่มแนบไฟล์ที่ยืนยันได้");
       }
       const expectedRow = position.GetRow() - 1 + (column ? rowIndex : 0);
       const expectedColumn = (column ? tracked : position).GetCol() - 1;
@@ -87,7 +87,7 @@ export function spreadsheetUploadPocActivationCommand(supplied) {
         marker.GetRow() - 1 > expectedRow ||
         marker.GetRow() + marker.GetRowsCount() - 2 < expectedRow
       ) {
-        throw new Error("ตำแหน่งวัตถุ POC ไม่ตรงกับข้อมูลช่อง");
+        throw new Error("ตำแหน่งปุ่มแนบไฟล์ไม่ตรงกับข้อมูลช่อง");
       }
       if (
         typeof drawing.setProtectionLocked !== "function" ||
@@ -96,12 +96,12 @@ export function spreadsheetUploadPocActivationCommand(supplied) {
         typeof object.GetLockValue !== "function"
       ) {
         throw new TypeError(
-          "ONLYOFFICE รุ่นนี้ยังไม่รองรับการเปิดปุ่มเลือกไฟล์ POC ภายใต้การป้องกันชีต"
+          "ONLYOFFICE รุ่นนี้ยังไม่รองรับการเปิดปุ่มแนบไฟล์ภายใต้การป้องกันชีต"
         );
       }
       const slot = JSON.stringify([data.bindingId, rowIndex]);
       if (slots.has(slot)) {
-        throw new Error("พบปุ่ม POC ซ้ำที่ช่องหรือแถวเดียวกัน");
+        throw new Error("พบปุ่มแนบไฟล์ซ้ำที่ช่องหรือแถวเดียวกัน");
       }
       slots.add(slot);
       targets.push(object);
@@ -118,13 +118,13 @@ export function spreadsheetUploadPocActivationCommand(supplied) {
           object.GetLockValue("noResize") !== true ||
           object.GetLockValue("noSelect") !== false
         ) {
-          throw new Error("ยืนยันการล็อกตำแหน่งปุ่ม POC ไม่ได้");
+          throw new Error("ยืนยันการล็อกตำแหน่งปุ่มแนบไฟล์ไม่ได้");
         }
       }
       for (const object of targets) {
         object.Drawing.setProtectionLocked(false);
         if (object.Drawing.getProtectionLocked() !== false) {
-          throw new Error("ยืนยันการเปิดปุ่ม POC อย่างจำกัดไม่ได้");
+          throw new Error("ยืนยันการเปิดปุ่มแนบไฟล์อย่างจำกัดไม่ได้");
         }
       }
     } catch (error) {
@@ -140,7 +140,7 @@ export function spreadsheetUploadPocActivationCommand(supplied) {
         }
       }
       if (rollbackFailed) {
-        throw new Error("ยืนยันการป้องกันปุ่ม POC ไม่ได้ กรุณาปิดตัวแก้ไขและเปิดใหม่", {
+        throw new Error("ยืนยันการป้องกันปุ่มแนบไฟล์ไม่ได้ กรุณาปิดตัวแก้ไขและเปิดใหม่", {
           cause: error,
         });
       }
@@ -149,7 +149,7 @@ export function spreadsheetUploadPocActivationCommand(supplied) {
     return JSON.stringify({ count: targets.length, ok: true });
   } catch (error) {
     return JSON.stringify({
-      error: error.message || "เปิดปุ่ม POC ไม่สำเร็จ",
+      error: error.message || "เปิดปุ่มแนบไฟล์ไม่สำเร็จ",
       ok: false,
     });
   }

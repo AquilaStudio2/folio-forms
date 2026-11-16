@@ -1,5 +1,6 @@
 import { expect, test } from "bun:test";
 
+import { attachCategoryPopup } from "./attachment-category-popup-harness.js";
 import { acknowledgeBridge, createHarness, flushPlugin } from "./harness.js";
 
 const descendants = (node) => [node, ...node.children.flatMap(descendants)];
@@ -13,7 +14,7 @@ const button = (harness, text) =>
     (node) => node.tagName === "BUTTON" && node.textContent === text
   );
 
-test("native category controls retain the saved destination during an outage and show only actual loaded choices plus the saved name", async () => {
+test("category dialog preserves a saved destination through an outage and a renamed upstream list without writing on cancel", async () => {
   const state = {
     fields: [
       {
@@ -34,6 +35,7 @@ test("native category controls retain the saved destination during an outage and
     table: null,
     version: 1,
   };
+  let categories = ["หมวดใหม่"];
   let outage = true;
   const response = (url) => {
     if (String(url).endsWith("/attachment-categories")) {
@@ -42,12 +44,13 @@ test("native category controls retain the saved destination during an outage and
             body: { error: "ecm_unavailable", message: "ระบบเอกสารแนบไม่พร้อม" },
             httpStatus: 503,
           }
-        : { categories: ["หมวดใหม่"] };
+        : { categories };
     }
     return { bindings: state, documentKey: "document-key", revision: 0 };
   };
   const harness = createHarness({
     action: "template-edit",
+    attachmentCategoryPopupChannelId: "category-channel",
     capabilityResponses: Array.from(
       { length: 30 },
       () => "configure-fields-capability"
@@ -61,21 +64,47 @@ test("native category controls retain the saved destination during an outage and
       names: { folio_proof: "'Sheet1'!$B$3" },
     },
   });
+  const popup = attachCategoryPopup(harness);
   acknowledgeBridge(harness);
   await flushPlugin();
-  const category = control(harness, "Document Category");
-  expect(category.value).toBe("หมวดเดิม");
-  expect(control(harness, "ช่องแนบไฟล์จากปุ่มเดิม").checked).toBe(true);
-  button(harness, "โหลด Document Category").dispatchEvent({ type: "click" });
+  button(harness, "เปลี่ยนหมวด").click();
   await flushPlugin();
-  expect(category.value).toBe("หมวดเดิม");
+  const category = control(popup, "หมวดหมู่จัดเก็บเอกสาร");
+  expect(category.disabled).toBe(true);
+  expect(button(popup, "ยืนยันและบันทึก").disabled).toBe(true);
+  expect(state.fields[0].attachment.category).toBe("หมวดเดิม");
+  button(popup, "ยกเลิก").click();
+  await flushPlugin();
   outage = false;
-  button(harness, "โหลด Document Category").dispatchEvent({ type: "click" });
+  button(harness, "เปลี่ยนหมวด").click();
   await flushPlugin();
-  expect(category.value).toBe("หมวดเดิม");
-  expect(category.children.map((option) => option.value)).toEqual([
+  const refreshed = control(popup, "หมวดหมู่จัดเก็บเอกสาร");
+  expect(refreshed.value).toBe("");
+  expect(refreshed.children.map((option) => option.value)).toEqual([
     "",
     "หมวดใหม่",
-    "หมวดเดิม",
   ]);
+  expect(button(popup, "ยืนยันและบันทึก").disabled).toBe(true);
+  expect(state.fields[0].attachment.category).toBe("หมวดเดิม");
+  button(popup, "ยกเลิก").click();
+  await flushPlugin();
+  expect(popup.methodInvocations).toContainEqual({
+    args: ["asc.test-plugin", 430, 360, true],
+    method: "ShowInputHelper",
+  });
+  expect(popup.methodCalls).toContain("UnShowInputHelper");
+  expect(
+    descendants(harness.body).some((node) => node.tagName === "DIALOG")
+  ).toBe(false);
+  categories = ["หมวดเดิม", "หมวดใหม่"];
+  button(harness, "เปลี่ยนหมวด").click();
+  await flushPlugin();
+  expect(control(popup, "หมวดหมู่จัดเก็บเอกสาร").value).toBe("หมวดเดิม");
+  expect(button(popup, "ยืนยันและบันทึก").disabled).toBe(false);
+  button(popup, "ยกเลิก").click();
+  await flushPlugin();
+  expect(popup.requests).toEqual([]);
+  expect(
+    harness.requests.filter((request) => request.method !== "GET")
+  ).toEqual([]);
 });

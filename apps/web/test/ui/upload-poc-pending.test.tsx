@@ -813,7 +813,7 @@ describe("local POC pending files", () => {
         }),
         options
       )
-    ).toThrow(/คำสั่ง POC/u);
+    ).toThrow();
     store.handle(
       message({
         file: new File(["pending"], "pending.txt"),

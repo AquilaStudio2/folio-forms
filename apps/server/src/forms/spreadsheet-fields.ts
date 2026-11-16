@@ -42,26 +42,35 @@ export const validateSpreadsheetPublication = (
     ...bindings.fields,
     ...(bindings.table?.columns ?? []),
   ].filter((field) => field.attachment);
-  if (attachments.some((field) => !field.attachment?.category)) {
+  const missingCategories = attachments.filter(
+    (field) => !field.attachment?.category
+  );
+  const missingMetadata = attachments.length
+    ? ["fiscal_year", "docs_number"].filter(
+        (key) =>
+          bindings.fields.filter(
+            (field) => field.key === key && !field.attachment && !field.computed
+          ).length !== 1
+      )
+    : [];
+  if (missingCategories.length || missingMetadata.length) {
+    const problems: string[] = [];
+    if (missingCategories.length) {
+      problems.push(
+        `ยังไม่ได้เลือก Document Category ให้ช่อง ${missingCategories.map((field) => `${field.label} (Tag: ${field.key})`).join(", ")}`
+      );
+    }
+    if (missingMetadata.length) {
+      problems.push(
+        `ยังไม่มีช่องกรอกเดี่ยวที่ใช้ได้สำหรับ Tag ${missingMetadata.join(" และ ")}`
+      );
+    }
     fail(
       422,
-      "attachment_category_required",
-      "เลือก Document Category ให้ครบทุกช่องแนบก่อนเผยแพร่"
-    );
-  }
-  if (
-    attachments.length &&
-    ["fiscal_year", "docs_number"].some(
-      (key) =>
-        bindings.fields.filter(
-          (field) => field.key === key && !field.attachment && !field.computed
-        ).length !== 1
-    )
-  ) {
-    fail(
-      422,
-      "attachment_metadata_required",
-      "เพิ่มช่องเดี่ยว fiscal_year และ docs_number อย่างละหนึ่งช่องก่อนเผยแพร่ โดยไม่ต้องกรอกค่าคำตอบ"
+      missingCategories.length
+        ? "attachment_category_required"
+        : "attachment_metadata_required",
+      `ไม่สามารถเผยแพร่ได้ เนื่องจาก${problems.join(" และ")}`
     );
   }
   if (bindings.fields.length === 0 && !bindings.table) {

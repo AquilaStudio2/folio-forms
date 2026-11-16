@@ -152,7 +152,7 @@ export const spreadsheetUploadPocTargets = (
       )
     ) {
       throw new Error(
-        "Upload POC marker does not match an editable text mapping"
+        "Attachment button marker does not match an editable text mapping"
       );
     }
     seen.add(id);
@@ -467,7 +467,7 @@ export const stripSpreadsheetUploadPoc = (
         const target = id && relationships.get(id);
         const part = target && workbook.archive[target];
         if (!part || !target) {
-          throw new Error("Missing POC object metadata");
+          throw new Error("Missing attachment button object metadata");
         }
         if (retainBindingIds.has(readUploadPocMetadata(part).bindingId)) {
           return false;
@@ -485,9 +485,9 @@ export const stripSpreadsheetUploadPoc = (
         return true;
       })
       .map((node) => {
-        const {shapeId} = node.attributes;
+        const { shapeId } = node.attributes;
         if (!shapeId) {
-          throw new Error("Missing POC object shape");
+          throw new Error("Missing attachment button object shape");
         }
         return shapeId;
       })
@@ -705,12 +705,12 @@ export const normalizeSpreadsheetUploadPocAnchors = (
     )?.[1];
     const part = relationshipId && relationships.get(relationshipId);
     if (!part || !workbook.archive[part]) {
-      throw new Error("Missing POC metadata");
+      throw new Error("Missing attachment button metadata");
     }
     const metadata = readUploadPocMetadata(workbook.archive[part]);
     const marker = markers.get(`_folio_upload_poc_${metadata.bindingId}`);
     if (!marker) {
-      throw new Error("Missing POC placement marker");
+      throw new Error("Missing attachment button placement marker");
     }
     const range = parseSpreadsheetRange(
       marker.children
@@ -734,12 +734,12 @@ export const normalizeSpreadsheetUploadPocAnchors = (
       row < range.firstRow ||
       row > range.lastRow
     ) {
-      throw new Error("Invalid POC preview anchor");
+      throw new Error("Invalid attachment button preview anchor");
     }
     for (const name of ["colOff", "rowOff"]) {
       const [coordinate] = nodes(from, name);
       if (!coordinate) {
-        throw new Error("Incomplete POC preview anchor");
+        throw new Error("Incomplete attachment button preview anchor");
       }
       coordinate.children = ["0"];
     }
@@ -764,7 +764,7 @@ export const normalizeSpreadsheetUploadPocAnchors = (
     }
     const scale = Math.min(1, cellWidth / 110, (cellHeight * 4) / 3 / 24);
     if (!Number.isFinite(scale) || scale <= 0) {
-      throw new Error("Upload POC cell has no visible space");
+      throw new Error("Attachment button cell has no visible space");
     }
     const width = 110 * scale;
     const height = 24 * scale;
@@ -777,7 +777,7 @@ export const normalizeSpreadsheetUploadPocAnchors = (
     ] as const) {
       const [coordinate] = nodes(to, name);
       if (!coordinate) {
-        throw new Error("Incomplete POC preview anchor");
+        throw new Error("Incomplete attachment button preview anchor");
       }
       coordinate.children = [String(value)];
     }
@@ -819,7 +819,9 @@ export const normalizeSpreadsheetUploadPocAnchors = (
       );
       const [client] = nodes(shape, "ClientData");
       if (!client) {
-        throw new Error("Missing POC preview interaction metadata");
+        throw new Error(
+          "Missing attachment button preview interaction metadata"
+        );
       }
       const [locked] = nodes(client, "Locked");
       if (locked) {
@@ -832,7 +834,7 @@ export const normalizeSpreadsheetUploadPocAnchors = (
       }
       const [anchor] = nodes(shape, "Anchor");
       if (!anchor) {
-        throw new Error("Missing POC preview geometry");
+        throw new Error("Missing attachment button preview geometry");
       }
       anchor.children = [
         String([

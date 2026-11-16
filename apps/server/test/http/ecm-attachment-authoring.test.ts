@@ -78,7 +78,7 @@ const provider = Bun.serve({
       });
       return Response.json({
         data: {
-          expire: new Date(Date.now() + 3_600_000).toISOString(),
+          expire: new Date(Date.now() + 15 * 24 * 60 * 60 * 1000).toISOString(),
           token: "isolated-provider-bearer-never-return-to-browser",
         },
       });
@@ -88,7 +88,7 @@ const provider = Bun.serve({
         "Bearer isolated-provider-bearer-never-return-to-browser"
       );
       return Response.json(
-        { data: categoryNames.map((type, id) => ({ id, type })) },
+        categoryNames.map((type, id) => ({ id, type })),
         { status: categoryStatus }
       );
     }

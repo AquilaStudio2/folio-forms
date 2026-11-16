@@ -36,8 +36,7 @@ export const checkUploadPocPending = (
       if (message.error || message.allowed !== true) {
         reject(
           new Error(
-            message.error ||
-              "มีไฟล์ที่ยังไม่อัปโหลดหรือบันทึกถาวร จึงยังดำเนินการนี้ไม่ได้ใน POC"
+            message.error || "มีไฟล์ที่ยังไม่อัปโหลดหรือบันทึกถาวร จึงยังดำเนินการนี้ไม่ได้"
           )
         );
       } else {
