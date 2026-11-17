@@ -183,6 +183,12 @@ let deleteBarrier: { enter: () => void; release: Promise<void> } | null = null;
 const provider = Bun.serve({
   async fetch(request): Promise<Response> {
     const url = new URL(request.url);
+    if (url.pathname.endsWith("/document/category")) {
+      return Response.json([
+        { id: 42, type: "Original" },
+        { id: 43, type: "Moved" },
+      ]);
+    }
     if (request.method === "GET" && !url.pathname.startsWith("/snapshot/")) {
       publicGets.push(url.pathname);
     }
@@ -2080,6 +2086,215 @@ test("initial Correction rejects a changed captured workspace base before origin
     captureBarrier = null;
     released.resolve();
   }
+});
+
+test("template Correction freezes catalog routing, rejects protected overwrite and reuses scalar/table originals at distinct destinations", async () => {
+  const owner = await fixture({ templateMode: true, tableAttachments: true });
+  const admin = await fixture({ admin: true });
+  const scalar = new Uint8Array([6, 0, 255]);
+  const row = new Uint8Array();
+  expect(
+    (
+      await poll(
+        owner,
+        await send(
+          owner,
+          {
+            folio_proof: file(scalar, "scalar.BIN"),
+            '["folio_row_proof",2]': file(row, "empty.TXT"),
+          },
+          "submit"
+        )
+      )
+    ).status
+  ).toBe("completed");
+  const submission = await prisma.submission.findFirstOrThrow({
+    where: { responseId: owner.response.id },
+  });
+  const response = await prisma.response.findUniqueOrThrow({
+    where: { id: owner.response.id },
+  });
+  const manifest = await prisma.fieldManifest.findUniqueOrThrow({
+    where: { publishedTemplateId: response.publishedTemplateId },
+    include: { fields: true },
+  });
+  const frozen = manifest.fields.filter((field) => field.attachment);
+  for (const field of frozen) {
+    await prisma.storageTemplate.create({
+      data: {
+        id: fixtureValue(field.attachmentTemplateId),
+        document_category_id: 42,
+        template_name: fixtureValue(field.attachmentTemplateName),
+      },
+    });
+  }
+  const bridge = await openCorrection(owner, admin);
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const reads = originalReads.length;
+  for (const field of frozen) {
+    const id = fixtureValue(field.attachmentTemplateId);
+    const renamed = await app.handle(
+      new Request(`http://test.local/api/admin/storage-templates/${id}`, {
+        method: "PATCH",
+        headers: {
+          Authorization: `Bearer ${admin.bearer}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          document_category_id: 43,
+          template_name: `changed-${id}`,
+        }),
+      })
+    );
+    expect(renamed.status).toBe(200);
+    const removed = await app.handle(
+      new Request(`http://test.local/api/admin/storage-templates/${id}`, {
+        method: "DELETE",
+        headers: {
+          Authorization: `Bearer ${admin.bearer}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ confirm: true }),
+      })
+    );
+    expect(removed.status).toBe(200);
+  }
+  const conflict = await poll(
+    admin,
+    await postCorrection(owner, admin, bridge, {
+      folio_proof: file(new Uint8Array([9]), "replacement.BIN"),
+    })
+  );
+  expect(conflict.status).toBe("failed");
+  expect(conflict.result?.errorMessage).toContain("ห้ามเขียนทับ");
+  expect(received.length).toBe(uploads);
+  expect(deleted.length).toBe(deletes);
+  expect(originalReads.length).toBe(reads);
+  expect(
+    await prisma.correction.count({ where: { submissionId: submission.id } })
+  ).toBe(0);
+  const next = await openCorrection(owner, admin);
+  snapshots.set(
+    next.documentKey,
+    replaceCell(
+      fixtureValue(snapshots.get(next.documentKey)),
+      "B2",
+      `CORRECTION.${owner.response.id}`
+    )
+  );
+  expect(
+    (await poll(admin, await postCorrection(owner, admin, next, {}, {}, true)))
+      .status
+  ).toBe("completed");
+  expect(received.length).toBe(uploads);
+  expect(deleted.length).toBe(deletes);
+  const saved = await openCorrection(owner, admin);
+  expect(
+    (await poll(admin, await postCorrection(owner, admin, saved))).status
+  ).toBe("completed");
+  expect(
+    received.slice(uploads).map((entry) => ({
+      bytes: [...entry.bytes],
+      name: entry.name,
+      template: entry.template,
+      fields: entry.fields,
+    }))
+  ).toEqual([
+    {
+      bytes: [...scalar],
+      name: `CORRECTION.${owner.response.id}-ก่อหนี้-4_ขยาย(45).BIN`,
+      template: "1",
+      fields: ["documentFile", "template"],
+    },
+    {
+      bytes: [],
+      name: `CORRECTION.${owner.response.id}-หลักฐาน-ตาราง.TXT`,
+      template: "1",
+      fields: ["documentFile", "template"],
+    },
+  ]);
+  expect(originalReads.slice(reads).map((entry) => entry.path)).toEqual(
+    Array(2).fill("/api/beeecm/public/file")
+  );
+  expect(deleted.length).toBe(deletes);
+  const correction = await prisma.correction.findFirstOrThrow({
+    where: { submissionId: submission.id },
+  });
+  const data = z.record(z.string(), z.unknown()).parse(correction.data);
+  expect(tableRowsSchema.parse(data.rows)[0]?.proof?.row_index).toBe(2);
+  expect(
+    await prisma.ecmAttachmentReference.findMany({
+      where: { snapshotId: correction.documentKey },
+      select: { rowIndex: true },
+      orderBy: { rowIndex: "asc" },
+    })
+  ).toEqual([{ rowIndex: 2 }, { rowIndex: null }]);
+  for (const [revision, expected] of [
+    ["original", submission.data],
+    [String(correction.revision), correction.data],
+  ] as const) {
+    const result = await app.handle(
+      new Request(
+        `http://test.local/api/submissions/${submission.id}/xlsx?revision=${revision}`,
+        {
+          headers: { Authorization: `Bearer ${admin.bearer}` },
+        }
+      )
+    );
+    expect(result.status).toBe(200);
+    const workbook = readSpreadsheetWorkbook(
+      new Uint8Array(await result.arrayBuffer())
+    );
+    const snapshot = z.record(z.string(), z.unknown()).parse(expected);
+    expect(workbook.cells.get("B3")?.value).toBe(
+      attachmentSchema.parse(snapshot.proof).file_link
+    );
+    expect(workbook.cells.get("C12")?.value).toBe(
+      tableRowsSchema.parse(snapshot.rows)[0]?.proof?.file_link
+    );
+    const attachment = attachmentSchema.parse(snapshot.proof);
+    expect([
+      ...new Uint8Array(
+        await (await fetch(attachment.file_link)).arrayBuffer()
+      ),
+    ]).toEqual([...scalar]);
+  }
+  expect(
+    (
+      await prisma.submission.findUniqueOrThrow({
+        where: { id: submission.id },
+      })
+    ).data
+  ).toEqual(submission.data);
+  expect(
+    (
+      await prisma.fieldManifest.findUniqueOrThrow({
+        where: { id: manifest.id },
+        include: { fields: true },
+      })
+    ).fields
+  ).toEqual(manifest.fields);
+  const latest = await openCorrection(owner, admin);
+  const protectedCorrection = await poll(
+    admin,
+    await postCorrection(owner, admin, latest, {
+      folio_proof: file(new Uint8Array([99]), "newer.BIN"),
+    })
+  );
+  expect(protectedCorrection.status).toBe("failed");
+  expect(protectedCorrection.result?.errorMessage).toContain("ห้ามเขียนทับ");
+  expect(received.length).toBe(uploads + 2);
+  expect(deleted.length).toBe(deletes);
+  expect(
+    await prisma.correction.count({ where: { submissionId: submission.id } })
+  ).toBe(1);
+  const protectedFile = attachmentSchema.parse(data.proof);
+  expect([
+    ...new Uint8Array(
+      await (await fetch(protectedFile.file_link)).arrayBuffer()
+    ),
+  ]).toEqual([...scalar]);
 });
 
 test("Correction metadata and removal preserve older selected file versions and exports", async () => {
