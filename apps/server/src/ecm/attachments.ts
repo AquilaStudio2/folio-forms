@@ -373,16 +373,14 @@ const planAttachmentFile = (
   };
 };
 
-const originalForChangedMetadata = async (
+const savedOriginalVersions = async (
   slot: AttachmentSlot,
   saved: Attachment,
   responseId: string,
-  data: Record<string, unknown>,
-  ecm: EcmClient,
-  snapshotId: string | null
-): Promise<{ file: File; sha256: string | null } | undefined> => {
+  snapshotId: string | null,
+  label: string
+) => {
   const { field } = slot;
-  const label = `${field.label}${slot.rowIndex === null ? "" : ` / แถว ${slot.rowIndex + 1}`}`;
   if (!snapshotId) {
     fail(409, "invalid_attachment", `${label}: ไม่พบเอกสารต้นฉบับที่บันทึกแล้ว`);
   }
@@ -390,7 +388,7 @@ const originalForChangedMetadata = async (
     select: { rowIndex: true, versionId: true },
     where: { responseId, snapshotId },
   });
-  const versions = await prisma.ecmAttachmentVersion.findMany({
+  return await prisma.ecmAttachmentVersion.findMany({
     take: slot.rowIndex === null ? 1 : undefined,
     where: {
       bindingId: field.id,
@@ -415,6 +413,25 @@ const originalForChangedMetadata = async (
       tag: slot.tag,
     },
   });
+};
+
+const originalForChangedMetadata = async (
+  slot: AttachmentSlot,
+  saved: Attachment,
+  responseId: string,
+  data: Record<string, unknown>,
+  ecm: EcmClient,
+  snapshotId: string | null
+): Promise<{ file: File; sha256: string | null } | undefined> => {
+  const { field } = slot;
+  const label = `${field.label}${slot.rowIndex === null ? "" : ` / แถว ${slot.rowIndex + 1}`}`;
+  const versions = await savedOriginalVersions(
+    slot,
+    saved,
+    responseId,
+    snapshotId,
+    label
+  );
   const [version] = versions;
   if (!version) {
     fail(409, "invalid_attachment", `${label}: ไม่พบหลักฐานไฟล์เดิมที่บันทึกแล้ว`);
@@ -529,6 +546,14 @@ const attachmentSnapshot = (
   return extracted;
 };
 
+const originalFileSha256 = async (file: File): Promise<string> => {
+  const hash = createHash("sha256");
+  for await (const chunk of file.stream()) {
+    hash.update(chunk);
+  }
+  return hash.digest("hex");
+};
+
 const planAttachmentUploads = async (
   input: AttachmentInput,
   responseId: string
@@ -590,11 +615,8 @@ const planAttachmentUploads = async (
     if (file) {
       const plan = planAttachmentFile(slot, target, file, data);
       if (slot.field.attachment?.mode === "template" && !sha256) {
-        const hash = createHash("sha256");
-        for await (const chunk of file.stream()) {
-          hash.update(chunk);
-        }
-        sha256 = hash.digest("hex");
+        // oxlint-disable-next-line no-await-in-loop -- Hash one bounded original at a time before any external write.
+        sha256 = await originalFileSha256(file);
       }
       plans.push({ ...plan, sha256 });
     }
@@ -644,7 +666,14 @@ export const uploadAttachments = async (
           documentNumber: plan.number,
           filename: plan.filename,
           fiscalYear: plan.year,
+          id: plan.id,
+          operationId: operation.id,
+          originalName: plan.file.name,
+          originalSha256: plan.sha256,
           overwriteIdentityIds,
+          responseId: batch.responseId,
+          rowIndex: plan.slot.rowIndex,
+          sizeBytes: plan.file.size,
           storageMode: plan.slot.field.attachment?.mode ?? "legacy",
           ...(plan.slot.field.attachment?.mode === "template"
             ? {
@@ -655,13 +684,6 @@ export const uploadAttachments = async (
                 templateName: plan.slot.field.attachment.template_name,
               }
             : {}),
-          id: plan.id,
-          operationId: operation.id,
-          originalName: plan.file.name,
-          responseId: batch.responseId,
-          rowIndex: plan.slot.rowIndex,
-          sizeBytes: plan.file.size,
-          originalSha256: plan.sha256,
           tag: plan.slot.tag,
         },
       });
@@ -906,14 +928,16 @@ export const commitAttachmentBatch = async (
     fail(409, "invalid_attachment", "หลักฐานการย้ายแถวไม่ตรงกับเอกสารรอบนี้");
   }
   const currentRows = new Map(
-    currentReferences.map((reference) => [
-      reference.versionId,
-      reference.rowIndex === null
-        ? null
-        : (transition
-          ? (transition.rowMapping[reference.rowIndex] ?? undefined)
-          : reference.rowIndex),
-    ])
+    currentReferences.map((reference) => {
+      const { rowIndex } = reference;
+      if (rowIndex !== null && transition) {
+        return [
+          reference.versionId,
+          transition.rowMapping[rowIndex] ?? undefined,
+        ] as const;
+      }
+      return [reference.versionId, rowIndex] as const;
+    })
   );
   for (const field of fields) {
     const { binding } = field;
@@ -987,22 +1011,21 @@ export const commitAttachmentBatch = async (
         ? tableAttachmentSchema.parse(value).row_index
         : null;
       // Current snapshot positions follow only verified row transitions, never immutable upload positions.
-      const selected = column
-        ? (uploaded
-          ? [uploaded]
-          : candidates.filter(
+      const selected =
+        column && !uploaded
+          ? candidates.filter(
               (candidate) =>
                 currentVersionIds.has(candidate.id) &&
                 candidate.state === "committed" &&
                 (currentRows.get(candidate.id) === null ||
                   currentRows.get(candidate.id) === rowIndex)
-            ))
-        : [
-            uploaded ??
-              candidates.find((candidate) =>
-                currentVersionIds.has(candidate.id)
-              ),
-          ];
+            )
+          : [
+              uploaded ??
+                candidates.find((candidate) =>
+                  currentVersionIds.has(candidate.id)
+                ),
+            ];
       if (
         !selected.length ||
         selected.some(
