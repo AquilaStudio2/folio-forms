@@ -22,8 +22,8 @@ flowchart TD
     author --> select --> settings --> native --> patch --> known
     known -->|"ได้"| rules
     known -->|"ไม่ได้"| block --> recover --> known
-    rules --> attachment["ช่องแนบ: category ต่อ scalar หรือ column"]
-    attachment --> complete{"category ครบ และมี root fiscal_year/docs_number"}
+    rules --> attachment["ช่องแนบ: category ID และ Storage Template ต่อ scalar หรือ column"]
+    attachment --> complete{"current mapping ครบ และมี root docs_number หนึ่งช่อง"}
     complete -->|"ครบ"| publish
     complete -->|"ไม่ครบ"| draftOnly["บันทึก Template Draft ได้ แต่เผยแพร่ไม่ได้"]
     rules -->|"ordinary Fields ไม่มีปุ่มแนบ"| publish

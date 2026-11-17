@@ -207,6 +207,7 @@ Form ที่เผยแพร่ใหม่ใช้ชื่อ `<docs_numb
 - `file_link` เป็นจุดเริ่มต้น อาจเป็น viewer/redirect/download flow; downloader ต้องใช้ supported provider flow ที่พิสูจน์ว่าได้ exact original bytes ไม่ผูกกับ private PDF.js/viewer routes ที่ยังไม่มี contract
 - ตรวจ origin/redirect ทุก hop, credentials propagation, streamed-size bounds, exact expected size, timeout และ error behavior ตาม trust boundary เดิม ไม่ส่ง service credentials ไป origin นอกที่อนุญาต
 - MIME หรือ HTTP 200 อย่างเดียวไม่ยืนยันต้นฉบับ ต้องไม่อัปโหลด HTML viewer/error page หรือ converted preview แทนไฟล์ และยังต้องรองรับ original HTML เมื่อเป็นชนิดไฟล์ที่ User แนบจริง ไม่ใช้ blanket HTML ban ลด all-type requirement
+- หลักฐาน implementation เพิ่มเติมวันที่ 2026-11-17: public `GET /api/beeecm/public/file?token=<trusted receipt file_token>` ผ่าน shared service authentication คืน exact original PDF ของ scenario ที่อนุญาตแล้ว ใช้คู่ trusted `file_link`/`file_token` และตรวจ account/origin ก่อนเรียก ไม่ดึง token จาก URL ที่ client ส่งเอง เส้นทางนี้เป็น public file endpoint ที่สังเกตได้จริง ไม่ใช่ private viewer route; collection snapshot เดิมไม่ระบุ GET method และผลหนึ่ง PDF ยังไม่รับรอง provider matrix ทุกชนิดไฟล์
 - Verify ด้วย known fixture bytes/hash รวมไฟล์ binary, text/HTML, extensionless, encrypted และ 0/10,000,000 bytes ไม่ถือการเปิด viewer ใน browser เป็น server-download proof
 - อ่านต้นฉบับไม่ได้ให้ fail ก่อน write ใหม่ รักษาข้อมูลที่บันทึกและ pending selection ที่ยังอยู่ในหน้า แจ้ง slot/row และการทำต่อ ไม่บังคับ reselection และไม่เพิ่ม RustFS/DB original cache หรือ fallback สำเร็จปลอม
 - ขณะนี้ supported all-type server-download contract ยังมีหลักฐานไม่เพียงพอ ต้องหาและพิสูจน์ใน implementation หากยังหาไม่ได้ให้รายงาน prerequisite ที่ขาดและ HOLD การเปิดใช้เส้นทางนี้ ไม่เปลี่ยนคำตัดสินเรื่อง DCM-only และไม่ส่งงานว่า feature ครบแล้ว
@@ -373,3 +374,10 @@ Cross-cutting validation/authorization/accessibility/legacy compatibility ต้
 - Original fixture SHA-256: `4293a5cdab0808afc75f3e0e985f6f3cb5c7cfd457f9bb094d4c178375a8e21d` เปิด public file_link ผ่าน native viewer แล้วเห็นข้อความสังเคราะห์และ PDF หนึ่งหน้า แต่ Download control ไม่ให้ captured download ภายในเวลารอของเครื่องมือ จึงยังไม่อ้าง exact original-byte backend retrieval
 - ไม่ทดสอบ overwrite, ชนิดไฟล์อื่น, zero/10 MB หรือ extensionless เพิ่ม และไม่ DELETE live file ผู้ใช้ต้องตามลบ synthetic PDF หนึ่งไฟล์ที่ปลายทางข้างต้น ไม่มี token/URL/credentials จริงในเอกสารนี้
 - ผลนี้ supported เฉพาะ request/object receipt/ปลายทาง/การแสดง PDF ของตัวอย่าง ไม่ใช่ all-type download หรือ same-identity recovery proof; external provider semantic/deployed revision ยังไม่ทราบ
+
+### Original-byte read-only probe — 2026-11-17
+
+- ใช้เฉพาะ token ของ synthetic primary PDF ที่อัปโหลดไว้แล้ว ทดลอง public file endpoint ด้วย GET ไม่มี upload/DELETE หรือชื่อสำรองเพิ่ม
+- ครั้งแรกได้401 จาก cached service token จึงยังไม่สรุป method support; explicit read รอบถัดไปผ่าน shared coordinator login200 และ GET200 `application/pdf`
+- ได้629 bytes และ SHA-256 ตรง original fixture ครบ `4293a5cdab0808afc75f3e0e985f6f3cb5c7cfd457f9bb094d4c178375a8e21d` จึงยืนยัน backend original-byte path สำหรับ PDF ตัวอย่างนี้ได้แล้ว รายละเอียด raw receipt/token ไม่อยู่ใน repo
+- ข้อนี้แทนข้อจำกัดเดิมที่ยังหา usable backend path ไม่ได้ แต่ยังไม่ใช่ all-type/zero/10MB/encrypted/extensionless หรือ provider-version guarantee งาน04ต้องตรวจ shared authenticated bounded reader และ regression matrix ก่อนส่งมอบ; ไม่ใช้ HTML viewer เป็นไฟล์ ไม่เพิ่มที่เก็บต้นฉบับสำรอง

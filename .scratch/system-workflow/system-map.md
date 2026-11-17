@@ -1,5 +1,9 @@
 # Folio Forms: แผนผังการทำงานทั้งระบบ
 
+ทบทวน Storage Template catalog และ authoring วันที่ 17 พฤศจิกายน 2026 บน integration `feat/ecm-storage-templates` ที่ source commit `1d23d50a9bbc4b4ae37014b3c2ed358b50272b7b`: Admin CRUD/filter ใช้ category ID, popup เลือก category/template, publication ตรึง normal Field metadata และ duplication ได้ Form/link ใหม่ ผลตรวจส่วนกลางบน integration: catalog HTTP 3 tests, authoring HTTP 16 tests, plugin 312 tests, web UI 265 tests และ root type checks 5/5 ผ่าน ตรวจ actual Admin CRUD/keyboard และ actual ONLYOFFICE scalar configuration/no-year publication/duplicate แล้ว ไม่ใช่ผลรับรอง upload lifecycle ใหม่หรือทุกตั๋วในสเปค
+
+รอบเดียวกัน live DCM ที่ผู้ใช้อนุญาตสร้างเพียง PDF สังเคราะห์ `กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).pdf` 629 bytes ที่ provider รายงานใต้ `2. มติและการก่อหนี้` ได้ object receipt ไม่ทดสอบชื่อสำรอง/overwrite/ชนิดไฟล์อื่น และไม่ DELETE ไฟล์ซึ่งผู้ใช้จะตามลบเอง `file_link` เปิด native viewer ได้ แต่ยังไม่มี supported all-type original-byte backend download proof จึงไม่ถือว่าผ่านเส้นทางเปลี่ยนเลขหนังสือหรือเปิดใช้ feature ทั้งหมด
+
 ทบทวนวันที่ 9 พฤศจิกายน 2026 จากฐาน `codex/admin-result-downloads` ที่ `95534c9` รวมการย้ายปุ่มดาวน์โหลดในแถว Document / Fields ของหน้ารายละเอียด Results และการคง guard ห้ามลบคำตอบระหว่างส่งออก
 
 ทบทวนส่วนตั้งค่าช่องแนบ Excel และ ECM authentication วันที่ 13 พฤศจิกายน 2026 บน `feat/ecm-attachments-config` จากฐาน implementation `b627865` ส่วนอื่นคงผลทบทวนเดิม ขอบเขตนี้เพิ่มการตั้งค่าจากปุ่มเดิมและ shared auth ไม่ได้ยืนยันวงจรอัปโหลดคำตอบ การตรวจ native browser หรือบริการ ECM จริง

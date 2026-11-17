@@ -1,8 +1,8 @@
 {
-  "commit": "3ec718a5c7ec34549c0c8c5521310a38f66ee00c",
-  "branch": "feat/ecm-attachments",
-  "source_fingerprint": "7e1162bed15d3c6b892458e53d3048486a508dff8c03e372a6355b87de6fc4a1",
-  "source_files": 315,
+  "commit": "1d23d50a9bbc4b4ae37014b3c2ed358b50272b7b",
+  "branch": "feat/ecm-storage-templates",
+  "source_fingerprint": "80650fca40e4ade1c6f8de867f3df5bf375c1652cd1b94a61c6c5218e8249c0d",
+  "source_files": 319,
   "pages": [
     {
       "route": "__root",
@@ -73,6 +73,11 @@
       "route": "/admin/results",
       "file": "apps/web/src/routes/admin/results.tsx",
       "line": 5
+    },
+    {
+      "route": "/admin/storage-templates",
+      "file": "apps/web/src/routes/admin/storage-templates.tsx",
+      "line": 343
     },
     {
       "route": "/admin/users",
@@ -267,43 +272,43 @@
       "method": "GET",
       "path": "/api/admin/forms/:publicId/editor-config",
       "file": "apps/server/src/routes/form-authoring.ts",
-      "line": 118
+      "line": 119
     },
     {
       "method": "GET",
       "path": "/api/admin/forms/:publicId/schema",
       "file": "apps/server/src/routes/form-authoring.ts",
-      "line": 236
+      "line": 237
     },
     {
       "method": "GET",
       "path": "/api/admin/forms/:publicId/field-rules",
       "file": "apps/server/src/routes/form-authoring.ts",
-      "line": 244
+      "line": 245
     },
     {
       "method": "PATCH",
       "path": "/api/admin/forms/:publicId/field-rules",
       "file": "apps/server/src/routes/form-authoring.ts",
-      "line": 271
+      "line": 272
     },
     {
       "method": "POST",
       "path": "/api/admin/forms/:publicId/save",
       "file": "apps/server/src/routes/form-authoring.ts",
-      "line": 452
+      "line": 453
     },
     {
       "method": "POST",
       "path": "/api/admin/forms/:publicId/publish",
       "file": "apps/server/src/routes/form-authoring.ts",
-      "line": 584
+      "line": 585
     },
     {
       "method": "GET",
       "path": "/api/admin/forms/:publicId/submissions",
       "file": "apps/server/src/routes/form-authoring.ts",
-      "line": 708
+      "line": 711
     },
     {
       "method": "GET",
@@ -327,25 +332,25 @@
       "method": "DELETE",
       "path": "/api/admin/forms/:publicId",
       "file": "apps/server/src/routes/form-catalog.ts",
-      "line": 397
+      "line": 408
     },
     {
       "method": "POST",
       "path": "/api/admin/forms",
       "file": "apps/server/src/routes/form-catalog.ts",
-      "line": 613
+      "line": 624
     },
     {
       "method": "GET",
       "path": "/api/admin/forms/:publicId/template/:format",
       "file": "apps/server/src/routes/form-catalog.ts",
-      "line": 726
+      "line": 737
     },
     {
       "method": "GET",
       "path": "/api/admin/forms/:publicId",
       "file": "apps/server/src/routes/form-catalog.ts",
-      "line": 772
+      "line": 783
     },
     {
       "method": "GET",
@@ -717,7 +722,37 @@
       "method": "POST",
       "path": "/api/admin/forms/:publicId/spreadsheet-bindings/recover",
       "file": "apps/server/src/routes/spreadsheet-authoring.ts",
-      "line": 458
+      "line": 452
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/storage-templates/categories",
+      "file": "apps/server/src/routes/storage-templates.ts",
+      "line": 66
+    },
+    {
+      "method": "GET",
+      "path": "/api/admin/storage-templates",
+      "file": "apps/server/src/routes/storage-templates.ts",
+      "line": 70
+    },
+    {
+      "method": "POST",
+      "path": "/api/admin/storage-templates",
+      "file": "apps/server/src/routes/storage-templates.ts",
+      "line": 89
+    },
+    {
+      "method": "PATCH",
+      "path": "/api/admin/storage-templates/:id",
+      "file": "apps/server/src/routes/storage-templates.ts",
+      "line": 101
+    },
+    {
+      "method": "DELETE",
+      "path": "/api/admin/storage-templates/:id",
+      "file": "apps/server/src/routes/storage-templates.ts",
+      "line": 129
     },
     {
       "method": "GET",
@@ -753,213 +788,219 @@
       "method": "GET",
       "path": "/health",
       "file": "apps/server/src/app.ts",
-      "line": 200
+      "line": 201
     },
     {
       "method": "GET",
       "path": "/ready",
       "file": "apps/server/src/app.ts",
-      "line": 201
+      "line": 202
     }
   ],
   "models": [
     {
+      "model": "StorageTemplate",
+      "table": "storage_templates",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 95
+    },
+    {
       "model": "User",
       "table": "user",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 95
+      "line": 104
     },
     {
       "model": "LegacyAccountLinkRequest",
       "table": "legacy_account_link_requests",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 123
+      "line": 132
     },
     {
       "model": "Session",
       "table": "session",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 145
+      "line": 154
     },
     {
       "model": "Account",
       "table": "account",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 164
+      "line": 173
     },
     {
       "model": "Verification",
       "table": "verification",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 190
+      "line": 199
     },
     {
       "model": "Form",
       "table": "forms",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 203
+      "line": 212
     },
     {
       "model": "TemplateDraft",
       "table": "template_drafts",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 231
+      "line": 240
     },
     {
       "model": "DraftFieldRule",
       "table": "draft_field_rules",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 248
+      "line": 257
     },
     {
       "model": "PublishedTemplate",
       "table": "published_templates",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 276
+      "line": 289
     },
     {
       "model": "FieldManifest",
       "table": "field_manifests",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 294
+      "line": 307
     },
     {
       "model": "ManifestField",
       "table": "manifest_fields",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 307
+      "line": 320
     },
     {
       "model": "PrefillConfiguration",
       "table": "prefill_configurations",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 336
+      "line": 353
     },
     {
       "model": "PrefillField",
       "table": "prefill_fields",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 351
+      "line": 368
     },
     {
       "model": "Response",
       "table": "responses",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 366
+      "line": 383
     },
     {
       "model": "PrefillSnapshot",
       "table": "prefill_snapshots",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 397
+      "line": 414
     },
     {
       "model": "Submission",
       "table": "submissions",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 414
+      "line": 431
     },
     {
       "model": "Correction",
       "table": "corrections",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 436
+      "line": 453
     },
     {
       "model": "Handoff",
       "table": "handoffs",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 459
+      "line": 476
     },
     {
       "model": "PendingClaim",
       "table": "pending_claims",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 488
+      "line": 505
     },
     {
       "model": "Operation",
       "table": "operations",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 502
+      "line": 519
     },
     {
       "model": "CallbackClaim",
       "table": "callback_claims",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 539
+      "line": 556
     },
     {
       "model": "EditorLease",
       "table": "editor_leases",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 553
+      "line": 570
     },
     {
       "model": "ObjectCleanupIntent",
       "table": "object_cleanup_intents",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 578
+      "line": 595
     },
     {
       "model": "AuditEvent",
       "table": "audit_events",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 592
+      "line": 609
     },
     {
       "model": "LoginFailure",
       "table": "login_failures",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 610
+      "line": 627
     },
     {
       "model": "DeletionTombstone",
       "table": "deletion_tombstones",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 624
+      "line": 641
     },
     {
       "model": "PdmsProjectCatalogSession",
       "table": "pdms_project_catalog_sessions",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 640
+      "line": 657
     },
     {
       "model": "EcmAuthState",
       "table": "ecm_auth_states",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 663
+      "line": 680
     },
     {
       "model": "EcmCategoryCatalog",
       "table": "ecm_category_catalogs",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 676
+      "line": 693
     },
     {
       "model": "EcmAttachmentBatch",
       "table": "ecm_attachment_batches",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 685
+      "line": 702
     },
     {
       "model": "EcmAttachmentVersion",
       "table": "ecm_attachment_versions",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 704
+      "line": 721
     },
     {
       "model": "EcmAttachmentReference",
       "table": "ecm_attachment_references",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 732
+      "line": 749
     },
     {
       "model": "EcmAttachmentCleanup",
       "table": "ecm_attachment_cleanups",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 743
+      "line": 760
     }
   ],
   "relations": [
