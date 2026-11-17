@@ -202,6 +202,8 @@ Form ที่เผยแพร่ใหม่ใช้ชื่อ `<docs_numb
 - คง original bytes, ทุกชนิดไฟล์, 0–10,000,000 bytes inclusive, password-protected support โดยไม่ decrypt/preview และหนึ่งไฟล์ต่อ slot ตรวจขนาดจริงฝั่ง server
 - Draft ขาด required attachment ได้ แต่ invalid selected file ยังทำให้ save ไม่ผ่าน Submit/Correction ใช้ requiredness เดิมและนับ saved zero-byte file ว่ามีไฟล์
 
+**ขอบเขตเอกสารปัจจุบัน:** กติกา batch ด้านล่างอธิบาย implementation ที่มีอยู่ ไม่ใช่ข้อเสนอจองชื่อข้ามรอบ สเปกต่อยอดแยกไว้ใน [การป้องกันชื่อไฟล์ชนข้ามรอบ](../ecm-attachment-safety/spec.md) ซึ่งยังไม่ได้ implement ส่วนผลทดสอบ wildcard routing ที่ผู้ใช้ยืนยันล่าสุดให้ยึด [หลักฐานผู้ใช้เพิ่มเติม](planning.md#หลักฐานผู้ใช้เพิ่มเติมหลังการประเมินความเสี่ยงตาราง) แทนสถานะไม่ทราบว่ามีการจับแพทเทิร์นหรือไม่ใน snapshot เก่า โดยไม่ใช้แทนหลักฐาน byte independence หรือ unknown settlement
+
 #### ข้อแก้ไขนโยบายชื่อซ้ำภายใน batch — 2026-11-17
 
 - **Intended policy ที่ผู้ใช้อนุญาตล่าสุด:** ใช้เฉพาะ storage mode `template` ภายในหนึ่ง explicit Save Draft/Submit/final Save Correction upload batch รวม upload plans ของ scalar และทุก table เป็น namespace เดียว ตามลำดับ slot เดิมที่ deterministic ไม่ใช้ลำดับการเลือกไฟล์เป็น counter

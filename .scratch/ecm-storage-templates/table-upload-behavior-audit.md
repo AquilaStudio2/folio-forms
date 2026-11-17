@@ -8,6 +8,8 @@
 
 **Local verification supported:** [BATCH evidence](acceptance-matrix.md#batch-filename-verification) บันทึก final HTTP 143 ผ่าน/0 fail และ standalone real-listener/native-Builder smoke ของนโยบายใหม่นี้ แยกจาก snapshot เดิมด้านล่าง ไม่มี live DCM calls; provider suffix routing ยัง **unverified / HOLD** ชื่อข้าม save ยังอาจซ้ำ/overwrite ไม่รับรอง cross-batch uniqueness หรือ independent provider files ไม่ข้าม owner/history/unknown-operation guards และไม่ retry POST/DELETE
 
+**หลักฐานและแผนต่อยอดล่าสุด:** ผู้ใช้ยืนยันการทดลอง DCM จับ wildcard และแยก folder ปี/หมวดหมู่จริงแล้ว ดู [หลักฐานผู้ใช้เพิ่มเติม](planning.md#หลักฐานผู้ใช้เพิ่มเติมหลังการประเมินความเสี่ยงตาราง) ข้อมูลนี้เพิ่มเติมและแทนข้อสงสัยเรื่องการมี wildcard routing ใน snapshot ด้านล่าง ไม่ใช่ผลทดสอบ suffix/byte independence ทุกกรณี ข้อเสนอแก้ชื่อชนข้ามรอบอยู่ที่ [สเปกป้องกันชื่อไฟล์ชนข้ามรอบ](../ecm-attachment-safety/spec.md) และประเด็นที่เหลืออยู่ใน [แผนตัดสินใจความเสี่ยงไฟล์แนบ](../ecm-attachment-safety/map.md) เอกสารทั้งสองไม่ใช่การแก้ application หรือผลรับรอง Production
+
 ## ขอบเขตและน้ำหนักหลักฐาน
 
 - **Current Source:** Working Tree ของ `feat/ecm-storage-templates`, HEAD `0a12d91a5b72d4470ae9ceed1c3d4845d2103ced` มีงานที่ยังไม่ commit จึงไม่ถือว่า HEAD เพียงอย่างเดียวระบุเนื้อหาทั้งหมด และไม่อ้างว่าเป็นเวอร์ชัน deployed/Production
