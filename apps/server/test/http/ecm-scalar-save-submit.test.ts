@@ -5756,6 +5756,26 @@ test("Admin fences the original sender and deletes a late canceled receipt once,
         },
       ],
     });
+    // Settlement can outlast the editor lease; reopen before a new user save.
+    const reopened = await app.handle(
+      new Request(
+        `http://test.local/api/forms/${f.form.publicId}/editor-config?responseId=${f.response.id}&action=draft`,
+        { headers: { Authorization: `Bearer ${f.bearer}` } }
+      )
+    );
+    expect(reopened.status).toBe(200);
+    const opening = z
+      .object({
+        bridge: z.object({
+          documentKey: z.literal(f.documentKey),
+          lease: z.object({ expiresAt: z.coerce.date(), id: z.uuid() }),
+        }),
+        config: z.object({ document: z.object({ key: z.string() }) }),
+      })
+      .parse(await reopened.json());
+    f.lease = { ...f.lease, ...opening.bridge.lease };
+    f.documentServerKey = opening.config.document.key;
+    nativeSnapshotKeys.set(f.documentServerKey, f.documentKey);
     const next = await poll(f, await send(f, { folio_proof: file() }));
     expect(next.status).toBe("completed");
     expect(fixtureValue(received[uploads + 1]).name).not.toBe(
