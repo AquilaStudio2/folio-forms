@@ -127,7 +127,6 @@ process.env.ECM_PASSWORD = "isolated-folio-service-password";
 process.env.ECM_TOKEN_ENCRYPTION_KEY = Buffer.alloc(32, 7).toString("base64");
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   onlyOffice: {
     convertDocxToPdf: () => Promise.resolve(new Uint8Array()),
     forceSave: () => Promise.resolve({ url: native.url.href }),
@@ -756,7 +755,7 @@ test("category outage and upstream rename preserve saved template, binding, Tag 
 });
 
 test("ordinary Field authoring remains usable with ECM unset and attachments cannot replace ordinary validation", async () => {
-  const ordinary = createApp({ ecm: null, legacySso: null, omniRoute: null });
+  const ordinary = createApp({ ecm: null, legacySso: null });
   expect(
     (
       await authoringRequest(
@@ -1044,7 +1043,6 @@ const isolatedPublication = async (
   const ownApp = createApp({
     ecm: null,
     legacySso: null,
-    omniRoute: null,
     onlyOffice: {
       convertDocxToPdf: () => Promise.resolve(new Uint8Array()),
       forceSave: () => Promise.resolve({ url: snapshotProvider.url.href }),

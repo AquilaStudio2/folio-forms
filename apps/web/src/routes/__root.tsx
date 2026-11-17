@@ -35,15 +35,7 @@ const currentReturnPath = () => {
 
 // oxlint-disable-next-line complexity -- Coordinates session expiry, reauthentication, and routing in the app shell.
 const AuthGate = () => {
-  const {
-    error: authError,
-    expiresAt,
-    isSso,
-    loading,
-    signedOut,
-    signOut,
-    user,
-  } = useAuth();
+  const { expiresAt, isSso, loading, signedOut, signOut, user } = useAuth();
   const location = useLocation();
   const matches = useMatches();
   const navigate = useNavigate();
@@ -191,16 +183,8 @@ const AuthGate = () => {
     sessionExpiringSoon &&
     pathname !== "/login" &&
     pathname !== "/change-password";
-  const showSignOutCleanupFailure =
-    !user && pathname === "/login" && authError === "sign_out_cleanup_failed";
   return (
     <>
-      {showSignOutCleanupFailure ? (
-        <div className="mx-auto max-w-[1240px] px-5 pt-4 lg:px-8">
-          <Notice tone="danger">ออกจากระบบแล้ว แต่การล้างข้อมูล AI ไม่สำเร็จ</Notice>
-        </div>
-      ) : null}
-
       {showSessionWarning ? (
         <div className="mx-auto max-w-[1240px] px-5 pt-4 lg:px-8">
           <Notice tone="danger">

@@ -45,7 +45,6 @@ const native = Bun.serve({
 const app = createApp({
   ecm: null,
   legacySso: null,
-  omniRoute: null,
   onlyOffice: {
     convertDocxToPdf: () => Promise.resolve(new Uint8Array()),
     forceSave: () => Promise.resolve({ url: native.url.href }),

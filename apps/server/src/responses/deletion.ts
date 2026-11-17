@@ -8,11 +8,9 @@ import {
   AuditOutcome,
 } from "@onlyoffice/db";
 
-import type { AiAuthoringSessions } from "../ai-authoring";
 import { createResponseDeletionAudit } from "../audit/events";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Identity } from "../auth/identity";
-import { endAiAuthoringSessions } from "../auth/password-session";
 import { tokenDigest } from "../digests";
 import {
   deleteAttachmentCleanup,
@@ -31,7 +29,6 @@ import {
 interface ResponseDeletionResult {
   alreadyDeleted: boolean;
   deleted: boolean;
-  ownerSessionIds: string[];
   attachmentCleanup: {
     caseReference: string | null;
     state: "complete" | "pending";
@@ -105,14 +102,12 @@ export async function responseDeletionWarnings(
 
 export async function deleteResponseData({
   actor,
-  aiAuthoring,
   intent,
   ecm,
   removeObject,
   responseId,
 }: {
   actor: Identity;
-  aiAuthoring: AiAuthoringSessions;
   intent: "confirmed-admin-delete" | "discard-own-draft";
   ecm: EcmClient;
   removeObject: (key: string) => Promise<void>;
@@ -150,7 +145,6 @@ export async function deleteResponseData({
       alreadyDeleted: true,
       attachmentCleanup: await deletionAttachmentOutcome(existingTombstone.id),
       deleted: true,
-      ownerSessionIds: [],
     };
   }
   const result = await prisma.$transaction(
@@ -182,7 +176,6 @@ export async function deleteResponseData({
             deleted: false,
             deletionCaseId: null,
             initial: [],
-            ownerSessionIds: [],
           };
         }
         fail(404, "not_found", "Response was not found");
@@ -202,7 +195,6 @@ export async function deleteResponseData({
             deleted: false,
             deletionCaseId: null,
             initial: [],
-            ownerSessionIds: [],
           };
         }
         fail(404, "not_found", "Response was not found");
@@ -429,13 +421,6 @@ export async function deleteResponseData({
           ],
         },
       });
-      const ownerSessions = confirmedAdminDelete
-        ? await tx.session.findMany({
-            select: { id: true },
-            where: { userId: response.userId },
-          })
-        : [];
-      const ownerSessionIds = ownerSessions.map(({ id }) => id);
       if (confirmedAdminDelete) {
         await tx.session.deleteMany({ where: { userId: response.userId } });
       }
@@ -477,7 +462,6 @@ export async function deleteResponseData({
         deleted: true,
         deletionCaseId,
         initial: attachments.initial,
-        ownerSessionIds,
       };
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
@@ -496,30 +480,16 @@ export async function deleteResponseData({
       // Rows stay deleted; existing durable cleanup evidence retains the incomplete outcome.
     }
   }
-  const cleanupResults = await Promise.allSettled([
-    endAiAuthoringSessions(aiAuthoring, result.ownerSessionIds),
-    (async () => {
-      await drainObjectCleanupIntents(
-        undefined,
-        responseLookupDigest,
-        removeObject
-      );
-      const remaining = await prisma.objectCleanupIntent.count({
-        where: { deletionResponseLookupDigest: responseLookupDigest },
-      });
-      if (remaining > 0) {
-        fail(503, "deletion_cleanup_failed", "Response objects remain");
-      }
-    })(),
-  ]);
-  const cleanupErrors = cleanupResults.flatMap((cleanup) =>
-    cleanup.status === "rejected" ? [cleanup.reason] : []
+  await drainObjectCleanupIntents(
+    undefined,
+    responseLookupDigest,
+    removeObject
   );
-  if (cleanupErrors.length === 1) {
-    throw cleanupErrors[0];
-  }
-  if (cleanupErrors.length > 1) {
-    throw new AggregateError(cleanupErrors, "Response deletion cleanup failed");
+  const remaining = await prisma.objectCleanupIntent.count({
+    where: { deletionResponseLookupDigest: responseLookupDigest },
+  });
+  if (remaining > 0) {
+    fail(503, "deletion_cleanup_failed", "Response objects remain");
   }
   await createResponseDeletionAudit({
     actorId: actor.id,

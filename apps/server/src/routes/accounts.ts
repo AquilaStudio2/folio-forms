@@ -33,7 +33,6 @@ import {
   normalizeEmail,
 } from "../auth/identity";
 import type { UserRole } from "../auth/identity";
-import { endAiAuthoringSessions } from "../auth/password-session";
 import { fail } from "../http/errors";
 import {
   validateId,
@@ -46,15 +45,10 @@ import {
 import { paginationInfo, paginationPage } from "../http/pagination";
 import { invalidateLegacyAccountLinkReview } from "../legacy-sso/accounts";
 import type { JsonRecord } from "../model-types";
-import type { RouteDependencies } from "./dependencies";
 
 const accountLinkPageSize = 10;
 
-export function registerAccountRoutes(
-  app: Elysia,
-  dependencies: Pick<RouteDependencies, "aiAuthoring">
-): void {
-  const { aiAuthoring } = dependencies;
+export function registerAccountRoutes(app: Elysia): void {
   app
     .get("/api/admin/account-links", async ({ request }) => {
       const identity = await requireIdentity(request);
@@ -457,13 +451,6 @@ export function registerAccountRoutes(
                 select: adminUserSelect,
                 where: { id: target.id },
               });
-              const ownerSessions = revokeSessions
-                ? await tx.session.findMany({
-                    select: { id: true },
-                    where: { userId: target.id },
-                  })
-                : [];
-              const ownerSessionIds = ownerSessions.map(({ id }) => id);
               if (revokeSessions) {
                 await tx.session.deleteMany({ where: { userId: target.id } });
               }
@@ -474,9 +461,8 @@ export function registerAccountRoutes(
                 safeMetadata: { change },
                 targetId: target.id,
               });
-              return { ownerSessionIds, user: updated };
+              return { user: updated };
             });
-            await endAiAuthoringSessions(aiAuthoring, result.ownerSessionIds);
             return { user: accountUserSummary(result.user) };
           }
         ),
@@ -498,109 +484,100 @@ export function registerAccountRoutes(
             if (Object.keys(input).length !== 1 || input.confirm !== true) {
               fail(400, "invalid_request", "confirm must be true");
             }
-            const revokedOwnerSessionIds = await accountTransaction(
-              identity,
-              async (tx) => {
-                const target = await lockAccountUser(tx, userId);
-                if (target.role === "admin" && target.enabled) {
-                  const enabledAdminCount = await tx.user.count({
-                    where: { enabled: true, role: "admin" },
-                  });
-                  if (enabledAdminCount <= 1) {
-                    fail(
-                      409,
-                      "final_admin_required",
-                      "At least one enabled Admin is required"
-                    );
-                  }
-                }
-                const responseCount = await tx.response.count({
-                  where: { userId: target.id },
+            await accountTransaction(identity, async (tx) => {
+              const target = await lockAccountUser(tx, userId);
+              if (target.role === "admin" && target.enabled) {
+                const enabledAdminCount = await tx.user.count({
+                  where: { enabled: true, role: "admin" },
                 });
-                if (responseCount > 0) {
+                if (enabledAdminCount <= 1) {
                   fail(
                     409,
-                    "personal_data_remains",
-                    "Personal Responses must be deleted first"
+                    "final_admin_required",
+                    "At least one enabled Admin is required"
                   );
                 }
-                const cleanupIntentCount = await tx.objectCleanupIntent.count({
-                  where: { deletionOwnerUserId: target.id },
-                });
-                if (cleanupIntentCount > 0) {
-                  fail(
-                    409,
-                    "personal_data_remains",
-                    "Response object cleanup is still pending"
-                  );
-                }
-                const deletionCases = await tx.deletionTombstone.findMany({
-                  select: { id: true },
-                  where: { ownerUserId: target.id },
-                });
-                const attachmentCleanupCount =
-                  await tx.ecmAttachmentCleanup.count({
-                    where: {
-                      deletionCaseId: {
-                        in: deletionCases.map((item) => item.id),
-                      },
-                      state: {
-                        in: ["pending", "claimed", "started", "unknown"],
-                      },
-                    },
-                  });
-                if (attachmentCleanupCount > 0) {
-                  fail(
-                    409,
-                    "personal_data_remains",
-                    "Response attachment cleanup is still pending"
-                  );
-                }
-                const handoffs = await tx.handoff.findMany({
-                  select: { id: true },
-                  where: { normalizedEmail: target.email },
-                });
-                if (handoffs.length > 0) {
-                  await tx.pendingClaim.deleteMany({
-                    where: {
-                      handoffId: {
-                        in: handoffs.map((handoff) => handoff.id),
-                      },
-                    },
-                  });
-                  await tx.handoff.updateMany({
-                    data: {
-                      codeDigest: null,
-                      configurationHash: null,
-                      consumedAt: null,
-                      filteredValues: Prisma.JsonNull,
-                      formId: null,
-                      normalizedEmail: null,
-                      reservedAt: null,
-                      responseId: null,
-                      status: HandoffStatus.deleted,
-                    },
-                    where: {
-                      id: { in: handoffs.map((handoff) => handoff.id) },
-                    },
-                  });
-                }
-                await createAccountAudit(tx, {
-                  action: "delete_user",
-                  actorId: identity.id,
-                  outcome: AuditOutcome.success,
-                  safeMetadata: { change: "deleted" },
-                  targetId: target.id,
-                });
-                const sessions = await tx.session.findMany({
-                  select: { id: true },
-                  where: { userId: target.id },
-                });
-                await tx.user.delete({ where: { id: target.id } });
-                return sessions.map(({ id }) => id);
               }
-            );
-            await endAiAuthoringSessions(aiAuthoring, revokedOwnerSessionIds);
+              const responseCount = await tx.response.count({
+                where: { userId: target.id },
+              });
+              if (responseCount > 0) {
+                fail(
+                  409,
+                  "personal_data_remains",
+                  "Personal Responses must be deleted first"
+                );
+              }
+              const cleanupIntentCount = await tx.objectCleanupIntent.count({
+                where: { deletionOwnerUserId: target.id },
+              });
+              if (cleanupIntentCount > 0) {
+                fail(
+                  409,
+                  "personal_data_remains",
+                  "Response object cleanup is still pending"
+                );
+              }
+              const deletionCases = await tx.deletionTombstone.findMany({
+                select: { id: true },
+                where: { ownerUserId: target.id },
+              });
+              const attachmentCleanupCount =
+                await tx.ecmAttachmentCleanup.count({
+                  where: {
+                    deletionCaseId: {
+                      in: deletionCases.map((item) => item.id),
+                    },
+                    state: {
+                      in: ["pending", "claimed", "started", "unknown"],
+                    },
+                  },
+                });
+              if (attachmentCleanupCount > 0) {
+                fail(
+                  409,
+                  "personal_data_remains",
+                  "Response attachment cleanup is still pending"
+                );
+              }
+              const handoffs = await tx.handoff.findMany({
+                select: { id: true },
+                where: { normalizedEmail: target.email },
+              });
+              if (handoffs.length > 0) {
+                await tx.pendingClaim.deleteMany({
+                  where: {
+                    handoffId: {
+                      in: handoffs.map((handoff) => handoff.id),
+                    },
+                  },
+                });
+                await tx.handoff.updateMany({
+                  data: {
+                    codeDigest: null,
+                    configurationHash: null,
+                    consumedAt: null,
+                    filteredValues: Prisma.JsonNull,
+                    formId: null,
+                    normalizedEmail: null,
+                    reservedAt: null,
+                    responseId: null,
+                    status: HandoffStatus.deleted,
+                  },
+                  where: {
+                    id: { in: handoffs.map((handoff) => handoff.id) },
+                  },
+                });
+              }
+              await createAccountAudit(tx, {
+                action: "delete_user",
+                actorId: identity.id,
+                outcome: AuditOutcome.success,
+                safeMetadata: { change: "deleted" },
+                targetId: target.id,
+              });
+              await tx.user.delete({ where: { id: target.id } });
+            });
             return { deleted: true };
           }
         ),
@@ -636,11 +613,6 @@ export function registerAccountRoutes(
                 select: adminUserSelect,
                 where: { id: target.id },
               });
-              const ownerSessions = await tx.session.findMany({
-                select: { id: true },
-                where: { userId: target.id },
-              });
-              const ownerSessionIds = ownerSessions.map(({ id }) => id);
               await tx.session.deleteMany({ where: { userId: target.id } });
               await createAccountAudit(tx, {
                 action: "reset_user_password",
@@ -649,9 +621,8 @@ export function registerAccountRoutes(
                 safeMetadata: { change: "password_reset" },
                 targetId: target.id,
               });
-              return { ownerSessionIds, user: updated };
+              return { user: updated };
             });
-            await endAiAuthoringSessions(aiAuthoring, result.ownerSessionIds);
             return {
               temporaryPassword,
               user: accountUserSummary(result.user),

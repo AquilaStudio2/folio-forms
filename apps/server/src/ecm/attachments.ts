@@ -546,6 +546,34 @@ const attachmentSnapshot = (
   return extracted;
 };
 
+const numberDuplicateAttachmentFilenames = (
+  plans: readonly AttachmentPlan[]
+): void => {
+  // Reserve natural destinations so a suffix cannot steal another template's filename.
+  const filenames = new Set(plans.map((plan) => plan.filename));
+  const nextSuffixes = new Map<string, number>();
+  for (const plan of plans) {
+    if (plan.slot.field.attachment?.mode !== "template") {
+      continue;
+    }
+    const { filename } = plan;
+    let suffix = nextSuffixes.get(filename) ?? 0;
+    if (suffix > 0) {
+      const dot = plan.file.name.lastIndexOf(".");
+      const extension = dot > 0 ? plan.file.name.slice(dot) : "";
+      const stem = filename.slice(0, filename.length - extension.length);
+      do {
+        plan.filename = `${stem}-(${suffix})${extension}`;
+        suffix += 1;
+      } while (filenames.has(plan.filename));
+      filenames.add(plan.filename);
+    } else {
+      suffix = 1;
+    }
+    nextSuffixes.set(filename, suffix);
+  }
+};
+
 const originalFileSha256 = async (file: File): Promise<string> => {
   const hash = createHash("sha256");
   for await (const chunk of file.stream()) {
@@ -621,6 +649,7 @@ const planAttachmentUploads = async (
       plans.push({ ...plan, sha256 });
     }
   }
+  numberDuplicateAttachmentFilenames(plans);
   checkAttachmentJsonBytes(data);
   return { data, plans };
 };

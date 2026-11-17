@@ -59,7 +59,7 @@ def collect():
 
     apis = []
     api_files = sorted((ROOT / "apps/server/src/routes").glob("*.ts"))
-    api_files += [ROOT / "apps/server/src/app.ts", ROOT / "apps/server/src/document-worker-server.ts"]
+    api_files += [ROOT / "apps/server/src/app.ts"]
     for path in api_files:
         source = path.read_text()
         for match in re.finditer(r'\.(get|post|patch|delete|put|all|options|head)\(\s*["\'](/[^"\']*)["\']', source):
@@ -81,7 +81,7 @@ def collect():
     commit = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT, text=True).strip()
     branch = subprocess.check_output(["git", "branch", "--show-current"], cwd=ROOT, text=True).strip()
     fingerprint, source_files = source_fingerprint()
-    return {"commit": commit, "branch": branch, "source_fingerprint": fingerprint, "source_files": source_files, "pages": pages, "apis": apis, "models": models, "relations": relations, "status_enums": status_enums, "private_worker_endpoints": [{"method": "GET", "path": "/health"}, {"method": "POST", "path": "/run"}]}
+    return {"commit": commit, "branch": branch, "source_fingerprint": fingerprint, "source_files": source_files, "pages": pages, "apis": apis, "models": models, "relations": relations, "status_enums": status_enums}
 
 
 def render_inventory(inventory):
@@ -91,7 +91,6 @@ def render_inventory(inventory):
     lines += ["", "## API endpoints", "", "| Method | Path | Source |", "| --- | --- | --- |"]
     for item in inventory["apis"]:
         lines.append(f"| {item['method']} | `{item['path']}` | `{item['file']}:{item['line']}` |")
-    lines += ["", "## Private document worker", "", "Separate private HTTP listener in `apps/server/src/document-worker-server.ts:170`, not part of the main API count.", "", "| Method | Path |", "| --- | --- |", "| GET | `/health` |", "| POST | `/run` |"]
     lines += ["", "## Database models", "", "| Model | Table | Source |", "| --- | --- | --- |"]
     for item in inventory["models"]:
         lines.append(f"| {item['model']} | `{item['table']}` | `{item['file']}:{item['line']}` |")

@@ -17,6 +17,43 @@ const trustedPendingReply = (event, hostWindow, options, pending) => {
   );
 };
 
+const validSelectionReply = (message, type, file) => {
+  if (message.filename !== null && typeof message.filename !== "string") {
+    return false;
+  }
+  if (
+    message.size !== null &&
+    (!Number.isSafeInteger(message.size) || message.size < 0)
+  ) {
+    return false;
+  }
+  if (typeof message.removal !== "boolean") {
+    return false;
+  }
+  switch (type) {
+    case "pending-file-set": {
+      return (
+        message.filename === file?.name &&
+        message.size === file?.size &&
+        !message.removal
+      );
+    }
+    case "pending-file-cancel": {
+      return (
+        message.filename === null &&
+        !message.removal &&
+        !message.validationError
+      );
+    }
+    case "pending-file-remove": {
+      return message.filename === null && message.removal;
+    }
+    default: {
+      return true;
+    }
+  }
+};
+
 export const uploadPocPickerTarget = (data) => {
   const value = typeof data === "string" ? JSON.parse(data) : data;
   if (
@@ -41,28 +78,79 @@ export const uploadPocPickerTarget = (data) => {
 /** Files stay in the host page's memory; this plugin never uploads or writes workbook data. */
 export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
   const input = document.querySelector("#attachment");
+  const choose = document.querySelector("#choose");
   const status = document.querySelector("#status");
   const filename = document.querySelector("#filename");
   const filesize = document.querySelector("#filesize");
+  const selectedFile = document.querySelector("#selected-file");
+  const selectionHint = document.querySelector("#selection-hint");
   const retry = document.querySelector("#retry");
   const selection = document.querySelector("#selection");
   const savedFile = document.querySelector("#saved-file");
   const savedLink = document.querySelector("#saved-link");
   const savedSize = document.querySelector("#saved-size");
-  const cancel = document.querySelector("#cancel");
   const remove = document.querySelector("#remove");
   const removal = document.querySelector("#removal");
   const cleanupWarning = document.querySelector("#cleanup-warning");
   let hasSaved = false;
   let options;
   let target;
+  let baseline = null;
   let pending = null;
   let selected = null;
+  let operation = null;
+  let uncertain = false;
   let unavailable = false;
   let sequence = 0;
   const notify = (text, error = false) => {
-    status.textContent = text;
-    status.dataset.error = String(error);
+    const warnings = [baseline?.mutationNotice, baseline?.commitNotice]
+      .filter(Boolean)
+      .join("\n");
+    const validationError = !operation && baseline?.validationError;
+    status.textContent = [warnings, text || validationError]
+      .filter(Boolean)
+      .join("\n");
+    status.dataset.error = String(
+      error || Boolean(warnings) || Boolean(validationError)
+    );
+    status.hidden = !status.textContent;
+    selectionHint.hidden = Boolean(warnings);
+  };
+  const renderRemoveAction = () => {
+    const canCancel =
+      baseline?.filename || baseline?.removal || baseline?.validationError;
+    remove.hidden = !operation && !canCancel && !hasSaved;
+    if (operation) {
+      remove.textContent = selected ? "ล้างไฟล์ที่เลือก" : "ยกเลิกการเปลี่ยนแปลง";
+    } else if (!canCancel) {
+      remove.textContent = "นำไฟล์ออก";
+    } else if (baseline.removal) {
+      remove.textContent = "ยกเลิกนำไฟล์ออก";
+    } else {
+      remove.textContent = hasSaved ? "คืนไฟล์เดิม" : "ล้างไฟล์ที่เลือก";
+    }
+  };
+  const render = () => {
+    const reset = operation === "pending-file-cancel";
+    const removing = operation === "pending-file-remove";
+    let name = baseline?.filename;
+    if (selected) {
+      ({ name } = selected);
+    } else if (reset || removing) {
+      name = null;
+    }
+    const size = selected ? selected.size : baseline?.size;
+    filename.textContent = name || "ยังไม่ได้เลือกไฟล์";
+    filesize.textContent =
+      name && Number.isSafeInteger(size) && size >= 0 ? `${size} ไบต์` : "";
+    selectedFile.hidden = hasSaved && !name;
+    removal.hidden = !(removing || (!operation && baseline?.removal === true));
+    const locked = Boolean(pending || uncertain || unavailable || !baseline);
+    input.disabled = locked;
+    choose.disabled = locked;
+    remove.disabled = locked;
+    renderRemoveAction();
+    notify("");
   };
   const request = (type, file) => {
     if (pending || unavailable) {
@@ -70,16 +158,19 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
     }
     sequence += 1;
     const requestId = `picker-${sequence}`;
-    input.disabled = true;
-    cancel.disabled = true;
-    remove.disabled = true;
     retry.hidden = true;
     const timeout = hostWindow.setTimeout(() => {
-      pending = null;
+      if (!pending || pending.requestId !== requestId) {
+        return;
+      }
+      pending.timedOut = true;
+      uncertain ||= type !== "pending-file-get";
       retry.hidden = false;
-      notify("ยังยืนยันไฟล์ในหน้านี้ไม่ได้ กรุณาลองอีกครั้งก่อนปิดหน้าต่าง", true);
+      render();
+      notify("ยังยืนยันผลไม่ได้ กรุณาลองอีกครั้งก่อนปิดหน้าต่าง", true);
     }, 15_000);
-    pending = { requestId, timeout, type };
+    pending = { requestId, timedOut: false, timeout, type };
+    render();
     hostWindow.top.postMessage(
       {
         ...target,
@@ -95,9 +186,6 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
     );
   };
   const renderSavedAttachment = (message) => {
-    if (!savedFile || !savedLink || !savedSize) {
-      return;
-    }
     const { saved } = message;
     const url =
       isRecord(saved) &&
@@ -122,43 +210,30 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
         ? `${saved.size_bytes} ไบต์`
         : "";
     }
-  };
-  const renderSelection = (message) => {
-    filename.textContent = message.filename || "ยังไม่ได้เลือกไฟล์";
-    filesize.textContent =
-      message.filename &&
-      Number.isSafeInteger(message.size) &&
-      message.size >= 0
-        ? `${message.size} ไบต์`
-        : "";
-    renderSavedAttachment(message);
-    removal.hidden = message.removal !== true;
-    cancel.disabled =
-      !message.filename && message.removal !== true && !message.validationError;
-    remove.disabled =
-      !hasSaved && !message.filename && !message.validationError;
     cleanupWarning.hidden =
       typeof message.cleanupWarning !== "string" || !message.cleanupWarning;
     cleanupWarning.textContent =
       typeof message.cleanupWarning === "string" ? message.cleanupWarning : "";
-    input.value = "";
-    selected = null;
-    input.disabled = false;
-    if (message.mutationNotice || message.commitNotice) {
-      notify(String(message.mutationNotice || message.commitNotice), true);
-    } else if (message.validationError) {
-      notify(String(message.validationError), true);
-    } else if (message.removal === true) {
-      notify("รอนำไฟล์ออกเมื่อบันทึกฉบับร่างหรือส่ง ยังไม่ลบไฟล์ที่บันทึกแล้ว");
-    } else if (message.filename) {
-      notify("เก็บไฟล์ไว้ในหน่วยความจำของหน้านี้แล้ว ยังไม่ได้อัปโหลดหรือบันทึกถาวร");
-    } else {
-      notify("เลือกไฟล์ได้หนึ่งไฟล์ และเลือกใหม่เพื่อเปลี่ยนไฟล์ได้");
-    }
   };
   hostWindow.addEventListener("message", (event) => {
     const message = event.data;
     if (!trustedPendingReply(event, hostWindow, options, pending)) {
+      return;
+    }
+    if (
+      (message.error !== undefined && typeof message.error !== "string") ||
+      (message.allowed !== undefined && typeof message.allowed !== "boolean") ||
+      (message.unavailable !== undefined &&
+        typeof message.unavailable !== "boolean")
+    ) {
+      return;
+    }
+    if (
+      !message.error &&
+      message.allowed !== false &&
+      message.unavailable !== true &&
+      !validSelectionReply(message, pending.type, selected)
+    ) {
       return;
     }
     hostWindow.clearTimeout(pending.timeout);
@@ -166,12 +241,7 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
     pending = null;
     if (message.unavailable === true) {
       unavailable = true;
-      selected = null;
-      input.value = "";
-      input.disabled = true;
-      retry.disabled = true;
-      cancel.disabled = true;
-      remove.disabled = true;
+      render();
       retry.hidden = true;
       selection.hidden = true;
       status.className = "notice";
@@ -184,58 +254,74 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
       return;
     }
     if (message.error || message.allowed === false) {
-      if (requestType === "pending-file-set") {
-        // A rejected replacement leaves the host's accepted file untouched.
-        // Clear only the rejected native input so another file can be chosen.
-        selected = null;
-        input.value = "";
-        input.disabled = false;
-        retry.hidden = true;
-        cancel.disabled = false;
-        remove.disabled = false;
-      } else {
-        retry.hidden = false;
-      }
+      render();
+      retry.hidden = requestType !== "pending-file-get" && !uncertain;
       notify(
         String(message.error || "ยังเลือกไฟล์ที่ตำแหน่งนี้ไม่ได้ กรุณาเปิดแบบฟอร์มใหม่"),
         true
       );
       return;
     }
-    if (
-      message.filename !== null &&
-      message.filename !== undefined &&
-      typeof message.filename !== "string"
-    ) {
-      retry.hidden = false;
-      notify("อ่านชื่อไฟล์ที่เลือกไม่ได้ กรุณาลองอีกครั้ง", true);
+    if (requestType !== "pending-file-get") {
+      plugin.executeCommand("close", "");
       return;
     }
-    renderSelection(message);
+    baseline = message;
+    renderSavedAttachment(message);
+    retry.hidden = true;
+    render();
+  });
+  choose.addEventListener("click", () => {
+    if (!choose.disabled) {
+      input.click();
+    }
   });
   input.addEventListener("change", () => {
     const [file] = input.files;
-    if (!file || pending || unavailable || !target || !options) {
+    input.value = "";
+    if (!file || pending || uncertain || unavailable || !baseline) {
+      return;
+    }
+    if (
+      !Number.isSafeInteger(file.size) ||
+      file.size < 0 ||
+      file.size > 10_000_000
+    ) {
+      notify(
+        `ช่อง ${target.tag}${target.rowIndex === null ? "" : ` / แถว ${target.rowIndex + 1}`}: เลือกไฟล์ขนาด 0–10,000,000 ไบต์`,
+        true
+      );
       return;
     }
     selected = file;
-    notify("กำลังเก็บไฟล์ไว้ในหน่วยความจำของหน้านี้…");
-    request("pending-file-set", file);
+    operation = "pending-file-set";
+    render();
   });
-  retry.addEventListener("click", () =>
-    request(selected ? "pending-file-set" : "pending-file-get", selected)
-  );
-  cancel.addEventListener("click", () => {
-    if (!cancel.disabled) {
-      selected = null;
-      request("pending-file-cancel");
+  retry.addEventListener("click", () => {
+    if (pending && !pending.timedOut) {
+      return;
     }
+    const type = pending?.type || (uncertain ? operation : "pending-file-get");
+    if (pending) {
+      hostWindow.clearTimeout(pending.timeout);
+      pending = null;
+    }
+    request(type, selected);
   });
   remove.addEventListener("click", () => {
-    if (!remove.disabled) {
-      selected = null;
-      request("pending-file-remove");
+    if (remove.disabled) {
+      return;
     }
+    if (operation) {
+      operation = null;
+      selected = null;
+    } else {
+      operation =
+        baseline.filename || baseline.removal || baseline.validationError
+          ? "pending-file-cancel"
+          : "pending-file-remove";
+    }
+    render();
   });
   plugin.init = (data) => {
     try {
@@ -256,22 +342,43 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
       ) {
         throw new Error("ยังเชื่อมต่อหน้ากรอกแบบฟอร์มไม่ได้ กรุณาเปิดแบบฟอร์มใหม่");
       }
+      if (options.action === "correction") {
+        selectionHint.textContent =
+          "ยืนยันไฟล์ที่นี่ แล้วบันทึก Correction ที่หน้าหลักเพื่ออัปโหลด ไฟล์ที่ยังไม่บันทึกจะหายเมื่อปิดหน้าเว็บหรือรีเฟรช";
+      }
       target = uploadPocPickerTarget(data);
       if (target.tag.includes(".") && target.rowIndex === null) {
         throw new Error(
           "ปุ่มตารางนี้ยังไม่มีรหัสแถวสำหรับเลือกไฟล์ กรุณาบันทึกและเปิดแบบฟอร์มใหม่"
         );
       }
-      notify("กำลังอ่านไฟล์ที่เลือกไว้ในหน้านี้…");
+      notify("กำลังอ่านไฟล์…");
       request("pending-file-get");
     } catch (error) {
       notify(error.message, true);
     }
   };
-  plugin.button = () => {
-    if (pending) {
-      notify("กรุณารอยืนยันไฟล์ในหน้านี้ก่อนปิดหน้าต่าง", true);
+  plugin.button = (index) => {
+    if ((pending && pending.type !== "pending-file-get") || uncertain) {
+      const waiting = pending && !pending.timedOut;
+      notify(
+        waiting
+          ? "กำลังยืนยันการเลือก กรุณารอสักครู่"
+          : "กรุณายืนยันผลด้วยปุ่มลองอีกครั้งก่อนปิดหน้าต่าง",
+        !waiting
+      );
       return;
+    }
+    if (index === 0 && operation && !unavailable) {
+      request(operation, selected);
+      return;
+    }
+    if (index === 0 && pending) {
+      return;
+    }
+    if (pending) {
+      hostWindow.clearTimeout(pending.timeout);
+      pending = null;
     }
     plugin.executeCommand("close", "");
   };

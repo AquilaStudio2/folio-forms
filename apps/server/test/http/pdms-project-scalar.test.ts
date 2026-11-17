@@ -12,7 +12,7 @@ import { bearerFor, createCredentialFixture } from "../fixtures/http";
 if (!process.env.DATABASE_URL) {
   throw new Error("An isolated DATABASE_URL is required");
 }
-const app = createApp({ legacySso: null, omniRoute: null });
+const app = createApp({ legacySso: null });
 const formId = crypto.randomUUID();
 const draftId = crypto.randomUUID();
 const publicId = crypto.randomUUID().replaceAll("-", "");
@@ -140,7 +140,6 @@ test("a fresh authorized editor opening loads usable names once and preserves it
   try {
     const catalogApp = createApp({
       legacySso: null,
-      omniRoute: null,
       pdmsProjects: {
         baseUrl: `${upstream.url.origin}/prefix/api`,
         secret: "fixture-server-only-secret",

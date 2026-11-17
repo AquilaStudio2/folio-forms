@@ -61,12 +61,9 @@ import type { RouteDependencies } from "./dependencies";
 
 export function registerResponseRoutes(
   app: Elysia,
-  dependencies: Pick<
-    RouteDependencies,
-    "onlyOffice" | "removeObject" | "aiAuthoring" | "ecm"
-  >
+  dependencies: Pick<RouteDependencies, "onlyOffice" | "removeObject" | "ecm">
 ): void {
-  const { onlyOffice, removeObject, aiAuthoring, ecm } = dependencies;
+  const { onlyOffice, removeObject, ecm } = dependencies;
   app
     .get("/api/responses/deletion-status", async ({ request }) => {
       const identity = await requireIdentity(request);
@@ -515,7 +512,6 @@ export function registerResponseRoutes(
           }
           const result = await deleteResponseData({
             actor: identity,
-            aiAuthoring,
             ecm,
             intent: "confirmed-admin-delete",
             removeObject,
@@ -552,7 +548,6 @@ export function registerResponseRoutes(
       try {
         const result = await deleteResponseData({
           actor: identity,
-          aiAuthoring,
           ecm,
           intent: "discard-own-draft",
           removeObject,

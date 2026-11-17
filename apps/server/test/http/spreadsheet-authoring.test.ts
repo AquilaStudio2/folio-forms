@@ -56,7 +56,6 @@ const nativeServer = Bun.serve({
 let nativeSnapshotUrl: string | null = null;
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   onlyOffice: {
     convertDocxToPdf: async (key, _pdfOnly, kind) => {
       pdfKinds.push(kind);
@@ -670,7 +669,6 @@ test("saved Excel templates export XLSX and PDF with admin authorization and act
   ).toBe(404);
   const failureApp = createApp({
     legacySso: null,
-    omniRoute: null,
     onlyOffice: {
       convertDocxToPdf: () =>
         Promise.reject(new Error("test conversion failure")),

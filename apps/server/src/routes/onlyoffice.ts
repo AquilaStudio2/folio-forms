@@ -254,18 +254,18 @@ export function registerOnlyOfficeRoutes(
         variations: [
           {
             EditorsSupport: ["cell"],
-            buttons: [{ primary: true, text: "ปิด" }],
+            buttons: [{ primary: true, text: "บันทึก" }, { text: "ยกเลิก" }],
             description: "เลือกไฟล์ไว้ในหน้านี้ ยังไม่อัปโหลด",
             initData: "",
             initDataType: "ole",
             isUpdateOleOnResize: false,
             isVisual: true,
-            size: [460, 500],
+            size: [460, 360],
             type: "window",
             url: "index.html",
           },
         ],
-        version: "0.2.0",
+        version: "0.3.0",
       };
     })
     .get("/onlyoffice-plugin/upload-poc/index.html", uploadPocIndexResponse)

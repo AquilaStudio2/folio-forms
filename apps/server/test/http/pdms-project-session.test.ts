@@ -54,7 +54,6 @@ const fixture = async (
       convertDocxToPdf: () => Promise.resolve(new Uint8Array()),
     },
     legacySso: null,
-    omniRoute: null,
     pdmsProjects: {
       baseUrl: upstream.url.origin,
       secret: "session-upstream-only-secret",

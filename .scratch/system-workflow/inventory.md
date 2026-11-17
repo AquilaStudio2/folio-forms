@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `baf64cb590b5390954d7f9f233f59f26f1405ceb`
+Commit: `0a12d91a5b72d4470ae9ceed1c3d4845d2103ced`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -11,7 +11,6 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | Route | Source |
 | --- | --- |
 | `__root` | `apps/web/src/routes/__root.tsx:1` |
-| `/admin/ai-authoring` | `apps/web/src/routes/admin/ai-authoring.tsx:396` |
 | `/admin/audit` | `apps/web/src/routes/admin/audit.tsx:330` |
 | `/admin/forms/$formId/` | `apps/web/src/routes/admin/forms/$formId/index.tsx:879` |
 | `/admin/forms/$formId/submissions/$submissionId` | `apps/web/src/routes/admin/forms/$formId/submissions/$submissionId.tsx:253` |
@@ -24,7 +23,7 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `/admin/results/$responseId/` | `apps/web/src/routes/admin/results/$responseId/index.tsx:546` |
 | `/admin/results/` | `apps/web/src/routes/admin/results/index.tsx:813` |
 | `/admin/results` | `apps/web/src/routes/admin/results.tsx:5` |
-| `/admin/storage-templates` | `apps/web/src/routes/admin/storage-templates.tsx:343` |
+| `/admin/storage-templates` | `apps/web/src/routes/admin/storage-templates.tsx:478` |
 | `/admin/users` | `apps/web/src/routes/admin/users.tsx:749` |
 | `/admin` | `apps/web/src/routes/admin.tsx:35` |
 | `/change-password` | `apps/web/src/routes/change-password.tsx:229` |
@@ -41,26 +40,20 @@ These are source declarations, not a live deployment or endpoint-availability ch
 
 | Method | Path | Source |
 | --- | --- | --- |
-| GET | `/api/admin/account-links` | `apps/server/src/routes/accounts.ts:59` |
-| POST | `/api/admin/account-links/:id/approve` | `apps/server/src/routes/accounts.ts:103` |
-| POST | `/api/admin/account-links/:id/reject` | `apps/server/src/routes/accounts.ts:135` |
-| GET | `/api/admin/users` | `apps/server/src/routes/accounts.ts:167` |
-| POST | `/api/admin/users` | `apps/server/src/routes/accounts.ts:230` |
-| PATCH | `/api/admin/users/:id` | `apps/server/src/routes/accounts.ts:307` |
-| DELETE | `/api/admin/users/:id` | `apps/server/src/routes/accounts.ts:485` |
-| POST | `/api/admin/users/:id/password-reset` | `apps/server/src/routes/accounts.ts:609` |
-| GET | `/api/admin/ai-authoring` | `apps/server/src/routes/ai-authoring.ts:21` |
-| POST | `/api/admin/ai-authoring/sessions` | `apps/server/src/routes/ai-authoring.ts:26` |
-| GET | `/api/admin/ai-authoring/sessions/current` | `apps/server/src/routes/ai-authoring.ts:57` |
-| POST | `/api/admin/ai-authoring/sessions/:sessionId/revisions` | `apps/server/src/routes/ai-authoring.ts:69` |
-| GET | `/api/admin/ai-authoring/sessions/:sessionId/docx` | `apps/server/src/routes/ai-authoring.ts:97` |
-| DELETE | `/api/admin/ai-authoring/sessions/:sessionId` | `apps/server/src/routes/ai-authoring.ts:117` |
+| GET | `/api/admin/account-links` | `apps/server/src/routes/accounts.ts:53` |
+| POST | `/api/admin/account-links/:id/approve` | `apps/server/src/routes/accounts.ts:97` |
+| POST | `/api/admin/account-links/:id/reject` | `apps/server/src/routes/accounts.ts:129` |
+| GET | `/api/admin/users` | `apps/server/src/routes/accounts.ts:161` |
+| POST | `/api/admin/users` | `apps/server/src/routes/accounts.ts:224` |
+| PATCH | `/api/admin/users/:id` | `apps/server/src/routes/accounts.ts:301` |
+| DELETE | `/api/admin/users/:id` | `apps/server/src/routes/accounts.ts:471` |
+| POST | `/api/admin/users/:id/password-reset` | `apps/server/src/routes/accounts.ts:586` |
 | GET | `/api/admin/audit-events` | `apps/server/src/routes/audit.ts:24` |
-| POST | `/api/auth/sign-in/email` | `apps/server/src/routes/auth.ts:27` |
-| GET | `/api/session` | `apps/server/src/routes/auth.ts:46` |
-| POST | `/api/account/password` | `apps/server/src/routes/auth.ts:69` |
-| POST | `/api/auth/sign-out` | `apps/server/src/routes/auth.ts:159` |
-| ALL | `/api/auth/*` | `apps/server/src/routes/auth.ts:187` |
+| POST | `/api/auth/sign-in/email` | `apps/server/src/routes/auth.ts:26` |
+| GET | `/api/session` | `apps/server/src/routes/auth.ts:45` |
+| POST | `/api/account/password` | `apps/server/src/routes/auth.ts:64` |
+| POST | `/api/auth/sign-out` | `apps/server/src/routes/auth.ts:144` |
+| ALL | `/api/auth/*` | `apps/server/src/routes/auth.ts:153` |
 | POST | `/api/editor-leases/:id/renew` | `apps/server/src/routes/editor-leases.ts:14` |
 | DELETE | `/api/editor-leases/:id` | `apps/server/src/routes/editor-leases.ts:23` |
 | GET | `/api/admin/forms/:publicId/editor-config` | `apps/server/src/routes/form-authoring.ts:119` |
@@ -77,13 +70,13 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | POST | `/api/admin/forms` | `apps/server/src/routes/form-catalog.ts:624` |
 | GET | `/api/admin/forms/:publicId/template/:format` | `apps/server/src/routes/form-catalog.ts:737` |
 | GET | `/api/admin/forms/:publicId` | `apps/server/src/routes/form-catalog.ts:783` |
-| GET | `/api/legacy-sso/status` | `apps/server/src/routes/legacy-sso.ts:25` |
-| POST | `/api/legacy-sso/start` | `apps/server/src/routes/legacy-sso.ts:31` |
-| GET | `/api/legacy-sso/callback` | `apps/server/src/routes/legacy-sso.ts:45` |
-| GET | `/api/legacy-sso/switch` | `apps/server/src/routes/legacy-sso.ts:53` |
-| POST | `/api/legacy-sso/switch/confirm` | `apps/server/src/routes/legacy-sso.ts:58` |
-| POST | `/api/legacy-sso/switch/cancel` | `apps/server/src/routes/legacy-sso.ts:70` |
-| POST | `/api/legacy-sso/session` | `apps/server/src/routes/legacy-sso.ts:82` |
+| GET | `/api/legacy-sso/status` | `apps/server/src/routes/legacy-sso.ts:22` |
+| POST | `/api/legacy-sso/start` | `apps/server/src/routes/legacy-sso.ts:28` |
+| GET | `/api/legacy-sso/callback` | `apps/server/src/routes/legacy-sso.ts:42` |
+| GET | `/api/legacy-sso/switch` | `apps/server/src/routes/legacy-sso.ts:50` |
+| POST | `/api/legacy-sso/switch/confirm` | `apps/server/src/routes/legacy-sso.ts:55` |
+| POST | `/api/legacy-sso/switch/cancel` | `apps/server/src/routes/legacy-sso.ts:61` |
+| POST | `/api/legacy-sso/session` | `apps/server/src/routes/legacy-sso.ts:67` |
 | GET | `/onlyoffice/document/:key` | `apps/server/src/routes/onlyoffice.ts:62` |
 | GET | `/onlyoffice-plugin/config.json` | `apps/server/src/routes/onlyoffice.ts:132` |
 | GET | `/onlyoffice-plugin/pdms-project/config.json` | `apps/server/src/routes/onlyoffice.ts:172` |
@@ -117,15 +110,15 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | POST | `/api/responses/:id/attachment-operations/:checkpoint/recover` | `apps/server/src/routes/response-actions.ts:155` |
 | POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:168` |
 | POST | `/api/forms/:publicId/submit` | `apps/server/src/routes/response-actions.ts:388` |
-| GET | `/api/responses/deletion-status` | `apps/server/src/routes/responses.ts:71` |
-| GET | `/api/responses/:id/attachment-status` | `apps/server/src/routes/responses.ts:75` |
-| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:100` |
-| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:134` |
-| POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:266` |
-| GET | `/api/responses/:id/draft/viewer-config` | `apps/server/src/routes/responses.ts:380` |
-| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:419` |
-| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:505` |
-| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:548` |
+| GET | `/api/responses/deletion-status` | `apps/server/src/routes/responses.ts:68` |
+| GET | `/api/responses/:id/attachment-status` | `apps/server/src/routes/responses.ts:72` |
+| GET | `/api/responses/me` | `apps/server/src/routes/responses.ts:97` |
+| GET | `/api/responses/:id/corrections` | `apps/server/src/routes/responses.ts:131` |
+| POST | `/api/responses/:id/editor-export/:format` | `apps/server/src/routes/responses.ts:263` |
+| GET | `/api/responses/:id/draft/viewer-config` | `apps/server/src/routes/responses.ts:377` |
+| GET | `/api/responses/:id/draft/:format` | `apps/server/src/routes/responses.ts:416` |
+| DELETE | `/api/admin/responses/:id` | `apps/server/src/routes/responses.ts:502` |
+| DELETE | `/api/responses/:id` | `apps/server/src/routes/responses.ts:544` |
 | GET | `/api/admin/results/attachment-follow-up` | `apps/server/src/routes/results.ts:357` |
 | POST | `/api/admin/results/attachment-follow-up/:operationId/settle` | `apps/server/src/routes/results.ts:369` |
 | POST | `/api/admin/results/attachment-follow-up/:operationId/cancel` | `apps/server/src/routes/results.ts:385` |
@@ -149,17 +142,8 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | GET | `/api/submissions/:id/json` | `apps/server/src/routes/submissions.ts:207` |
 | GET | `/api/submissions/:id/:format` | `apps/server/src/routes/submissions.ts:240` |
 | GET | `/api/submissions/:id/pdf` | `apps/server/src/routes/submissions.ts:293` |
-| GET | `/health` | `apps/server/src/app.ts:201` |
-| GET | `/ready` | `apps/server/src/app.ts:202` |
-
-## Private document worker
-
-Separate private HTTP listener in `apps/server/src/document-worker-server.ts:170`, not part of the main API count.
-
-| Method | Path |
-| --- | --- |
-| GET | `/health` |
-| POST | `/run` |
+| GET | `/health` | `apps/server/src/app.ts:179` |
+| GET | `/ready` | `apps/server/src/app.ts:180` |
 
 ## Database models
 

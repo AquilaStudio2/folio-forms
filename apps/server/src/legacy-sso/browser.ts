@@ -4,7 +4,6 @@ import { randomBytes, createHash } from "node:crypto";
 import { prisma } from "@onlyoffice/db";
 import { env } from "@onlyoffice/env/server";
 
-import type { AiAuthoringSessions } from "../ai-authoring";
 import type { Identity } from "../auth/identity";
 import { identityFor } from "../auth/identity";
 import { fail, HttpError } from "../http/errors";
@@ -189,8 +188,7 @@ export async function startLegacySso(
 export async function completeLegacySso(
   request: Request,
   config: LegacySsoConfig,
-  clock: () => Date,
-  aiAuthoring: AiAuthoringSessions
+  clock: () => Date
 ): Promise<globalThis.Response> {
   const requestUrl = new URL(request.url);
   const forwardedProtocol = request.headers.get("x-forwarded-proto")?.trim();
@@ -345,8 +343,7 @@ export async function completeLegacySso(
         subject: identity.subject,
         targetUserId: user.id,
       },
-      now,
-      aiAuthoring
+      now
     );
   } catch (error) {
     if (error instanceof HttpError) {
@@ -615,8 +612,7 @@ export async function consumeLegacySsoSwitch(
   request: Request,
   clock: () => Date,
   config: LegacySsoConfig | null,
-  confirm: boolean,
-  aiAuthoring: AiAuthoringSessions
+  confirm: boolean
 ): Promise<globalThis.Response> {
   const context = await legacySsoSwitchContext(request, clock, config);
   if (!context?.target || !context.confirmationFingerprint) {
@@ -663,7 +659,6 @@ export async function consumeLegacySsoSwitch(
     config,
     context.challenge,
     now,
-    aiAuthoring,
     {
       id: context.challengeId,
       initiatingEmail: context.identity.email,

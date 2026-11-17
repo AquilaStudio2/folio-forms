@@ -26,7 +26,7 @@ import { bearerFor, createCredentialFixture } from "../fixtures/http";
 import { fixtureWorkbook } from "../spreadsheet-unit/fixture";
 
 const forms: string[] = [];
-const app = createApp({ legacySso: null, omniRoute: null });
+const app = createApp({ legacySso: null });
 let adminId = "";
 let bearer = "";
 beforeAll(async () => {

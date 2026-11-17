@@ -1,18 +1,13 @@
 {
-  "commit": "baf64cb590b5390954d7f9f233f59f26f1405ceb",
+  "commit": "0a12d91a5b72d4470ae9ceed1c3d4845d2103ced",
   "branch": "feat/ecm-storage-templates",
-  "source_fingerprint": "80af484663ab2ca1c376b38da2547e3c2c5974a2e1c7b77307d12de1ce68667e",
-  "source_files": 325,
+  "source_fingerprint": "ede8fe0a92650abbeeb66e9145ef542bf96e14aeb1372860db4afc69e047f0dc",
+  "source_files": 312,
   "pages": [
     {
       "route": "__root",
       "file": "apps/web/src/routes/__root.tsx",
       "line": 1
-    },
-    {
-      "route": "/admin/ai-authoring",
-      "file": "apps/web/src/routes/admin/ai-authoring.tsx",
-      "line": 396
     },
     {
       "route": "/admin/audit",
@@ -77,7 +72,7 @@
     {
       "route": "/admin/storage-templates",
       "file": "apps/web/src/routes/admin/storage-templates.tsx",
-      "line": 343
+      "line": 478
     },
     {
       "route": "/admin/users",
@@ -140,85 +135,49 @@
       "method": "GET",
       "path": "/api/admin/account-links",
       "file": "apps/server/src/routes/accounts.ts",
-      "line": 59
+      "line": 53
     },
     {
       "method": "POST",
       "path": "/api/admin/account-links/:id/approve",
       "file": "apps/server/src/routes/accounts.ts",
-      "line": 103
+      "line": 97
     },
     {
       "method": "POST",
       "path": "/api/admin/account-links/:id/reject",
       "file": "apps/server/src/routes/accounts.ts",
-      "line": 135
+      "line": 129
     },
     {
       "method": "GET",
       "path": "/api/admin/users",
       "file": "apps/server/src/routes/accounts.ts",
-      "line": 167
+      "line": 161
     },
     {
       "method": "POST",
       "path": "/api/admin/users",
       "file": "apps/server/src/routes/accounts.ts",
-      "line": 230
+      "line": 224
     },
     {
       "method": "PATCH",
       "path": "/api/admin/users/:id",
       "file": "apps/server/src/routes/accounts.ts",
-      "line": 307
+      "line": 301
     },
     {
       "method": "DELETE",
       "path": "/api/admin/users/:id",
       "file": "apps/server/src/routes/accounts.ts",
-      "line": 485
+      "line": 471
     },
     {
       "method": "POST",
       "path": "/api/admin/users/:id/password-reset",
       "file": "apps/server/src/routes/accounts.ts",
-      "line": 609
-    },
-    {
-      "method": "GET",
-      "path": "/api/admin/ai-authoring",
-      "file": "apps/server/src/routes/ai-authoring.ts",
-      "line": 21
-    },
-    {
-      "method": "POST",
-      "path": "/api/admin/ai-authoring/sessions",
-      "file": "apps/server/src/routes/ai-authoring.ts",
-      "line": 26
-    },
-    {
-      "method": "GET",
-      "path": "/api/admin/ai-authoring/sessions/current",
-      "file": "apps/server/src/routes/ai-authoring.ts",
-      "line": 57
-    },
-    {
-      "method": "POST",
-      "path": "/api/admin/ai-authoring/sessions/:sessionId/revisions",
-      "file": "apps/server/src/routes/ai-authoring.ts",
-      "line": 69
-    },
-    {
-      "method": "GET",
-      "path": "/api/admin/ai-authoring/sessions/:sessionId/docx",
-      "file": "apps/server/src/routes/ai-authoring.ts",
-      "line": 97
-    },
-    {
-      "method": "DELETE",
-      "path": "/api/admin/ai-authoring/sessions/:sessionId",
-      "file": "apps/server/src/routes/ai-authoring.ts",
-      "line": 117
+      "line": 586
     },
     {
       "method": "GET",
@@ -230,31 +189,31 @@
       "method": "POST",
       "path": "/api/auth/sign-in/email",
       "file": "apps/server/src/routes/auth.ts",
-      "line": 27
+      "line": 26
     },
     {
       "method": "GET",
       "path": "/api/session",
       "file": "apps/server/src/routes/auth.ts",
-      "line": 46
+      "line": 45
     },
     {
       "method": "POST",
       "path": "/api/account/password",
       "file": "apps/server/src/routes/auth.ts",
-      "line": 69
+      "line": 64
     },
     {
       "method": "POST",
       "path": "/api/auth/sign-out",
       "file": "apps/server/src/routes/auth.ts",
-      "line": 159
+      "line": 144
     },
     {
       "method": "ALL",
       "path": "/api/auth/*",
       "file": "apps/server/src/routes/auth.ts",
-      "line": 187
+      "line": 153
     },
     {
       "method": "POST",
@@ -356,43 +315,43 @@
       "method": "GET",
       "path": "/api/legacy-sso/status",
       "file": "apps/server/src/routes/legacy-sso.ts",
-      "line": 25
+      "line": 22
     },
     {
       "method": "POST",
       "path": "/api/legacy-sso/start",
       "file": "apps/server/src/routes/legacy-sso.ts",
-      "line": 31
+      "line": 28
     },
     {
       "method": "GET",
       "path": "/api/legacy-sso/callback",
       "file": "apps/server/src/routes/legacy-sso.ts",
-      "line": 45
+      "line": 42
     },
     {
       "method": "GET",
       "path": "/api/legacy-sso/switch",
       "file": "apps/server/src/routes/legacy-sso.ts",
-      "line": 53
+      "line": 50
     },
     {
       "method": "POST",
       "path": "/api/legacy-sso/switch/confirm",
       "file": "apps/server/src/routes/legacy-sso.ts",
-      "line": 58
+      "line": 55
     },
     {
       "method": "POST",
       "path": "/api/legacy-sso/switch/cancel",
       "file": "apps/server/src/routes/legacy-sso.ts",
-      "line": 70
+      "line": 61
     },
     {
       "method": "POST",
       "path": "/api/legacy-sso/session",
       "file": "apps/server/src/routes/legacy-sso.ts",
-      "line": 82
+      "line": 67
     },
     {
       "method": "GET",
@@ -596,55 +555,55 @@
       "method": "GET",
       "path": "/api/responses/deletion-status",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 71
+      "line": 68
     },
     {
       "method": "GET",
       "path": "/api/responses/:id/attachment-status",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 75
+      "line": 72
     },
     {
       "method": "GET",
       "path": "/api/responses/me",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 100
+      "line": 97
     },
     {
       "method": "GET",
       "path": "/api/responses/:id/corrections",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 134
+      "line": 131
     },
     {
       "method": "POST",
       "path": "/api/responses/:id/editor-export/:format",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 266
+      "line": 263
     },
     {
       "method": "GET",
       "path": "/api/responses/:id/draft/viewer-config",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 380
+      "line": 377
     },
     {
       "method": "GET",
       "path": "/api/responses/:id/draft/:format",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 419
+      "line": 416
     },
     {
       "method": "DELETE",
       "path": "/api/admin/responses/:id",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 505
+      "line": 502
     },
     {
       "method": "DELETE",
       "path": "/api/responses/:id",
       "file": "apps/server/src/routes/responses.ts",
-      "line": 548
+      "line": 544
     },
     {
       "method": "GET",
@@ -788,13 +747,13 @@
       "method": "GET",
       "path": "/health",
       "file": "apps/server/src/app.ts",
-      "line": 201
+      "line": 179
     },
     {
       "method": "GET",
       "path": "/ready",
       "file": "apps/server/src/app.ts",
-      "line": 202
+      "line": 180
     }
   ],
   "models": [
@@ -1374,15 +1333,5 @@
       "rejected",
       "linked"
     ]
-  },
-  "private_worker_endpoints": [
-    {
-      "method": "GET",
-      "path": "/health"
-    },
-    {
-      "method": "POST",
-      "path": "/run"
-    }
-  ]
+  }
 }

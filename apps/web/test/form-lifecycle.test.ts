@@ -259,7 +259,6 @@ test("SSO returns preserve only known admin routes and opaque identifiers", () =
     "/admin/users",
     "/admin/storage-templates",
     "/admin/audit",
-    "/admin/ai-authoring",
     "/admin/forms/new",
     `/admin/forms/${formId}`,
     `/admin/forms/${formId}/submissions`,
@@ -337,31 +336,18 @@ test("sign-out clears token only when server confirms revocation", async () => {
   });
   const fetchMock = vi
     .spyOn(globalThis, "fetch")
-    .mockResolvedValueOnce(
-      Response.json(
-        {
-          error: "sign_out_cleanup_failed",
-          message: "AI authoring cleanup failed after session revocation",
-          sessionRevoked: true,
-        },
-        { status: 500 }
-      )
-    )
+    .mockResolvedValueOnce(Response.json({ ok: true }))
     .mockResolvedValueOnce(
       Response.json({ error: "internal_error" }, { status: 500 })
     );
   try {
     setToken("revoked-session");
-    await expect(signOut()).rejects.toMatchObject({
-      code: "sign_out_cleanup_failed",
-      sessionRevoked: true,
-    });
+    await signOut();
     expect(getToken()).toBeNull();
 
     setToken("active-session");
     await expect(signOut()).rejects.toMatchObject({
       code: "internal_error",
-      sessionRevoked: false,
     });
     expect(getToken()).toBe("active-session");
   } finally {

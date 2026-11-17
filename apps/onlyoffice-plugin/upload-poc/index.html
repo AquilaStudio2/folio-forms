@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>แนบไฟล์</title>
     <style>
       body {
         box-sizing: border-box;
@@ -10,23 +11,28 @@
           13px/1.5 system-ui,
           sans-serif;
         color: #242424;
-        padding: 36px 16px 16px;
+        padding: 16px;
         margin: 0;
-      }
-      h1 {
-        font-size: 16px;
-        line-height: 1.4;
-        margin: 0 0 8px;
       }
       p {
         margin: 8px 0;
       }
-      label {
-        display: block;
-        margin: 14px 0 6px;
+      button {
+        font: inherit;
+        cursor: pointer;
+        min-height: 32px;
+        padding: 4px 12px;
       }
-      input {
-        max-width: 100%;
+      button:disabled {
+        cursor: default;
+      }
+      button:focus-visible,
+      a:focus-visible {
+        outline: 2px solid #4473b9;
+        outline-offset: 3px;
+      }
+      #remove {
+        margin-top: 8px;
       }
       .notice {
         background: #fff7dc !important;
@@ -36,23 +42,50 @@
         line-height: 1.4;
         padding: 8px;
       }
+      [hidden] {
+        display: none !important;
+      }
       #filename,
+      #saved-link,
       #status {
         overflow-wrap: anywhere;
       }
+      #status {
+        white-space: pre-line;
+      }
+      #selection-hint {
+        font-size: 12px;
+      }
       [data-error="true"] {
-        color: #9b1c1c;
+        color: #9b1c1c !important;
+        background: #fff1f0 !important;
+        border: 1px solid #f2b8b5;
+        padding: 8px;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          color: #f0f0f0;
+          background: #242424;
+        }
+        a {
+          color: #9cc6ff;
+        }
+        button {
+          color: #f0f0f0;
+          background: #383838;
+          border: 1px solid #8a8a8a;
+          border-radius: 3px;
+        }
       }
     </style>
     <script src="__ONLYOFFICE_PLUGIN_SDK_URL__"></script>
     <script defer src="./picker.js"></script>
   </head>
   <body>
-    <h1>ไฟล์แนบ</h1>
     <div id="selection">
-      <p class="notice">
-        ไฟล์ที่เลือกใหม่อยู่ในหน่วยความจำจนกดบันทึกฉบับร่างหรือส่ง
-        การรีเฟรชหรือปิดหน้าจะทำให้เฉพาะไฟล์ที่ยังไม่บันทึกหายไป
+      <p id="selection-hint" class="notice">
+        ยืนยันไฟล์ที่นี่ แล้วบันทึกร่าง/ส่งคำตอบที่หน้าหลักเพื่ออัปโหลด
+        ไฟล์ที่ยังไม่บันทึกจะหายเมื่อปิดหน้าเว็บหรือรีเฟรช
       </p>
       <p id="saved-file" hidden>
         ไฟล์ที่บันทึกแล้ว:
@@ -61,31 +94,39 @@
         >
         <span id="saved-size"></span>
       </p>
-      <p>ลิงก์ไฟล์เป็นสาธารณะ ผู้ที่มี URL อาจเปิดได้โดยไม่เข้าสู่ระบบ Folio</p>
-      <label for="attachment"
-        >เลือกไฟล์หนึ่งไฟล์ขนาด 0–10,000,000 ไบต์
-        หรือเลือกใหม่เพื่อแทนที่เมื่อบันทึก</label
+      <p>ลิงก์สาธารณะ ผู้มีลิงก์อาจเปิดได้โดยไม่เข้าสู่ระบบ</p>
+      <p id="file-limit">1 ไฟล์ · สูงสุด 10 MB (10,000,000 ไบต์)</p>
+      <input
+        id="attachment"
+        type="file"
+        aria-label="เลือกไฟล์แนบ"
+        aria-describedby="file-limit status cleanup-warning"
+        hidden
+        disabled
+      />
+      <button
+        id="choose"
+        type="button"
+        aria-describedby="file-limit status cleanup-warning"
+        disabled
       >
-      <input id="attachment" type="file" disabled />
-      <p>
-        ไฟล์ที่เลือก: <strong id="filename">ยังไม่ได้เลือกไฟล์</strong>
+        เลือกไฟล์
+      </button>
+      <p id="selected-file">
+        <strong id="filename">ยังไม่ได้เลือกไฟล์</strong>
         <span id="filesize"></span>
       </p>
       <p id="removal" hidden>
-        รอนำไฟล์ออกเมื่อบันทึกฉบับร่างหรือส่ง ยังไม่ลบไฟล์ที่บันทึกแล้ว
+        รอนำไฟล์ออกเมื่อบันทึกฉบับร่าง / ส่ง / บันทึก Correction
       </p>
-      <button id="cancel" type="button" disabled>
-        ยกเลิกการเปลี่ยนไฟล์ที่ยังไม่บันทึก
+      <button id="remove" type="button" hidden disabled>
+        นำไฟล์ที่บันทึกแล้วออก
       </button>
-      <button id="remove" type="button" disabled>นำไฟล์ออกเมื่อบันทึก</button>
-      <p>
-        การยกเลิกไม่ย้อนคืนรอบบันทึกที่ส่งไปแล้ว กรุณาตรวจผลรอบนั้นก่อนแก้ต่อ
-      </p>
       <p id="cleanup-warning" class="notice" role="status" hidden></p>
     </div>
     <p id="status" role="status" aria-live="polite">
       กำลังเปิดหน้าต่างเลือกไฟล์…
     </p>
-    <button id="retry" type="button" hidden>ลองยืนยันไฟล์อีกครั้ง</button>
+    <button id="retry" type="button" hidden>ลองอีกครั้ง</button>
   </body>
 </html>

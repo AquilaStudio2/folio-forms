@@ -83,7 +83,7 @@ Form ที่เผยแพร่ใหม่ใช้ชื่อ `<docs_numb
 56. As a User, I want original bytes uploaded with only `template="1"` and `documentFile`, so that the provider receives the agreed template-mode request.
 57. As a User, I want generated filenames to use document number and configured template name, so that DCM can apply its existing template routing.
 58. As a User, I want the original extension and its casing preserved, so that Folio does not rename my file type.
-59. As a User, I want extensionless files to remain extensionless, so that Folio does not invent a suffix.
+59. As a User, I want extensionless files to remain extensionless, so that Folio does not invent a file extension when numbering duplicate destinations.
 60. As a User, I want unsafe document-number or filename input rejected rather than rewritten, so that the saved destination is not silently changed.
 61. As a User, I want all file types accepted within the existing size limits, so that a PDF example does not restrict my attachments.
 62. As a User, I want files from 0 through 10,000,000 bytes accepted inclusively, so that the documented boundary remains exact.
@@ -118,7 +118,7 @@ Form ที่เผยแพร่ใหม่ใช้ชื่อ `<docs_numb
 91. As a User, I want supported row changes to preserve file references without upload, so that layout changes do not duplicate files.
 92. As a User, I want unprovable row mappings rejected without discarding pending choices, so that Folio does not guess file placement.
 93. As a User, I want multi-file saves to expose only a complete canonical snapshot, so that partial upload does not look like a completed Submission.
-94. As a User, I want collisions across rows and slots handled without invented filename suffixes, so that Folio honors the agreed grammar and reports shared-identity limits.
+94. As a User, I want repeated destination filenames within one explicit template-mode upload batch numbered before the original extension, so that scalar and table uploads do not intentionally send the same filename in that batch.
 95. As an Admin, I want final Save Correction to use the selected Submission's frozen storage contract, so that catalog changes cannot redirect a Correction.
 96. As an Admin, I want Correction reason, eligibility and requiredness enforced before upload, so that attachments do not bypass existing audit rules.
 97. As an Admin, I want Submission and older Correction references protected before an overwrite or deletion, so that editing a newer revision cannot alter earlier evidence.
@@ -154,7 +154,7 @@ Form ที่เผยแพร่ใหม่ใช้ชื่อ `<docs_numb
 - หน้า Admin มี category select, persisted list/filter, create, update ชื่อ/หมวด และ confirmed delete ครบ หลัง mutation โหลดสถานะจริง ไม่รายงานสำเร็จจาก optimistic state เพียงอย่างเดียว
 - ตรวจ enabled Admin ฝั่ง server สำหรับ catalog และ category-management access ตามสิทธิ์เดิม User/Viewer ไม่ได้สิทธิ์จากการเรียก endpoint โดยตรง
 - ตรวจ category ID จากรายการ DCM ที่ backend เชื่อถือเมื่อตั้งหรือเปลี่ยนความสัมพันธ์ ไม่รับ ID เดาเอง เก็บรายการ/การเลือกเดิมระหว่าง provider outage; ไม่แก้ชื่อหมวด upstream แทน DCM
-- ชื่อว่าง/control characters/อักขระที่ทำให้ generated filename ไม่ปลอดภัยถูกปฏิเสธ ใช้ชื่อที่บันทึกตามจริง ไม่ sanitize, trim หรือเติม suffix เพื่อเดา DCM matching และไม่เพิ่ม case-folding policy โดยไม่มีเหตุจาก contract
+- ชื่อว่าง/control characters/อักขระที่ทำให้ generated filename ไม่ปลอดภัยถูกปฏิเสธ ใช้ชื่อ catalog ที่บันทึกตามจริง ไม่ sanitize, trim หรือเติม suffix ใน `template_name` เพื่อเดา DCM matching และไม่เพิ่ม case-folding policy โดยไม่มีเหตุจาก contract การเติมเลขใน destination filename เฉพาะ batch เป็นกฎแยกตามข้อ 6
 - การแก้ชื่ออย่างเดียวหรือลบ mapping ที่ Folio มีอยู่ไม่ต้องกลายเป็น DCM mutation การลบต้องยืนยันและ Cancel/Escape ไม่เปลี่ยนข้อมูล การเพิ่มหรือเปลี่ยนหมวดต้องมี category evidence ที่ใช้ได้
 - Catalog CRUD ไม่ POST/DELETE file, ไม่สร้าง/แก้/ลบ DCM template/folder และไม่เปลี่ยน Published Templates, Responses หรือ file receipts
 - Admin ต้องกรอกชื่อให้ตรงกับแม่แบบที่ DCM ตั้งไว้ Folio catalog ไม่ใช่หลักฐานว่า DCM มีแม่แบบนั้นหรือจะสร้างโฟลเดอร์ได้ทุกกรณี
@@ -194,13 +194,22 @@ Form ที่เผยแพร่ใหม่ใช้ชื่อ `<docs_numb
 ### 6. Template-mode upload
 
 - ก่อน external write ใช้ trusted snapshot ของ root `docs_number` และ frozen `template_name` ตรวจชื่อรวมและ original extension ด้วย validation เดิม ไม่อ่านเลขจาก PDMS project-name answer
-- Filename เป็น `<docs_number>-<template_name>.<original-extension>` คง extension/casing เดิม ถ้าไม่มี extension จบที่ `template_name` ไม่เพิ่ม UUID, row ID, binding ID หรือ unique suffix
+- Base filename เป็น `<docs_number>-<template_name>.<original-extension>` คง extension/casing เดิม ถ้าไม่มี extension จบที่ `template_name` ไม่เพิ่ม UUID, row ID หรือ binding ID ใช้ข้อแก้ไขนโยบายชื่อซ้ำด้านล่างเฉพาะ batch ปัจจุบัน
 - POST ไป upload endpoint เดิม ส่ง original bytes ผ่าน `documentFile` และ `template` เป็นข้อความ `"1"` เท่านั้น ไม่ส่ง `documentYear`, `documentNumber`, `documentCategory`, category ID หรือ type เพิ่มใน multipart โหมดใหม่
 - Legacy Published Templates ส่ง request/filename ตาม contract เดิม ไม่แปลงโหมดตาม schema default หรือ catalog ที่เพิ่งมี
 - อัปโหลดเฉพาะ explicit Save Draft/Submit และ final Save Correction การเลือกไฟล์, Admin CRUD, Template save/publish, row/project/workspace save, read-only และ export ไม่เริ่ม external file writes
 - ไฟล์และ metadata ไม่เปลี่ยน reuse reference เดิมโดยไม่ upload หรือขอ login โดยไม่จำเป็น ในโหมดใหม่เปลี่ยนเฉพาะ `fiscal_year` ไม่เป็นเหตุ upload
 - คง original bytes, ทุกชนิดไฟล์, 0–10,000,000 bytes inclusive, password-protected support โดยไม่ decrypt/preview และหนึ่งไฟล์ต่อ slot ตรวจขนาดจริงฝั่ง server
 - Draft ขาด required attachment ได้ แต่ invalid selected file ยังทำให้ save ไม่ผ่าน Submit/Correction ใช้ requiredness เดิมและนับ saved zero-byte file ว่ามีไฟล์
+
+#### ข้อแก้ไขนโยบายชื่อซ้ำภายใน batch — 2026-11-17
+
+- **Intended policy ที่ผู้ใช้อนุญาตล่าสุด:** ใช้เฉพาะ storage mode `template` ภายในหนึ่ง explicit Save Draft/Submit/final Save Correction upload batch รวม upload plans ของ scalar และทุก table เป็น namespace เดียว ตามลำดับ slot เดิมที่ deterministic ไม่ใช้ลำดับการเลือกไฟล์เป็น counter
+- จอง natural base filename ของทุก upload plan ใน batch ก่อนจัดชื่อ รายการแรกของ base เดียวกันคงชื่อเดิม รายการซ้ำถัดไปเติม `-(1)`, `-(2)` ตามลำดับ โดยข้ามชื่อที่ถูกจองเป็น natural base ของ plan อื่นหรือชื่อที่จัดให้แล้ว จึงไม่แย่งชื่อ literal `-(1)` ของอีกแม่แบบ
+- เติมเลขทันทีหน้า **original extension** และคง casing เช่น `DOC-หลักฐาน.PDF`, `DOC-หลักฐาน-(1).PDF`; ถ้าไม่มี original extension เติมท้ายชื่อ เช่น `กทอ.xx-xx-xxxx-ก่อหนี้-4_ขยาย(45)-(1)` ไม่ตีความจุดในเลขหนังสือหรือชื่อแม่แบบเป็น extension
+- Counter เริ่มใหม่ทุก batch ไม่จองชื่อข้าม save ไม่ rename ไฟล์เก่า ไม่แก้ frozen `template_name`, original answer metadata หรือรูปแบบ ledger; ledger ต้องบันทึก destination filename ที่ส่งจริง Legacy UUID naming คงเดิม ไม่เพิ่ม row ID/schema/config/UI
+- ข้อแก้ไขนี้แทนที่การยอมส่งชื่อซ้ำ unchanged ภายใน batch และคำห้าม suffix ทั้งหมดเฉพาะกรณีนี้ ไม่ใช้ suffix เพื่อหลบ owner/history/protected-reference guards หรือ unknown-operation holds และไม่ retry POST/DELETE
+- **Local verification supported:** [BATCH evidence](acceptance-matrix.md#batch-filename-verification) บันทึก integration HTTP 143 ผ่าน/0 fail, standalone Bun HTTP smoke พร้อม filename-keyed provider และ exact bytes, scoped format/lint/server types และ workflow build/check/visual inspection ผลนี้ไม่ใช่ browser attachment journey หรือ DCM จริง ไม่มี live DCM calls การ routing ของชื่อที่เติมเลขยัง **unverified / HOLD** ไม่รับรอง cross-save uniqueness, independent provider identity หรือ DCM acceptance
 
 ### 7. DCM-only original-byte reuse
 
@@ -232,7 +241,7 @@ Form ที่เผยแพร่ใหม่ใช้ชื่อ `<docs_numb
 - ถ้าลบ A ล้มเหลว/ไม่ทราบผล ให้ B ส่งสำเร็จพร้อม persistent warning ว่า A อาจยังเปิดได้ ไม่ rollback B และไม่ retry DELETE อัตโนมัติ ordinary save ถัดไปไม่ล้าง warning
 - ไฟล์ร่าง A ที่ไม่มี reference อื่นไม่ต้องเก็บตลอดไป หลัง distinct-identity cleanup ที่ยืนยันแล้ว A ต้องไม่เปิดเป็น original A ได้ หรือกรณี same-identity overwrite URL เดิมเป็น B โดยไม่มี DELETE เพิ่ม ไม่อ้างว่าตรวจลบสำเนา filesystem/backup ทั้งหมด
 - คง unique ownership/resource constraints ผ่าน explicit identity reconciliation ไม่ adopt ไฟล์ต่างเจ้าของหรือแก้หลักฐานเก่าเพียงเพราะ filename ตรงกัน
-- หลายช่อง/แถวชื่อซ้ำเป็นข้อจำกัดชั่วคราวที่ผู้ใช้ยอมรับ ไม่เพิ่ม suffix เองและไม่รับรอง independence ข้อยกเว้นนี้ไม่อนุญาต overwrite ข้อมูลคนอื่นหรือ immutable history ถ้าพบ conflict กับ protected reference ต้องหยุดก่อนส่ง
+- หลายช่อง/แถวใน template-mode batch เดียวกันจัด destination filename ตามข้อแก้ไขนโยบายชื่อซ้ำในข้อ 6 แทนข้อยกเว้นเดิมที่ยอมส่งชื่อซ้ำ unchanged แต่ชื่อข้าม batch ยังอาจซ้ำ/overwrite และไม่รับรอง provider independence ถ้าพบ conflict กับ protected reference ต้องหยุดก่อนส่ง
 
 ### 10. Failure, unknown overwrite และ recovery
 
@@ -249,7 +258,7 @@ Form ที่เผยแพร่ใหม่ใช้ชื่อ `<docs_numb
 
 - ใช้ trusted physical-row mapping และ existing column binding ไม่ใช้ compact answer-array index แทน row identity คงไฟล์ที่ active attachment-only/zero-byte rows และตรวจ required columns อื่นด้วย
 - Fully empty row ไม่บังคับแนบ Supported row append/delete-selected ต้อง preserve references/pending Files โดยไม่ upload/delete หาก mapping ไม่พิสูจน์ให้หยุดก่อนเปลี่ยน scope
-- Table batch ตรวจ duplicate destination/shared identity และ protected references ทั้งชุดก่อน dispatch ไม่เติม row suffix หากส่งหลายไฟล์แล้ว provider reuse identity ต้องรายงานจริง ไม่สร้างหลักฐานว่าแต่ละแถวเป็น independent version
+- Table และ scalar upload plans ใช้ namespace เดียวตามข้อ 6 ตรวจ destination/shared identity และ protected references ทั้งชุดก่อน dispatch ไม่เติม row identity หรือ suffix เพิ่มนอกนโยบาย หาก provider reuse identity ต้องรายงานจริง ไม่สร้างหลักฐานว่าแต่ละแถวเป็น independent version
 - Admin ทำ attachment changes เฉพาะ valid final Save Correction พร้อม reason/base revision/lease/eligibility เดิม ไม่ใช้สิทธิ์ Admin ไปแก้ Draft ของ User โดยตรง
 - Correction ใช้ frozen storage mode ของ Submission นั้น ทั้ง legacy/new mode ไม่เปลี่ยนตาม catalog และไม่เขียนทับ destination ที่ Submission/older Correction ยังปกป้องอยู่
 - Internal workspace/project saves ไม่ upload Pending files/removals ข้าม remount ได้เฉพาะ verified scope/row mapping ไม่ย้ายไฟล์ค้างจาก completed snapshot ไป operation ใหม่โดยเดา
@@ -285,7 +294,7 @@ Form ที่เผยแพร่ใหม่ใช้ชื่อ `<docs_numb
 1. **Admin CRUD:** list/filter by numeric ID, same label/different ID, empty/error/loading, create/edit/move/delete confirmation, duplicate names across categories รวม race, malformed/unknown ID, disabled/non-Admin access และไม่มี secrets ใน response
 2. **Catalog lifecycle:** rename/move/delete ขณะ popup เปิดหรือ publish กำลัง commit, final-entry deletion ทำหมวดเลือกไม่ได้, stale Draft ต้องเลือกใหม่, Published snapshots และ legacy values ไม่เปลี่ยน, ไม่มี file write จาก CRUD
 3. **Authoring/publication:** two dependent selects, cancel/Escape/focus, scoped relay, explicit confirmation, stable Tags/bindings/native proof, dirty state, incomplete Draft save, exactly-one root `docs_number`, no attachment-imposed `fiscal_year`, offline publication จาก saved valid mapping และ duplicate เป็น link ใหม่โดยไม่มี Responses
-4. **Mode contract:** persisted mode ไม่เดาจากปี; new mode multipart มีสอง fieldเท่านั้นและ filename/extension ถูกต้อง; legacy mode คง request เดิม; object และ one-item-array receipts ตาม modes, malformed/unsafe/null/multi receipts ถือ unknown โดยไม่มี resend/search fallback
+4. **Mode contract:** persisted mode ไม่เดาจากปี; new mode multipart มีสอง fieldเท่านั้นและ filename/extension ถูกต้อง; batch duplicates ใช้ลำดับ deterministic ร่วม scalar/table, จอง natural bases รวม literal `-(1)`, คง extension/casing/extensionless และ reset ทุก batch; legacy UUID naming คงเดิม; object และ one-item-array receipts ตาม modes, malformed/unsafe/null/multi receipts ถือ unknown โดยไม่มี resend/search fallback
 5. **Bytes/validation:** byte equality, any file type รวม original HTML/binary/password-protected/extensionless, case-preserved extension, sizes 0, 1, 9,999,999, 10,000,000 และ 10,000,001, forged size/MIME/Content-Length, unsafe metadata และ JSON 262,144-byte boundary
 6. **Original reuse:** `docs_number` เปลี่ยนไม่มี File ใหม่, replacement wins, year-only/unchanged ไม่ upload; trusted committed/account/slot checks; binary versus viewer/preview/error, redirects/auth/expiry/timeouts/wrong size/oversize และไม่มี bytes ถูก persist นอก DCM
 7. **Replacement/identity:** same-token/link overwrite, distinct receipt, aliases, multiple slots/rows, foreign owner/history destination conflictsก่อน send, concurrent save/reference/delete barriers, B commit ก่อน eligible A cleanup และ no shared-identity DELETE

@@ -7,17 +7,17 @@ import {
   LogOut,
   Menu,
   ScrollText,
+  Settings,
   ShieldCheck,
   UserRound,
   UsersRound,
-  WandSparkles,
   X,
 } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { LegacySsoSwitchButton } from "@/components/legacy-sso-switch-button";
 import { Button, Notice, Spinner } from "@/components/ui";
-import { ApiError, apiGet, homePathForRole } from "@/lib/api";
+import { apiGet, homePathForRole } from "@/lib/api";
 import type { ResponseAttachmentCleanup } from "@/lib/api";
 import { roleFor, useAuth } from "@/lib/auth";
 
@@ -35,7 +35,6 @@ const AdminNavigation = ({
     pathname === "/admin" || pathname.startsWith("/admin/forms/");
   const auditAreActive = pathname.startsWith("/admin/audit");
   const resultsAreActive = pathname.startsWith("/admin/results");
-  const authoringIsActive = pathname.startsWith("/admin/ai-authoring");
 
   return (
     <>
@@ -91,19 +90,8 @@ const AdminNavigation = ({
         activeProps={{ className: "bg-[var(--accent-soft)] text-[var(--ink)]" }}
         onClick={onNavigate}
       >
-        <FileText size={16} />
-        แม่แบบจัดเก็บเอกสาร
-      </Link>
-      <Link
-        to="/admin/ai-authoring"
-        className={`${navigationLinkClassName} ${
-          authoringIsActive ? "bg-[var(--accent-soft)] text-[var(--ink)]" : ""
-        }`}
-        aria-current={authoringIsActive ? "page" : undefined}
-        onClick={onNavigate}
-      >
-        <WandSparkles size={16} />
-        AI Authoring
+        <Settings size={16} />
+        ตั้งค่าระบบ
       </Link>
       <Link
         to="/dashboard"
@@ -188,9 +176,7 @@ const ResponseDeletionWarnings = ({
 
 export const AppShell = ({ children }: { children: React.ReactNode }) => {
   const { user, signOut } = useAuth();
-  const [logoutError, setLogoutError] = useState<"cleanup" | "sign-out" | null>(
-    null
-  );
+  const [logoutError, setLogoutError] = useState(false);
   const [loggingOut, setLoggingOut] = useState(false);
   const [open, setOpen] = useState(false);
   const navigate = useNavigate();
@@ -204,7 +190,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
       return;
     }
     setLoggingOut(true);
-    setLogoutError(null);
+    setLogoutError(false);
     try {
       await signOut();
       await navigate({
@@ -212,12 +198,8 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
         search: { returnTo: undefined },
         to: "/login",
       });
-    } catch (error) {
-      setLogoutError(
-        error instanceof ApiError && error.sessionRevoked
-          ? "cleanup"
-          : "sign-out"
-      );
+    } catch {
+      setLogoutError(true);
     } finally {
       setLoggingOut(false);
     }
@@ -339,11 +321,7 @@ export const AppShell = ({ children }: { children: React.ReactNode }) => {
       </header>
       {logoutError ? (
         <div className="mx-auto max-w-[1240px] px-5 pt-4 lg:px-8">
-          <Notice tone="danger">
-            {logoutError === "cleanup"
-              ? "ออกจากระบบแล้ว แต่การล้างข้อมูล AI ไม่สำเร็จ"
-              : "ไม่สามารถออกจากระบบได้ กรุณาลองใหม่อีกครั้ง"}
-          </Notice>
+          <Notice tone="danger">ไม่สามารถออกจากระบบได้ กรุณาลองใหม่อีกครั้ง</Notice>
         </div>
       ) : null}
       {legacySsoError ? (

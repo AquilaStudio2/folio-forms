@@ -16,7 +16,7 @@ const session = await prisma.session.findFirstOrThrow({
   orderBy: { createdAt: "desc" },
   where: { userId: response.userId },
 });
-const app = createApp({ legacySso: null, omniRoute: null });
+const app = createApp({ legacySso: null });
 const headers = { Authorization: `Bearer ${session.token}` };
 const dataResponse = await app.handle(
   new Request(`http://test.local/api/responses/${response.id}/draft/json`, {

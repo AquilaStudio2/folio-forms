@@ -50,7 +50,6 @@ const native = enabled
   : null;
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   prefillHandoffSecret: "project-history-fixture-handoff-secret",
   pdmsProjects: upstream
     ? { baseUrl: upstream.url.origin, secret: "history-fixture-secret" }

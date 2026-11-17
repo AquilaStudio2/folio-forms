@@ -266,7 +266,6 @@ test("VIEWER cannot mutate even their own old responses or obtain editing creden
     ["DELETE", `/api/admin/forms/${f.form.publicId}`],
     ["POST", "/api/admin/users"],
     ["PATCH", `/api/admin/users/${f.viewer.id}`],
-    ["POST", "/api/admin/ai-authoring/sessions"],
   ] as const) {
     const result = await f.request(
       path,
@@ -284,7 +283,6 @@ test("VIEWER cannot mutate even their own old responses or obtain editing creden
     "/api/admin/forms",
     "/api/admin/account-links",
     "/api/admin/audit-events",
-    "/api/admin/ai-authoring",
   ]) {
     expect({ path, status: (await f.request(path)).status }).toEqual({
       path,

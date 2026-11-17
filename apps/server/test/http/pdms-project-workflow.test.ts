@@ -35,7 +35,6 @@ const native = enabled
   : null;
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   pdmsProjects: upstream
     ? { baseUrl: upstream.url.origin, secret: "workflow-fixture-secret" }
     : null,

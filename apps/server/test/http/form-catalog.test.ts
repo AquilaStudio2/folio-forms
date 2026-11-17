@@ -21,7 +21,6 @@ if (!process.env.DATABASE_URL) {
 
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   onlyOffice: {
     convertDocxToPdf: () => Promise.resolve(new Uint8Array()),
     forceSave: () => Promise.resolve(false),

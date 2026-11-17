@@ -10,6 +10,16 @@
 
 คำตัดสินเดิมข้อ 1–3 ปิดครบแล้ว ผู้ใช้ยืนยันเพิ่มว่าหน้า Admin ต้องจัดการรายการแม่แบบครบทั้ง list/filter เพิ่ม แก้ไข และลบ การดาวน์โหลดต้นฉบับจาก file_link ให้ได้ทุกชนิดไฟล์และการป้องกัน ownership/history/failure เป็นงานออกแบบและ verification ใน implementation ไม่ใช่คำถามให้ผู้ใช้เลือกที่เก็บไฟล์ซ้ำอีก ผลทดสอบและคำถามเก่าด้านล่างคงไว้เป็นลำดับหลักฐาน ไม่ใช่รายการ blocked ปัจจุบัน
 
+## ข้อแก้ไขนโยบายชื่อซ้ำภายใน batch — 2026-11-17
+
+ผู้ใช้อนุญาตให้เปลี่ยนนโยบายเฉพาะ storage mode `template`: หนึ่ง explicit Save Draft/Submit/final Save Correction upload batch ใช้ namespace เดียวรวม scalar/table upload plans ตามลำดับ slot เดิมที่ deterministic รายการแรกของ natural base filename คงเดิม รายการซ้ำเติม `-(1)`, `-(2)` ทันทีหน้า original extension โดยคง casing; ไม่มี original extension ให้เติมท้าย เช่น `กทอ.xx-xx-xxxx-ก่อหนี้-4_ขยาย(45)-(1)`
+
+จอง natural base filenames ทั้ง batch ก่อนจัดชื่อ และข้าม suffix ที่ชน natural base ของแม่แบบอื่นหรือชื่อที่จัดให้แล้ว เช่นแม่แบบที่มี literal `-(1)` ต้องได้ชื่อเดิม Counter reset ทุก batch ไม่จองข้าม save ไม่ rename ไฟล์เก่า ไม่แก้ frozen `template_name`, original answer metadata หรือ ledger schema และ ledger เก็บ destination filename ที่ส่งจริง Legacy UUID policy คงเดิม ไม่เพิ่ม row IDs/schema/config/UI
+
+ข้อแก้ไขนี้ supersede การยอมส่งชื่อซ้ำ unchanged ภายใน batch และข้อห้าม suffix เฉพาะกรณีนี้ ไม่เปลี่ยนคำตัดสินปิดแล้วข้อ 1–3 ไม่ข้าม ownership/history/unknown-operation guards และไม่เพิ่ม POST/DELETE retry ดู contract ฉบับเต็มที่ [spec ข้อ 6](spec.md#6-template-mode-upload)
+
+**Local implementation verified:** [BATCH evidence](acceptance-matrix.md#batch-filename-verification) มี final HTTP 143 ผ่าน/0 fail และ standalone real-listener smoke ที่ได้ชื่อเดิม/`-(1)`/`-(2)` พร้อม bytes แยก physical rows คง guard เดิม ผล native/HTTP/provider ก่อนหน้าเป็น historical evidence ไม่ใช่หลักฐานใหม่นี้ ไม่มี live DCM calls การจับแม่แบบ/ปลายทางของชื่อเติมเลขยัง **unverified / HOLD** ไม่รับรอง DCM acceptance, cross-batch uniqueness หรือ token/URL อิสระทุกไฟล์
+
 
 ## สิ่งที่ผู้ใช้ต้องการ
 
@@ -80,9 +90,9 @@
 
 ### Q6 — สถานะข้อเสนอรหัสแยกฉบับ
 
-ยังไม่ได้รับอนุมัติให้เพิ่มรหัสใน filename และจะไม่ถือว่ารหัสเพิ่มเป็น requirement ที่ผู้ใช้ต้องเลือกเพื่อเก็บประวัติร่าง A หลังคำชี้แจงล่าสุด ไม่ถามซ้ำโดยตั้งสมมติฐานว่าต้องเก็บ A หลังแทนด้วย B
+ประวัติคำตัดสินก่อนข้อแก้ไขนโยบายชื่อซ้ำด้านบน: ยังไม่ได้อนุมัติ UUID/รหัสฉบับเพื่อเก็บ A หลังแทนด้วย B ข้อแก้ไขล่าสุดอนุญาตเฉพาะ counter ของชื่อซ้ำภายใน batch ไม่ใช่ version ID และไม่เปิดคำถามเดิมเรื่องเก็บ A ซ้ำ
 
-คำถามรอบแรกเรื่องชื่อซ้ำ/token ปิดแล้วตามคำตอบและภาพทดสอบของผู้ใช้วันที่ 2026-11-17: กรณีชื่อ/ปลายทางเดิมใช้ token/URL เดิมและเขียนทับไฟล์เดิม ห้ามอัปโหลด B แล้ว DELETE token A ซ้ำเมื่อเป็น identity เดียวกัน ยังคง ownership/reference checks และไม่เติม suffix หรือเปลี่ยนชื่อโดยพลการ
+คำถามรอบแรกเรื่องชื่อซ้ำ/token ปิดแล้วตามคำตอบและภาพทดสอบของผู้ใช้วันที่ 2026-11-17: กรณีชื่อ/ปลายทางเดิมใช้ token/URL เดิมและเขียนทับไฟล์เดิม ห้ามอัปโหลด B แล้ว DELETE token A ซ้ำเมื่อเป็น identity เดียวกัน ยังคง ownership/reference checks ไม่เปลี่ยนชื่อโดยพลการนอกข้อแก้ไข batch numbering ที่ผู้ใช้อนุญาตด้านบน
 
 ## วงจรไฟล์ User ที่ยืนยันล่าสุด
 
@@ -128,7 +138,7 @@
 ### Upload และการเปลี่ยนไฟล์
 
 7. รูปแบบใหม่ตรวจ `docs_number` จาก root Tag กับ Storage Template ที่ Admin เลือก ไม่บังคับ Tag `fiscal_year` แต่ไม่ลบ Field/คำตอบปีหรือข้าม required Field rules อื่นของฟอร์ม
-8. ส่ง original bytes เป็น multipart `documentFile` พร้อม `template="1"` เท่านั้น รูปแบบชื่อที่ผู้ใช้ต้องการยังเป็น `<docs_number>-<template_name>.<original-extension>`; ถ้าไม่มี extension ไม่เติมเอง ไม่เติม UUID/รหัสฉบับโดยไม่ได้ตกลงและไม่มี grammar รองรับ
+8. ส่ง original bytes เป็น multipart `documentFile` พร้อม `template="1"` เท่านั้น Base filename เป็น `<docs_number>-<template_name>.<original-extension>`; คง original extension/casing และไม่เติมนามสกุลเอง ชื่อซ้ำภายใน batch ใช้ counter ตามข้อแก้ไขนโยบายด้านบน ไม่เพิ่ม UUID/รหัสฉบับหรือ row identity
 9. เลือกไฟล์อย่างเดียวไม่ upload ใช้จังหวะ Save Draft/Submit เดิม เมื่อ B เขียนทับด้วย token/identity เดียวกับ A ไม่ DELETE token นั้นซ้ำ กรณีไฟล์คนละ identity ทำ cleanup A หลัง canonical B commit และผ่าน ownership/reference checks เท่านั้น ถ้าลบ A ไม่สำเร็จ B ยังส่งสำเร็จพร้อม warning ที่คงอยู่ และไม่อ้างว่า external in-place overwrite สามารถ rollback ด้วย DB transaction ได้
 10. Canonical JSON เก็บ URL/token/ชื่อเดิม/ขนาดตาม contract เดิม หลัง Submit แสดง URL ของไฟล์ที่บันทึกแทนปุ่มในโหมดดู/ส่งออก ส่ง URL ของ provider ตามจริง ไม่ export file token เป็น field แยก และไม่ส่ง service Bearer/credentials ลง workbook ทั้งนี้ URL ของ provider อาจมี file token อยู่ใน query ตามผล live ท้ายเอกสาร
 11. คงทุกชนิดไฟล์, ขอบเขต 0–10,000,000 bytes, requiredness, row ownership, validation และการป้องกัน unknown outcomes ของระบบเดิม ไม่ยืม PDF-only gate ของ Ongoing หรือเพิ่มการ retry upload/delete อัตโนมัติ
@@ -149,7 +159,7 @@
 
 1. งานตรวจเทคนิคก่อนเปิดใช้: filename grammar ที่มีขีด/นามสกุลและไม่มีนามสกุล, การโหลด original bytes จาก trusted file_link สำหรับทุกชนิดไฟล์และขนาดที่อยู่ในขอบเขต, auth/redirect/error/timeout และผล in-place overwrite ตรวจเนื้อหาจริง ไม่ใช้เพียง HTTP 200 หรือการเปิดหน้า viewer สำเร็จแทน proof ข้อนี้ไม่ใช่ gate ให้ PM ตรวจชื่อ type เทียบกับ folder label
 2. **ปิดแล้ว:** กรณี overwrite ที่ผู้ใช้ยืนยันใช้ token/URL เดิม ไม่ DELETE token เดิมซ้ำ ผลรอบก่อนที่ได้ token ใหม่เป็นหลักฐานเฉพาะตัวอย่างนั้น ไม่ใช่เหตุให้ถามข้อ 2 ซ้ำหรือรอ DCM มายืนยันคำตอบเดิมอีก
-3. ผู้ใช้ยอมรับชั่วคราวให้หลายช่อง/หลายแถวส่งชื่อซ้ำได้ ต้องบันทึกข้อจำกัดและเตือนอีกครั้งก่อน implementation/เปิดใช้ ไม่รับรอง independence ของทุกช่องจากตัวอย่างเดียว และไม่เติม suffix ที่เดาเอง
+3. ข้อยกเว้นชั่วคราวเดิมที่ยอมส่งชื่อซ้ำ unchanged ภายใน batch **ถูกแทนที่แล้ว** ด้วยข้อแก้ไขนโยบายด้านบน ต้องตรวจ batch-wide numbering และ natural-base reservation โดย parent ส่วนชื่อข้าม batch ยังอาจ overwrite และ provider suffix routing ยัง unverified / HOLD ไม่รับรอง independence
 4. เดิมเอกสาร Postman/current Ongoing code ยืนยันได้เฉพาะ request shape ต่อมาผู้ใช้ให้คำตอบจาก DCM และอนุญาตทดสอบ API จริงเฉพาะชื่อที่ระบุในหัวข้อรอบทดสอบด้านล่าง การยืนยันคำตอบยังต้องแยก user-reported contract ออกจากผล runtime ที่สังเกตจริง
 
 สถานะ: คำตัดสินข้อ 1–3 ปิดครบแล้วตามผู้ใช้ เก็บ DCM แห่งเดียว ใช้ category ID สำหรับ grouping และทำ Admin CRUD ครบ ไม่มีคำถามเดิมค้างให้ตอบ ยังไม่ได้เริ่ม implementation/migration และการปิดแผนไม่ใช่การรับรองว่า downloader/CRUD ถูกพัฒนาหรือผ่าน Production acceptance แล้ว
@@ -172,7 +182,7 @@
 
 ### ข้อจำกัดชั่วคราวที่ต้องเตือนอีกครั้ง
 
-ผู้ใช้ตัดสินใจให้หลายช่อง/หลายแถวส่งชื่อซ้ำไปก่อนได้ แต่ไม่รับรองว่าไฟล์แต่ละช่องแยกกันในทุกกรณี คำแจ้งเดิมเรื่อง overwrite/token เดิมขัดกับตัวอย่าง live ที่ได้ token/URL ใหม่และพบรายการ A/B แยกกัน ต้องเตือนข้อยกเว้นนี้อีกครั้งก่อน implementation และเปิดใช้ ไม่เติม suffix เอง ไม่ใช้ token ต่างกันเพียงอย่างเดียวแทนการตรวจ ownership/reference หรือรับรองว่า DELETE ไม่กระทบไฟล์อื่น
+**Historical decision ก่อนข้อแก้ไขนโยบายชื่อซ้ำด้านบน:** ผู้ใช้เคยยอมให้หลายช่อง/หลายแถวส่งชื่อซ้ำ unchanged ไปก่อน ไม่ใช่ intended policy ปัจจุบันภายใน batch เดียวกัน คำแจ้งเดิมเรื่อง overwrite/token เดิมขัดกับตัวอย่าง live ที่ได้ token/URL ใหม่และพบรายการ A/B แยกกัน ผล live เดิมไม่รองรับการ routing ของชื่อเติมเลขใหม่และไม่รับรองว่าไฟล์แต่ละช่องเป็นอิสระทุกกรณี
 
 ข้อยกเว้นนี้ไม่ใช่การอนุญาตให้ลบ B ตามไปด้วย ข้าม ownership/reference checks หรือเขียนทับไฟล์ที่มีอยู่ก่อนในรอบทดสอบ และยังไม่ขยายเป็นการอนุญาตให้แก้เนื้อหาข้อมูลคนอื่น/ประวัติเดิมโดยไม่แจ้ง
 

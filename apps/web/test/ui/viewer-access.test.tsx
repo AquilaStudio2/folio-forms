@@ -1120,7 +1120,6 @@ describe("VIEWER existing results access", () => {
     "/admin",
     "/admin/users",
     "/admin/audit",
-    "/admin/ai-authoring",
     "/admin/forms/new",
     "/admin/results/response-id/correction",
     "/dashboard",
@@ -1168,9 +1167,6 @@ describe("VIEWER existing results access", () => {
     ).not.toBeInTheDocument();
     expect(
       screen.queryByRole("link", { name: "Audit Trail" })
-    ).not.toBeInTheDocument();
-    expect(
-      screen.queryByRole("link", { name: "AI Authoring" })
     ).not.toBeInTheDocument();
   });
 });

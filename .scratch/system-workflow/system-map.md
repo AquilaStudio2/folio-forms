@@ -1,5 +1,25 @@
 # Folio Forms: แผนผังการทำงานทั้งระบบ
 
+ปรับคำอธิบายนโยบายชื่อปลายทางวันที่ 18 พฤศจิกายน 2026 บน working tree `feat/ecm-storage-templates` ฐาน `0a12d91a5b72d4470ae9ceed1c3d4845d2103ced`: mode `template` จัดสรร suffix สำหรับชื่อซ้ำเฉพาะ explicit save/upload batch ปัจจุบันก่อน ledger admission และ POST ตามรายละเอียดหัวข้อ 08 แหล่ง implementation คือ [shared attachment planner](../../apps/server/src/ecm/attachments.ts) ผล smoke ใหม่ผ่าน Bun HTTP listener จริงตั้งแต่ login, multipart Save Draft, Operation poll ถึง saved JSON และ canonical XLSX โดย local provider ใช้ filename เป็น resource key: ได้ชื่อเดิม, `-(1)`, `-(2)`, อ่าน bytes 11/12/13 ตรง physical rows และ URL ที่ C10/C11/C12 ไม่มี DELETE ใช้ ONLYOFFICE Builder จริง แต่ capture seam ใช้ XLSX สังเคราะห์ที่บันทึกไว้ ไม่ใช่ browser editor Root scoped format/lint สอง source files และ server typecheck ผ่าน ผล native/provider เก่าไม่รับรองนโยบายใหม่นี้ ยังไม่ยืนยัน DCM routing ของ suffix หรือความไม่ซ้ำข้าม batch และไม่มี live DCM calls ในงานนี้
+
+ทบทวนกล่องแนบไฟล์วันที่ 17 พฤศจิกายน 2026 จาก working tree ใน delivery checkout เดิม: ปุ่มเลือกไฟล์มี label ภาษาไทยและซ่อน native file input เลือกใหม่แทนที่เฉพาะไฟล์ในหน้าต่าง **บันทึก** ยืนยันเข้าหน่วยความจำของ host หลัง trusted acknowledgement ส่วน **ยกเลิก/กากบาทก่อนยืนยัน** ทิ้งเฉพาะการเลือกในหน้าต่างและคงสถานะก่อนเปิดไว้ ปุ่มคืนไฟล์เดิม/นำไฟล์ออกแสดงตามสถานะ ไม่มีการ upload หรือแก้ canonical จาก dialog; การเก็บถาวรยังใช้ explicit Save Draft, Submit หรือ final Save Correction เดิม ไม่เปลี่ยน schema, mutation API หรือ provider contract และไม่เรียก DCM จริงในการตรวจ UI รอบนี้
+
+ผลตรวจรอบกล่องไฟล์: plugin 336 tests, web UI 265 tests และ lifecycle 12 tests ผ่าน ตรวจ native ONLYOFFICE 9.4 แบบ scalar ด้วยฟอร์มสังเคราะห์ ไม่ต่อ PostgreSQL/RustFS/DCM: เลือก/แทนที่ บันทึก เปิดกลับ ยกเลิก/กากบาท คืนไฟล์เดิม/นำออก ไฟล์ศูนย์ไบต์ ปฏิเสธไฟล์เกินขนาด และ keyboard chooser ผ่าน ทดสอบหน่วง trusted acknowledgement ก่อนถึง picker จริงแล้ว Cancel/X ไม่ปิดระหว่างยืนยันหรือ timeout; late success ปิดได้โดยไม่ส่ง File ซ้ำ ตรวจสีข้อความผิดพลาดทั้ง system light/dark และไม่พบแนวนอนล้น หลังแยก helper เพื่อผ่าน lint ตรวจ native Save/Cancel/reopen ซ้ำบน source สุดท้ายแล้ว Root scoped lint/format 4 files ผ่าน, types 5/5 (server ตรวจใหม่ อีก 4 tasks ใช้ cache), build 3/3 (server/plugin ตรวจใหม่ อีก 2 tasks ใช้ cache) ผ่าน ไม่ใช้ผลนี้รับรอง native table ทุกกรณี, live DCM upload หรือ Production
+
+คง context ของข้อความไฟล์เกินขนาด: แสดง Tag และเลขแถวข้อมูลแบบเริ่มที่หนึ่งเมื่อเป็นตาราง regression พบข้อความขาดตำแหน่งทั้ง scalar/table 2 กรณีก่อนแก้ และผ่านหลังแก้ โดยไม่ทำให้ File ที่ยืนยันแล้วหรือ local candidate ที่ valid ถูกแทนด้วยไฟล์เกินขนาด ไม่เปลี่ยน zero-based `row_index` ที่เก็บในคำตอบ
+
+เมื่อรับ UI ชุดใหม่นี้ ให้จัดการงานค้างก่อนเปิด editor ใหม่ทั้งหน้า เพื่อโหลด footer **บันทึก/ยกเลิก** พร้อม picker รุ่นเดียวกัน ห้ามรีโหลดทิ้ง File ที่ยังไม่บันทึก การบันทึกใน dialog ไม่แทนการบันทึกคำตอบที่หน้าหลัก
+
+วันที่ 17 พฤศจิกายน 2026 ถอด AI Authoring ตามคำสั่งเจ้าของระบบ ทั้งหน้า เมนู HTTP endpoints, Pi/OmniRoute, document worker และ config/dependencies เฉพาะฟีเจอร์ การสร้าง Form, DOCX/XLSX, Template Draft และข้อมูลเดิมยังใช้ flow ปกติ การ logout, เปลี่ยนรหัสผ่าน, account mutation และ SSO ยังคงเพิกถอน session ตามเงื่อนไขเดิม ไม่ทำ schema migration หรือลบข้อมูล/ไฟล์ที่บันทึกแล้ว ADR 0001 เก็บไว้เป็นประวัติพร้อมสถานะ Retired
+
+ผลตรวจการถอด AI: retained HTTP 122 tests / 5,000 assertions จาก 8 suites (`callback`, `legacy-provisioning`, `legacy-review`, `legacy-session`, `legacy-roles`, `viewer-role`, `native-scalar`, `admin-user-workflow`) ผ่านบนฐาน PostgreSQL และ RustFS bucket แยก ใช้ migrations เดิม 36 รายการเฉพาะฐานทดสอบ; ไม่ migrate ฐานใช้งานเดิม เคส conversion/database/object-cleanup failure เป็น fault injection ที่มี assertions รองรับ ไม่ใช่ suite failure Web lifecycle 12 และ UI 265 tests ผ่าน Root typecheck 5/5 (web/server ตรวจใหม่ อีก 3 tasks ใช้ cache), build 3/3 (web/server ตรวจใหม่ prefill-mock ใช้ cache) และ scoped root lint/format 348 files ผ่าน ไม่ใช้ผลนี้อ้างว่า whole-repo Markdown format debt ที่อยู่นอกงานได้รับการแก้แล้ว
+
+Smoke ผ่าน Bun HTTP listener จริง: AI endpoints เดิมทั้ง 6 คืน 404, สร้าง DOCX Draft ปกติได้, editor-config เป็น DOCX/edit และ logout ทำให้ bearer เดิมอ่าน session ได้ 401 Browser บน runtime แยกที่ 3030/5174 ยืนยันเมนู AI หาย หน้า New Form ยังมี DOCX/XLSX และ URL AI เดิมแสดง Not Found โดยไม่ส่ง AI API requests คู่มือเหลือ 22 diagrams, 25 page declarations, 104 API declarations และ 35 models; ตรวจภาพ 02/03/05/12 กับหน้าตารางและ source links แล้ว ไม่เรียก DCM/OmniRoute จริง และไม่ทดสอบ deployment ระหว่างตรวจพบ gateway เดิม 503 เพราะไม่มี listeners ที่ 3000/5173 จึงไม่อ้างว่า dev stack เดิมกำลังรัน หลังตรวจหยุด runtime ที่สร้างเอง ลบฐานทดสอบและ bucket พร้อม 82 objects แล้ว ไม่ลบ secrets, containers, volumes หรือข้อมูลเดิมของผู้ใช้
+
+ทบทวนหน้า **ตั้งค่าระบบ** วันที่ 17 พฤศจิกายน 2026 จาก working tree บน `feat/ecm-storage-templates` ฐาน `0a12d91`: เปลี่ยนชื่อเมนูและชื่อหน้าเพื่อรองรับส่วนตั้งค่าอื่น โดยคง URL เดิม แม่แบบจัดเก็บเอกสารอยู่ในกรอบเดียว แยกตัวเลือกหัวข้อจากแบบเพิ่มและตาราง CRUD ใช้ selector หลักชุดเดียว ไม่มีปุ่มโหลดซ้ำในสถานะปกติ และมีปุ่มลองใหม่เฉพาะเมื่อโหลดผิดพลาด ตรวจผ่าน actual development gateway ทั้งเพิ่ม ชื่อซ้ำ แก้ชื่อ ย้ายหัวข้อ reload แล้วยังอยู่ ยกเลิกด้วย Escape/focus restoration และยืนยันลบรายการทดสอบแล้ว ทดสอบ category/catalog outage ด้วย browser HTTP interception และกู้คืนด้วยปุ่มลองใหม่ ตรวจ desktop 1440 และ mobile 375/320 pixels ไม่พบแนวนอนล้น; ปุ่มแถว mobile มีพื้นที่ 44×44 pixels รายการทดสอบ local catalog ถูกลบแล้ว ไม่ upload หรือ DELETE ไฟล์ DCM ไม่เปลี่ยน schema, API contract, permissions หรือ Published Template และไม่ใช่ผล deployment
+
+ผลตรวจรอบ UI นี้: existing web UI 267 tests ผ่าน; root typecheck 5/5 (web ตรวจใหม่ อีก 4 tasks ใช้ cache), build 3/3 (web/server ตรวจใหม่ และ prefill-mock ใช้ cache) ผ่าน Root `bun run check` พบ Markdown format issues 23 files รวมเอกสารนอกขอบเขตงาน จึงไม่ใช้ผลนี้อ้างว่า whole-repo lint/format ผ่าน และไม่จัดรูปแบบ specs/tickets/CONTEXT ที่ไม่เกี่ยวข้อง
+
 ทบทวน Storage Templates ครบวงจรวันที่ 17 พฤศจิกายน 2026 บน delivery integration `feat/ecm-storage-templates` ที่ `baf64cb590b5390954d7f9f233f59f26f1405ceb` (production source `d8162b8`): Admin CRUD/category ID, frozen scalar/table choices, no-year upload, trusted original reuse/current physical-row references, Correction/history และ deletion/follow-up ใช้ flow เดิม ผลส่วนกลาง: HTTP 505 กรณีไม่ซ้ำจาก 39 suites ผ่านแบบ resumed runs, UI 267, plugin 319, spreadsheet 116, root lint/format 47 files, forced types 5/5 และ build 3/3 ผ่าน กรณี late receipt ครั้งแรกใช้ fixture lease 90 วินาทีเกินอายุ จึงแก้เฉพาะ fixture ให้เปิด editor-config จริงหลัง settlement; changed case/expiry guard ผ่านบน integration โดยไม่เปลี่ยน TTL หรืออ้างสาเหตุที่รอบเดิมช้า Standards และ Spec recheck ไม่เหลือ code findings หลังแก้ stale choices ทีละช่องและ semantic recovery Actual native08/source90b ตรวจ scalar/table/current-B/0-byte, สิทธิ์, warnings, selected revisions และ 6 XLSX + 6 PDF + unsaved XLSX; actual changed-authoring native/source d816 ตรวจ repair/recovery/further save/publish โดยไม่ทิ้งงาน รายละเอียดใน [acceptance matrix](../ecm-storage-templates/acceptance-matrix.md) Submitted fixture ยกเลิกเฉพาะ automatic next-round `/start` หลัง Submit ไม่ใช่ uninterrupted default Submit→Correction และไม่เปลี่ยน eligibility Populated-ledger smoke รักษา attempt/reference เดิม ไม่เดา hash/row backfill ไม่มี reset หรือ migrate ฐานผู้ใช้เดิม ผล live เพียง PDF เดียว; all-type/boundary/overwrite/settlement/provider revision และ human release acceptance ยัง HOLD จึงไม่ปิดตั๋ว04/08
 
 ทบทวน scalar upload และ whole-Response deletion วันที่ 17 พฤศจิกายน 2026 บน integration `feat/ecm-storage-templates` ที่ source commit `6c0ef6fc95a126f190e17348c9392f366f9d2bf6`: upload attempt เก็บ receipt เดิมแยกจาก canonical provider identity ที่ fence shared references/dispatch และใช้ปีเป็น nullable ตาม storage mode ผลส่วนกลางบน integration: scalar HTTP 90 tests ผ่านบน source ก่อน merge 07 และ deletion/follow-up HTTP 20 tests ผ่านหลัง merge 07 โดยไม่ใช้ผล worktree มาแทน การตรวจ native upload/reuse/table/Correction/export แบบรวมยังรอตั๋ว 04–06/08 ไม่ถือว่า feature ผ่านครบจากผลเหล่านี้
@@ -12,8 +32,7 @@
 
 ทบทวนส่วนตั้งค่าช่องแนบ Excel และ ECM authentication วันที่ 13 พฤศจิกายน 2026 บน `feat/ecm-attachments-config` จากฐาน implementation `b627865` ส่วนอื่นคงผลทบทวนเดิม ขอบเขตนี้เพิ่มการตั้งค่าจากปุ่มเดิมและ shared auth ไม่ได้ยืนยันวงจรอัปโหลดคำตอบ การตรวจ native browser หรือบริการ ECM จริง
 
-ทบทวน cutover ของ PoC เดิม วันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments-legacy` จาก source commit `6a87d0004dccba530401531777c9de42162d00c6` ครอบคลุม explicit Draft conversion, Published ordinary contract, Duplicate และ pending dirty guards ผล HTTP/UI/native/browser ผ่านการตรวจส่วนกลางตามขอบเขต legacy แล้ว ไม่ใช่หลักฐาน live ECM หรือการ deploy และยังไม่ยืนยันวงจร scalar upload/export ทั้งหมด
-ทบทวนวงจร scalar attachment วันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments` จาก source-containing commit `1362d403580ae0f0f027f19791db35a663feea2f` ซึ่งรวม source `22dbd6f9f6c8b055cc0ae50f960bb55e1eebac25`, การคืน shared workbook extraction ใน `b90fcfb0840e22609f6d0b5e02001e04e00ba4e7` และการลบ mock-echo tests: เพิ่ม explicit Save Draft/Submit, durable intent/receipt, atomic commit, after-send unknown hold และ checkpoint recovery ที่ fence sender เดิมด้วย lease rotation รวมการตรวจ original checkpoint ก่อนเปิด editor และการกู้ original Submit ตามผลจริง ผลตรวจ automated และ native/browser ใช้ระบบทดสอบแยกตามขอบเขตที่ระบุ ไม่ใช่หลักฐานบริการ ECM จริงหรือการ deploy; exported PDF control-overlap ยังอยู่ในขอบเขตตั๋ว 07 และไม่อ้างว่าแก้แล้ว
+ทบทวน cutover ของ PoC เดิม วันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments-legacy` จาก source commit `6a87d0004dccba530401531777c9de42162d00c6` ครอบคลุม explicit Draft conversion, Published ordinary contract, Duplicate และ pending dirty guards ผล HTTP/UI/native/browser ผ่านการตรวจส่วนกลางตามขอบเขต legacy แล้ว ไม่ใช่หลักฐาน live ECM หรือการ deploy และยังไม่ยืนยันวงจร scalar upload/export ทั้งหมด ทบทวนวงจร scalar attachment วันที่ 14 พฤศจิกายน 2026 บน `feat/ecm-attachments` จาก source-containing commit `1362d403580ae0f0f027f19791db35a663feea2f` ซึ่งรวม source `22dbd6f9f6c8b055cc0ae50f960bb55e1eebac25`, การคืน shared workbook extraction ใน `b90fcfb0840e22609f6d0b5e02001e04e00ba4e7` และการลบ mock-echo tests: เพิ่ม explicit Save Draft/Submit, durable intent/receipt, atomic commit, after-send unknown hold และ checkpoint recovery ที่ fence sender เดิมด้วย lease rotation รวมการตรวจ original checkpoint ก่อนเปิด editor และการกู้ original Submit ตามผลจริง ผลตรวจ automated และ native/browser ใช้ระบบทดสอบแยกตามขอบเขตที่ระบุ ไม่ใช่หลักฐานบริการ ECM จริงหรือการ deploy; exported PDF control-overlap ยังอยู่ในขอบเขตตั๋ว 07 และไม่อ้างว่าแก้แล้ว
 
 ตรวจ integration artifact เพิ่มหลัง merge: พบว่า manifest สำหรับ commit scalar ตกหล่น shared workbook attachment extraction แม้ implementation worktree ผ่านการตรวจ จึงนำ extraction ที่ตรวจ native แล้วมารวมใน integration และตรวจ native HTTP 39 tests/679 assertions, root type checks 5/5 และ build 3/3 บน integration โดยตรง เมื่อตรวจ spreadsheet-unit พบ test ที่ตรวจ mock renderer echo และ copied manifest/defaults จึงลบ assertion/fixture ที่ผูก implementation เหล่านั้นโดยไม่ re-pin ผล spreadsheet-unit 116 tests/301 assertions และ native ONLYOFFICE Picture 2 tests/16 assertions ผ่าน รวมการรักษาตำแหน่ง/ขนาดผ่าน publish/reopen และรูปจริงใน protected workbook ผ่าน replace/remove/PDF export นี่เป็นขอบเขตการตรวจที่ทำจริง ไม่ใช่ผลตรวจรับทั้งสเปกหรือ live ECM
 
@@ -45,17 +64,17 @@
 
 ทบทวน Storage Template authoring วันที่ 17 พฤศจิกายน 2026 บน `feat/storage-templates-02` จาก integration `03c4906`: normal Field metadata เก็บ storage mode/category ID/catalog identity/name; publication ตรวจ local mapping ภายใน transaction แล้วตรึง snapshot ส่วน upload lifecycle ของ mode ใหม่เป็นงานตั๋ว 03 ไม่ถือว่าเปิดใช้ upload ได้จาก authoring ที่เสร็จแล้ว
 
-ทบทวน scalar Storage Template upload วันที่ 17 พฤศจิกายน 2026 บน `feat/storage-templates-03` จาก integration `1d23d50`: new mode ใช้ multipart สอง field, filename ไม่มี suffix และไม่บังคับปี; แยก attempt evidence จาก canonical provider identity พร้อม destination/reference/delete fencing ก่อน dispatch การตรวจรับระบุในตั๋ว 03 ไม่ใช่หลักฐาน Production หรือ all-type original retrieval ซึ่งยังเป็นงาน 04
+ทบทวน scalar Storage Template upload วันที่ 17 พฤศจิกายน 2026 บน `feat/storage-templates-03` จาก integration `1d23d50`: new mode ในรอบนั้นใช้ multipart สอง field, filename ไม่มี suffix และไม่บังคับปี; แยก attempt evidence จาก canonical provider identity พร้อม destination/reference/delete fencing ก่อน dispatch ข้อความนี้เป็นประวัติก่อนนโยบาย suffix ภายใน batch ในหัวข้อ 08 การตรวจรับระบุในตั๋ว 03 ไม่ใช่หลักฐาน Production หรือ all-type original retrieval ซึ่งยังเป็นงาน 04
 
 เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
-รายการ source ครอบคลุมหน้าและ layout ฝั่งเว็บ, HTTP routes ของเซิร์ฟเวอร์หลัก, private document worker และ Prisma models
+รายการ source ครอบคลุมหน้าและ layout ฝั่งเว็บ, HTTP routes ของเซิร์ฟเวอร์หลัก และ Prisma models
 
 ดูรายการที่สร้างจาก source และคำสั่งตรวจซ้ำได้ใน [inventory.md](inventory.md), [inventory.json](inventory.json) และ [survey.py](survey.py)
 
 ## วิธีอ่าน
 
-ถ้าต้องการรู้ว่า "บันทึกแล้วกลับมาแก้ได้ไหม" ให้อ่านภาพ 16 ถึง 23 ก่อน ส่วนภาพ 01 เป็นวงจรหลัก ภาพ 02 เป็นแผนที่หน้า ภาพ 03 ถึง 12 อธิบายแต่ละ feature และภาพ 13 ถึง 15 แสดงบริการ การเก็บข้อมูล และการกู้สถานะงานค้าง
+ถ้าต้องการรู้ว่า "บันทึกแล้วกลับมาแก้ได้ไหม" ให้อ่านภาพ 15 ถึง 22 ก่อน ส่วนภาพ 01 เป็นวงจรหลัก ภาพ 02 เป็นแผนที่หน้า ภาพ 03 ถึง 11 อธิบายแต่ละ feature และภาพ 12 ถึง 14 แสดงบริการ การเก็บข้อมูล และการกู้สถานะงานค้าง
 
 ลูกศรทึบแสดงลำดับหรือการเรียกโดยตรง ลูกศรประแสดงเส้นทางเพิ่มเติมหรือการเชื่อมระบบภายนอก ข้อความบนลูกศรตัดสินใจอธิบายเงื่อนไขจริง
 
@@ -75,7 +94,7 @@
 
 บนหน้ากรอก Excel ปุ่ม **ดาวน์โหลด Excel** และ **ดาวน์โหลด PDF** ให้สำเนาจากสมุดงานที่กำลังเปิด รวมค่าที่เพิ่งแก้ การกลับมาเปิดร่างใน Folio ใช้ค่าจากการบันทึก Draft ที่สำเร็จครั้งล่าสุด
 
-<p><a href="#section-16">อ่านโฟลวบันทึกและเปิดกลับ</a> · <a href="#section-17">สถานะ Form</a> · <a href="#section-18">สถานะคำตอบ</a> · <a href="#section-22">สถานะทั้งหมด</a> · <a href="#section-23">ตัวอย่างใช้งานข้ามวัน</a></p>
+<p><a href="#section-15">อ่านโฟลวบันทึกและเปิดกลับ</a> · <a href="#section-16">สถานะ Form</a> · <a href="#section-17">สถานะคำตอบ</a> · <a href="#section-21">สถานะทั้งหมด</a> · <a href="#section-22">ตัวอย่างใช้งานข้ามวัน</a></p>
 
 ## 01 ภาพรวมตั้งแต่เข้าระบบจนอ่านผล
 
@@ -146,9 +165,8 @@ flowchart LR
     detail["/admin/results/:responseId"]
     correction[".../:responseId/correction"]
     users["/admin/users"]
-    storageTemplates["/admin/storage-templates"]
+    storageTemplates["ตั้งค่าระบบ<br/>/admin/storage-templates"]
     audit["/admin/audit"]
-    ai["/admin/ai-authoring"]
     dashboard["/dashboard"]
     fill["/forms/:publicId/fill"]
     ownHistory["/forms/:publicId/submissions"]
@@ -167,7 +185,6 @@ flowchart LR
     admin --> users
     admin --> storageTemplates
     admin --> audit
-    admin --> ai -->|"นำ DOCX ไปสร้าง Form"| form
     dashboard --> fill
     dashboard --> receipt
     dashboard -->|"เคยส่งแล้ว"| ownHistory --> receipt
@@ -192,23 +209,25 @@ flowchart LR
 | `/admin/results/:responseId`, Admin และ Viewer | อ่านร่างที่บันทึก หรือ Submission ล่าสุดพร้อม Correction | มีแท็บ Document / Fields และปุ่มดาวน์โหลดชุดเดียวด้านขวาเฉพาะ submitted: Excel สำหรับ XLSX หรือ DOCX สำหรับ DOCX รวม PDF ตาม revision ที่เลือก Admin ไป Correction หรือลบ Response ได้ |
 | `/admin/results/:responseId/correction`, Admin | แก้ Submission ล่าสุดผ่าน editor แยก | กรอกเหตุผลแล้วบันทึก Correction ใหม่; กลับรายละเอียดเมื่อไม่มี pending File/removal ใหม่ หากมีให้คง editor และเตือนก่อน explicit discard ไม่บันทึกซ้ำด้วย workspace เดิม |
 | `/admin/users`, Admin | ค้นหาและจัดการบัญชี กับคำขอเชื่อมบัญชี PDMS | สร้างบัญชี เปลี่ยนอีเมล บทบาท เปิดปิดบัญชี reset รหัส ลบบัญชีหลังลบ Responses แล้ว และอนุมัติหรือปฏิเสธการเชื่อม |
-| `/admin/storage-templates`, enabled Admin | เลือกหัวข้อเอกสาร ดู/กรอง แม่แบบจัดเก็บเอกสาร | เพิ่ม แก้ชื่อ/ย้ายหมวด และยืนยันลบ local catalog; Cancel/Escape ไม่เปลี่ยนข้อมูล ไม่แตะไฟล์หรือ Published Template |
+| `/admin/storage-templates`, enabled Admin | ตั้งค่าระบบ: ส่วนแม่แบบจัดเก็บเอกสาร เลือกหัวข้อชุดเดียวเพื่อดูและเพิ่มรายการในกลุ่มนั้น | ตารางเพิ่ม/แก้ชื่อ/ย้ายหมวด และยืนยันลบ local catalog; modal แก้ไข/ลบรองรับ Cancel/Escape ไม่เปลี่ยนข้อมูล ไม่แตะไฟล์หรือ Published Template |
 | `/admin/audit`, Admin | อ่าน Audit Trail ที่ระบบบันทึก | กรองผู้กระทำ action เป้าหมาย outcome และช่วงเวลา หน้านี้ไม่แก้หรือลบ event |
-| `/admin/ai-authoring`, Admin | สร้าง DOCX จากคำอธิบายหรือ PDF แล้วคุยเพื่อแก้ฉบับปัจจุบัน | ดูตัวอย่าง ดาวน์โหลด จบ session หรือกดนำไปสร้าง Template Draft จากนั้นยังต้องตรวจและ Publish |
 | `/forms/:publicId/fill`, User และ Admin | เริ่มกรอกหรือกลับมาร่างเดิม ใช้ Native form หรือ ONLYOFFICE | กรอก บันทึกร่าง และส่ง XLSX ดาวน์โหลดจากสมุดงานในตัวแก้ไข DOCX บันทึกก่อนดาวน์โหลด เมื่อมีงานค้างจะเตือนก่อนออกหรือเปลี่ยน session ส่งสำเร็จแล้วเปิดร่างรอบถัดไป |
 | `/forms/:publicId/submissions`, เจ้าของ Response | ดูประวัติที่ตนเคยส่งของฟอร์มนั้น | เปิดใบรับแต่ละ Submission หรือกลับ Dashboard |
 | `/receipt/:submissionId`, เจ้าของและ Admin | ใบรับคำตอบของ Submission หนึ่งครั้ง | อ่านข้อมูล เลือก Correction revision ดาวน์โหลดเอกสารหรือ PDF และกลับระบบต้นทางตาม URL ที่เซิร์ฟเวอร์กำหนด |
 
 ### Storage Template catalog
 
-หน้า **แม่แบบจัดเก็บเอกสาร** ใช้ **หัวข้อเอกสาร** แสดง `type` แต่ผูกด้วย numeric `id`; ป้ายชื่อซ้ำไม่ยุบ identity เก็บ `StorageTemplate` ใน `storage_templates` มี UUID `id`, globally unique `template_name` และ `document_category_id` พร้อม index ของหมวด Migration เพิ่มตารางเท่านั้น ไม่ reset หรือเปลี่ยน Responses
+หน้า **ตั้งค่าระบบ** คง URL `/admin/storage-templates` และมีส่วน **แม่แบบจัดเก็บเอกสาร** เป็นกรอบอิสระสำหรับวางร่วมกับส่วนตั้งค่าอื่น ตัวเลือก **หัวข้อเอกสาร** ชุดเดียวทางซ้ายแสดง `type` แต่ผูกด้วย numeric `id` และกำหนดทั้งรายการในตารางและหัวข้อของแม่แบบใหม่ ทางขวาเป็นช่องชื่อกับปุ่มเพิ่มและตารางแก้ไข/ลบ จอเล็กเรียงส่วนเลือกไว้เหนือตาราง ไม่แสดงตัวกรองซ้ำ ปุ่มโหลดใหม่ถาวร หรือกล่อง empty แยกท้ายหน้า; สถานะว่างอยู่ในตารางแทน ป้ายชื่อซ้ำไม่ยุบ identity เก็บ `StorageTemplate` ใน `storage_templates` มี UUID `id`, globally unique `template_name` และ `document_category_id` พร้อม index ของหมวด รอบ UI นี้ไม่เปลี่ยน schema หรือ Responses
+
+ฝั่งเลือกหัวข้อกว้าง `24rem` (384 pixels ในธีมปัจจุบัน) เมื่อแสดงสองคอลัมน์ จอเล็กยังเรียงแนวตั้ง การปรับนี้ไม่เปลี่ยน CRUD หรือ API
+
+ตัวเลือกหัวข้อทั้งในส่วนหลักและ modal แก้ไขแสดงเฉพาะชื่อ `type` ไม่ต่อท้าย `(ID …)` โดย `option.value`, การเลือกหัวข้อ และ CRUD ยังใช้ numeric category ID เดิม การปรับข้อความนี้ไม่เปลี่ยน API หรือข้อมูลที่บันทึก
 
 `apps/server/src/routes/storage-templates.ts` ตรวจ enabled Admin ก่อนทุก action รวม GET categories: `GET /api/admin/storage-templates` อ่าน persisted catalog และกรองด้วย `document_category_id`; `POST` เพิ่ม, `PATCH /:id` แก้ชื่อ/หมวด และ `DELETE /:id` รับ `{confirm:true}` เท่านั้น ชื่อไม่ trim/rewrite และปฏิเสธ blank/control/unsafe filename characters; unique index ป้องกัน concurrent duplicates ด้วย error ที่แก้ได้
 
 `GET /api/admin/storage-templates/categories` คืน `{categories:[{id,type}]}` จาก `EcmClient.categoryEntries()` ซึ่งใช้ request/coordinator/renewal เดิม ไม่ส่ง Bearer ไป browser interface นี้เก็บ ID และ label ตาม provider และปฏิเสธ duplicate IDs; legacy `EcmClient.categories()` ยังคืน deduplicated `string[]` เพื่อคง contract เดิม
 
-การเพิ่มหรือเปลี่ยน category ต้องตรวจ provider list จริง Rename ในหมวดเดิมและ delete ไม่เรียก provider; outage ไม่ล้าง catalog หรือ input หน้าแยก loading/empty/error และ reload หลัง mutation ไม่แสดง optimistic success Native modal จัด focus/Cancel/Escape ของ delete การลบ choice ไม่ลบ DCM file/template/folder และไม่แก้ immutable Form contracts, canonical answers หรือ receipts Chooser/publication ใช้ catalog นี้ตามภาพ 08 แต่ local category relation ไม่ได้พิสูจน์ routing หรือ physical folder ของ DCM
-
+การเพิ่มหรือเปลี่ยน category ต้องตรวจ provider list จริง Rename ในหมวดเดิมและ delete ไม่เรียก provider; outage ไม่ล้าง catalog หรือ input และยังดูรายการในหัวข้อที่บันทึกไว้ได้ แต่เพิ่มรายการใหม่ไม่ได้จนมีหัวข้อจาก provider หน้าแยก loading/empty/error แสดงปุ่มลองใหม่เฉพาะส่วนที่โหลดผิดพลาด และ reload รายการหลัง mutation โดยไม่แสดง optimistic success การแก้ไขเปิด native modal แยกจากแบบเพิ่ม จึงไม่ล้างชื่อใหม่ที่ยังไม่ได้บันทึก; modal แก้ไขและลบจัด focus/Cancel/Escape และปิดการยกเลิกระหว่างส่งคำขอ การลบ choice ไม่ลบ DCM file/template/folder และไม่แก้ immutable Form contracts, canonical answers หรือ receipts Chooser/publication ใช้ catalog นี้ตามภาพ 08 แต่ local category relation ไม่ได้พิสูจน์ routing หรือ physical folder ของ DCM
 
 Viewer ถูก UI จำกัดไว้ที่ `/admin/results` และ `/admin/results/:responseId` แม้ API อ่าน Submission จะยอมรับบทบาท Viewer ด้วย
 
@@ -241,7 +260,7 @@ flowchart TD
     save["บันทึกหรือจัดการงานค้าง"]
     renew["login ใหม่ หรือ PDMS SSO"]
     logout["Sign out"]
-    clear["revoke session และจบ AI workspace"]
+    clear["revoke session"]
     open --> token
     token -->|"มี bearer"| check
     token -->|"ไม่มี bearer"| claim
@@ -325,7 +344,7 @@ flowchart TD
 ```mermaid
 flowchart TD
     list(["/admin"])
-    create["New form หรือ AI DOCX"]
+    create["New form"]
     kind{"ชนิดเอกสาร"}
     docx["DOCX เปล่าหรืออัปโหลด"]
     xlsx["XLSX workbook เปล่า"]
@@ -565,7 +584,10 @@ flowchart TD
     retryCategory -->|"ลองใหม่"| ecmAdmin
     retryCategory -->|"ยกเลิก"| unchanged
     subgraph scalarFiles ["Scalar และ physical table attachment: lifecycle เดียว"]
-        scalarPick["PoC popup เดิม: saved URL แยก pending File 0–10,000,000 bytes"] --> scalarPending["File อยู่ใน host memory; เตือนก่อนออกหรือ reload"]
+        scalarPick["กล่องแนบไฟล์: เลือก/แทนที่ File 0–10,000,000 bytes เฉพาะในหน้าต่าง"] --> scalarConfirm{"ยืนยันการเลือกหรือไม่"}
+        scalarConfirm -->|"ยกเลิก / X ก่อนยืนยัน"| scalarDiscard["ทิ้งเฉพาะการเลือกในหน้าต่าง คงสถานะก่อนเปิด"]
+        scalarDiscard -->|"เปิดใหม่"| scalarPick
+        scalarConfirm -->|"บันทึกการเปลี่ยน + trusted host ack"| scalarPending["File/removal อยู่ใน host memory; เตือนก่อนออกหรือ reload"]
         scalarPending -->|"explicit Save Draft / Submit เท่านั้น"| scalarCapture["GetFileToDownload: snapshot native ที่ freeze"]
         scalarPending -->|"Download ขณะมี pending"| scalarBlocked["หยุด export ไม่ upload"]
         scalarCapture --> scalarValidate["ตรวจ owner / lease / revision / button / native metadata"]
@@ -574,11 +596,12 @@ flowchart TD
         scalarReuse -->|"metadata เปลี่ยน ไม่มี replacement/removal"| scalarOriginal["legacy: owned direct original; template เปลี่ยนเลข: public authenticated GET ด้วย paired receipt token"]
         scalarOriginal -->|"ครบทุก plan จึงส่ง"| scalarIntent
         scalarOriginal -->|"อ่านไม่ได้ / size ไม่ตรง"| scalarOriginalFail["ไม่เริ่ม upload; canonical เดิมและ pending choice คงอยู่"]
-        scalarPick --> scalarRemove["Remove เป็น pending; Cancel คืน saved state ไม่ส่ง HTTP write"]
-        scalarRemove --> scalarPending
-        scalarReuse -->|"File/removal ใหม่"| scalarIntent["transaction สั้น: Operation + scoped batch และ version intent"]
-        scalarIntent --> scalarAdmission["shared ledger fence: account / destination / owner / history / active attempt"]
-        scalarAdmission --> scalarPlanned{"มีแผนส่งไฟล์ใหม่ที่ปลอดภัย"}
+        scalarPick --> scalarRemove["คืนไฟล์เดิม / นำออก เป็นการเลือกเฉพาะในหน้าต่าง"]
+        scalarRemove --> scalarConfirm
+        scalarReuse -->|"File/removal ใหม่"| scalarIntent["transaction สั้น: Operation + scoped batch"]
+        scalarIntent --> scalarNames["วางแผนทุก scalar/table slot: template ชื่อแรกเดิม ชื่อซ้ำเติม -(n); จองทุกชื่อฐานใน batch"]
+        scalarNames --> scalarLedger["shared ledger fence + version intent: account / destination / owner / history / active attempt"]
+        scalarLedger --> scalarPlanned{"มีแผนส่งไฟล์ใหม่ที่ปลอดภัย"}
         scalarPlanned -->|"มี"| scalarUpload["original bytes: template=1 สอง field; legacy=0 policy เดิม; ไม่ resend"]
         scalarPlanned -->|"ไม่มี: removal"| scalarCommit
         scalarUpload --> scalarReceipt{"receipt URL/token ถูกต้อง"}
@@ -652,6 +675,10 @@ Published PoC เก่าคง manifest/type/required และคำตอบ
 
 pending Files ของช่องที่ตั้งค่าจริงรวมกับ native/editor dirty ผ่าน `onDirtyChange` เดิม เพื่อให้ navigation, session-change และ before-unload guards ที่มีอยู่เตือนก่อนเสีย selection การส่ง dirty=false จาก native bridge ไม่ล้าง pending Files และไม่ถือชื่อไฟล์เป็น bytes ที่กู้คืนได้ ไม่มีการ persist pending bytes/filename เพื่อหลบ guard
 
+กล่องแนบไฟล์ซ่อนข้อความ native เช่น No file chosen และแสดงชื่อ/ขนาดไฟล์เฉพาะที่จำเป็น ปุ่มเลือกไฟล์รองรับ keyboard และใช้ file input ที่มี label เลือกใหม่แทนที่ File ที่ยังไม่ยืนยันโดยไม่แก้ host การปิด file chooser โดยไม่เลือกไม่ทิ้งตัวเลือกก่อนหน้า บันทึกใน dialog จึงส่ง set/cancel/remove ที่ผูก binding, physical row, document, bridge และ scope เดิม แล้วปิดเมื่อได้รับคำตอบสำเร็จที่ตรงกัน หาก acknowledgement ยังไม่มา/หมดเวลา จะคง File และไม่ให้ Cancel/X แสร้งว่าย้อนการยืนยันได้; คำตอบผิดรูปไม่ปิด timeout และ trusted late success ปิดได้โดยไม่ส่งซ้ำ การนำออก/คืนไฟล์เดิมยังต้องยืนยัน ส่วนการ Cancel dialog ก่อนยืนยันคง canonical และ pending choice ที่มีอยู่ก่อนเปิด ไม่เท่ากับยกเลิก pending change ที่เคยยืนยันแล้ว
+
+คำเตือนปกติย่อให้เหลือจังหวะ upload และความเสี่ยงจากการปิด/รีเฟรชหน้า พร้อมแจ้งลิงก์สาธารณะ หากมี mutation/commit recovery notice จะซ่อนคำแนะนำทั่วไปที่อาจชวนให้ส่งซ้ำ และคง recovery/cleanup instructions แม้เลือกไฟล์ใหม่ ถูกปฏิเสธ หรือยังรอยืนยัน การเลือกไฟล์ 10,000,001 ไบต์ถูกปฏิเสธก่อนเปลี่ยน host จึงไม่ทำให้ File เดิมหรือการเลือกที่ยืนยันแล้วสูญหาย ขอบเขต 0 และ 10,000,000 ไบต์ยังรวมอยู่ตามเดิม
+
 Native OOXML อาจแทนปุ่มเดียวด้วย anchored `Choice` และ empty `Fallback` ภายใน `AlternateContent` เดียวกัน ระบบนับ alias เป็นปุ่มเดียวเฉพาะเมื่อ shape ID/relationship ตรงกันและแต่ละด้านมีหนึ่งรายการเท่านั้น ปุ่มซ้ำหรือ orphan นอกโครงสร้างที่พิสูจน์นี้ยังต้องถูกปฏิเสธ
 
 Template Draft เก็บ mode `template` ที่ choice ยังไม่ครบได้ Publish ต้องมี current local mapping ทุก attachment Field/column และ exactly one root scalar `docs_number` ที่ไม่ใช่ attachment/computed ไม่บังคับ `fiscal_year` จาก attachment prerequisite หรือค่าคำตอบในต้นแบบ ตรวจ revision และ lock mapping อีกครั้งภายใน publication transaction จน Manifest commit; provider outage ไม่ขัดขวาง saved valid mapping ไม่ live lookup มาเปลี่ยน published routing ภายหลัง
@@ -670,17 +697,19 @@ Bearer ใน PostgreSQL เข้ารหัสและแยก key ออ�
 
 ไม่มี ECM login UI หรือ public token endpoint และไม่มี credentials/Bearer ใน browser, answers หรือ workbook การเรียก category/upload/delete ที่ถูกปฏิเสธไม่ถูกส่งซ้ำหลัง refresh โดยอัตโนมัติ ไม่ยืนยัน provider จริงรองรับไฟล์ 0 bytes/เข้ารหัส/10 MB การตรวจ HTTP double กับ native browser เป็นหลักฐานคนละประเภท
 
-Scalar และ table-row slots ใช้ File จริงใน host เดิมจน explicit User Save Draft/Submit เท่านั้น Server ตรวจ actual bytes ไม่เชื่อ MIME หรือ Content-Length รับ encrypted/extensionless และ 0 bytes รวมถึง 10,000,000 bytes ไม่เขียน attachment binary ลง RustFS/JSON/XLSX ก่อน external write ตรวจ root scalar `docs_number` ตาม native Field rules; legacy เท่านั้นที่เพิ่ม `fiscal_year` prerequisite ตรวจชื่อไฟล์รวมและหยุดพร้อมระบุ Field/physical row หากผิด ไม่แก้ unsafe characters หรือแทน destination เอง
+Scalar และ table-row slots ใช้ File จริงใน host เดิมจน explicit User Save Draft/Submit เท่านั้น Server ตรวจ actual bytes ไม่เชื่อ MIME หรือ Content-Length รับ encrypted/extensionless และ 0 bytes รวมถึง 10,000,000 bytes ไม่เขียน attachment binary ลง RustFS/JSON/XLSX ก่อน external write ตรวจ root scalar `docs_number` ตาม native Field rules; legacy เท่านั้นที่เพิ่ม `fiscal_year` prerequisite ตรวจชื่อไฟล์รวมและหยุดพร้อมระบุ Field/physical row หากผิด ไม่แก้ unsafe characters การจัดสรรชื่อซ้ำเฉพาะ mode `template` เป็นไปตามกฎ batch ด้านล่าง ไม่เลือก destination ใหม่เพื่อหลบ guard
 
 `POST /api/forms/:publicId/draft` และ `/submit` รับ multipart `payload` กับ `attachment:<bindingId>` สำหรับ scalar หรือ `attachment:<encodeURIComponent(JSON.stringify([bindingId,rowIndex]))>` สำหรับ table โดยมี trusted native `snapshotUrl` และ checkpoint ของรอบนั้น Encode เฉพาะ multipart boundary เพื่อไม่ให้ Content-Disposition เปลี่ยน JSON quotes; server decode/validate หนึ่งครั้ง Host store ยังคง JSON slot key เดิม Client rowIndex เป็นเพียง slot request; server ตรวจ binding/button/physical bounds จาก canonical workbook และตรวจ native edits ก่อนเริ่มส่ง Multipart limit คำนวณจากจำนวน slot จริงของ trusted table ปัจจุบัน Host สร้าง Blob part จาก original File พร้อมชื่อเดิมเพื่อผ่าน renderer disk-file grant โดยไม่เปลี่ยน File identity ใช้ shared ECM client ส่ง original bytes ทีละไฟล์, `template="0"`, root ปี/เลขของ snapshot, หมวด frozen ต่อช่อง/column และ filename UUID version เดิม ไม่มี table upload flow แยก
 
-Published mode `template` ส่งเฉพาะ `template="1"` กับ original-byte `documentFile` ชื่อ `<docs_number>-<frozen template_name>.<original-extension>` คง casing และ extensionless ไม่เพิ่ม UUID/row/version suffix ไม่ส่ง year/number/category/ID แยก และไม่ lookup catalog ปัจจุบันเพื่อเปลี่ยน routing ส่วน mode `legacy` คง multipart/UUID filename เดิมตามย่อหน้าข้างต้น ไม่มีปีได้ใน ledger ของ new mode โดยไม่สร้างปีปลอม
+Published mode `template` ส่งเฉพาะ `template="1"` กับ original-byte `documentFile` ชื่อฐาน `<docs_number>-<frozen template_name>.<original-extension>` คง extension/casing เดิมและรองรับ extensionless ก่อน ledger admission และ POST shared planner รวมทุก scalar/table upload plan ของ explicit Save Draft/Submit/final Save Correction รอบเดียวกันเป็น namespace เดียว เดินตามลำดับ slot เดิมอย่าง deterministic ชื่อแรกคงเดิม ชื่อซ้ำถัดไปเติม `-(1)`, `-(2)` ต่อไปก่อน original extension หรือท้ายชื่อหากไม่มี extension เช่น `กทอ.xx-xx-xxxx-ก่อหนี้-4_ขยาย(45).PDF` แล้ว `กทอ.xx-xx-xxxx-ก่อหนี้-4_ขยาย(45)-(1).PDF`
 
-Final Save Correction ใช้ Published Template ของ Submission ที่เลือก ไม่ตาม catalog ที่ rename/move/delete ระหว่างเปิด workspace และไม่เปลี่ยน legacy transport การเปลี่ยน `docs_number` ใช้ shared original-byte/hash/current physical-row reference paths เดียวกับ Draft/Submit Internal workspace/project save ไม่ upload/delete หากชื่อปลายทางเดิมยังถูก Submission หรือ older Correction ปกป้อง ให้ reject ก่อน POST; การบันทึก revision ใหม่สำเร็จต้องเป็นปลายทางที่ผ่าน guard เดิม เช่นเลขหนังสือใหม่ ไม่เติม suffix หรือปลด guard เพื่อให้ replace สำเร็จ ประวัติ JSON ที่ immutable ไม่ได้ทำให้ provider URL เก็บ bytes เก่าเอง
+Planner จองชื่อฐานตามธรรมชาติของทุก plan ใน batch ก่อนจัดสรร suffix จึงไม่แย่งชื่อ literal ของ template อื่น เช่น หากมีชื่อฐาน `A-(1).pdf` อยู่แล้ว ชื่อซ้ำของ `A.pdf` จะข้าม `A-(1).pdf` ไปใช้ `A-(2).pdf` โดยชื่อฐาน `A-(1).pdf` ยังได้ชื่อเดิม Counter เริ่มใหม่ทุก batch ไม่จองชื่อจาก batch ก่อน ไม่เปลี่ยนชื่อไฟล์ที่บันทึกแล้ว และไม่รับประกันความไม่ซ้ำข้ามการบันทึก ชื่อที่จัดสรรแล้วใช้ตรงกันใน ledger filename และ multipart; `original_name`/metadata คำตอบและ frozen `template_name` ไม่เปลี่ยน ไม่เพิ่ม UUID/physical-row/version suffix หรือ Field/config ใหม่ Mode `template` ไม่ส่ง year/number/category/ID แยก และไม่ lookup catalog ปัจจุบันเพื่อเปลี่ยน routing ส่วน mode `legacy` คง multipart/UUID filename เดิม ไม่ผ่านกฎ suffix ใหม่นี้ ไม่มีปีได้ใน ledger ของ new mode โดยไม่สร้างปีปลอม
+
+Final Save Correction ใช้ Published Template ของ Submission ที่เลือก ไม่ตาม catalog ที่ rename/move/delete ระหว่างเปิด workspace และไม่เปลี่ยน legacy transport การเปลี่ยน `docs_number` ใช้ shared original-byte/hash/current physical-row reference paths เดียวกับ Draft/Submit Internal workspace/project save ไม่ upload/delete ชื่อที่จัดสรรภายใน batch ยังต้องผ่าน account/destination/owner/history/active-attempt guards เดิม หากปลายทางยังถูก Submission หรือ older Correction ปกป้อง ให้ reject ก่อน POST ไม่เติม suffix เพิ่มเพื่อหลบ guard หรือเลือกชื่อว่างจาก ledger/history; การบันทึก revision ใหม่สำเร็จต้องเป็นปลายทางที่ผ่าน guard เดิม เช่นเลขหนังสือใหม่ ประวัติ JSON ที่ immutable ไม่ได้ทำให้ provider URL เก็บ bytes เก่าเอง การจัดสรรชื่อไม่เปลี่ยน permissions, internal-row save, remount/recovery, history หรือ deletion และไม่ retry POST/DELETE
 
 Listener ของ `createApp` ใช้ `maxRequestBodySize: Number.MAX_SAFE_INTEGER` แทน Bun default 128 MiB เพื่อไม่กำหนด aggregate attachment limit ที่ขัดกับ per-file contract ทุก startup ที่ใช้ factory เดียวกันรับ policy นี้ รวม entrypoint ปกติ ไม่ใช้ `0` ซึ่ง Bun 1.4.4 ไม่ได้ตีความว่า unlimited ตัวอ่าน multipart เดิมยังนับ stream จริงก่อน parse ตามจำนวน scalar/table slots ใน trusted current workbook, ตรวจแต่ละ File ไม่เกิน 10,000,000 bytes และตรวจ canonical JSON 262,144 bytes ตามเดิม ไม่เชื่อ Content-Length อย่างเดียว
 
-JSON consumers ที่เคยอาศัย auto/raw parsing ได้แก่ sign-in, password change, prefill handoff/status, attachment checkpoint recovery และ Results cancel/settle ใช้ bounded house reader กับ `parse: none`; คงเพดานเดิม 128 MiB เมื่อ route ไม่มีขอบเขตที่แคบกว่า โดยไม่ลด valid legacy/prefill payload เป็น 262 KiB Sign-in คง non-object rejection เดิมผ่าน bounded bytes กับ platform JSON parser ส่วน route readers ที่มี contract limit อยู่แล้วไม่เปลี่ยน Private document worker มี listener/limit ของตนและไม่ถูกยกเพดานนี้ Gateway ของ repo ส่ง `/api` ไป server โดยไม่มี aggregate body cap เพิ่มใน config; external ingress และ real ECM capacity ยังต้องตรวจ deployment จริง
+JSON consumers ที่เคยอาศัย auto/raw parsing ได้แก่ sign-in, password change, prefill handoff/status, attachment checkpoint recovery และ Results cancel/settle ใช้ bounded house reader กับ `parse: none`; คงเพดานเดิม 128 MiB เมื่อ route ไม่มีขอบเขตที่แคบกว่า โดยไม่ลด valid legacy/prefill payload เป็น 262 KiB Sign-in คง non-object rejection เดิมผ่าน bounded bytes กับ platform JSON parser ส่วน route readers ที่มี contract limit อยู่แล้วไม่เปลี่ยน Gateway ของ repo ส่ง `/api` ไป server โดยไม่มี aggregate body cap เพิ่มใน config; external ingress และ real ECM capacity ยังต้องตรวจ deployment จริง
 
 ขอบเขตนี้ยึด JSON contract ของ [web API helpers/sign-in](../../apps/web/src/lib/api.ts) และ [prefill connector](../../apps/prefill-mock/src/mock.ts) ซึ่งส่ง `application/json` กับ `JSON.stringify` จริง ไม่คง incidental URL-encoded/form-data parsing ของ Elysia ใน JSON endpoints เหล่านี้ และไม่อ้าง transport compatibility ของรูปแบบที่ไม่ได้อยู่ใน contract ส่วน `/prefill/handoff` ที่ระบุ top-level form และ native multipart/template upload ยังคง parser กับ byte bounds เดิม `handleEmailSignIn` ส่งต่อให้ `auth.handler` เฉพาะ email/password JSON ที่ประกอบใหม่จากข้อมูลที่อ่านแบบ bounded แล้ว ไม่ส่ง raw inbound stream ให้ delegated auth parser
 
@@ -704,7 +733,7 @@ Initial Correction workspace clone ยังไม่มี attachment reference
 
 Existing append และ delete-selected ยังคงพฤติกรรมของ ordinary tables เดิม สำหรับ attachment-aware transition server ตรวจ native snapshot เทียบ canonical workbook, ใช้ command ที่รองรับกับ Builder แล้ว resolve contract/output ใหม่ ตรวจ actual body count/column offsets และทุก surviving input cell ตาม old/new physical mapping ก่อน commit Canonical table objects เปลี่ยนเฉพาะ current `row_index`; `EcmAttachmentVersion.rowIndex` เก็บ immutable original upload position และไม่ถูก rewrite การเลื่อนแถวไม่ upload ใหม่ Reference lookup ใช้ nested table column data และ paired receipt เดิม ไม่ index root ด้วย dotted Tag
 
-`EcmAttachmentReference.rowIndex` เก็บ **ตำแหน่ง physical row ปัจจุบันของ snapshot นั้น** แยกจาก original attempt position; ไม่ใช่ stable row ID และไม่เพิ่ม Tag/filename suffix หรือ answer JSON Field ใหม่ New upload เลือก own-operation attempt ที่ row ตรงกัน Saved slot เลือกเฉพาะ current canonical refs ที่ row ตรงกัน แล้ว remap ผ่าน trusted workbook `attachmentTransition` ใน Draft/workspace commit เท่านั้น Submit/final Correction คงตำแหน่งเดิมใน final snapshot ที่ใช้ document key ใหม่ คง shared destination/identity/reference/delete fences เดิม
+`EcmAttachmentReference.rowIndex` เก็บ **ตำแหน่ง physical row ปัจจุบันของ snapshot นั้น** แยกจาก original attempt position; ไม่ใช่ stable row ID และไม่เพิ่ม Tag/filename suffix ที่มาจากเลขแถว หรือ answer JSON Field ใหม่ Suffix แก้ชื่อซ้ำภายใน batch ใน mode `template` ไม่ใช่ row identity New upload เลือก own-operation attempt ที่ row ตรงกัน Saved slot เลือกเฉพาะ current canonical refs ที่ row ตรงกัน แล้ว remap ผ่าน trusted workbook `attachmentTransition` ใน Draft/workspace commit เท่านั้น Submit/final Correction คงตำแหน่งเดิมใน final snapshot ที่ใช้ document key ใหม่ คง shared destination/identity/reference/delete fences เดิม
 
 คอลัมน์ metadata ใหม่นี้ nullable และไม่เดา backfill แถวเก่า การรักษา aliases แบบหยาบเพียงอย่างเดียวไม่พอ: rows0/2 อาจมี receipt/name/size เดียวกันแต่ bytes ต่างกัน เมื่อลบ A ผ่าน verified row command แล้ว B เลื่อนเหลือ1 การเปลี่ยนเลขต้องใช้ digest ของ current B เพื่ออ่าน original B ได้ ไม่เอา A มาทำให้เกิด false HOLD และไม่เลือก attempt ด้วย timestamp สำหรับ refs เก่าที่พิสูจน์ current position ไม่ได้ยังรักษาหลักฐานร่วมแบบ conservative; original reuse ที่มี digest ขาด/ขัดกันหยุดก่อนเขียน ไม่สร้าง independent-byte guarantee จาก provider URL เดียว Native และ HTTP proof ของตั๋ว05แยกจาก live-provider/release acceptance ตาม [บันทึกตั๋ว05](../ecm-storage-templates/issues/05-table-template-attachment-lifecycle.md)
 
@@ -890,47 +919,7 @@ AuditEvent เก็บ action, actor, target, outcome, เวลา และ s
 
 อ้างอิง [account routes](../../apps/server/src/routes/accounts.ts#L53), [account deletion guards](../../apps/server/src/routes/accounts.ts#L485), [response deletion](../../apps/server/src/responses/deletion.ts#L105), [การลบประวัติใน transaction](../../apps/server/src/responses/deletion.ts#L440), [Dashboard discard](../../apps/web/src/routes/dashboard.tsx#L123) และ [Audit API](../../apps/server/src/routes/audit.ts#L24)
 
-## 11 AI Authoring เชื่อมกับ Form อย่างไร
-
-```mermaid
-flowchart TD
-    admin(["Admin เปิด AI Authoring"])
-    available{"มี OmniRoute configuration"}
-    disabled["แสดงว่า AI ยังไม่เปิดใช้"]
-    input["ยินยอมและส่ง prompt หรือ PDF"]
-    session["สร้าง workspace ผูก Folio session"]
-    model["เรียก OmniRoute จาก server"]
-    generate{"document tool ที่ model เลือก"}
-    structured["สร้าง DOCX จาก structured fields"]
-    worker["Python ใน isolated document worker"]
-    validate["ตรวจ DOCX และ tagged fields"]
-    preview["ดูตัวอย่างและบทสนทนา"]
-    revise["ขอแก้ DOCX ปัจจุบัน"]
-    download["ดาวน์โหลด DOCX"]
-    use["กดนำไปสร้าง Template Draft"]
-    form["POST /api/admin/forms ด้วย DOCX"]
-    design["เปิด editor ตรวจแล้ว Publish"]
-    endSession["จบ หมดอายุ logout หรือ revoke"]
-    cleanup["ล้าง workspace ชั่วคราว"]
-    admin --> available
-    available -->|"ไม่มี"| disabled
-    available -->|"มี"| input --> session --> model --> generate
-    generate -->|"structured"| structured --> validate
-    generate -->|"Python พร้อมใช้"| worker --> validate
-    validate --> preview
-    preview --> revise --> model
-    preview --> download
-    preview --> use --> form --> design
-    session -.-> endSession --> cleanup
-```
-
-AI workspace เป็นข้อมูลชั่วคราวผูกกับ Folio auth session ไม่ใช่ Form ที่เผยแพร่แล้ว UI มีปุ่มดึง DOCX จาก workspace แล้วส่งเข้า API สร้าง Form ตามปกติ การสร้างด้วย AI จึงไม่ข้ามการตรวจต้นแบบหรือ Publish
-
-PDF เป็น reference สำหรับสร้าง DOCX ไม่ใช่การเปิดแบบฟอร์ม PDF ให้ User กรอก Python document worker เป็น sidecar แยกและใช้ container งานชั่วคราว การสร้าง DOCX ปกติและการประมวลผล XLSX ด้วย ONLYOFFICE Builder เป็นคนละเส้นทางกับ worker นี้
-
-อ้างอิง [AI routes](../../apps/server/src/routes/ai-authoring.ts#L15), [sessions](../../apps/server/src/ai-authoring.ts#L73), [document tools](../../apps/server/src/ai-authoring/agent.ts#L160), [นำไปสร้าง Form](../../apps/web/src/routes/admin/ai-authoring.tsx#L256) และ [private worker](../../apps/server/src/document-worker-server.ts#L170)
-
-## 12 Prefill handoff จากระบบภายนอก
+## 11 Prefill handoff จากระบบภายนอก
 
 ```mermaid
 flowchart TD
@@ -969,7 +958,7 @@ Handoff เป็นการนำข้อมูลเข้ากรอก �
 
 อ้างอิง [Prefill routes](../../apps/server/src/routes/prefill.ts#L23), [create/launch](../../apps/server/src/prefill/create-launch.ts#L36), [redeem](../../apps/server/src/prefill/redemption.ts#L49) และ [handoff error page](../../apps/web/src/routes/handoff.tsx#L19)
 
-## 13 บริการและการเชื่อมต่อจริงตาม Compose
+## 12 บริการและการเชื่อมต่อจริงตาม Compose
 
 ```mermaid
 flowchart LR
@@ -984,18 +973,14 @@ flowchart LR
         assets["Web assets server"]
         api["Folio API"]
         office["ONLYOFFICE Docs"]
-        worker["AI document worker"]
-        daemon["Private worker Docker daemon"]
     end
     subgraph datastore ["ข้อมูลถาวร"]
         postgres["PostgreSQL"]
         rustfs["RustFS private bucket"]
-        workspace["Worker workspace volume"]
     end
     subgraph external ["Integration ตาม configuration"]
         pdms["PDMS Portal และ Auth"]
         ongoing["PDMS Ongoing API"]
-        omni["OmniRoute"]
         prefill["Prefill source system"]
     end
     browser -->|"ผ่าน external TLS ingress"| pingap
@@ -1006,12 +991,8 @@ flowchart LR
     api -->|"Prisma และ transactions"| postgres
     api -->|"เอกสารที่บันทึกแล้ว"| rustfs
     api <-->|"config, save, Builder และ conversion"| office
-    api -->|"สร้าง AI DOCX"| worker
-    worker <-->|"job containers และผลลัพธ์"| daemon
-    worker -->|"temporary source"| workspace
     api -.->|"PDMS: แลก SSO code"| pdms
     api -.->|"Ongoing: อ่านชื่อโครงการ"| ongoing
-    api -.->|"OmniRoute: สร้างและแก้เอกสาร"| omni
     prefill -.->|"Prefill: สร้าง handoff และถามสถานะ"| api
 ```
 
@@ -1019,13 +1000,13 @@ Gateway ปัจจุบันใน `compose.yaml` เป็น Pingap แล
 
 PostgreSQL เก็บบัญชี session กฎฟอร์ม JSON คำตอบ และสถานะงาน RustFS เก็บ canonical DOCX หรือ XLSX และไฟล์ชั่วคราวที่เกี่ยวข้อง Browser และ ONLYOFFICE รับเอกสารผ่าน API ที่ออกสิทธิ์ให้ ไม่ได้รับการเปิด bucket สาธารณะ
 
-การทำงาน XLSX เรียก ONLYOFFICE Document Builder และ conversion ผ่าน `documents/spreadsheets/engine.ts` ส่วน `document-worker` กับ daemon ใช้สำหรับ AI Python document tool แยกจากกัน
+การทำงาน XLSX เรียก ONLYOFFICE Document Builder และ conversion ผ่าน `documents/spreadsheets/engine.ts` โดยไม่ใช้ AI document worker
 
 ข้อแตกต่างของเอกสารเดิม: README ตอนต้นยังบรรยาย Caddy แต่ Compose และ `gateway/pingap.toml` ใน commit ที่สำรวจใช้ Pingap แผนผังนี้ยึดไฟล์ deployment ปัจจุบัน ไม่ได้สรุปว่า production ที่รันอยู่ deploy commit นี้แล้ว
 
 อ้างอิง [Compose](../../compose.yaml), [gateway routes](../../gateway/pingap.toml), [API composition](../../apps/server/src/app.ts#L167) และ [XLSX engine](../../apps/server/src/documents/spreadsheets/engine.ts)
 
-## 14 ความสัมพันธ์ข้อมูลหลัก
+## 13 ความสัมพันธ์ข้อมูลหลัก
 
 ```mermaid
 erDiagram
@@ -1143,11 +1124,9 @@ ER แสดงความสัมพันธ์หลักสำหรั�
 | Canonical provider identity | `EcmAttachmentIdentity` unique ต่อ service account/token และ account/link; attempts เก็บ receipt แยก, nullable year, frozen storage snapshot และ identity FK; shared aliases ใช้ reference/delete fence เดียวกัน Unknown overwrite คง hold ไม่อ้าง DB rollback คืน external bytes |
 | การตรวจย้อนหลังและ cleanup | `AuditEvent` เก็บเหตุการณ์, `ObjectCleanupIntent` เก็บไฟล์หลักที่ต้องลบต่อ, `DeletionTombstone` กันข้อมูลกลับจาก handoff และเก็บ owner จริง/pre-cascade attachment context; `EcmAttachmentCleanup.deletionCaseId` ผูก pending external cleanup กับ case หลัง rows gone โดยไม่พึ่ง upload actor |
 
-AI authoring sessions อยู่ใน workspace ชั่วคราวของบริการ ไม่ได้มี Prisma model ชื่อ AI session ใน schema นี้
-
 อ้างอิง [Prisma schema](../../packages/db/prisma/schema.prisma#L95) และ [รายการ models ครบ](inventory.md#database-models)
 
-## 15 เริ่มระบบ งานค้าง และการกู้สถานะ
+## 14 เริ่มระบบ งานค้าง และการกู้สถานะ
 
 ```mermaid
 flowchart TD
@@ -1176,13 +1155,13 @@ flowchart TD
 
 Bootstrap สร้าง Admin เริ่มต้นเมื่อยังไม่มี Admin โดยใช้ค่าที่กำหนดนอก repository ไม่ seed บัญชีตัวอย่าง การ recovery ทำก่อนเริ่มรับงานและทำซ้ำทุก 60 วินาที
 
-`/health` บอกว่า API process ตอบได้ ส่วน `/ready` ตรวจ PostgreSQL, RustFS และ starter template การตอบ ready ของ API ไม่ใช่หลักฐานว่า PDMS SSO, Ongoing, OmniRoute และทุกฟังก์ชันใน ONLYOFFICE ใช้ได้ทั้งหมด Compose มี health check ของ ONLYOFFICE แยก
+`/health` บอกว่า API process ตอบได้ ส่วน `/ready` ตรวจ PostgreSQL, RustFS และ starter template การตอบ ready ของ API ไม่ใช่หลักฐานว่า PDMS SSO, Ongoing และทุกฟังก์ชันใน ONLYOFFICE ใช้ได้ทั้งหมด Compose มี health check ของ ONLYOFFICE แยก
 
 งานที่ล้มเหลวไม่ควรเปลี่ยน canonical document ไปเป็นไฟล์ที่ยังตรวจไม่ผ่าน เส้นทาง submitting ที่ failed มี lifecycle handler จัดสถานะให้กลับมาแก้ต่อได้ การ cleanup ใช้ intents และตรวจว่าไฟล์ยังเป็น canonical หรือไม่ก่อนลบ
 
 อ้างอิง [startup](../../apps/server/src/index.ts#L9), [readiness](../../apps/server/src/readiness.ts#L6), [recovery](../../apps/server/src/operations/recovery.ts#L11) และ [operation lifecycle](../../apps/server/src/operations/lifecycle.ts)
 
-## 16 บันทึกแล้วปิดหน้า กลับมาแก้ต่อได้อย่างไร
+## 15 บันทึกแล้วปิดหน้า กลับมาแก้ต่อได้อย่างไร
 
 ```mermaid
 flowchart TD
@@ -1236,7 +1215,7 @@ flowchart TD
 
 อ้างอิง [completeTemplateOperation](../../apps/server/src/operations/template-completion.ts#L32), [completeDraftOperation](../../apps/server/src/operations/response-completion.ts#L25), [start/resume](../../apps/server/src/routes/public-forms.ts#L239), [claimEditorLease](../../apps/server/src/editor/leases.ts#L98) และ [lease renewal interval](../../apps/web/src/features/onlyoffice/editor-protocol.ts#L33)
 
-## 17 สถานะ Form และสิ่งที่ Admin ทำได้ในแต่ละสถานะ
+## 16 สถานะ Form และสิ่งที่ Admin ทำได้ในแต่ละสถานะ
 
 Form มี status จริงสามค่า การลบ Form เป็นการนำ record ออก ไม่ใช่ค่า `deleted` ของ FormStatus ดู flow การลบแยกในภาพ 10
 
@@ -1254,7 +1233,7 @@ stateDiagram-v2
 
 | Form status | สร้างหรือเกิดเมื่อใด | แก้อะไรได้ | สิ่งที่ยังทำไม่ได้ |
 | --- | --- | --- | --- |
-| `draft` | สร้างจาก New form, AI หรือ Duplicate | ออกแบบเอกสาร ตั้งฟิลด์ บันทึก เปิดกลับมาแก้ เปลี่ยนชื่อและคำอธิบาย Publish หรือ Duplicate | คนทั่วไปยังใช้ share link เริ่มกรอกไม่ได้ เปลี่ยน Fill Method จาก UI ก่อน Publish ไม่ได้ |
+| `draft` | สร้างจาก New form หรือ Duplicate | ออกแบบเอกสาร ตั้งฟิลด์ บันทึก เปิดกลับมาแก้ เปลี่ยนชื่อและคำอธิบาย Publish หรือ Duplicate | คนทั่วไปยังใช้ share link เริ่มกรอกไม่ได้ เปลี่ยน Fill Method จาก UI ก่อน Publish ไม่ได้ |
 | `published` | Publish Operation completed | แก้ชื่อและคำอธิบาย คัดลอกลิงก์ อ่าน Submission, Duplicate, Archive และเลือก DOCX Fill Method ที่รองรับ | แก้โครงสร้างหรือ policy ของต้นแบบเดิม Publish ซ้ำ หรือ hard-delete Form นี้ไม่ได้ |
 | `archived` | Admin กด Archive | เปลี่ยน metadata, อ่านข้อมูลเดิม และ Unarchive | ไม่รับเริ่ม Response ของผู้ที่ยังไม่เคยมี Response กับฟอร์มนี้ ปุ่ม Duplicate ใน UI ยังไม่เปิดให้ใช้จน Unarchive |
 
@@ -1266,7 +1245,7 @@ stateDiagram-v2
 
 อ้างอิง [FormStatus](../../packages/db/prisma/schema.prisma#L16), [metadata และ archive rules](../../apps/server/src/routes/form-catalog.ts#L74), [publish commit](../../apps/server/src/operations/template-completion.ts#L270) และ [ปุ่มตามสถานะ](../../apps/web/src/routes/admin/forms/$formId/index.tsx#L309)
 
-## 18 สถานะ Response และเหตุผลที่ส่งแล้วกลับเห็นร่าง
+## 17 สถานะ Response และเหตุผลที่ส่งแล้วกลับเห็นร่าง
 
 ```mermaid
 stateDiagram-v2
@@ -1303,7 +1282,7 @@ stateDiagram-v2
 
 อ้างอิง [ResponseStatus](../../packages/db/prisma/schema.prisma#L49), [รับ Submit](../../apps/server/src/routes/response-actions.ts#L240), [commit Submission](../../apps/server/src/operations/response-completion.ts#L97), [เปิดร่างรอบใหม่](../../apps/server/src/routes/public-forms.ts#L260) และ [Results state](../../apps/server/src/responses/query.ts#L269)
 
-## 19 สถานะการบันทึกสำเร็จกับสถานะของฟอร์มเป็นคนละเรื่อง
+## 18 สถานะการบันทึกสำเร็จกับสถานะของฟอร์มเป็นคนละเรื่อง
 
 ```mermaid
 stateDiagram-v2
@@ -1347,7 +1326,7 @@ DOCX แสดงผลบันทึกและดาวน์โหลดแ
 
 อ้างอิง [Operation lifecycle](../../apps/server/src/operations/lifecycle.ts#L26), [คืน submitting เป็น draft](../../apps/server/src/operations/lifecycle.ts#L149), [poll Operation](../../apps/server/src/routes/operations.ts#L19) และ [คำสั่งหน้ากรอก](../../apps/web/src/routes/forms/$publicId/fill.tsx)
 
-## 20 ออกจากหน้า Reload เน็ตหลุด และ session หมดอายุ
+## 19 ออกจากหน้า Reload เน็ตหลุด และ session หมดอายุ
 
 ภาพนี้แสดง dialog ของหน้า User fill ส่วนการบังคับปิดแท็บหรือ browser ใช้คำเตือนของ browser และไม่รับประกันว่าจะทำ Save ให้เสร็จแทนผู้ใช้
 
@@ -1407,13 +1386,13 @@ flowchart TD
 | editor ขึ้น blocked | อาจมี lease ของ session อื่นหรือสิทธิ์ editor ไม่พร้อม ยังไม่ใช่สถานะว่า Form ถูก Archive |
 | editor เปิดใหม่ได้หลัง lease หมด | กลับมาใช้เอกสารที่ API เลือกจากฉบับที่เก็บไว้ ไม่ย้ายการพิมพ์ที่ยังไม่บันทึกจากเครื่องอื่นมาให้เอง |
 
-ปุ่ม logout ของ AppShell จัดการ session และ AI workspace ส่วนหน้า fill มี blocker สำหรับ navigation และ flow บันทึกก่อนเปลี่ยน session ของตนเอง จึงควรกดบันทึกและรอผลก่อนตั้งใจออก ไม่ถือว่าการ logout ทุกกรณีคือ Save Draft
+ปุ่ม logout ของ AppShell เพิกถอน session ส่วนหน้า fill มี blocker สำหรับ navigation และ flow บันทึกก่อนเปลี่ยน session ของตนเอง จึงควรกดบันทึกและรอผลก่อนตั้งใจออก ไม่ถือว่าการ logout ทุกกรณีคือ Save Draft
 
 XLSX ยังมีสถานะการตั้งค่าฟิลด์ที่ผลการเขียนไม่แน่ชัด หากระบบยังยืนยันว่า Apply สำเร็จหรือ rollback สำเร็จไม่ได้ จะกัน mutation ต่อ การปิดข้อความ error ไม่ได้ทำให้การตั้งค่านั้นปลอดภัยที่จะ Save หรือ Publish ต่อทันที
 
 อ้างอิง [saveAndExit และ discardDraft](../../apps/web/src/routes/forms/$publicId/fill.tsx#L801), [ตัวเลือก dialog](../../apps/web/src/routes/forms/$publicId/fill.tsx#L998), [navigation blocker](../../apps/web/src/routes/forms/$publicId/fill.tsx#L201), [reauth guard](../../apps/web/src/lib/use-reauthentication-guard.ts#L8) และ [Admin guard](../../apps/web/src/routes/admin/forms/$formId/index.tsx#L181)
 
-## 21 ส่งแล้วแก้ได้แค่ไหน และ Correction กลับมาทำต่อได้ไหม
+## 20 ส่งแล้วแก้ได้แค่ไหน และ Correction กลับมาทำต่อได้ไหม
 
 ```mermaid
 flowchart TD
@@ -1471,7 +1450,7 @@ XLSX Correction เปิดปุ่ม PoC ที่ตรวจ binding/mappi
 
 อ้างอิง [Correction editor และ workspace](../../apps/server/src/responses/editor.ts), [Save workspace และ Save Correction](../../apps/server/src/operations/response-completion.ts), [PoC activation และการตรวจผลค้าง](../../apps/onlyoffice-plugin/src/spreadsheet.js) และ [UI ยืนยันก่อนออก/บันทึก](../../apps/web/src/routes/admin/results/$responseId/correction.tsx)
 
-## 22 สถานะทั้งหมดและสิ่งที่ไม่ใช่ status ของฟอร์ม
+## 21 สถานะทั้งหมดและสิ่งที่ไม่ใช่ status ของฟอร์ม
 
 ตารางแถวที่ชื่อจบด้วย `Status` มาจาก enum ของ Prisma โดยตรง สถานะ editor, catalog และตัวแปร boolean เป็นคนละชั้นกับ status ของ Form หรือ Response
 
@@ -1519,7 +1498,7 @@ stateDiagram-v2
 
 อ้างอิง [status enums](../../packages/db/prisma/schema.prisma#L16), [editor และ catalog states](../../apps/web/src/features/onlyoffice/editor-protocol.ts#L24), [หมดอายุ Handoff](../../apps/server/src/prefill/expiry.ts#L5) และ [การใช้ Handoff](../../apps/server/src/prefill/redemption.ts#L49)
 
-## 23 ตัวอย่างใช้งานจริงตั้งแต่วันสร้างจนกลับมากรอกต่อ
+## 22 ตัวอย่างใช้งานจริงตั้งแต่วันสร้างจนกลับมากรอกต่อ
 
 ```mermaid
 flowchart TD
@@ -1568,12 +1547,11 @@ flowchart TD
 | Archive แล้วผู้มีร่างเดิมกลับมาได้ไหม | ผู้ที่มี Response เดิมมีเส้นทางเปิดต่อได้ ไม่ใช่การปิดและลบงานของทุกคน |
 | ปิดบัญชี User แล้วร่างกับประวัติถูกลบไหม | ไม่ถูกลบเพราะ enabled เปลี่ยนอย่างเดียว ต้องใช้ flow ลบ Response แยก |
 | ลบบัญชีเลยได้ไหม | ต้องลบ Responses และรอ cleanup ให้หมดก่อน และห้ามเอา enabled Admin คนสุดท้ายออก |
-| AI สร้างฟอร์มเสร็จถือว่า User เปิดกรอกได้แล้วไหม | ยัง ต้องนำ DOCX ไปสร้าง Form ตรวจต้นแบบและ Publish ผ่าน flow เดิม |
 | Prefill เติมข้อมูลใหม่ให้ทุกครั้งที่กลับเข้ามาไหม | Resume ใช้ snapshot เดิม ไม่ refresh ค่าจากต้นทางใหม่ทับร่างอัตโนมัติ |
 
-ตัวอย่างนี้แยกการเปลี่ยนสถานะของ Form, Response และ Operation ไว้ตามลำดับ ส่วนเรื่องสิทธิ์ SSO, Excel, Prefill และ AI ใช้ผังรายละเอียด 03 ถึง 12 ประกอบในขั้นตอนที่เกี่ยวข้อง
+ตัวอย่างนี้แยกการเปลี่ยนสถานะของ Form, Response และ Operation ไว้ตามลำดับ ส่วนเรื่องสิทธิ์ SSO, Excel และ Prefill ใช้ผังรายละเอียด 03 ถึง 11 ประกอบในขั้นตอนที่เกี่ยวข้อง
 
-อ้างอิง [start/resume/reopen](../../apps/server/src/routes/public-forms.ts#L130), [Save/Submit guards](../../apps/server/src/routes/response-actions.ts#L62), [Draft completion](../../apps/server/src/operations/response-completion.ts#L25), [Dashboard](../../apps/web/src/routes/dashboard.tsx#L76) และผัง 03 ถึง 15 ที่อ้าง source ของแต่ละ feature ไว้แล้ว
+อ้างอิง [start/resume/reopen](../../apps/server/src/routes/public-forms.ts#L130), [Save/Submit guards](../../apps/server/src/routes/response-actions.ts#L62), [Draft completion](../../apps/server/src/operations/response-completion.ts#L25), [Dashboard](../../apps/web/src/routes/dashboard.tsx#L76) และผัง 03 ถึง 14 ที่อ้าง source ของแต่ละ feature ไว้แล้ว
 
 ## ถ้าต้องเปลี่ยนหน้า กฎ หรือการบันทึก ให้เริ่มที่ไหน
 
@@ -1596,7 +1574,6 @@ flowchart TD
 | Receipt, export และประวัติรายฟอร์ม | `routes/receipt/$submissionId.tsx`, `routes/admin/forms/$formId/submissions/` | `routes/submissions.ts`, `routes/form-authoring.ts`, `responses/query.ts`, `onlyoffice.ts` |
 | Users และ pending account links | `routes/admin/users.tsx`, `features/admin-users/` | `routes/accounts.ts`, `accounts/mutations.ts`, `accounts/review.ts` |
 | Audit | `routes/admin/audit.tsx` | `routes/audit.ts`, `audit/events.ts`, `audit/query.ts` |
-| AI Authoring | `routes/admin/ai-authoring.tsx`, `features/ai-authoring/` | `routes/ai-authoring.ts`, `ai-authoring.ts`, `ai-authoring/`, `document-worker.ts`, `document-worker-server.ts` |
 | Prefill handoff | `routes/handoff.tsx`, หน้า fill | `routes/prefill.ts`, `prefill/` |
 | Pagination | `components/list-pagination.tsx`, `lib/pagination.ts`, state ของแต่ละหน้า | `http/pagination.ts`, query ของแต่ละ list route |
 | Models, relations และ constraints | types ที่ derive จาก API | `packages/db/prisma/schema.prisma` และ migration ใหม่ |
@@ -1626,11 +1603,9 @@ flowchart TD
 | Operation/lease | `routes/operations.ts`, `routes/editor-leases.ts`: poll, renew และ release |
 | PDMS catalog | `routes/pdms-project-catalog.ts`: retry catalog ภายใต้ editor scope |
 | Prefill | `routes/prefill.ts`: create handoff, integration status, top-level launch และ GET ที่ปฏิเสธวิธีเปิดผิด |
-| AI | `routes/ai-authoring.ts`: availability, create/current/revise/download/end workspace |
 | Audit | `routes/audit.ts`: filtered paginated events |
 | ONLYOFFICE | `routes/onlyoffice.ts`: signed document access, editor plugin assets และ authenticated callback |
 | Health | `app.ts`: `/health` และ `/ready` |
-| AI worker ภายใน | `document-worker-server.ts`: `GET /health` และ `POST /run` บน private listener |
 
 ดู method, path และบรรทัด source ครบทุกรายการใน [inventory.md](inventory.md#api-endpoints)
 

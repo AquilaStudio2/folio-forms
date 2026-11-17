@@ -1,4 +1,5 @@
 import { createFileRoute, Navigate } from "@tanstack/react-router";
+import { FolderArchive, Pencil, Plus, Trash2 } from "lucide-react";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
@@ -17,7 +18,7 @@ interface StorageTemplate {
 }
 const endpoint = "/api/admin/storage-templates";
 const selectClass =
-  "min-h-11 rounded-[10px] border border-[var(--line-strong)] bg-[var(--paper)] px-3";
+  "min-h-11 w-full rounded-[10px] border border-[var(--line-strong)] bg-[var(--paper)] px-3";
 const message = (error: unknown) =>
   error instanceof ApiError
     ? (error.userMessage ?? error.message)
@@ -33,14 +34,13 @@ const StorageTemplatesPage = () => {
   const [categoryError, setCategoryError] = useState("");
   const [listError, setListError] = useState("");
   const [mutationError, setMutationError] = useState("");
-  const [filter, setFilter] = useState("");
   const [name, setName] = useState("");
   const [category, setCategory] = useState("");
   const [editing, setEditing] = useState<StorageTemplate | null>(null);
   const [deleting, setDeleting] = useState<StorageTemplate | null>(null);
   const [busy, setBusy] = useState(false);
   const dialog = useRef<HTMLDialogElement>(null);
-  const editForm = useRef<HTMLFormElement>(null);
+  const editDialog = useRef<HTMLDialogElement>(null);
   const refreshList = useCallback(async () => {
     setListLoading(true);
     setListError("");
@@ -76,12 +76,6 @@ const StorageTemplatesPage = () => {
   if (roleFor(user) !== "admin") {
     return <Navigate to="/admin/results" search={{ form: undefined }} />;
   }
-  const reset = () => {
-    setEditing(null);
-    setName("");
-    setCategory("");
-    setMutationError("");
-  };
   const categoryOptions = [...categories];
   for (const id of new Set(
     templates.map((template) => template.document_category_id)
@@ -91,8 +85,15 @@ const StorageTemplatesPage = () => {
     }
   }
   const visible = templates.filter(
-    (template) => !filter || template.document_category_id === Number(filter)
+    (template) =>
+      category !== "" && template.document_category_id === Number(category)
   );
+  const categoryAvailable = categories.some(
+    (entry) => String(entry.id) === category
+  );
+  const editingOriginalCategory = templates.find(
+    (template) => template.id === editing?.id
+  )?.document_category_id;
   const save = async (event: React.SubmitEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (busy) {
@@ -101,15 +102,20 @@ const StorageTemplatesPage = () => {
     setBusy(true);
     setMutationError("");
     try {
-      const data = {
-        document_category_id: Number(category),
-        template_name: name,
-      };
+      const data = editing
+        ? {
+            document_category_id: editing.document_category_id,
+            template_name: editing.template_name,
+          }
+        : { document_category_id: Number(category), template_name: name };
       await (editing
         ? apiPatch(`${endpoint}/${editing.id}`, data)
         : apiPost(endpoint, data));
-      setFilter(category);
-      reset();
+      if (editing) {
+        editDialog.current?.close();
+      } else {
+        setName("");
+      }
       await refreshList();
     } catch (error) {
       setMutationError(message(error));
@@ -126,10 +132,6 @@ const StorageTemplatesPage = () => {
     try {
       await apiDelete(`${endpoint}/${deleting.id}`, { confirm: true });
       dialog.current?.close();
-      setDeleting(null);
-      if (editing?.id === deleting.id) {
-        reset();
-      }
       await refreshList();
     } catch (error) {
       setMutationError(message(error));
@@ -140,54 +142,233 @@ const StorageTemplatesPage = () => {
   return (
     <div className="space-y-6">
       <PageHeader
-        title="แม่แบบจัดเก็บเอกสาร"
-        description="จัดการรายการของ Folio เท่านั้น ชื่อแม่แบบต้องตรงกับ DCM การแก้รายการไม่เปลี่ยนไฟล์หรือแบบฟอร์มที่เผยแพร่แล้ว"
+        title="ตั้งค่าระบบ"
+        description="จัดการการตั้งค่าและข้อมูลสำหรับผู้ดูแลระบบ"
       />
-      {categoryLoading ? (
-        <p role="status">
-          <Spinner /> กำลังโหลดหัวข้อเอกสาร
-        </p>
-      ) : null}
-      {categoryError ? (
-        <Notice tone="danger">
-          โหลดหัวข้อเอกสารไม่สำเร็จ: {categoryError} รายการที่บันทึกไว้ยังคงเดิม
-        </Notice>
-      ) : null}
-      <Button
-        variant="secondary"
-        disabled={busy || categoryLoading}
-        onClick={() => {
-          void refreshCategories();
+      <Card>
+        <section aria-labelledby="storage-templates-title">
+          <div className="flex items-start gap-3 border-b border-[var(--line)] p-5 sm:p-6">
+            <span className="rounded-xl bg-[var(--accent-soft)] p-3">
+              <FolderArchive size={22} aria-hidden="true" />
+            </span>
+            <div className="min-w-0">
+              <h2 id="storage-templates-title" className="text-xl font-bold">
+                แม่แบบจัดเก็บเอกสาร
+              </h2>
+              <p className="mt-1 text-sm text-[var(--ink-soft)]">
+                ชื่อแม่แบบต้องตรงกับ DCM จัดการเฉพาะรายการของ Folio
+                โดยไม่เปลี่ยนไฟล์หรือแบบฟอร์มที่เผยแพร่แล้ว
+              </p>
+            </div>
+          </div>
+          <div className="grid md:grid-cols-[24rem_minmax(0,1fr)]">
+            <div className="min-w-0 space-y-4 border-b border-[var(--line)] p-5 sm:p-6 md:border-r md:border-b-0">
+              <label className="flex flex-col gap-2 font-semibold">
+                หัวข้อเอกสาร
+                <select
+                  className={selectClass}
+                  value={category}
+                  onChange={(event) => setCategory(event.target.value)}
+                  disabled={busy || categoryLoading}
+                >
+                  <option value="">เลือกหัวข้อเอกสาร</option>
+                  {categoryOptions.map((entry) => (
+                    <option key={entry.id} value={entry.id}>
+                      {entry.type}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <p className="text-sm text-[var(--ink-soft)]">
+                เลือกหัวข้อเพื่อดูและจัดการแม่แบบในกลุ่มนี้
+              </p>
+              {categoryLoading ? (
+                <p role="status" className="flex items-center gap-2 text-sm">
+                  <Spinner /> กำลังโหลดหัวข้อเอกสาร
+                </p>
+              ) : null}
+              {categoryError ? (
+                <div className="space-y-3">
+                  <Notice tone="danger">
+                    โหลดหัวข้อเอกสารไม่สำเร็จ: {categoryError} รายการที่บันทึกไว้ยังคงเดิม
+                  </Notice>
+                  <Button
+                    variant="secondary"
+                    disabled={busy || categoryLoading}
+                    onClick={() => {
+                      void refreshCategories();
+                    }}
+                  >
+                    ลองโหลดหัวข้ออีกครั้ง
+                  </Button>
+                </div>
+              ) : null}
+            </div>
+            <div className="min-w-0 space-y-5 p-5 sm:p-6">
+              <form onSubmit={save} aria-busy={busy}>
+                <label
+                  className="mb-2 block font-semibold"
+                  htmlFor="new-template-name"
+                >
+                  ชื่อแม่แบบ
+                </label>
+                <div className="flex flex-col gap-3 sm:flex-row">
+                  <Input
+                    id="new-template-name"
+                    className="min-w-0 flex-1"
+                    value={name}
+                    onChange={(event) => setName(event.target.value)}
+                    placeholder="ระบุชื่อแม่แบบให้ตรงกับ DCM"
+                    required
+                    maxLength={255}
+                    disabled={busy || !categoryAvailable}
+                  />
+                  <Button
+                    type="submit"
+                    className="min-h-11 shrink-0"
+                    disabled={busy || !name.trim() || !categoryAvailable}
+                  >
+                    {busy && !editing && !deleting ? (
+                      <Spinner />
+                    ) : (
+                      <Plus size={16} aria-hidden="true" />
+                    )}
+                    เพิ่มแม่แบบ
+                  </Button>
+                </div>
+              </form>
+              {mutationError && !editing && !deleting ? (
+                <Notice tone="danger">{mutationError}</Notice>
+              ) : null}
+              {listLoading ? (
+                <p role="status" className="flex items-center gap-2 text-sm">
+                  <Spinner /> กำลังโหลดแม่แบบ
+                </p>
+              ) : null}
+              {listError ? (
+                <div className="space-y-3">
+                  <Notice tone="danger">โหลดรายการไม่สำเร็จ: {listError}</Notice>
+                  <Button
+                    variant="secondary"
+                    disabled={busy || listLoading}
+                    onClick={() => {
+                      void refreshList();
+                    }}
+                  >
+                    ลองโหลดรายการอีกครั้ง
+                  </Button>
+                </div>
+              ) : null}
+              {!listLoading && !listError ? (
+                <div className="overflow-x-auto rounded-xl border border-[var(--line)]">
+                  <table className="w-full table-fixed text-left text-sm">
+                    <caption className="sr-only">
+                      แม่แบบจัดเก็บเอกสารในหัวข้อที่เลือก
+                    </caption>
+                    <colgroup>
+                      <col />
+                      <col className="w-32 sm:w-56" />
+                    </colgroup>
+                    <thead className="bg-[var(--muted-soft)] text-[var(--ink-soft)]">
+                      <tr>
+                        <th scope="col" className="px-4 py-3 font-semibold">
+                          ชื่อแม่แบบ
+                        </th>
+                        <th
+                          scope="col"
+                          className="px-3 py-3 text-right font-semibold"
+                        >
+                          จัดการ
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-[var(--line)]">
+                      {visible.map((template) => (
+                        <tr key={template.id}>
+                          <td className="break-all px-4 py-3 font-medium">
+                            {template.template_name}
+                          </td>
+                          <td className="px-3 py-2">
+                            <div className="flex justify-end gap-2">
+                              <Button
+                                variant="ghost"
+                                className="min-h-11 min-w-11 px-2 sm:px-3"
+                                aria-label={`แก้ไข ${template.template_name}`}
+                                disabled={busy}
+                                onClick={() => {
+                                  setEditing(template);
+                                  setMutationError("");
+                                  editDialog.current?.showModal();
+                                }}
+                              >
+                                <Pencil size={16} aria-hidden="true" />
+                                <span className="hidden sm:inline">แก้ไข</span>
+                              </Button>
+                              <Button
+                                variant="ghost"
+                                className="min-h-11 min-w-11 px-2 text-[var(--danger)] sm:px-3"
+                                aria-label={`ลบ ${template.template_name}`}
+                                disabled={busy}
+                                onClick={() => {
+                                  setDeleting(template);
+                                  setMutationError("");
+                                  dialog.current?.showModal();
+                                }}
+                              >
+                                <Trash2 size={16} aria-hidden="true" />
+                                <span className="hidden sm:inline">ลบ</span>
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {visible.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={2}
+                            className="px-4 py-10 text-center text-[var(--ink-soft)]"
+                          >
+                            {category
+                              ? "ยังไม่มีรายการ"
+                              : "เลือกหัวข้อเอกสารเพื่อดูรายการแม่แบบ"}
+                          </td>
+                        </tr>
+                      ) : null}
+                    </tbody>
+                  </table>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        </section>
+      </Card>
+      <dialog
+        ref={editDialog}
+        aria-labelledby="storage-edit-title"
+        className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl bg-[var(--paper)] p-6 text-[var(--ink)] backdrop:bg-black/35"
+        onCancel={(event) => {
+          if (busy) {
+            event.preventDefault();
+          }
+        }}
+        onClose={() => {
+          setEditing(null);
+          setMutationError("");
         }}
       >
-        โหลดหัวข้อเอกสารใหม่
-      </Button>
-      <label className="flex flex-col gap-2">
-        หัวข้อเอกสาร
-        <select
-          className={selectClass}
-          value={filter}
-          onChange={(event) => setFilter(event.target.value)}
-          disabled={busy}
-        >
-          <option value="">ทุกหัวข้อ</option>
-          {categoryOptions.map((entry) => (
-            <option key={entry.id} value={entry.id}>
-              {entry.type} (ID {entry.id})
-            </option>
-          ))}
-        </select>
-      </label>
-      <Card className="p-5">
-        <h2 className="mb-4 text-xl font-bold">
-          {editing ? "แก้ไขแม่แบบ" : "เพิ่มแม่แบบ"}
-        </h2>
-        <form ref={editForm} onSubmit={save} className="space-y-4">
+        <form onSubmit={save} className="space-y-4" aria-busy={busy}>
+          <h2 id="storage-edit-title" className="text-xl font-bold">
+            แก้ไขแม่แบบ
+          </h2>
           <label className="flex flex-col gap-2">
             ชื่อแม่แบบ
             <Input
-              value={name}
-              onChange={(event) => setName(event.target.value)}
+              value={editing?.template_name ?? ""}
+              onChange={(event) => {
+                if (editing) {
+                  setEditing({ ...editing, template_name: event.target.value });
+                }
+              }}
               required
               maxLength={255}
               disabled={busy}
@@ -197,12 +378,21 @@ const StorageTemplatesPage = () => {
             หัวข้อเอกสารของแม่แบบ
             <select
               className={selectClass}
-              value={category}
-              onChange={(event) => setCategory(event.target.value)}
+              value={editing?.document_category_id ?? ""}
+              onChange={(event) => {
+                if (editing) {
+                  setEditing({
+                    ...editing,
+                    document_category_id: Number(event.target.value),
+                  });
+                }
+              }}
               required
               disabled={busy}
             >
-              <option value="">เลือกหัวข้อเอกสาร</option>
+              <option value="" disabled>
+                เลือกหัวข้อเอกสาร
+              </option>
               {categoryOptions.map((entry) => (
                 <option
                   key={entry.id}
@@ -210,114 +400,59 @@ const StorageTemplatesPage = () => {
                   disabled={
                     !categories.some(
                       (available) => available.id === entry.id
-                    ) && editing?.document_category_id !== entry.id
+                    ) && editingOriginalCategory !== entry.id
                   }
                 >
-                  {entry.type} (ID {entry.id})
+                  {entry.type}
                 </option>
               ))}
             </select>
           </label>
-          <Button type="submit" disabled={busy || !name.trim() || !category}>
-            {busy ? <Spinner /> : null}บันทึกแม่แบบ
-          </Button>
-          {editing ? (
+          {mutationError && editing ? (
+            <Notice tone="danger">{mutationError}</Notice>
+          ) : null}
+          <div className="flex justify-end gap-3 pt-2">
             <Button
               type="button"
               variant="secondary"
               disabled={busy}
-              onClick={reset}
+              onClick={() => editDialog.current?.close()}
             >
-              ยกเลิกแก้ไข
+              ยกเลิก
             </Button>
-          ) : null}
+            <Button
+              type="submit"
+              disabled={busy || !editing?.template_name.trim()}
+            >
+              {busy ? <Spinner /> : null}บันทึกการแก้ไข
+            </Button>
+          </div>
         </form>
-      </Card>
-      {mutationError && !deleting ? (
-        <Notice tone="danger">{mutationError}</Notice>
-      ) : null}
-      {listLoading ? (
-        <p role="status">
-          <Spinner /> กำลังโหลดแม่แบบ
-        </p>
-      ) : null}
-      {listError ? (
-        <Notice tone="danger">โหลดรายการไม่สำเร็จ: {listError}</Notice>
-      ) : null}
-      <Button
-        variant="secondary"
-        disabled={busy || listLoading}
-        onClick={() => {
-          void refreshList();
-        }}
-      >
-        โหลดรายการใหม่
-      </Button>
-      {!listLoading && !listError && visible.length === 0 ? (
-        <Notice>ยังไม่มีแม่แบบในหัวข้อที่เลือก</Notice>
-      ) : null}
-      <ul className="space-y-3">
-        {visible.map((template) => (
-          <li key={template.id}>
-            <Card className="flex flex-wrap items-center gap-3 p-4">
-              <div className="mr-auto">
-                <strong>{template.template_name}</strong>
-                <p>
-                  {
-                    categoryOptions.find(
-                      (entry) => entry.id === template.document_category_id
-                    )?.type
-                  }{" "}
-                  (ID {template.document_category_id})
-                </p>
-              </div>
-              <Button
-                variant="secondary"
-                disabled={busy || listLoading || Boolean(listError)}
-                onClick={() => {
-                  setEditing(template);
-                  setName(template.template_name);
-                  setCategory(String(template.document_category_id));
-                  setMutationError("");
-                  editForm.current?.querySelector("input")?.focus();
-                }}
-              >
-                แก้ไข
-              </Button>
-              <Button
-                variant="danger"
-                disabled={busy || listLoading || Boolean(listError)}
-                onClick={() => {
-                  setDeleting(template);
-                  setMutationError("");
-                  dialog.current?.showModal();
-                }}
-              >
-                ลบ
-              </Button>
-            </Card>
-          </li>
-        ))}
-      </ul>
+      </dialog>
       <dialog
         ref={dialog}
         aria-labelledby="storage-delete-title"
-        className="m-auto max-w-lg rounded-xl bg-[var(--paper)] p-6 text-[var(--ink)] backdrop:bg-black/35"
+        className="m-auto w-[calc(100%-2rem)] max-w-lg rounded-xl bg-[var(--paper)] p-6 text-[var(--ink)] backdrop:bg-black/35"
         onCancel={(event) => {
           if (busy) {
             event.preventDefault();
           }
         }}
-        onClose={() => setDeleting(null)}
+        onClose={() => {
+          setDeleting(null);
+          setMutationError("");
+        }}
       >
         <h2 id="storage-delete-title" className="text-xl font-bold">
           ยืนยันลบแม่แบบ
         </h2>
-        <p className="my-4">
+        <p className="my-4 break-words">
           ลบ {deleting?.template_name} ออกจากตัวเลือกในอนาคตเท่านั้น ไม่ลบไฟล์ DCM
         </p>
-        {mutationError ? <Notice tone="danger">{mutationError}</Notice> : null}
-        <div className="mt-4 flex gap-3">
+        {mutationError && deleting ? (
+          <Notice tone="danger">{mutationError}</Notice>
+        ) : null}
+        <div className="flex justify-end gap-3">
           <Button
             variant="secondary"
             disabled={busy}
@@ -333,7 +468,7 @@ const StorageTemplatesPage = () => {
               void remove();
             }}
           >
-            ยืนยันลบ
+            {busy ? <Spinner /> : null}ยืนยันลบ
           </Button>
         </div>
       </dialog>

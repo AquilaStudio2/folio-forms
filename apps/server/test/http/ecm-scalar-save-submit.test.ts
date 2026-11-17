@@ -156,6 +156,8 @@ let nextMode:
 let rejectUploadAt: number | null = null;
 let customLink: string | null = null;
 let customToken: string | null = null;
+let reuseFilenameIdentity = false;
+const filenameReceipts = new Map<string, { link: string; token: string }>();
 let receiveBarrier: { enter: () => void; release: Promise<void> } | null = null;
 let receiptBarrier: { enter: () => void; release: Promise<void> } | null = null;
 let loginBarrier: { enter: () => void; release: Promise<void> } | null = null;
@@ -353,8 +355,13 @@ const provider = Bun.serve({
       if (!(file instanceof File)) {
         return new Response(null, { status: 400 });
       }
+      const previous = reuseFilenameIdentity
+        ? filenameReceipts.get(file.name)
+        : undefined;
       const token =
-        customToken ?? crypto.randomUUID().replaceAll("-", "").repeat(2);
+        customToken ??
+        previous?.token ??
+        crypto.randomUUID().replaceAll("-", "").repeat(2);
       received.push({
         bytes: new Uint8Array(await file.arrayBuffer()),
         category: body.get("documentCategory"),
@@ -398,7 +405,12 @@ const provider = Bun.serve({
         await barrier.release;
       }
       const link =
-        customLink ?? `${provider.url.origin}/files/${crypto.randomUUID()}`;
+        customLink ??
+        previous?.link ??
+        `${provider.url.origin}/files/${crypto.randomUUID()}`;
+      if (reuseFilenameIdentity) {
+        filenameReceipts.set(file.name, { link, token });
+      }
       providerFiles.set(new URL(link).pathname, {
         bytes: fixtureValue(received.at(-1)).bytes,
         token,
@@ -470,7 +482,6 @@ let heldNativeForceSave:
   | null = null;
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   onlyOffice: {
     convertDocxToPdf: () => Promise.resolve(new Uint8Array()),
     downloadEditorWorkbook: async ({ documentServerKey }) => {
@@ -609,6 +620,7 @@ const fixture = async (
     table?: boolean;
     tableAttachments?: boolean;
     tableRows?: number;
+    tableTemplateNames?: Record<string, string>;
     tableItemRequired?: boolean;
     project?: boolean;
     admin?: boolean;
@@ -618,6 +630,8 @@ const fixture = async (
   nextMode = "ok";
   customLink = null;
   customToken = null;
+  reuseFilenameIdentity = false;
+  filenameReceipts.clear();
   deleteFails = false;
   deleteMalformed = false;
   rejectUploadAt = null;
@@ -751,7 +765,9 @@ const fixture = async (
                       document_category_id: 42,
                       mode: "template",
                       storage_template_id: crypto.randomUUID(),
-                      template_name: `${column.key === "proof" ? "หลักฐาน-ตาราง" : "อื่น-ตาราง"}${values.templateNameSuffix ?? ""}`,
+                      template_name:
+                        values.tableTemplateNames?.[column.key] ??
+                        `${column.key === "proof" ? "หลักฐาน-ตาราง" : "อื่น-ตาราง"}${values.templateNameSuffix ?? ""}`,
                     },
                   }
                 : {}),
@@ -3166,19 +3182,169 @@ test("template table rejects invalid Draft files and requires other attachment c
   expect(await draft(f)).toEqual({});
 });
 
-test("template table duplicate destinations retain physical receipts but share mutable provider bytes without DELETE", async () => {
+test("template batch filename duplicates preserve each row's bytes with numbered suffixes and original extensions", async () => {
+  const number = `กทอ.xx-xx-xxxx.${crypto.randomUUID()}`;
+  const f = await fixture({
+    number,
+    tableAttachments: true,
+    tableRows: 5,
+    tableTemplateNames: { proof: "ก่อหนี้-4_ขยาย(45)" },
+    templateMode: true,
+  });
+  reuseFilenameIdentity = true;
+  const uploads = received.length;
+  const result = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 0])]: file(
+        new Uint8Array([1]),
+        "first.PDF"
+      ),
+      [JSON.stringify(["folio_row_proof", 1])]: file(
+        new Uint8Array([2]),
+        "second.PDF"
+      ),
+      [JSON.stringify(["folio_row_proof", 2])]: file(
+        new Uint8Array([3]),
+        "third.PDF"
+      ),
+      [JSON.stringify(["folio_row_proof", 3])]: file(
+        new Uint8Array([4]),
+        "extensionless"
+      ),
+      [JSON.stringify(["folio_row_proof", 4])]: file(
+        new Uint8Array([5]),
+        "also-extensionless"
+      ),
+    })
+  );
+  expect(result.status, String(result.result?.errorMessage)).toBe("completed");
+  expect(received.slice(uploads).map((entry) => entry.name)).toEqual([
+    `${number}-ก่อหนี้-4_ขยาย(45).PDF`,
+    `${number}-ก่อหนี้-4_ขยาย(45)-(1).PDF`,
+    `${number}-ก่อหนี้-4_ขยาย(45)-(2).PDF`,
+    `${number}-ก่อหนี้-4_ขยาย(45)`,
+    `${number}-ก่อหนี้-4_ขยาย(45)-(1)`,
+  ]);
+  const saved = await draft(f);
+  const rows = tableRowsSchema.parse(saved.rows);
+  for (const [index, row] of rows.entries()) {
+    const attachment = fixtureValue(row.proof);
+    expect(attachment.row_index).toBe(index);
+    const original = await fetch(attachment.file_link);
+    expect(new Uint8Array(await original.arrayBuffer())).toEqual(
+      new Uint8Array([index + 1])
+    );
+  }
+  await resume(f);
+  const unchanged = await poll(f, await send(f, {}));
+  expect(unchanged.status).toBe("completed");
+  expect(received.length).toBe(uploads + 5);
+  expect(await draft(f)).toEqual(saved);
+});
+
+test("template batch filename suffixes reserve literal destinations across scalar and table columns", async () => {
+  const f = await fixture({
+    tableAttachments: true,
+    tableTemplateNames: {
+      other: "ก่อหนี้-4_ขยาย(45)-(1)",
+      proof: "ก่อหนี้-4_ขยาย(45)",
+    },
+    templateMode: true,
+  });
+  reuseFilenameIdentity = true;
+  const uploads = received.length;
+  const result = await poll(
+    f,
+    await send(f, {
+      folio_proof: file(new Uint8Array([1]), "scalar.pdf"),
+      [JSON.stringify(["folio_row_proof", 0])]: file(
+        new Uint8Array([2]),
+        "first.pdf"
+      ),
+      [JSON.stringify(["folio_row_other", 0])]: file(
+        new Uint8Array([3]),
+        "literal.pdf"
+      ),
+      [JSON.stringify(["folio_row_proof", 2])]: file(
+        new Uint8Array([4]),
+        "last.pdf"
+      ),
+    })
+  );
+  expect(result.status, String(result.result?.errorMessage)).toBe("completed");
+  const saved = await draft(f);
+  expect(received.slice(uploads).map((entry) => entry.name)).toEqual([
+    `${saved.docs_number}-ก่อหนี้-4_ขยาย(45).pdf`,
+    `${saved.docs_number}-ก่อหนี้-4_ขยาย(45)-(2).pdf`,
+    `${saved.docs_number}-ก่อหนี้-4_ขยาย(45)-(1).pdf`,
+    `${saved.docs_number}-ก่อหนี้-4_ขยาย(45)-(3).pdf`,
+  ]);
+  const rows = tableRowsSchema.parse(saved.rows);
+  const attachments = [
+    attachmentSchema.parse(saved.proof),
+    fixtureValue(rows[0]?.proof),
+    fixtureValue(rows[0]?.other),
+    fixtureValue(rows[1]?.proof),
+  ];
+  for (const [index, attachment] of attachments.entries()) {
+    const original = await fetch(attachment.file_link);
+    expect(new Uint8Array(await original.arrayBuffer())).toEqual(
+      new Uint8Array([index + 1])
+    );
+  }
+});
+
+test("template batch filename suffixes do not bypass a provider receipt alias conflict", async () => {
+  const number = `ALIAS.${crypto.randomUUID()}`;
+  const f = await fixture({
+    number,
+    tableAttachments: true,
+    templateMode: true,
+  });
+  customToken = crypto.randomUUID();
+  customLink = `${provider.url.origin}/files/${crypto.randomUUID()}`;
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const result = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 0])]: file(new Uint8Array([1])),
+      [JSON.stringify(["folio_row_proof", 2])]: file(new Uint8Array([2])),
+    })
+  );
+  expect(result.status).toBe("failed");
+  expect(received.slice(uploads).map((entry) => entry.name)).toEqual([
+    `${number}-หลักฐาน-ตาราง.BIN`,
+    `${number}-หลักฐาน-ตาราง-(1).BIN`,
+  ]);
+  expect(await draft(f)).toEqual({});
+  expect(deleted.length).toBe(deletes);
+  const blocked = await send(f, {});
+  expect(blocked.status).toBe(409);
+  expect(received.length).toBe(uploads + 2);
+});
+
+test("template table shared provider receipts retain physical rows and protect current bytes without DELETE", async () => {
   const f = await fixture({ tableAttachments: true, templateMode: true });
   const uploads = received.length;
   const deletes = deleted.length;
   customToken = crypto.randomUUID();
   customLink = `${provider.url.origin}/files/${crypto.randomUUID()}`;
-  const result = await poll(
+  const first = await poll(
     f,
     await send(f, {
       [JSON.stringify(["folio_row_proof", 0])]: file(
         new Uint8Array(),
         "empty.BIN"
       ),
+    })
+  );
+  expect(first.status).toBe("completed");
+  await resume(f);
+  const result = await poll(
+    f,
+    await send(f, {
       [JSON.stringify(["folio_row_proof", 2])]: file(
         new Uint8Array([7, 8]),
         "last.BIN"
@@ -3208,20 +3374,17 @@ test("template table duplicate destinations retain physical receipts but share m
     received.slice(uploads).map((entry) => ({
       bytes: [...entry.bytes],
       fields: entry.fields,
-      name: entry.name,
       template: entry.template,
     }))
   ).toEqual([
     {
       bytes: [],
       fields: ["documentFile", "template"],
-      name: `${saved.docs_number}-หลักฐาน-ตาราง.BIN`,
       template: "1",
     },
     {
       bytes: [7, 8],
       fields: ["documentFile", "template"],
-      name: `${saved.docs_number}-หลักฐาน-ตาราง.BIN`,
       template: "1",
     },
   ]);
@@ -3286,13 +3449,20 @@ test("template table identical shared receipts keep both physical attempt refere
   const f = await fixture({ tableAttachments: true, templateMode: true });
   customToken = crypto.randomUUID();
   customLink = `${provider.url.origin}/files/${crypto.randomUUID()}`;
-  const initial = await poll(
+  const first = await poll(
     f,
     await send(f, {
       [JSON.stringify(["folio_row_proof", 0])]: file(
         new Uint8Array([1]),
         "same.BIN"
       ),
+    })
+  );
+  expect(first.status).toBe("completed");
+  await resume(f);
+  const initial = await poll(
+    f,
+    await send(f, {
       [JSON.stringify(["folio_row_proof", 2])]: file(
         new Uint8Array([2]),
         "same.BIN"
@@ -3313,11 +3483,6 @@ test("template table identical shared receipts keep both physical attempt refere
   expect(
     await prisma.ecmAttachmentReference.count({
       where: { responseId: f.response.id },
-    })
-  ).toBe(2);
-  expect(
-    await prisma.ecmAttachmentVersion.count({
-      where: { operationId: initial.operationId, state: "committed" },
     })
   ).toBe(2);
   await resume(f);
@@ -3551,13 +3716,20 @@ test("template table removes overwritten row A and reuses surviving B original b
   const f = await fixture({ tableAttachments: true, templateMode: true });
   customToken = crypto.randomUUID();
   customLink = `${provider.url.origin}/files/${crypto.randomUUID()}`;
-  const operationResult15 = await poll(
+  const first = await poll(
     f,
     await send(f, {
       [JSON.stringify(["folio_row_proof", 0])]: file(
         new Uint8Array([1]),
         "same.BIN"
       ),
+    })
+  );
+  expect(first.status).toBe("completed");
+  await resume(f);
+  const operationResult15 = await poll(
+    f,
+    await send(f, {
       [JSON.stringify(["folio_row_proof", 2])]: file(
         new Uint8Array([2]),
         "same.BIN"
@@ -3707,13 +3879,20 @@ test("template table ambiguous or missing current-alias digests stop metadata re
     const f = await fixture({ tableAttachments: true, templateMode: true });
     customToken = crypto.randomUUID();
     customLink = `${provider.url.origin}/files/${crypto.randomUUID()}`;
-    const initial = await poll(
+    const first = await poll(
       f,
       await send(f, {
         [JSON.stringify(["folio_row_proof", 0])]: file(
           new Uint8Array([1]),
           "same.BIN"
         ),
+      })
+    );
+    expect(first.status).toBe("completed");
+    await resume(f);
+    const initial = await poll(
+      f,
+      await send(f, {
         [JSON.stringify(["folio_row_proof", 2])]: file(
           new Uint8Array([missing ? 1 : 2]),
           "same.BIN"
@@ -3724,7 +3903,7 @@ test("template table ambiguous or missing current-alias digests stop metadata re
     if (missing) {
       await prisma.ecmAttachmentVersion.updateMany({
         data: { originalSha256: null },
-        where: { operationId: initial.operationId, rowIndex: 0 },
+        where: { operationId: first.operationId, rowIndex: 0 },
       });
     }
     // Old snapshots have no trustworthy current-row position; do not fabricate one from upload history.
@@ -6531,11 +6710,7 @@ test("whole-Response deletion retains pending cases across fresh application ins
         }),
       })
       .parse(await removed.json());
-    const fresh = createApp({
-      legacySso: null,
-      omniRoute: null,
-      pdmsProjects: null,
-    });
+    const fresh = createApp({ legacySso: null, pdmsProjects: null });
     const ownStatus = await fresh.handle(
       new Request("http://test.local/api/responses/deletion-status", {
         headers: { Authorization: `Bearer ${owner.bearer}` },

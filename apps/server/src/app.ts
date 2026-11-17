@@ -3,9 +3,6 @@ import { cors } from "@elysiajs/cors";
 import { env } from "@onlyoffice/env/server";
 import { Elysia } from "elysia";
 
-import { AiAuthoringSessions } from "./ai-authoring";
-import { AiAuthoringError } from "./ai-authoring-error";
-import type { OmniRouteConfig } from "./ai-authoring/agent";
 import { databaseErrorCode } from "./db-errors";
 import { EcmClient, ecmConfigurationFromEnv } from "./ecm/client";
 import type { EcmConfiguration, EcmRuntime } from "./ecm/client";
@@ -26,7 +23,6 @@ import type { PdmsProjectsConfiguration } from "./pdms/projects";
 import { configuredPrefillReturnUrl } from "./prefill/input";
 import { readinessStatus } from "./readiness";
 import { registerAccountRoutes } from "./routes/accounts";
-import { registerAiAuthoringRoutes } from "./routes/ai-authoring";
 import { registerAuditRoutes } from "./routes/audit";
 import {
   registerSessionRoutes,
@@ -62,7 +58,6 @@ export interface AppOptions {
   deleteObject?: (key: string) => Promise<void>;
   putObject?: typeof putObject;
   legacySso?: LegacySsoConfig | null;
-  omniRoute?: OmniRouteConfig | null;
   onlyOffice?: Omit<OnlyOfficeClient, "downloadEditorWorkbook"> &
     Partial<Pick<OnlyOfficeClient, "downloadEditorWorkbook">>;
   onlyOfficeCallbackOrigins?: readonly string[];
@@ -104,16 +99,7 @@ export function createApp(options: AppOptions = {}) {
       : options.legacySso
         ? validatedLegacySsoConfiguration(options.legacySso)
         : null;
-  let omniRoute = options.omniRoute;
-  if (omniRoute === undefined) {
-    const apiKey = env.OMNIROUTE_API_KEY;
-    const baseUrl = env.OMNIROUTE_BASE_URL;
-    const model = env.OMNIROUTE_MODEL;
-    omniRoute = apiKey && baseUrl && model ? { apiKey, baseUrl, model } : null;
-  }
-  const aiAuthoring = new AiAuthoringSessions(omniRoute, options.clock);
   const dependencies: RouteDependencies = {
-    aiAuthoring,
     allowedCallbackOrigins,
     callbackMaximumBytes,
     ecm: new EcmClient(
@@ -144,13 +130,6 @@ export function createApp(options: AppOptions = {}) {
         return Response.json({
           error: "not_found",
           message: "Route was not found",
-        });
-      }
-      if (error instanceof AiAuthoringError) {
-        set.status = error.status;
-        return Response.json({
-          error: error.code,
-          message: error.message,
         });
       }
       if (error instanceof HttpError) {
@@ -193,10 +172,9 @@ export function createApp(options: AppOptions = {}) {
   registerPrefillMethodRoute(app, dependencies);
   registerSessionRoutes(app, dependencies);
   registerEditorLeaseRoutes(app, dependencies);
-  registerPasswordRoutes(app, dependencies);
-  registerAccountRoutes(app, dependencies);
-  registerSessionExitRoutes(app, dependencies);
-  registerAiAuthoringRoutes(app, dependencies);
+  registerPasswordRoutes(app);
+  registerAccountRoutes(app);
+  registerSessionExitRoutes(app);
   app
     .get("/health", () => ({ ok: true }))
     .get("/ready", async ({ set }) => {
@@ -219,6 +197,5 @@ export function createApp(options: AppOptions = {}) {
   registerOperationRoutes(app, dependencies);
   registerSubmissionRoutes(app, dependencies);
   registerOnlyOfficeRoutes(app, dependencies);
-  app.onStop(() => aiAuthoring.close());
   return app;
 }

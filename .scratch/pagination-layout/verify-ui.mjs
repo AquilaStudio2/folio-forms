@@ -161,8 +161,6 @@ try {
         body = { submissions: history };
       } else if (endpoint === `/api/forms/${formId}/my-submissions/export`) {
         body = history;
-      } else if (endpoint === "/api/admin/ai-authoring/sessions/current") {
-        body = { session: null };
       }
       await route.fulfill({
         body: JSON.stringify(body),
@@ -439,18 +437,6 @@ try {
       }
       console.log(`PASS ${name} at ${width}px`);
     }
-    role = "admin";
-    await page.goto(`${origin}/admin/ai-authoring`);
-    await page
-      .getByRole("heading", { name: /AI Authoring/u })
-      .first()
-      .waitFor();
-    assert.equal(
-      await page.locator('[data-slot="list-pagination"]').count(),
-      0
-    );
-    assert.deepEqual(pageErrors, [], "No browser runtime errors");
-    console.log(`PASS AI Authoring single-session screen at ${width}px`);
     await context.close();
   }
   await fs.writeFile(

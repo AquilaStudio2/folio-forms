@@ -106,7 +106,7 @@ def build():
         "status_values": sum(map(len, inventory["status_enums"].values())),
         "svg_xml_parse": "passed",
         "html_sha256": sha256(DIRECTORY / "system-map.html"),
-        "scope": "Source inventory, diagram rendering, and generated artifacts. Inspect changed diagrams in a browser separately; no live login, PDMS, OmniRoute, or data mutation was tested by this command.",
+        "scope": "Source inventory, diagram rendering, and generated artifacts. Inspect changed diagrams in a browser separately; no live login, PDMS, or data mutation was tested by this command.",
     })
     ARCHIVE.write_bytes(archive_bytes())
     check()

@@ -56,7 +56,6 @@ const app = createApp({
     username: run,
   },
   legacySso: null,
-  omniRoute: null,
 });
 const request = (method: string, path = "", body?: unknown, role = "admin") =>
   app.handle(

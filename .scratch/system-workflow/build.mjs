@@ -38,7 +38,6 @@ const slugs = [
   "spreadsheet-pdms",
   "results-correction",
   "accounts-deletion-audit",
-  "ai-authoring",
   "prefill-handoff",
   "architecture",
   "data-model",

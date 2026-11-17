@@ -26,7 +26,6 @@ const maxDownloadBytes = 64_000;
 const upstream = mock<(url: string, init?: RequestInit) => Promise<Response>>();
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   onlyOffice: createOnlyOfficeClient({
     fetch: upstream,
     internalUrl: internalOfficeUrl,

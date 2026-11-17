@@ -3,7 +3,7 @@ import { env } from "@onlyoffice/env/server";
 
 import {
   responseTextControlValues,
-  validateTemplateControls,
+  parseTemplateFields,
 } from "../documents/fields";
 import { overlayNativeResponseDocument } from "../documents/native-document";
 import {
@@ -335,7 +335,7 @@ export async function finalizeCallback(
     } else if (metadata.action === "save-template") {
       validateTemplatePackage(bytes);
     } else if (metadata.action === "publish") {
-      validateTemplateControls(bytes);
+      parseTemplateFields(bytes);
     } else {
       validateOfficeRelationshipsBytes(bytes);
     }

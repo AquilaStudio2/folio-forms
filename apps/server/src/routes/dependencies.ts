@@ -1,4 +1,3 @@
-import type { AiAuthoringSessions } from "../ai-authoring";
 import type { EcmClient } from "../ecm/client";
 import type { LegacySsoConfig } from "../legacy-sso/config";
 import type { OnlyOfficeClient } from "../onlyoffice";
@@ -17,6 +16,5 @@ export interface RouteDependencies {
   prefillReturnUrl: string;
   handoffClock: () => Date;
   legacySso: LegacySsoConfig | null;
-  aiAuthoring: AiAuthoringSessions;
   requestIp?: (request: Request) => string | null | undefined;
 }

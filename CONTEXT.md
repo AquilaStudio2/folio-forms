@@ -40,14 +40,6 @@ Creating a repeating table adds cell borders across the selected range, includin
 
 An Admin-selected DOCX Form setting that routes all current and new Responses through either the native web form or ONLYOFFICE. Changing the method does not change the shared Fields or saved DOCX. XLSX Forms use ONLYOFFICE.
 
-## AI Authoring Session
-
-An Admin's temporary workspace for creating or editing a Form from a PDF or chat description. It contains an iterative conversation and a generated DOCX that the Admin can preview and download.
-
-## OmniRoute
-
-The external model gateway used by AI Authoring Sessions. Folio calls it server-side; the upstream provider and model are configured in OmniRoute.
-
 ## Template Draft
 
 The editable document an Admin is currently preparing. Saving it does not change the document available through the Form's share link.
@@ -70,8 +62,9 @@ A mapped input in a Form. For DOCX, it is a tagged content control: its Title/Al
 
 An explicitly configured XLSX Field or table column associated with the existing attachment button and stable binding. Its Title, editable pre-publication Tag and requiredness use the existing Field settings. Attachment intent is never inferred from an `attachment_N` Tag, filename or URL string. Each new published slot freezes storage mode `template`, numeric category ID, catalog template identity and template name in normal Field metadata, never Excel Binding. A table column shares one choice across its rows. Existing Published Templates explicitly retain storage mode `legacy` and their saved category-name policy, independently of whether they contain `fiscal_year`. Changing a published contract requires duplicating the Form. Legacy duplicates require a new explicit catalog choice; copied new-mode choices still require current catalog validation before publication.
 
-An old Published PoC remains an ordinary text/URL contract, including its required rules and immutable history. Its old button explains that durable attachments need a newly configured Form; it cannot retain a File as a memory-only fallback. Duplicating the Form copies only its template and configuration, never User Responses, answers or files. An Admin must explicitly configure verified old PoC slots in the new Template Draft; the application never chooses a successor or archives, deletes, redirects or migrates the original Form.
-Attachment selection is a pending browser File, not a saved answer. Explicit User Save Draft or Submit persists its original bytes to ECM and commits the document, canonical receipt and Operation together. A saved attachment may contain zero bytes. Unknown upload or canceled-batch cleanup outcomes keep the previous canonical answer readable but prevent further response mutations until settled. An in-place provider overwrite may already have changed bytes at the old URL; a Folio rollback does not restore those bytes. A saved public URL is a projection, not ownership or deletion authority.
+An old Published PoC remains an ordinary text/URL contract, including its required rules and immutable history. Its old button explains that durable attachments need a newly configured Form; it cannot retain a File as a memory-only fallback. Duplicating the Form copies only its template and configuration, never User Responses, answers or files. An Admin must explicitly configure verified old PoC slots in the new Template Draft; the application never chooses a successor or archives, deletes, redirects or migrates the original Form. Attachment selection is a pending browser File, not a saved answer. Explicit User Save Draft or Submit persists its original bytes to ECM and commits the document, canonical receipt and Operation together. A saved attachment may contain zero bytes. Unknown upload or canceled-batch cleanup outcomes keep the previous canonical answer readable but prevent further response mutations until settled. An in-place provider overwrite may already have changed bytes at the old URL; a Folio rollback does not restore those bytes. A saved public URL is a projection, not ownership or deletion authority.
+
+A newly picked File remains local to its open attachment dialog until the dialog's Save confirms it with the trusted host. Choosing another File replaces that local candidate. Cancel or the title-bar close discards only changes made since this dialog opened, preserving both the canonical attachment and any previously confirmed pending File/removal. A single contextual action can undo the local choice, restore the canonical selection or stage removal; those changes also require dialog Save. This confirmation does not upload, persist an answer or replace the main Save Draft, Submit or final Save Correction. A dispatched confirmation must settle before closing; timeout/retry retains the File and cannot imply rollback of a host-accepted choice. Recovery and public-link warnings remain visible, and selecting an oversized File cannot poison the previously accepted host selection.
 
 A missing attachment checkpoint lookup is not proof that an earlier sender cannot start. Explicit recovery shares the existing Form/lease admission locks: it returns the original Operation if admitted, or atomically rotates the old lease UUID before reporting non-admission. The host retains the File and native edits, then uses normal capability renewal for a new user-triggered save; absence or elapsed time alone never permits resend.
 
@@ -108,7 +101,6 @@ A durable record of an authorized whole-Response deletion. It retains the origin
 Owner discard applies only to that person's Draft, including an Admin's own Draft. It cannot replace the confirmed Admin deletion flow for another person's Response or a submitted Response. Whole-Response deletion retires that Response's Draft, Submission, Correction, workspace and eligible Operation references together; references surviving elsewhere still protect their files. Archive preserves files and history.
 
 The owner can still read a pending deletion warning after leaving Fill or reloading a page. Admin and Viewer find the case in existing Results tracking without restoring a normal Response row. Only an authorized Admin may perform the existing evidence-based first cleanup action; an uncertain dispatched DELETE cannot be resent or settled by a note.
-
 
 ## Document Category
 

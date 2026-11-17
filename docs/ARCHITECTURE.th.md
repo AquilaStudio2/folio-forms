@@ -2,6 +2,8 @@
 
 ปรับตาม implementation และผลตรวจถึงวันที่ 20 ตุลาคม 2026 อ่านคู่กับ [คู่มือวางไฟล์](STRUCTURE.th.md) และ [คำศัพท์ของระบบ](../CONTEXT.md)
 
+วันที่ 17 พฤศจิกายน 2026 ถอด AI Authoring, OmniRoute และ isolated document worker ออกจากแอปตามคำสั่งเจ้าของระบบ โดยไม่ลบ Form, Response หรือไฟล์ที่บันทึกแล้ว ส่วนผลตรวจตามวันที่ด้านล่างเป็นประวัติของแต่ละรอบ ไม่ใช่ผลตรวจการถอดฟีเจอร์ครั้งนี้
+
 ## ภาพรวม
 
 Folio Forms ใช้ API หลักตัวเดียว แบ่งโค้ดตามหน้าที่ของระบบ Web และปลั๊กอิน ONLYOFFICE เรียก lifecycle เดียวกันสำหรับสร้างต้นแบบ เผยแพร่ บันทึกร่าง ส่งคำตอบ และแก้ไขผลย้อนหลัง PostgreSQL เก็บข้อมูลและตัวอ้างอิงไฟล์ ส่วน RustFS เก็บไฟล์ DOCX/XLSX จริง
@@ -13,7 +15,6 @@ flowchart LR
   API --> DB[(PostgreSQL / Prisma)]
   API --> Storage[(RustFS: ไฟล์เอกสาร)]
   API <--> Office[ONLYOFFICE: editor / processing / PDF]
-  API --> AI[OmniRoute / isolated document worker]
 ```
 
 [compose.yaml](../compose.yaml) และ [gateway/pingap.toml](../gateway/pingap.toml) กำหนดเส้นทาง Web, assets, API และ ONLYOFFICE ส่วน HTTPS อยู่ที่ ingress ภายนอก API ประกอบ routes ใน [app.ts](../apps/server/src/app.ts) และเริ่มงาน recovery ใน [index.ts](../apps/server/src/index.ts)
@@ -193,7 +194,6 @@ Dropdown ใช้ native list validation พร้อมคำนวณรา�
 - Operation บันทึกสถานะ pending/processing/completed/failed ใน DB งานเริ่มใน API process และมี recovery สำหรับงานค้าง ไม่มี queue service ใหม่
 - `ObjectCleanupIntent` ทำให้การเก็บกวาดไฟล์ที่ไม่เป็น canonical แล้ว retry ได้ การล้มเหลวระหว่างบันทึกต้องไม่ลบไฟล์ canonical เดิม
 - `AuditEvent`, `LoginFailure` และ `DeletionTombstone` ยังคงหน้าที่ด้าน audit, login และ deletion แยกจากคำตอบ
-- AI authoring ใช้ session ชั่วคราวและ worker แยก container ตาม [ADR 0001](adr/0001-ai-authoring-through-omniroute.md) ไม่รวมบทสนทนา AI เข้า Submission
 - Spreadsheet engine และ export snapshot มีข้อมูลชั่วคราวเพื่อ processing/conversion พร้อมหมดอายุและ cleanup ไม่ใช่แหล่งเก็บคำตอบถาวร
 
 ## Migration และผลตรวจครั้งนี้

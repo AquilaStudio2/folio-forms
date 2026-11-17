@@ -123,24 +123,6 @@ describe("logout navigation", () => {
     }
   );
 
-  it("keeps the cleanup warning and omits returnTo when the session was revoked", async () => {
-    signOutResponse = () =>
-      Response.json(
-        { error: "sign_out_cleanup_failed", sessionRevoked: true },
-        { status: 500 }
-      );
-    const router = await mount();
-    await userEvent.click(
-      await screen.findByRole("button", { exact: true, name: "ออกจากระบบ" })
-    );
-    await screen.findByText("Login page");
-    expect(router.state.location.href).toBe("/login");
-    expect(
-      screen.getByText("ออกจากระบบแล้ว แต่การล้างข้อมูล AI ไม่สำเร็จ")
-    ).toBeVisible();
-    expect(localStorage.getItem(SESSION_KEY)).toBeNull();
-  });
-
   it("stays signed in when logout fails before revocation", async () => {
     signOutResponse = () =>
       Response.json({ error: "sign_out_failed" }, { status: 500 });

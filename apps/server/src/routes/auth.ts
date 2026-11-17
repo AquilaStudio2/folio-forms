@@ -8,7 +8,6 @@ import {
   handleEmailSignIn,
   passwordMinimumLength,
   passwordMaximumLength,
-  endAiAuthoringSessions,
 } from "../auth/password-session";
 import { fail } from "../http/errors";
 import {
@@ -20,9 +19,9 @@ import type { RouteDependencies } from "./dependencies";
 
 export function registerSessionRoutes(
   app: Elysia,
-  dependencies: Pick<RouteDependencies, "aiAuthoring" | "requestIp">
+  dependencies: Pick<RouteDependencies, "requestIp">
 ): void {
-  const { aiAuthoring, requestIp } = dependencies;
+  const { requestIp } = dependencies;
   app
     .post(
       "/api/auth/sign-in/email",
@@ -39,7 +38,7 @@ export function registerSessionRoutes(
               )
             )
           : undefined;
-        return handleEmailSignIn(request, body, sourceIp, aiAuthoring);
+        return handleEmailSignIn(request, body, sourceIp);
       },
       { parse: "none" }
     )
@@ -61,11 +60,7 @@ export function registerSessionRoutes(
     });
 }
 
-export function registerPasswordRoutes(
-  app: Elysia,
-  dependencies: Pick<RouteDependencies, "aiAuthoring">
-): void {
-  const { aiAuthoring } = dependencies;
+export function registerPasswordRoutes(app: Elysia): void {
   app.post(
     "/api/account/password",
     async ({ request }) => {
@@ -123,7 +118,7 @@ export function registerPasswordRoutes(
       }
 
       const passwordHash = await authContext.password.hash(newPassword);
-      const revokedOwnerSessionIds = await prisma.$transaction(async (tx) => {
+      await prisma.$transaction(async (tx) => {
         const update = await tx.account.updateMany({
           data: { password: passwordHash },
           where: { id: account.id, password: currentHash },
@@ -135,52 +130,23 @@ export function registerPasswordRoutes(
           data: { mustChangePassword: false },
           where: { id: identity.id },
         });
-        const sessions = await tx.session.findMany({
-          select: { id: true },
-          where: { userId: identity.id },
-        });
         await tx.session.deleteMany({ where: { userId: identity.id } });
-        return sessions.map(({ id }) => id);
       });
-      await endAiAuthoringSessions(aiAuthoring, revokedOwnerSessionIds);
       return { ok: true };
     },
     { parse: "none" }
   );
 }
 
-export function registerSessionExitRoutes(
-  app: Elysia,
-  dependencies: Pick<RouteDependencies, "aiAuthoring">
-): void {
-  const { aiAuthoring } = dependencies;
+export function registerSessionExitRoutes(app: Elysia): void {
   app
 
     .post("/api/auth/sign-out", async ({ request }) => {
       const identity = await identityFor(request);
       if (identity) {
-        let sessionRevoked = false;
-        try {
-          await aiAuthoring.endForSession(identity.sessionId, async () => {
-            await prisma.session.deleteMany({
-              where: { id: identity.sessionId },
-            });
-            sessionRevoked = true;
-          });
-        } catch (error) {
-          if (!sessionRevoked) {
-            throw error;
-          }
-          console.error(error);
-          return Response.json(
-            {
-              error: "sign_out_cleanup_failed",
-              message: "Session was revoked, but AI authoring cleanup failed",
-              sessionRevoked: true,
-            },
-            { status: 500 }
-          );
-        }
+        await prisma.session.deleteMany({
+          where: { id: identity.sessionId },
+        });
       }
       return { ok: true };
     })

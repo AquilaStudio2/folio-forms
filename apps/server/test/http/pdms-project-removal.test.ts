@@ -52,7 +52,6 @@ const native = Bun.serve({
 });
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   pdmsProjects: {
     baseUrl: upstream.url.origin,
     secret: "synthetic-removal-secret",

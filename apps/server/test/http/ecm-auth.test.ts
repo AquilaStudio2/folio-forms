@@ -22,7 +22,7 @@ const formId = crypto.randomUUID();
 const templateId = crypto.randomUUID();
 const publicId = crypto.randomUUID().replaceAll("-", "");
 const documentKey = `ecm-auth-${id}`;
-const baseApp = createApp({ ecm: null, legacySso: null, omniRoute: null });
+const baseApp = createApp({ ecm: null, legacySso: null });
 let bearer = "";
 let capability = "";
 let adminId = "";
@@ -147,12 +147,7 @@ const scenario = (
     .digest("hex");
   accountKeys.push(accountKey);
   const app = () =>
-    createApp({
-      ecm: configuration,
-      ecmRuntime: runtime,
-      legacySso: null,
-      omniRoute: null,
-    });
+    createApp({ ecm: configuration, ecmRuntime: runtime, legacySso: null });
   return { accountKey, app, configuration };
 };
 
@@ -561,7 +556,7 @@ test("unset and unsafe ECM configuration leave ordinary Forms available without 
       username: "folio",
     },
   ]) {
-    const app = createApp({ ecm, legacySso: null, omniRoute: null });
+    const app = createApp({ ecm, legacySso: null });
     // oxlint-disable-next-line no-await-in-loop -- Verify each unsafe configuration fails before checking its unaffected Form access.
     expect((await requestCategories(app)).status).toBe(503);
     // oxlint-disable-next-line no-await-in-loop -- This read proves the preceding integration error did not revoke the Folio session.

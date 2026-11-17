@@ -10,21 +10,18 @@ export const SESSION_KEY = "onlyoffice.sessionToken";
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
-  readonly sessionRevoked: boolean;
   readonly userMessage?: string;
 
   constructor(
     status: number,
     code: string,
     message: string,
-    sessionRevoked = false,
     userMessage?: string
   ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
-    this.sessionRevoked = sessionRevoked;
     this.userMessage = userMessage;
   }
 }
@@ -33,7 +30,6 @@ interface ApiErrorBody {
   error?: unknown;
   message?: unknown;
   code?: unknown;
-  sessionRevoked?: unknown;
 }
 export type Role = "admin" | "user" | "viewer";
 export interface SessionUser {
@@ -518,7 +514,6 @@ export const returnPathForRole = (value: unknown, role: Role): string => {
 
 const legacySsoAdminPaths = new Set([
   "/admin",
-  "/admin/ai-authoring",
   "/admin/audit",
   "/admin/forms/new",
   "/admin/results",
@@ -632,7 +627,6 @@ const request = async <T>(
       response.status,
       code,
       fallbackMessage,
-      errorBody?.sessionRevoked === true,
       typeof errorBody?.message === "string" ? errorBody.message : undefined
     );
   }
@@ -664,8 +658,6 @@ const requestBlob = async (path: string, init?: RequestInit): Promise<Blob> => {
   }
   return response.blob();
 };
-export const apiGetBlob = (path: string): Promise<Blob> => requestBlob(path);
-
 export const apiPost = <T>(
   path: string,
   body?: unknown,
@@ -827,14 +819,7 @@ export const replacePassword = (currentPassword: string, newPassword: string) =>
   });
 
 export const signOut = async () => {
-  try {
-    await apiPost("/api/auth/sign-out");
-  } catch (error) {
-    if (error instanceof ApiError && error.sessionRevoked) {
-      clearToken();
-    }
-    throw error;
-  }
+  await apiPost("/api/auth/sign-out");
   clearToken();
 };
 
@@ -858,7 +843,6 @@ export const waitForOperation = async (
         422,
         operation.error ?? "operation_failed",
         operation.errorMessage ?? "The operation failed.",
-        false,
         operation.errorMessage
       );
     }

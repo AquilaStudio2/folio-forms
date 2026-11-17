@@ -65,7 +65,6 @@ const native = enabled
   : null;
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   onlyOffice: {
     convertDocxToPdf: () =>
       Promise.resolve(new TextEncoder().encode("%PDF-fixture")),
