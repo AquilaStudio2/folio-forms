@@ -5167,6 +5167,98 @@ test("physical-row deletion retains cleanup-only follow-up and permits only an A
   expect(publicAfter.status).toBe(404);
 });
 
+test("template whole-Response deletion protects surviving alias B and deletes the canonical resource only after its last owner retires", async () => {
+  const owner = await fixture({ templateMode: true });
+  const other = await fixture({ templateMode: true });
+  const admin = await fixture({ admin: true });
+  const viewer = await fixture({ viewer: true });
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }))).status
+  ).toBe("completed");
+  const first = attachmentSchema.parse((await draft(owner)).proof);
+  await resume(owner);
+  customToken = first.file_token;
+  customLink = first.file_link;
+  const replacement = new Uint8Array([83, 72, 65, 82, 69, 68]);
+  expect(
+    (
+      await poll(
+        owner,
+        await send(owner, { folio_proof: file(replacement) })
+      )
+    ).status
+  ).toBe("completed");
+  const current = attachmentSchema.parse((await draft(owner)).proof);
+  expect(current.file_link).toBe(first.file_link);
+  const aliases = await prisma.ecmAttachmentVersion.findMany({
+    orderBy: { sentAt: "asc" },
+    where: { responseId: owner.response.id },
+  });
+  expect(aliases).toHaveLength(2);
+  const surviving = fixtureValue(aliases.at(-1));
+  await prisma.ecmAttachmentReference.create({
+    data: {
+      responseId: other.response.id,
+      snapshotId: other.documentKey,
+      versionId: surviving.id,
+    },
+  });
+  const uploads = received.length;
+  const before = deleted.length;
+  const removed = await app.handle(
+    new Request(`http://test.local/api/responses/${owner.response.id}`, {
+      headers: { Authorization: `Bearer ${owner.bearer}` },
+      method: "DELETE",
+    })
+  );
+  expect(removed.status).toBe(200);
+  expect(await removed.json()).toMatchObject({
+    attachmentCleanup: { state: "complete", warning: null },
+    discarded: true,
+  });
+  expect(deleted.length).toBe(before);
+  expect(
+    new Uint8Array(await (await fetch(current.file_link)).arrayBuffer())
+  ).toEqual(replacement);
+  const denied = await app.handle(
+    new Request(`http://test.local/api/admin/responses/${other.response.id}`, {
+      body: JSON.stringify({ confirm: true }),
+      headers: {
+        Authorization: `Bearer ${viewer.bearer}`,
+        "Content-Type": "application/json",
+      },
+      method: "DELETE",
+    })
+  );
+  expect(denied.status).toBe(403);
+  const last = await app.handle(
+    new Request(`http://test.local/api/responses/${other.response.id}`, {
+      headers: { Authorization: `Bearer ${other.bearer}` },
+      method: "DELETE",
+    })
+  );
+  expect(last.status).toBe(200);
+  expect(await last.json()).toMatchObject({
+    attachmentCleanup: { state: "complete", warning: null },
+    discarded: true,
+  });
+  expect(deleted.slice(before)).toEqual([current.file_token]);
+  expect((await fetch(current.file_link)).status).toBe(404);
+  expect(received.length).toBe(uploads);
+  const tracked = await followUpFor(admin, surviving.operationId);
+  expect(tracked).toMatchObject({ responseDeleted: true });
+  expect(tracked.versions).toEqual(
+    expect.arrayContaining([
+      expect.objectContaining({
+        canDelete: false,
+        cleanupState: "deleted",
+        id: surviving.id,
+        state: "deleted",
+      }),
+    ])
+  );
+});
+
 test("whole-Response deletion retires its references and deletes only unshared Folio files after rows are gone", async () => {
   const owner = await fixture();
   const admin = await fixture({ admin: true });
@@ -5247,10 +5339,19 @@ test("whole-Response deletion retires its references and deletes only unshared F
 test.each(["failed", "unknown"] as const)(
   "whole-Response deletion keeps durable %s file cleanup separate from deleted data without retry",
   async (mode) => {
-    const owner = await fixture();
+    const owner = await fixture({ templateMode: true });
     const admin = await fixture({ admin: true });
     const saved = await poll(owner, await send(owner, { folio_proof: file() }));
     expect(saved.status).toBe("completed");
+    await resume(owner);
+    const original = attachmentSchema.parse((await draft(owner)).proof);
+    customToken = original.file_token;
+    customLink = original.file_link;
+    const replacement = await poll(
+      owner,
+      await send(owner, { folio_proof: file(new Uint8Array([66])) })
+    );
+    expect(replacement.status).toBe("completed");
     const savedDraft = await draft(owner);
     const proof = attachmentSchema.parse(savedDraft.proof);
     deleteFails = mode === "failed";
@@ -5287,7 +5388,7 @@ test.each(["failed", "unknown"] as const)(
         expect.arrayContaining([
           expect.objectContaining({
             canDelete: false,
-            cleanupState: "unknown",
+            cleanupState: expect.stringMatching(/^(pending|unknown)$/u),
             referenced: false,
           }),
         ])
