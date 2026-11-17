@@ -184,7 +184,7 @@ const attachmentSourceSnapshot = async (
   const savedWorkspace = await tx.operation.findFirst({
     select: { id: true },
     where: {
-      metadata: { path: ["nextDocumentKey"], equals: snapshotId },
+      metadata: { equals: snapshotId, path: ["nextDocumentKey"] },
       responseId,
       status: "completed",
       targetType: "correction",
@@ -366,10 +366,10 @@ const planAttachmentFile = (
     filename,
     id,
     number,
+    sha256: null,
     slot,
     target,
     year,
-    sha256: null,
   };
 };
 
@@ -387,12 +387,16 @@ const originalForChangedMetadata = async (
     fail(409, "invalid_attachment", `${label}: ไม่พบเอกสารต้นฉบับที่บันทึกแล้ว`);
   }
   const references = await prisma.ecmAttachmentReference.findMany({
-    select: { versionId: true, rowIndex: true },
+    select: { rowIndex: true, versionId: true },
     where: { responseId, snapshotId },
   });
   const versions = await prisma.ecmAttachmentVersion.findMany({
     take: slot.rowIndex === null ? 1 : undefined,
     where: {
+      bindingId: field.id,
+      category: field.attachment?.category ?? "",
+      fileLink: saved.file_link,
+      fileToken: saved.file_token,
       id: {
         in: references
           .filter(
@@ -403,10 +407,6 @@ const originalForChangedMetadata = async (
           )
           .map((reference) => reference.versionId),
       },
-      bindingId: field.id,
-      category: field.attachment?.category ?? "",
-      fileLink: saved.file_link,
-      fileToken: saved.file_token,
       originalName: saved.original_name,
       responseId,
       rowIndex: slot.rowIndex === null ? null : { not: null },
@@ -882,7 +882,7 @@ export const commitAttachmentBatch = async (
   );
   const currentReferences = sourceSnapshot
     ? await tx.ecmAttachmentReference.findMany({
-        select: { versionId: true, rowIndex: true },
+        select: { rowIndex: true, versionId: true },
         where: { responseId, snapshotId: sourceSnapshot },
       })
     : [];
@@ -893,8 +893,8 @@ export const commitAttachmentBatch = async (
     ? z
         .object({
           fromDocumentKey: z.string(),
-          toDocumentKey: z.string(),
           rowMapping: z.array(z.number().int().nonnegative().nullable()),
+          toDocumentKey: z.string(),
         })
         .parse(rowTransition)
     : undefined;
@@ -910,9 +910,9 @@ export const commitAttachmentBatch = async (
       reference.versionId,
       reference.rowIndex === null
         ? null
-        : transition
+        : (transition
           ? (transition.rowMapping[reference.rowIndex] ?? undefined)
-          : reference.rowIndex,
+          : reference.rowIndex),
     ])
   );
   for (const field of fields) {
@@ -988,7 +988,7 @@ export const commitAttachmentBatch = async (
         : null;
       // Current snapshot positions follow only verified row transitions, never immutable upload positions.
       const selected = column
-        ? uploaded
+        ? (uploaded
           ? [uploaded]
           : candidates.filter(
               (candidate) =>
@@ -996,7 +996,7 @@ export const commitAttachmentBatch = async (
                 candidate.state === "committed" &&
                 (currentRows.get(candidate.id) === null ||
                   currentRows.get(candidate.id) === rowIndex)
-            )
+            ))
         : [
             uploaded ??
               candidates.find((candidate) =>
@@ -1110,7 +1110,7 @@ export const commitAttachmentBatch = async (
     await requireAttachmentReferenceReady(tx, current, operation.id);
     // oxlint-disable-next-line no-await-in-loop -- Acquire every new canonical reference before retiring the previous Draft.
     await tx.ecmAttachmentReference.upsert({
-      create: { responseId, snapshotId, versionId, rowIndex },
+      create: { responseId, rowIndex, snapshotId, versionId },
       update: { rowIndex },
       where: { versionId_snapshotId: { snapshotId, versionId } },
     });

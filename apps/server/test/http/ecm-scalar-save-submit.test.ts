@@ -287,9 +287,9 @@ const provider = Bun.serve({
             .encode(
               originalReadMode === "same-size-viewer"
                 ? "<html>viewer</html>"
-                : originalReadMode === "same-size-error"
+                : (originalReadMode === "same-size-error"
                   ? '{"error":"denied"}'
-                  : "%PDF converted preview"
+                  : "%PDF converted preview")
             )
             .subarray(0, bytes.length)
         );
@@ -1744,11 +1744,10 @@ test.each([
     const saved = await draft(owner);
     const receipt = attachmentSchema.parse(saved.proof);
     const version = await prisma.ecmAttachmentVersion.findFirstOrThrow({
-      where: { responseId: owner.response.id, fileToken: receipt.file_token },
+      where: { fileToken: receipt.file_token, responseId: owner.response.id },
     });
     if (invalid !== "origin") {
       await prisma.ecmAttachmentVersion.update({
-        where: { id: version.id },
         data:
           invalid === "account"
             ? { accountKey: "foreign-account" }
@@ -1761,6 +1760,7 @@ test.each([
                   : invalid === "missing-digest"
                     ? { originalSha256: null }
                     : { state: "received" },
+        where: { id: version.id },
       });
     }
     await resume(owner);
@@ -2089,7 +2089,7 @@ test("initial Correction rejects a changed captured workspace base before origin
 });
 
 test("template Correction freezes catalog routing, rejects protected overwrite and reuses scalar/table originals at distinct destinations", async () => {
-  const owner = await fixture({ templateMode: true, tableAttachments: true });
+  const owner = await fixture({ tableAttachments: true, templateMode: true });
   const admin = await fixture({ admin: true });
   const scalar = new Uint8Array([6, 0, 255]);
   const row = new Uint8Array();
@@ -2100,8 +2100,8 @@ test("template Correction freezes catalog routing, rejects protected overwrite a
         await send(
           owner,
           {
-            folio_proof: file(scalar, "scalar.BIN"),
             '["folio_row_proof",2]': file(row, "empty.TXT"),
+            folio_proof: file(scalar, "scalar.BIN"),
           },
           "submit"
         )
@@ -2115,15 +2115,15 @@ test("template Correction freezes catalog routing, rejects protected overwrite a
     where: { id: owner.response.id },
   });
   const manifest = await prisma.fieldManifest.findUniqueOrThrow({
-    where: { publishedTemplateId: response.publishedTemplateId },
     include: { fields: true },
+    where: { publishedTemplateId: response.publishedTemplateId },
   });
   const frozen = manifest.fields.filter((field) => field.attachment);
   for (const field of frozen) {
     await prisma.storageTemplate.create({
       data: {
-        id: fixtureValue(field.attachmentTemplateId),
         document_category_id: 42,
+        id: fixtureValue(field.attachmentTemplateId),
         template_name: fixtureValue(field.attachmentTemplateName),
       },
     });
@@ -2136,26 +2136,26 @@ test("template Correction freezes catalog routing, rejects protected overwrite a
     const id = fixtureValue(field.attachmentTemplateId);
     const renamed = await app.handle(
       new Request(`http://test.local/api/admin/storage-templates/${id}`, {
-        method: "PATCH",
-        headers: {
-          Authorization: `Bearer ${admin.bearer}`,
-          "Content-Type": "application/json",
-        },
         body: JSON.stringify({
           document_category_id: 43,
           template_name: `changed-${id}`,
         }),
+        headers: {
+          Authorization: `Bearer ${admin.bearer}`,
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
       })
     );
     expect(renamed.status).toBe(200);
     const removed = await app.handle(
       new Request(`http://test.local/api/admin/storage-templates/${id}`, {
-        method: "DELETE",
+        body: JSON.stringify({ confirm: true }),
         headers: {
           Authorization: `Bearer ${admin.bearer}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ confirm: true }),
+        method: "DELETE",
       })
     );
     expect(removed.status).toBe(200);
@@ -2196,22 +2196,22 @@ test("template Correction freezes catalog routing, rejects protected overwrite a
   expect(
     received.slice(uploads).map((entry) => ({
       bytes: [...entry.bytes],
+      fields: entry.fields,
       name: entry.name,
       template: entry.template,
-      fields: entry.fields,
     }))
   ).toEqual([
     {
       bytes: [...scalar],
+      fields: ["documentFile", "template"],
       name: `CORRECTION.${owner.response.id}-ก่อหนี้-4_ขยาย(45).BIN`,
       template: "1",
-      fields: ["documentFile", "template"],
     },
     {
       bytes: [],
+      fields: ["documentFile", "template"],
       name: `CORRECTION.${owner.response.id}-หลักฐาน-ตาราง.TXT`,
       template: "1",
-      fields: ["documentFile", "template"],
     },
   ]);
   expect(originalReads.slice(reads).map((entry) => entry.path)).toEqual(
@@ -2225,9 +2225,9 @@ test("template Correction freezes catalog routing, rejects protected overwrite a
   expect(tableRowsSchema.parse(data.rows)[0]?.proof?.row_index).toBe(2);
   expect(
     await prisma.ecmAttachmentReference.findMany({
-      where: { snapshotId: correction.documentKey },
-      select: { rowIndex: true },
       orderBy: { rowIndex: "asc" },
+      select: { rowIndex: true },
+      where: { snapshotId: correction.documentKey },
     })
   ).toEqual([{ rowIndex: 2 }, { rowIndex: null }]);
   for (const [revision, expected] of [
@@ -2270,8 +2270,8 @@ test("template Correction freezes catalog routing, rejects protected overwrite a
   expect(
     (
       await prisma.fieldManifest.findUniqueOrThrow({
-        where: { id: manifest.id },
         include: { fields: true },
+        where: { id: manifest.id },
       })
     ).fields
   ).toEqual(manifest.fields);
@@ -3711,33 +3711,33 @@ test("template table metadata reuse reads every shifted physical slot through th
   expect(
     received.slice(uploads).map((entry) => ({
       bytes: [...entry.bytes],
-      name: entry.name,
       fields: entry.fields,
+      name: entry.name,
       template: entry.template,
     }))
   ).toEqual([
     {
       bytes: [],
-      name: `CHANGED.${f.response.id}-หลักฐาน-ตาราง.TXT`,
       fields: ["documentFile", "template"],
+      name: `CHANGED.${f.response.id}-หลักฐาน-ตาราง.TXT`,
       template: "1",
     },
     {
       bytes: [0, 255, 7],
-      name: `CHANGED.${f.response.id}-หลักฐาน-ตาราง.BIN`,
       fields: ["documentFile", "template"],
+      name: `CHANGED.${f.response.id}-หลักฐาน-ตาราง.BIN`,
       template: "1",
     },
     {
       bytes: [...new TextEncoder().encode("<html>original</html>")],
-      name: `CHANGED.${f.response.id}-อื่น-ตาราง.html`,
       fields: ["documentFile", "template"],
+      name: `CHANGED.${f.response.id}-อื่น-ตาราง.html`,
       template: "1",
     },
     {
       bytes: [8],
-      name: `CHANGED.${f.response.id}-อื่น-ตาราง`,
       fields: ["documentFile", "template"],
+      name: `CHANGED.${f.response.id}-อื่น-ตาราง`,
       template: "1",
     },
   ]);
