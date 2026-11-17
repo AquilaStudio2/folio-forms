@@ -6,11 +6,11 @@ import type { Operation } from "../model-types";
 import type { OperationMetadata } from "./model";
 
 /** Accepted operations may finish after expiry, but never after actor or workspace replacement. */
-export async function requireCorrectionWorkspace(
+export const requireCorrectionWorkspace = async (
   tx: Prisma.TransactionClient,
   operation: Operation,
   metadata: OperationMetadata
-) {
+) => {
   if (
     !metadata.workspaceLeaseId ||
     !metadata.workspaceDocumentKey ||
@@ -75,4 +75,4 @@ export async function requireCorrectionWorkspace(
     }
   }
   return workspace;
-}
+};
