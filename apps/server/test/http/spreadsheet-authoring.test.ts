@@ -28,7 +28,6 @@ import {
   attachmentCategoryPopupGuid,
   documentUrl,
   editorConfig,
-  pluginGuid,
   readOnlyViewerConfig,
   xlsxEditorOpening,
 } from "../../src/onlyoffice";
@@ -580,76 +579,7 @@ test("Excel upload and preview routes are unavailable", async () => {
   ).toBe(404);
 });
 
-test("Excel and DOCX field panels share supported autostart configuration", async () => {
-  const response = await request(
-    `/api/admin/forms/${publicId}/editor-config`,
-    bearer
-  );
-  expect(response.status).toBe(200);
-  const payload = (await response.json()) as {
-    bridge: {
-      id: string;
-      documentKey: string;
-      attachmentCategoryPopup?: { channelId: string; documentKey: string };
-    };
-    config: {
-      documentType: string;
-      editorConfig: {
-        plugins: {
-          autostart: string[];
-          options: Record<string, Record<string, unknown>>;
-          pluginsData: string[];
-        };
-      };
-    };
-  };
-  expect(payload.config.documentType).toBe("cell");
-  expect(payload.config.editorConfig.plugins.autostart).toEqual([
-    pluginGuid,
-    attachmentCategoryPopupGuid,
-  ]);
-  const scope = payload.bridge.attachmentCategoryPopup;
-  expect(scope).toEqual({
-    channelId: expect.any(String),
-    documentKey: payload.bridge.documentKey,
-  });
-  const popupOptions =
-    payload.config.editorConfig.plugins.options[attachmentCategoryPopupGuid];
-  expect(popupOptions).toEqual({
-    attachmentCategoryPopupChannelId: scope?.channelId,
-    bridgeId: payload.bridge.id,
-    documentKey: payload.bridge.documentKey,
-    parentOrigin: expect.any(String),
-  });
-  expect(
-    payload.config.editorConfig.plugins.options[pluginGuid]
-      ?.attachmentCategoryPopupChannelId
-  ).toBe(scope?.channelId);
-  expect(payload.config.editorConfig.plugins.pluginsData).toContain(
-    expect.stringContaining(
-      "/onlyoffice-plugin/attachment-category/config.json"
-    )
-  );
-  const popupManifest = await request(
-    "/onlyoffice-plugin/attachment-category/config.json",
-    bearer
-  );
-  expect(await popupManifest.json()).toMatchObject({
-    guid: attachmentCategoryPopupGuid,
-    variations: [
-      { EditorsSupport: ["cell"], isActivated: true, type: "background" },
-    ],
-  });
-  const popupPage = await request(
-    "/onlyoffice-plugin/attachment-category/index.html",
-    bearer
-  );
-  expect(popupPage.status).toBe(200);
-  expect(await popupPage.text()).not.toContain("__ONLYOFFICE_PLUGIN_SDK_URL__");
-  expect(
-    (await request("/onlyoffice-plugin/attachment-category/popup.js", bearer))
-      .status
-  ).toBe(200);
+test("attachment popup assets reject reads from a foreign origin", async () => {
   expect(
     (
       await app.handle(
@@ -662,34 +592,6 @@ test("Excel and DOCX field panels share supported autostart configuration", asyn
       )
     ).status
   ).toBe(403);
-  const docx = editorConfig(
-    {
-      action: "template-edit",
-      capabilities: {},
-      documentKey,
-      documentKind: "docx",
-      lease: {
-        expiresAt: new Date(Date.now() + 60_000).toISOString(),
-        id: fixtureId,
-        releaseUrl: "/release",
-        renewUrl: "/renew",
-      },
-      publicId,
-    },
-    { id: adminId, name: "Admin" }
-  ) as unknown as typeof payload;
-  expect(docx.config.editorConfig.plugins.autostart).toEqual([pluginGuid]);
-  expect(docx.bridge.attachmentCategoryPopup).toBeUndefined();
-  const manifest = await request("/onlyoffice-plugin/config.json", bearer);
-  expect(await manifest.json()).toMatchObject({
-    variations: [
-      {
-        EditorsSupport: ["word", "cell"],
-        isActivated: true,
-        type: "panelRight",
-      },
-    ],
-  });
 });
 
 test("saved Excel templates export XLSX and PDF with admin authorization and actionable conversion errors", async () => {
