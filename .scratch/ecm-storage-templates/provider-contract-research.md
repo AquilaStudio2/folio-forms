@@ -140,3 +140,13 @@ The [current planning owner](planning.md) records Q1–Q3 as closed: DCM-only or
 
 The new page selects category headers using provider type labels with category IDs as values, lists the related local templates, and supports create, update (name/category relation), and confirmed deletion. The attachment popup uses the same category/template relation as two dependent selects. Catalog changes do not edit DCM templates/folders or delete user files, and do not rewrite frozen Published Template/Response configuration. Implementation must not reduce this scope to create/list only.
 
+
+## Implementation discovery — public original-file GET, 2026-11-17
+
+The user authorized one primary project scenario. A single synthetic `กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).pdf` was uploaded once, with the expected reported folder `DMS/ShareFiles/2567/กทอ.67-00-0001/2. มติและการก่อหนี้`. No fallback scenario or file DELETE was performed.
+
+A read-only probe of `GET /api/beeecm/public/file?token=<original receipt file_token>` established a usable public original-byte path for that same file. The first GET returned401 with cached service authentication; no method conclusion was drawn. A subsequent explicit read used the existing shared coordinator to authenticate successfully and returned HTTP200, `Content-Type: application/pdf`,629 bytes, with full SHA-256 equal to the upload fixture: `4293a5cdab0808afc75f3e0e985f6f3cb5c7cfd457f9bb094d4c178375a8e21d`.
+
+**Supported for this runtime sample:** backend original-byte retrieval through the public file endpoint, not private viewer/PDF.js routes. **Partial:** the public collection snapshot does not list this GET method; no semantic/deployed provider revision is available. **Unverified:** all-type, zero-byte,10,000,000-byte, encrypted and extensionless provider behavior. A single PDF does not prove those cases.
+
+This supersedes earlier statements that no usable backend path had been established; it does not rewrite the historical source/public-collection snapshots above. Implementation must bind `file_link` and `file_token` to a trusted committed owned/account reference, validate origin and response bounds, preserve original bytes, and use shared service authentication. No additional upload, DELETE, alternate filename, private route, local original-byte archive or raw token publication was needed.
