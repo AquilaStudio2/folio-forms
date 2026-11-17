@@ -8,6 +8,7 @@ import { extractSpreadsheetData } from "../documents/spreadsheets/workbook";
 import type { SpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
 import { fail, HttpError } from "../http/errors";
 import type { Operation } from "../model-types";
+import { requireCorrectionWorkspace } from "../operations/correction-workspace";
 import { operationMetadata } from "../operations/model";
 import {
   attachmentSchema,
@@ -111,14 +112,14 @@ export const requireAttachmentMutationReady = async (
 const requireCorrectionBatchDocument = async (
   tx: Prisma.TransactionClient,
   operation: Operation,
-  batch: EcmAttachmentBatch,
+  responseId: string,
   lease: EditorLease
 ): Promise<void> => {
   const metadata = operationMetadata(operation.metadata);
   const submission = await tx.submission.findFirst({
     include: { corrections: { orderBy: { revision: "desc" }, take: 1 } },
     orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-    where: { responseId: batch.responseId },
+    where: { responseId },
   });
   const latest = submission?.corrections[0];
   if (
@@ -127,13 +128,68 @@ const requireCorrectionBatchDocument = async (
     (latest?.documentKey ?? submission.documentKey) !==
       metadata.baseDocumentKey ||
     (latest?.revision ?? 0) !== metadata.baseRevision ||
-    lease.workspaceDocumentKey !== batch.documentKey ||
+    lease.workspaceDocumentKey !== operation.documentKey ||
     lease.workspaceObjectKey !== metadata.workspaceObjectKey ||
     lease.workspaceBaseDocumentKey !== metadata.baseDocumentKey ||
     lease.workspaceBaseRevision !== metadata.baseRevision
   ) {
     fail(409, "stale_operation", "สิทธิ์หรือเอกสารเปลี่ยนก่อนบันทึกไฟล์");
   }
+};
+
+const attachmentSourceSnapshot = async (
+  tx: Prisma.TransactionClient,
+  operation: Operation,
+  responseId: string
+): Promise<string | null> => {
+  const snapshotId = operation.documentKey;
+  if (
+    !snapshotId ||
+    operation.targetType !== "correction" ||
+    (await tx.ecmAttachmentReference.count({
+      where: { responseId, snapshotId },
+    }))
+  ) {
+    return snapshotId;
+  }
+  const captured = await tx.operation.findFirst({
+    where: {
+      actorId: operation.actorId,
+      documentKey: snapshotId,
+      id: operation.id,
+      responseId,
+      status: "processing",
+      targetId: responseId,
+      targetType: "correction",
+    },
+  });
+  if (!captured || captured.actorId !== operation.actorId) {
+    fail(
+      409,
+      "stale_operation",
+      "The correction workspace is no longer current"
+    );
+  }
+  const metadata = operationMetadata(captured.metadata);
+  const workspace = await requireCorrectionWorkspace(tx, captured, metadata);
+  const response = await tx.response.findFirst({
+    where: { formId: metadata.formId, id: responseId, status: "submitted" },
+  });
+  if (!response) {
+    fail(409, "stale_operation", "The Submission is no longer correctable");
+  }
+  await requireCorrectionBatchDocument(tx, captured, responseId, workspace);
+  // A saved empty workspace is not an initial clone and cannot resurrect its base.
+  const savedWorkspace = await tx.operation.findFirst({
+    select: { id: true },
+    where: {
+      metadata: { path: ["nextDocumentKey"], equals: snapshotId },
+      responseId,
+      status: "completed",
+      targetType: "correction",
+    },
+  });
+  return savedWorkspace ? snapshotId : workspace.workspaceBaseDocumentKey;
 };
 
 const requireBatchScope = async (
@@ -169,7 +225,12 @@ const requireBatchScope = async (
     if (response.status !== "submitted") {
       fail(409, "stale_operation", "สิทธิ์หรือเอกสารเปลี่ยนก่อนบันทึกไฟล์");
     }
-    await requireCorrectionBatchDocument(tx, operation, batch, lease);
+    await requireCorrectionBatchDocument(
+      tx,
+      operation,
+      batch.responseId,
+      lease
+    );
   } else if (
     response.userId !== batch.actorId ||
     response.draftDocumentKey !== batch.documentKey ||
@@ -468,6 +529,11 @@ const planAttachmentUploads = async (
     })
   );
   const plans: AttachmentPlan[] = [];
+  const sourceSnapshot = await attachmentSourceSnapshot(
+    prisma,
+    input.operation,
+    responseId
+  );
   for (const slot of slots) {
     const target = slot.rowIndex === null ? data : targets.get(slot.rowIndex);
     if (!target || input.removals.has(slot.key)) {
@@ -489,7 +555,7 @@ const planAttachmentUploads = async (
         responseId,
         data,
         ecm,
-        input.operation.documentKey
+        sourceSnapshot
       );
       file = original?.file;
       sha256 = original?.sha256 ?? null;
@@ -781,10 +847,15 @@ export const commitAttachmentBatch = async (
   }
   checkAttachmentJsonBytes(data);
   const versions: string[] = [];
-  const currentReferences = operation.documentKey
+  const sourceSnapshot = await attachmentSourceSnapshot(
+    tx,
+    operation,
+    responseId
+  );
+  const currentReferences = sourceSnapshot
     ? await tx.ecmAttachmentReference.findMany({
         select: { versionId: true },
-        where: { responseId, snapshotId: operation.documentKey },
+        where: { responseId, snapshotId: sourceSnapshot },
       })
     : [];
   const currentVersionIds = new Set(
