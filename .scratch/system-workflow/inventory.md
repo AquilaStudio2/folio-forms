@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `6c0ef6fc95a126f190e17348c9392f366f9d2bf6`
+Commit: `d399a810f89cede072d621cf3a3b94202ce80b9c`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -198,8 +198,8 @@ Separate private HTTP listener in `apps/server/src/document-worker-server.ts:170
 | EcmAttachmentBatch | `ecm_attachment_batches` | `packages/db/prisma/schema.prisma:702` |
 | EcmAttachmentIdentity | `ecm_attachment_identities` | `packages/db/prisma/schema.prisma:722` |
 | EcmAttachmentVersion | `ecm_attachment_versions` | `packages/db/prisma/schema.prisma:735` |
-| EcmAttachmentReference | `ecm_attachment_references` | `packages/db/prisma/schema.prisma:773` |
-| EcmAttachmentCleanup | `ecm_attachment_cleanups` | `packages/db/prisma/schema.prisma:784` |
+| EcmAttachmentReference | `ecm_attachment_references` | `packages/db/prisma/schema.prisma:774` |
+| EcmAttachmentCleanup | `ecm_attachment_cleanups` | `packages/db/prisma/schema.prisma:787` |
 
 ## Status enums
 

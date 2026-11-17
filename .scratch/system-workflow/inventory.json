@@ -1,8 +1,8 @@
 {
-  "commit": "6c0ef6fc95a126f190e17348c9392f366f9d2bf6",
+  "commit": "d399a810f89cede072d621cf3a3b94202ce80b9c",
   "branch": "feat/ecm-storage-templates",
-  "source_fingerprint": "f6a401a01ecec21b61e73ad429cdb522068b8bedd2a1dbb64ff772f10d264002",
-  "source_files": 322,
+  "source_fingerprint": "00052eaa7ef9b6bf2155b85d146e956a4a67cdd24d800947e562959b7a4ee179",
+  "source_files": 325,
   "pages": [
     {
       "route": "__root",
@@ -1000,13 +1000,13 @@
       "model": "EcmAttachmentReference",
       "table": "ecm_attachment_references",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 773
+      "line": 774
     },
     {
       "model": "EcmAttachmentCleanup",
       "table": "ecm_attachment_cleanups",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 784
+      "line": 787
     }
   ],
   "relations": [

@@ -84,7 +84,7 @@ flowchart TD
         scalarCapture --> scalarValidate["ตรวจ owner / lease / revision / button / native metadata"]
         scalarValidate --> scalarReuse{"ไม่มี File/removal ใหม่ และ metadata เดิม"}
         scalarReuse -->|"ใช่: ไม่ login/upload"| scalarCommit
-        scalarReuse -->|"metadata เปลี่ยน ไม่มี replacement/removal"| scalarOriginal["legacy: อ่าน owned original; template เปลี่ยนเลข: explicit retrieval error จนงาน 04 พร้อม"]
+        scalarReuse -->|"metadata เปลี่ยน ไม่มี replacement/removal"| scalarOriginal["legacy: owned direct original; template เปลี่ยนเลข: public authenticated GET ด้วย paired receipt token"]
         scalarOriginal -->|"ครบทุก plan จึงส่ง"| scalarIntent
         scalarOriginal -->|"อ่านไม่ได้ / size ไม่ตรง"| scalarOriginalFail["ไม่เริ่ม upload; canonical เดิมและ pending choice คงอยู่"]
         scalarPick --> scalarRemove["Remove เป็น pending; Cancel คืน saved state ไม่ส่ง HTTP write"]
