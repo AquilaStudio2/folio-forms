@@ -569,7 +569,7 @@ flowchart TD
         scalarCapture --> scalarValidate["ตรวจ owner / lease / revision / button / native metadata"]
         scalarValidate --> scalarReuse{"ไม่มี File/removal ใหม่ และ metadata เดิม"}
         scalarReuse -->|"ใช่: ไม่ login/upload"| scalarCommit
-        scalarReuse -->|"metadata เปลี่ยน ไม่มี replacement/removal"| scalarOriginal["legacy: อ่าน owned original; template เปลี่ยนเลข: explicit retrieval error จนงาน 04 พร้อม"]
+        scalarReuse -->|"metadata เปลี่ยน ไม่มี replacement/removal"| scalarOriginal["legacy: owned direct original; template เปลี่ยนเลข: public authenticated GET ด้วย paired receipt token"]
         scalarOriginal -->|"ครบทุก plan จึงส่ง"| scalarIntent
         scalarOriginal -->|"อ่านไม่ได้ / size ไม่ตรง"| scalarOriginalFail["ไม่เริ่ม upload; canonical เดิมและ pending choice คงอยู่"]
         scalarPick --> scalarRemove["Remove เป็น pending; Cancel คืน saved state ไม่ส่ง HTTP write"]
@@ -690,7 +690,7 @@ Canonical completion และ whole-Response deletion รับ shared ledger f
 
 Draft ใช้ `attachmentRemovals: [{bindingId, rowIndex}]` ใน `payload` เดิม โดย scalar ใช้ null และ table ใช้ physical index ที่ server ตรวจซ้ำจาก trusted current workbook ไม่รับ binding/slot แปลก ซ้ำ หรือ File กับ removal ของช่องเดียวกัน ทั้ง removals และ Files ถูกปฏิเสธใน internal row/project request การไม่ส่ง removal หมายถึงคงไฟล์เดิม การ cancel เกิดใน pending host state ไม่เปลี่ยน canonical หรือส่ง DELETE Removal ที่ทำให้แถวว่างทั้งหมดนำแถวนั้นออกจาก compact JSON โดยไม่สลับไฟล์ใน column อื่น
 
-Legacy mode เมื่อปีหรือเลขเปลี่ยน server ใช้ paired owned committed receipt อ่าน original ตาม exact-origin/no-redirect/size policy เดิม New mode ไม่ upload เมื่อปีเปลี่ยนอย่างเดียว; เมื่อเลขเปลี่ยนและไม่มี replacement คืน explicit `attachment_original_unavailable` จนตั๋ว 04 พิสูจน์ supported original retrieval ไม่ใช้ viewer scraping, RustFS copy หรือบังคับเลือกไฟล์ใหม่ Pending replacement ยังคงชนะ refetch และ removal ไม่ refetch ช่องนั้น
+Legacy mode เมื่อปีหรือเลขเปลี่ยน server ใช้ paired owned committed receipt อ่าน original ตาม exact-origin/no-redirect/size policy เดิม New mode ไม่ GET/upload/login เมื่อปีเปลี่ยนอย่างเดียว; เมื่อเลขเปลี่ยนและไม่มี replacement ตรวจ committed attempt ที่ current canonical snapshot อ้างอยู่ พร้อม Response/binding/receipt/account/origin ก่อนเรียก public `GET /api/beeecm/public/file?token=<trusted file_token>` ผ่าน shared auth ตรวจ actual bounded stream, exact expected size และ SHA-256 ของ original upload attempt ก่อนเริ่ม upload ใด ๆ จึงปฏิเสธ same-size viewer/error/converted bytes โดยไม่ห้าม legitimate HTML เก็บเฉพาะ nullable digest metadata ใน ledger ไม่เก็บ bytes/answer JSON เพิ่ม และไม่ fake-backfill hash จาก mutable URL ของ legacy/intermediate attempts ที่ไม่มี hash Pending replacement ชนะ refetch และ removal ไม่ refetch ช่องนั้น หลักฐาน live ของ parent ยืนยันเพียง PDF 629 bytes/hash เดิม; all-type/HTML/zero/10MB/encrypted matrix เป็น provider-double proof เท่านั้น ไม่ใช่ live provider guarantee
 
 ทุก canonical Draft transition รวม implicit row/project save ย้าย references ไป document key ใหม่ใน transaction เดียว ไม่อาศัย reference ของ Draft เก่าที่ไม่ใช่ canonical แล้ว การ retire refs ไม่แตะ snapshot ที่ Submission/Correction/workspace/eligible Operation หรือ Draft อื่นยังใช้ และนับ surviving refs ทั่วระบบ การ acquire ref กับ deletion claim lock version row เดียวกัน จึง acquire ไปยัง deleting/deletion-unknown version ไม่ได้ Internal workspace/Correction completion รักษา canonical receipt ของ base revision และ references โดยไม่เริ่ม attachment writes
 

@@ -504,7 +504,13 @@ export class EcmClient {
     return this.configured().accountKey;
   }
 
-  async originalBytes(link: string, expectedSize: number): Promise<Blob> {
+  async originalBytes(
+    link: string,
+    token: string,
+    expectedSize: number,
+    storageMode: "legacy" | "template",
+    expectedSha256: string | null
+  ): Promise<Blob> {
     const { origin } = new URL(this.configured().baseUrl);
     let url: URL;
     try {
@@ -517,6 +523,9 @@ export class EcmClient {
       url.username ||
       url.password ||
       url.href.includes("#") ||
+      !/^[!-~]{1,16384}$/u.test(token) ||
+      (storageMode === "template" &&
+        !/^[a-f0-9]{64}$/u.test(expectedSha256 ?? "")) ||
       !Number.isSafeInteger(expectedSize) ||
       expectedSize < 0 ||
       expectedSize > 10_000_000
@@ -524,17 +533,25 @@ export class EcmClient {
       return unavailable();
     }
     try {
-      const response = await this.runtime.fetch(url.href, {
-        credentials: "omit",
-        redirect: "manual",
-        signal: this.runtime.timeoutSignal(90_000),
-      });
+      const response =
+        storageMode === "template"
+          ? await this.request(
+              `file?token=${encodeURIComponent(token)}`,
+              { credentials: "omit", method: "GET" },
+              90_000
+            )
+          : await this.runtime.fetch(url.href, {
+              credentials: "omit",
+              redirect: "manual",
+              signal: this.runtime.timeoutSignal(90_000),
+            });
       if (response.status !== 200) {
         await response.body?.cancel();
         return unavailable();
       }
       const reader = response.body?.getReader();
       const chunks: Uint8Array[] = [];
+      const hash = storageMode === "template" ? createHash("sha256") : null;
       let size = 0;
       if (reader) {
         try {
@@ -549,12 +566,16 @@ export class EcmClient {
               return unavailable();
             }
             chunks.push(part.value);
+            hash?.update(part.value);
           }
         } finally {
           await reader.cancel();
         }
       }
-      if (size !== expectedSize) {
+      if (
+        size !== expectedSize ||
+        (hash && hash.digest("hex") !== expectedSha256)
+      ) {
         return unavailable();
       }
       return new Blob(chunks);
