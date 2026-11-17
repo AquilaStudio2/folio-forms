@@ -166,7 +166,19 @@ const originalReads: {
   path: string;
 }[] = [];
 const publicGets: string[] = [];
-let originalReadMode: "ok" | "redirect" | "oversized" | "wrong-size" = "ok";
+let originalReadMode:
+  | "ok"
+  | "redirect"
+  | "oversized"
+  | "wrong-size"
+  | "unauthorized"
+  | "missing"
+  | "viewer"
+  | "broken-stream"
+  | "same-size-viewer"
+  | "same-size-preview"
+  | "same-size-error"
+  | "stalled" = "ok";
 let deleteBarrier: { enter: () => void; release: Promise<void> } | null = null;
 const provider = Bun.serve({
   async fetch(request): Promise<Response> {
@@ -207,12 +219,47 @@ const provider = Bun.serve({
         status: 200,
       });
     }
-    if (request.method === "GET" && url.pathname.startsWith("/files/")) {
+    if (
+      request.method === "GET" &&
+      (url.pathname.startsWith("/files/") || url.pathname.endsWith("/file"))
+    ) {
       originalReads.push({
         authorization: request.headers.get("authorization"),
         cookie: request.headers.get("cookie"),
         path: url.pathname,
       });
+      if (url.pathname.endsWith("/file")) {
+        expect(request.headers.get("Authorization")).toBe(
+          "Bearer scalar-test-service-token"
+        );
+      }
+      if (originalReadMode === "unauthorized") {
+        return new Response(null, { status: 401 });
+      }
+      if (originalReadMode === "missing") {
+        return new Response(null, { status: 404 });
+      }
+      if (originalReadMode === "viewer") {
+        return new Response("<html>viewer, not original</html>");
+      }
+      if (originalReadMode === "stalled") {
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.enqueue(new Uint8Array([0]));
+            },
+          })
+        );
+      }
+      if (originalReadMode === "broken-stream") {
+        return new Response(
+          new ReadableStream({
+            start(controller) {
+              controller.error(new Error("truncated"));
+            },
+          })
+        );
+      }
       if (originalReadMode === "redirect") {
         return Response.redirect(`${provider.url.origin}/redirect-target`, 302);
       }
@@ -222,7 +269,26 @@ const provider = Bun.serve({
       if (originalReadMode === "wrong-size") {
         return new Response(new Uint8Array([1]));
       }
-      const saved = providerFiles.get(url.pathname);
+      const saved = url.pathname.endsWith("/file")
+        ? [...providerFiles.values()].find(
+            (entry) => entry.token === url.searchParams.get("token")
+          )
+        : providerFiles.get(url.pathname);
+      if (saved && originalReadMode.startsWith("same-size-")) {
+        const bytes = new Uint8Array(saved.bytes.length);
+        bytes.set(
+          new TextEncoder()
+            .encode(
+              originalReadMode === "same-size-viewer"
+                ? "<html>viewer</html>"
+                : originalReadMode === "same-size-error"
+                  ? '{"error":"denied"}'
+                  : "%PDF converted preview"
+            )
+            .subarray(0, bytes.length)
+        );
+        return new Response(bytes);
+      }
       return saved
         ? new Response(new Uint8Array(saved.bytes))
         : new Response(null, { status: 404 });
@@ -382,6 +448,7 @@ const provider = Bun.serve({
     return new Response(null, { status: 404 });
   },
   hostname: "127.0.0.1",
+  idleTimeout: 120,
   port: 0,
 });
 const previousEnvironment = Object.fromEntries(
@@ -867,7 +934,7 @@ const recover = (f: Fixture, checkpoint: string) =>
       }
     )
   );
-const poll = async (f: Fixture, accepted: Response) => {
+const poll = async (f: Fixture, accepted: Response, budgetMs = 90_000) => {
   let admissionError: string | undefined;
   if (accepted.status !== 202) {
     const body = z.object({ error: z.string(), message: z.string() }).safeParse(
@@ -882,7 +949,7 @@ const poll = async (f: Fixture, accepted: Response) => {
   }
   expect(accepted.status, admissionError).toBe(202);
   const envelope = envelopeSchema.parse(await accepted.json());
-  const deadline = Date.now() + 90_000;
+  const deadline = Date.now() + budgetMs;
   for (;;) {
     const result = await app.handle(
       new Request(`http://test.local/api/operations/${envelope.operationId}`, {
@@ -1393,7 +1460,119 @@ test("template year-only edits preserve ordinary answers without uploading uncha
   expect(logins).toBe(authentication);
 });
 
-test("template docs_number change without replacement stays explicit retrieval error without external fallback", async () => {
+test("template docs_number change reuses authenticated original without picker, then reloads and submits", async () => {
+  const owner = await fixture({ templateMode: true });
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }))).status
+  ).toBe("completed");
+  await resume(owner);
+  snapshots.set(
+    owner.documentKey,
+    replaceCell(fixtureValue(snapshots.get(owner.documentKey)), "B2", "CHANGED")
+  );
+  const uploads = received.length;
+  const reads = originalReads.length;
+  expect((await poll(owner, await send(owner, {}))).status).toBe("completed");
+  expect(received.length).toBe(uploads + 1);
+  expect(originalReads.length).toBe(reads + 1);
+  expect(originalReads.at(-1)).toMatchObject({
+    authorization: "Bearer scalar-test-service-token",
+    cookie: null,
+    path: "/api/beeecm/public/file",
+  });
+  expect(received.at(-1)?.bytes).toEqual(new Uint8Array([0, 255, 7, 1]));
+  expect(received.at(-1)?.name).toBe("CHANGED-ก่อหนี้-4_ขยาย(45).BIN");
+  await resume(owner);
+  expect((await poll(owner, await send(owner, {}, "submit"))).status).toBe(
+    "completed"
+  );
+  expect(received.length).toBe(uploads + 1);
+  expect(originalReads.length).toBe(reads + 1);
+});
+
+test.each([
+  ["binary.BIN", new Uint8Array([0, 255, 7, 1])],
+  ["original.html", new TextEncoder().encode("<!doctype html><p>original</p>")],
+  ["plain.txt", new TextEncoder().encode("ต้นฉบับ\n")],
+  ["image.PNG", new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])],
+  [
+    "protected.zip",
+    Buffer.from(
+      "UEsDBAoACQAAAGhUcV2gTZqnEAAAAAQAAAAMABwAb3JpZ2luYWwuYmluVVQJAAN0y/tqEM37anV4CwABBPUBAAAEAAAAADHQzZpxfvkmszL+oRDy49FQSwcIoE2apxAAAAAEAAAAUEsBAh4DCgAJAAAAaFRxXaBNmqcQAAAABAAAAAwAGAAAAAAAAAAAAKSBAAAAAG9yaWdpbmFsLmJpblVUBQADdMv7anV4CwABBPUBAAAEAAAAAFBLBQYAAAAAAQABAFIAAABmAAAAAAA=",
+      "base64"
+    ),
+  ],
+  ["extensionless", new Uint8Array([5, 4, 3])],
+  ["empty", new Uint8Array(0)],
+  ["one.bin", new Uint8Array([255])],
+  ["near-maximum.bin", new Uint8Array(9_999_999)],
+  ["maximum.bin", new Uint8Array(10_000_000)],
+] as const)(
+  "template number change preserves exact simulated original %s",
+  async (name, bytes) => {
+    const owner = await fixture({ templateMode: true });
+    expect(
+      (await poll(owner, await send(owner, { folio_proof: file(bytes, name) })))
+        .status
+    ).toBe("completed");
+    await resume(owner);
+    snapshots.set(
+      owner.documentKey,
+      replaceCell(
+        fixtureValue(snapshots.get(owner.documentKey)),
+        "B2",
+        `CHANGED.${crypto.randomUUID()}`
+      )
+    );
+    expect((await poll(owner, await send(owner, {}))).status).toBe("completed");
+    expect(received.at(-1)?.bytes).toEqual(bytes);
+    expect(attachmentSchema.parse((await draft(owner)).proof)).toMatchObject({
+      original_name: name,
+      size_bytes: bytes.byteLength,
+    });
+  }
+);
+
+test.each([
+  "redirect",
+  "oversized",
+  "wrong-size",
+  "unauthorized",
+  "missing",
+  "viewer",
+  "broken-stream",
+] as const)(
+  "template original %s fails before upload and preserves canonical Draft",
+  async (mode) => {
+    const owner = await fixture({ templateMode: true });
+    expect(
+      (await poll(owner, await send(owner, { folio_proof: file() }))).status
+    ).toBe("completed");
+    const saved = await draft(owner);
+    await resume(owner);
+    snapshots.set(
+      owner.documentKey,
+      replaceCell(
+        fixtureValue(snapshots.get(owner.documentKey)),
+        "B2",
+        `CHANGED.${crypto.randomUUID()}`
+      )
+    );
+    const uploads = received.length;
+    const gets = publicGets.length;
+    originalReadMode = mode;
+    expect((await poll(owner, await send(owner, {}))).status).toBe("failed");
+    expect(received.length).toBe(uploads);
+    expect(publicGets.slice(gets).length).toBeGreaterThan(0);
+    expect(
+      publicGets.slice(gets).every((path) => path === "/api/beeecm/public/file")
+    ).toBe(true);
+    expect(await draft(owner)).toEqual(saved);
+  }
+);
+
+test("template original stalled stream expires its real transport budget before upload", async () => {
+  // Native HTTP streaming uses the platform abort clock; fake timers cannot advance this transport.
   const owner = await fixture({ templateMode: true });
   expect(
     (await poll(owner, await send(owner, { folio_proof: file() }))).status
@@ -1402,15 +1581,179 @@ test("template docs_number change without replacement stays explicit retrieval e
   await resume(owner);
   snapshots.set(
     owner.documentKey,
-    replaceCell(fixtureValue(snapshots.get(owner.documentKey)), "B2", "CHANGED")
+    replaceCell(
+      fixtureValue(snapshots.get(owner.documentKey)),
+      "B2",
+      `CHANGED.${crypto.randomUUID()}`
+    )
   );
+  originalReadMode = "stalled";
   const uploads = received.length;
-  const reads = originalReads.length;
-  expect((await poll(owner, await send(owner, {}))).status).toBe("failed");
+  const started = Date.now();
+  expect((await poll(owner, await send(owner, {}), 115_000)).status).toBe(
+    "failed"
+  );
+  expect(Date.now() - started).toBeGreaterThanOrEqual(90_000);
   expect(received.length).toBe(uploads);
-  expect(originalReads.length).toBe(reads);
   expect(await draft(owner)).toEqual(saved);
+}, 120_000);
+
+test("template replacement wins over original retrieval on number change", async () => {
+  const owner = await fixture({ templateMode: true });
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }))).status
+  ).toBe("completed");
+  await resume(owner);
+  snapshots.set(
+    owner.documentKey,
+    replaceCell(
+      fixtureValue(snapshots.get(owner.documentKey)),
+      "B2",
+      `REPLACED.${crypto.randomUUID()}`
+    )
+  );
+  const reads = originalReads.length;
+  originalReadMode = "missing";
+  expect(
+    (
+      await poll(
+        owner,
+        await send(owner, {
+          folio_proof: file(new Uint8Array([8, 9]), "new.bin"),
+        })
+      )
+    ).status
+  ).toBe("completed");
+  expect(originalReads.length).toBe(reads);
+  expect(received.at(-1)?.bytes).toEqual(new Uint8Array([8, 9]));
 });
+
+test.each([
+  "same-size-viewer",
+  "same-size-preview",
+  "same-size-error",
+] as const)(
+  "template digest rejects %s without rejecting legitimate HTML originals",
+  async (mode) => {
+    const owner = await fixture({ templateMode: true });
+    const bytes = new TextEncoder().encode(
+      "<!doctype html><p>legitimate original HTML content</p>"
+    );
+    expect(
+      (
+        await poll(
+          owner,
+          await send(owner, { folio_proof: file(bytes, "original.html") })
+        )
+      ).status
+    ).toBe("completed");
+    const saved = await draft(owner);
+    await resume(owner);
+    snapshots.set(
+      owner.documentKey,
+      replaceCell(
+        fixtureValue(snapshots.get(owner.documentKey)),
+        "B2",
+        `CHANGED.${crypto.randomUUID()}`
+      )
+    );
+    originalReadMode = mode;
+    const uploads = received.length;
+    expect((await poll(owner, await send(owner, {}))).status).toBe("failed");
+    expect(received.length).toBe(uploads);
+    expect(await draft(owner)).toEqual(saved);
+  }
+);
+
+test("template same receipt/name/size replacement reuses current B bytes on number change", async () => {
+  const owner = await fixture({ templateMode: true });
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }))).status
+  ).toBe("completed");
+  const first = attachmentSchema.parse((await draft(owner)).proof);
+  await resume(owner);
+  customToken = first.file_token;
+  customLink = first.file_link;
+  expect(
+    (
+      await poll(
+        owner,
+        await send(owner, { folio_proof: file(new Uint8Array([8, 7, 6, 5])) })
+      )
+    ).status
+  ).toBe("completed");
+  await resume(owner);
+  snapshots.set(
+    owner.documentKey,
+    replaceCell(
+      fixtureValue(snapshots.get(owner.documentKey)),
+      "B2",
+      `CHANGED.${crypto.randomUUID()}`
+    )
+  );
+  customToken = null;
+  customLink = null;
+  expect((await poll(owner, await send(owner, {}))).status).toBe("completed");
+  expect(received.at(-1)?.bytes).toEqual(new Uint8Array([8, 7, 6, 5]));
+});
+
+test.each([
+  "account",
+  "response",
+  "binding",
+  "token",
+  "uncommitted",
+  "origin",
+  "missing-digest",
+] as const)(
+  "template original rejects %s evidence before provider GET",
+  async (invalid) => {
+    const owner = await fixture({ templateMode: true });
+    if (invalid === "origin") {
+      customLink = `${provider.url.origin.replace("127.0.0.1", "localhost")}/files/foreign`;
+    }
+    expect(
+      (await poll(owner, await send(owner, { folio_proof: file() }))).status
+    ).toBe("completed");
+    const saved = await draft(owner);
+    const receipt = attachmentSchema.parse(saved.proof);
+    const version = await prisma.ecmAttachmentVersion.findFirstOrThrow({
+      where: { responseId: owner.response.id, fileToken: receipt.file_token },
+    });
+    if (invalid !== "origin") {
+      await prisma.ecmAttachmentVersion.update({
+        where: { id: version.id },
+        data:
+          invalid === "account"
+            ? { accountKey: "foreign-account" }
+            : invalid === "response"
+              ? { responseId: crypto.randomUUID() }
+              : invalid === "binding"
+                ? { bindingId: "foreign-binding" }
+                : invalid === "token"
+                  ? { fileToken: "foreign-token" }
+                  : invalid === "missing-digest"
+                    ? { originalSha256: null }
+                    : { state: "received" },
+      });
+    }
+    await resume(owner);
+    snapshots.set(
+      owner.documentKey,
+      replaceCell(
+        fixtureValue(snapshots.get(owner.documentKey)),
+        "B2",
+        `CHANGED.${crypto.randomUUID()}`
+      )
+    );
+    const reads = originalReads.length;
+    const uploads = received.length;
+    expect((await poll(owner, await send(owner, {}))).status).toBe("failed");
+    expect(originalReads.length).toBe(reads);
+    expect(received.length).toBe(uploads);
+    expect(await draft(owner)).toEqual(saved);
+  }
+);
 
 test.each([0, 10_000_000])(
   "template scalar preserves %i original bytes and extensionless filename",

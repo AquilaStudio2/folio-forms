@@ -743,6 +743,7 @@ model EcmAttachmentVersion {
   filename         String
   originalName     String    @map("original_name")
   sizeBytes        Int       @map("size_bytes")
+  originalSha256   String?   @map("original_sha256") @db.Char(64)
   fiscalYear       String?   @map("fiscal_year")
   documentNumber   String    @map("document_number")
   category         String
