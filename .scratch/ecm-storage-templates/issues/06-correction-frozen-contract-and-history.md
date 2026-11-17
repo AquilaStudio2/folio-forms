@@ -69,3 +69,9 @@ Private wrapper `/tmp/folio-storage-templates-runtime/ticket06.env` was sourced 
 - A dedicated test repair made the case's frozen names unique before publication, retained filename/history assertions and preserved all7 pre-existing catalog entries unchanged. Its46-case Correction/table/original selection passed on that existing DB. Source lint repair separately preserved public original-reader/current-row/workspace contracts; neither repair changed the Correction policy.
 - After both repairs merged at `90b9e9b4235629a876343a5b8bd81d3e8ab2e2d8`, Parent root scoped lint/format44 files passed, forced types5/5 passed, forced build3/3 passed, and integrated frozen-Correction/current-B smoke passed **2 tests,0 failures,178 assertions**,8.29s.
 - Final native/export08 runs the delivery integration source after this gate. Full39 HTTP workflow and global UI results remain separately tracked; no worktree-only result or this limited smoke closes final review/release gates.
+
+### 2026-11-17 — Parent inspection of retained native artifacts
+
+- Independently inspected all6 actual XLSX exports (template/legacy × original/Correction1/older Correction1 selected after Correction2). Every full SHA-256 and size matched the retained export evidence; every worksheet value and external hyperlink matched that selected revision, not the latest.
+- Parsed every ZIP XML/VML part: no OLE/control/shape/drawing anchor, embedded file, separate `file_token` field or literal service Bearer remained. Empty drawing/VML containers are not controls. This is inspection of actual exported packages, not copied renderer input.
+- Extracted all6 actual PDF texts/links; document numbers and links matched each selected revision, including older Correction1. These retained06 artifacts complement, not replace, final08 execution on the current delivery source.
