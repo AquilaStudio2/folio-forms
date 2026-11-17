@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `1d23d50a9bbc4b4ae37014b3c2ed358b50272b7b`
+Commit: `6c0ef6fc95a126f190e17348c9392f366f9d2bf6`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -22,7 +22,7 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `/admin/` | `apps/web/src/routes/admin/index.tsx:5` |
 | `/admin/results/$responseId/correction` | `apps/web/src/routes/admin/results/$responseId/correction.tsx:242` |
 | `/admin/results/$responseId/` | `apps/web/src/routes/admin/results/$responseId/index.tsx:546` |
-| `/admin/results/` | `apps/web/src/routes/admin/results/index.tsx:810` |
+| `/admin/results/` | `apps/web/src/routes/admin/results/index.tsx:813` |
 | `/admin/results` | `apps/web/src/routes/admin/results.tsx:5` |
 | `/admin/storage-templates` | `apps/web/src/routes/admin/storage-templates.tsx:343` |
 | `/admin/users` | `apps/web/src/routes/admin/users.tsx:749` |
@@ -196,9 +196,10 @@ Separate private HTTP listener in `apps/server/src/document-worker-server.ts:170
 | EcmAuthState | `ecm_auth_states` | `packages/db/prisma/schema.prisma:680` |
 | EcmCategoryCatalog | `ecm_category_catalogs` | `packages/db/prisma/schema.prisma:693` |
 | EcmAttachmentBatch | `ecm_attachment_batches` | `packages/db/prisma/schema.prisma:702` |
-| EcmAttachmentVersion | `ecm_attachment_versions` | `packages/db/prisma/schema.prisma:721` |
-| EcmAttachmentReference | `ecm_attachment_references` | `packages/db/prisma/schema.prisma:749` |
-| EcmAttachmentCleanup | `ecm_attachment_cleanups` | `packages/db/prisma/schema.prisma:760` |
+| EcmAttachmentIdentity | `ecm_attachment_identities` | `packages/db/prisma/schema.prisma:722` |
+| EcmAttachmentVersion | `ecm_attachment_versions` | `packages/db/prisma/schema.prisma:735` |
+| EcmAttachmentReference | `ecm_attachment_references` | `packages/db/prisma/schema.prisma:773` |
+| EcmAttachmentCleanup | `ecm_attachment_cleanups` | `packages/db/prisma/schema.prisma:784` |
 
 ## Status enums
 

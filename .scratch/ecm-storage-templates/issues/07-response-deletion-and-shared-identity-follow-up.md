@@ -48,3 +48,8 @@
 - Evidence screenshots: `/var/folders/hx/gkp7qp017jz17c69mzbqc8t40000gn/T/omp-sshots-15d13032b5518e9f.webp` (owner unknown hold plus persistent warning), `/var/folders/hx/gkp7qp017jz17c69mzbqc8t40000gn/T/omp-sshots-15d1312ae6118ea0.png` (Viewer Results evidence).
 - Runtime launchers, credentials and fixtures stayed outside the repository. No new dashboard, retry queue, manual unlock, schema or provider-token authority. Full integrated suites, regenerated workflow artifacts and ticket closure remain with the integration owner. This evidence does not prove live DCM settlement or Production behavior.
 - Stopped owned server/provider, both web service instances, exact CDP Chrome service and browser handles; stopped and removed only `folio-storage-templates-gateway07`. Isolated DB and synthetic evidence remain for parent inspection. Merged the current integration branch before delivery; its only incoming change was additional shared spec evidence.
+
+### 2026-11-17 — Parent integration verification
+
+- Merged into `feat/ecm-storage-templates` at `6c0ef6fc95a126f190e17348c9392f366f9d2bf6` without conflicts. Parent ran the same deletion/follow-up HTTP selection on the integration checkout using its isolated DB/callback: **20 passed, 0 failed, 71 filtered**, 809 `expect` calls, 43.11 seconds.
+- This is integrated HTTP proof, not a replacement for the native worktree evidence above or final combined native/export acceptance. Final review and ticket closure remain pending.

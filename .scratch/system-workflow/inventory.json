@@ -1,8 +1,8 @@
 {
-  "commit": "1d23d50a9bbc4b4ae37014b3c2ed358b50272b7b",
+  "commit": "6c0ef6fc95a126f190e17348c9392f366f9d2bf6",
   "branch": "feat/ecm-storage-templates",
-  "source_fingerprint": "80650fca40e4ade1c6f8de867f3df5bf375c1652cd1b94a61c6c5218e8249c0d",
-  "source_files": 319,
+  "source_fingerprint": "f6a401a01ecec21b61e73ad429cdb522068b8bedd2a1dbb64ff772f10d264002",
+  "source_files": 322,
   "pages": [
     {
       "route": "__root",
@@ -67,7 +67,7 @@
     {
       "route": "/admin/results/",
       "file": "apps/web/src/routes/admin/results/index.tsx",
-      "line": 810
+      "line": 813
     },
     {
       "route": "/admin/results",
@@ -985,22 +985,28 @@
       "line": 702
     },
     {
+      "model": "EcmAttachmentIdentity",
+      "table": "ecm_attachment_identities",
+      "file": "packages/db/prisma/schema.prisma",
+      "line": 722
+    },
+    {
       "model": "EcmAttachmentVersion",
       "table": "ecm_attachment_versions",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 721
+      "line": 735
     },
     {
       "model": "EcmAttachmentReference",
       "table": "ecm_attachment_references",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 749
+      "line": 773
     },
     {
       "model": "EcmAttachmentCleanup",
       "table": "ecm_attachment_cleanups",
       "file": "packages/db/prisma/schema.prisma",
-      "line": 760
+      "line": 784
     }
   ],
   "relations": [
@@ -1326,6 +1332,15 @@
       "optional": false,
       "foreign_keys": [
         "holderUserId"
+      ]
+    },
+    {
+      "from": "EcmAttachmentVersion",
+      "field": "identity",
+      "to": "EcmAttachmentIdentity",
+      "optional": true,
+      "foreign_keys": [
+        "identityId"
       ]
     }
   ],
