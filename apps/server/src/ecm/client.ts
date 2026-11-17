@@ -157,6 +157,47 @@ const jsonBody = async (
   }
 };
 
+const originalBody = async (
+  response: Response,
+  expectedSize: number,
+  expectedSha256: string | null
+): Promise<Blob> => {
+  if (response.status !== 200) {
+    await response.body?.cancel();
+    return unavailable();
+  }
+  const reader = response.body?.getReader();
+  const chunks: Uint8Array[] = [];
+  const hash = expectedSha256 === null ? null : createHash("sha256");
+  let size = 0;
+  if (reader) {
+    try {
+      for (;;) {
+        // oxlint-disable-next-line no-await-in-loop -- Bound actual original bytes, never trust Content-Length.
+        const part = await reader.read();
+        if (part.done) {
+          break;
+        }
+        size += part.value.byteLength;
+        if (size > 10_000_000 || size > expectedSize) {
+          return unavailable();
+        }
+        chunks.push(part.value);
+        hash?.update(part.value);
+      }
+    } finally {
+      await reader.cancel();
+    }
+  }
+  if (
+    size !== expectedSize ||
+    (hash && hash.digest("hex") !== expectedSha256)
+  ) {
+    return unavailable();
+  }
+  return new Blob(chunks);
+};
+
 export class EcmClient {
   private readonly configuration: EcmConfiguration | null;
   private readonly runtime: EcmRuntime;
@@ -545,40 +586,11 @@ export class EcmClient {
               redirect: "manual",
               signal: this.runtime.timeoutSignal(90_000),
             });
-      if (response.status !== 200) {
-        await response.body?.cancel();
-        return unavailable();
-      }
-      const reader = response.body?.getReader();
-      const chunks: Uint8Array[] = [];
-      const hash = storageMode === "template" ? createHash("sha256") : null;
-      let size = 0;
-      if (reader) {
-        try {
-          for (;;) {
-            // oxlint-disable-next-line no-await-in-loop -- Bound actual original bytes, never trust Content-Length.
-            const part = await reader.read();
-            if (part.done) {
-              break;
-            }
-            size += part.value.byteLength;
-            if (size > 10_000_000 || size > expectedSize) {
-              return unavailable();
-            }
-            chunks.push(part.value);
-            hash?.update(part.value);
-          }
-        } finally {
-          await reader.cancel();
-        }
-      }
-      if (
-        size !== expectedSize ||
-        (hash && hash.digest("hex") !== expectedSha256)
-      ) {
-        return unavailable();
-      }
-      return new Blob(chunks);
+      return await originalBody(
+        response,
+        expectedSize,
+        storageMode === "template" ? expectedSha256 : null
+      );
     } catch {
       return unavailable();
     }
