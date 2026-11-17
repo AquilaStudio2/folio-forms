@@ -775,6 +775,8 @@ model EcmAttachmentReference {
   versionId  String @map("version_id") @db.Uuid
   snapshotId String @map("snapshot_id")
   responseId String @map("response_id") @db.Uuid
+  /// Current physical table position in this snapshot; null also preserves unknown legacy mappings.
+  rowIndex   Int?   @map("row_index")
 
   @@id([versionId, snapshotId])
   @@index([responseId])
