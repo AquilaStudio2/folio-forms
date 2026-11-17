@@ -670,6 +670,26 @@ const fixture = async (
               }
             : {}),
         })),
+      table: publishedBindings.table
+        ? {
+            ...publishedBindings.table,
+            columns: publishedBindings.table.columns.map((column) => ({
+              ...column,
+              ...(column.attachment
+                ? {
+                    attachment: {
+                      category: null,
+                      document_category_id: 42,
+                      mode: "template",
+                      storage_template_id: crypto.randomUUID(),
+                      template_name:
+                        column.key === "proof" ? "หลักฐาน-ตาราง" : "อื่น-ตาราง",
+                    },
+                  }
+                : {}),
+            })),
+          }
+        : null,
     });
     const prepared = await processSpreadsheet(unprotectSpreadsheet(template), {
       bindings: publishedBindings,
@@ -2108,8 +2128,9 @@ test("TCP chunked multipart cannot exceed its trusted slot budget or start provi
   expect(await draft(f)).toEqual(before);
 });
 
-test("table attachments retain physical gaps and attachment-only zero-byte rows across multiple columns", async () => {
-  const f = await fixture({ tableAttachments: true });
+for (const templateMode of [false, true]) {
+test(`${templateMode ? "template " : ""}table attachments retain physical gaps and attachment-only zero-byte rows across multiple columns`, async () => {
+  const f = await fixture({ tableAttachments: true, templateMode });
   const uploads = received.length;
   const completed = await poll(
     f,
@@ -2175,8 +2196,8 @@ test("table attachments retain physical gaps and attachment-only zero-byte rows 
   );
 });
 
-test("table attachment-only selected rows validate other required columns before any upload", async () => {
-  const f = await fixture({ tableAttachments: true, tableItemRequired: true });
+test(`${templateMode ? "template " : ""}table attachment-only selected rows validate other required columns before any upload`, async () => {
+  const f = await fixture({ tableAttachments: true, tableItemRequired: true, templateMode });
   const uploads = received.length;
   const result = await poll(
     f,
@@ -2193,14 +2214,16 @@ test("table attachment-only selected rows validate other required columns before
     )
   );
   expect(result.status).toBe("failed");
+  expect(result.result?.errorMessage).toContain("Required field: รายการ (B12)");
   expect(received.length).toBe(uploads);
   expect(await draft(f)).toEqual({});
 });
 
-test("table fully empty rows need no attachments but active ordinary rows require their column attachment", async () => {
+test(`${templateMode ? "template " : ""}table fully empty rows need no attachments but active ordinary rows require their column attachment`, async () => {
   const empty = await fixture({
     tableAttachments: true,
     tableItemRequired: true,
+    templateMode,
   });
   const emptySubmission = await poll(
     empty,
@@ -2210,6 +2233,7 @@ test("table fully empty rows need no attachments but active ordinary rows requir
   const active = await fixture({
     tableAttachments: true,
     tableItemRequired: true,
+    templateMode,
   });
   snapshots.set(
     active.documentKey,
@@ -2225,11 +2249,12 @@ test("table fully empty rows need no attachments but active ordinary rows requir
     await send(active, { folio_proof: file() }, "submit")
   );
   expect(activeSubmission.status).toBe("failed");
+  expect(activeSubmission.result?.errorMessage).toContain("Required attachment: หลักฐานรายแถว (แถว 3)");
   expect(received.length).toBe(uploads);
 });
 
-test("table zero-byte required files submit with valid ordinary input at physical not compact indices", async () => {
-  const f = await fixture({ tableAttachments: true, tableItemRequired: true });
+test(`${templateMode ? "template " : ""}table zero-byte required files submit with valid ordinary input at physical not compact indices`, async () => {
+  const f = await fixture({ tableAttachments: true, tableItemRequired: true, templateMode });
   snapshots.set(
     f.documentKey,
     replaceCell(fixtureValue(snapshots.get(f.documentKey)), "B12", "รายการจริง")
@@ -2269,8 +2294,8 @@ test("table zero-byte required files submit with valid ordinary input at physica
   ]);
 });
 
-test("table row shifts preserve exact versions and immutable send positions without ECM writes", async () => {
-  const f = await fixture({ tableAttachments: true });
+test(`${templateMode ? "template " : ""}table row shifts preserve exact versions and immutable send positions without ECM writes`, async () => {
+  const f = await fixture({ tableAttachments: true, templateMode });
   const initial = await poll(
     f,
     await send(f, {
@@ -2324,8 +2349,8 @@ test("table row shifts preserve exact versions and immutable send positions with
   expect(received.length).toBe(uploads);
 });
 
-test("table append preserves saved file slots and returns verified remount mapping without upload", async () => {
-  const f = await fixture({ tableAttachments: true });
+test(`${templateMode ? "template " : ""}table append preserves saved file slots and returns verified remount mapping without upload`, async () => {
+  const f = await fixture({ tableAttachments: true, templateMode });
   const initial = await poll(
     f,
     await send(f, {
@@ -2352,8 +2377,8 @@ test("table append preserves saved file slots and returns verified remount mappi
   expect(received.length).toBe(uploads);
 });
 
-test("table stale snapshots and forged physical slots stop before external writes", async () => {
-  const f = await fixture({ tableAttachments: true });
+test(`${templateMode ? "template " : ""}table stale snapshots and forged physical slots stop before external writes`, async () => {
+  const f = await fixture({ tableAttachments: true, templateMode });
   const uploads = received.length;
   const forged = await poll(
     f,
@@ -2401,8 +2426,8 @@ test("table stale snapshots and forged physical slots stop before external write
   expect(await draft(f)).toEqual({});
 });
 
-test("table removals compact only empty rows and never cross-wire another attachment column", async () => {
-  const f = await fixture({ tableAttachments: true });
+test(`${templateMode ? "template " : ""}table removals compact only empty rows and never cross-wire another attachment column`, async () => {
+  const f = await fixture({ tableAttachments: true, templateMode });
   const initial = await poll(
     f,
     await send(f, {
@@ -2438,8 +2463,8 @@ test("table removals compact only empty rows and never cross-wire another attach
   expect(after.rows).toEqual([tableRowsSchema.parse(before.rows)[1]]);
   expect(received.length).toBe(uploads);
 });
-test("table multi-column failure leaves the complete old Draft and never sends the next physical slot", async () => {
-  const f = await fixture({ tableAttachments: true });
+test(`${templateMode ? "template " : ""}table multi-column failure leaves the complete old Draft and never sends the next physical slot`, async () => {
+  const f = await fixture({ tableAttachments: true, templateMode });
   const initial = await poll(
     f,
     await send(f, {
@@ -2477,6 +2502,147 @@ test("table multi-column failure leaves the complete old Draft and never sends t
     [3],
   ]);
   expect(await draft(f)).toEqual(before);
+});
+}
+
+test("template table duplicate destinations retain physical receipts but share mutable provider bytes without DELETE", async () => {
+  const f = await fixture({ tableAttachments: true, templateMode: true });
+  const uploads = received.length;
+  const deletes = deleted.length;
+  customToken = crypto.randomUUID();
+  customLink = `${provider.url.origin}/files/${crypto.randomUUID()}`;
+  const result = await poll(f, await send(f, {
+    [JSON.stringify(["folio_row_proof", 0])]: file(new Uint8Array(), "empty.BIN"),
+    [JSON.stringify(["folio_row_proof", 2])]: file(new Uint8Array([7, 8]), "last.BIN"),
+  }));
+  expect(result.status).toBe("completed");
+  const saved = await draft(f);
+  const rows = tableRowsSchema.parse(saved.rows);
+  expect(rows.map((row) => row.proof)).toEqual([
+    { file_link: customLink, file_token: customToken, original_name: "empty.BIN", row_index: 0, size_bytes: 0 },
+    { file_link: customLink, file_token: customToken, original_name: "last.BIN", row_index: 2, size_bytes: 2 },
+  ]);
+  expect(received.slice(uploads).map((entry) => ({
+    bytes: [...entry.bytes], fields: entry.fields, name: entry.name, template: entry.template,
+  }))).toEqual([
+    { bytes: [], fields: ["documentFile", "template"], name: `${saved.docs_number}-หลักฐาน-ตาราง.BIN`, template: "1" },
+    { bytes: [7, 8], fields: ["documentFile", "template"], name: `${saved.docs_number}-หลักฐาน-ตาราง.BIN`, template: "1" },
+  ]);
+  expect(providerFiles.get(new URL(customLink).pathname)?.bytes).toEqual(new Uint8Array([7, 8]));
+  await resume(f);
+  const replacement = await poll(f, await send(f, {
+    [JSON.stringify(["folio_row_proof", 2])]: file(new Uint8Array([9]), "replacement.BIN"),
+  }));
+  expect(replacement.status).toBe("completed");
+  expect(tableRowsSchema.parse((await draft(f)).rows).map((row) => row.proof)).toEqual([
+    rows[0]?.proof,
+    { file_link: customLink, file_token: customToken, original_name: "replacement.BIN", row_index: 2, size_bytes: 1 },
+  ]);
+  expect(providerFiles.get(new URL(customLink).pathname)?.bytes).toEqual(new Uint8Array([9]));
+  expect(deleted.length).toBe(deletes);
+  await resume(f);
+  expect((await poll(f, await send(f, {}, "draft", crypto.randomUUID(), {
+    attachmentRemovals: [{ bindingId: "folio_row_proof", rowIndex: 0 }],
+  }))).status).toBe("completed");
+  expect(tableRowsSchema.parse((await draft(f)).rows)).toEqual([
+    { item: null, other: null, proof: { file_link: customLink, file_token: customToken, original_name: "replacement.BIN", row_index: 2, size_bytes: 1 } },
+  ]);
+  expect(deleted.length).toBe(deletes);
+  expect(received.length).toBe(uploads + 3);
+});
+
+test("template table identical shared receipts keep both physical attempt references usable for later replacement", async () => {
+  const admin = await fixture({ admin: true });
+  const f = await fixture({ tableAttachments: true, templateMode: true });
+  customToken = crypto.randomUUID();
+  customLink = `${provider.url.origin}/files/${crypto.randomUUID()}`;
+  const initial = await poll(f, await send(f, {
+    [JSON.stringify(["folio_row_proof", 0])]: file(new Uint8Array([1]), "same.BIN"),
+    [JSON.stringify(["folio_row_proof", 2])]: file(new Uint8Array([2]), "same.BIN"),
+  }));
+  expect(initial.status).toBe("completed");
+  const before = await draft(f);
+  expect(tableRowsSchema.parse(before.rows).map((row) => row.proof?.row_index)).toEqual([0, 2]);
+  await resume(f);
+  const uploads = received.length;
+  const deletes = deleted.length;
+  expect((await poll(f, await send(f, {}))).status).toBe("completed");
+  expect(received.length).toBe(uploads);
+  expect((await followUpFor(admin, initial.operationId)).versions.map((version) => ({
+    referenced: version.referenced, rowIndex: version.rowIndex, state: version.state,
+  }))).toEqual([
+    { referenced: true, rowIndex: 0, state: "committed" },
+    { referenced: true, rowIndex: 2, state: "committed" },
+  ]);
+  await resume(f);
+  const replacement = await poll(f, await send(f, {
+    [JSON.stringify(["folio_row_proof", 2])]: file(new Uint8Array([3]), "same.BIN"),
+  }));
+  expect(replacement.status, String(replacement.result?.errorMessage)).toBe("completed");
+  expect(tableRowsSchema.parse((await draft(f)).rows).map((row) => row.proof?.row_index)).toEqual([0, 2]);
+  expect(providerFiles.get(new URL(fixtureValue(customLink)).pathname)?.bytes).toEqual(new Uint8Array([3]));
+  expect(received.length).toBe(uploads + 1);
+  expect(deleted.length).toBe(deletes);
+});
+
+test("template table plans every destination before POST and rejects foreign or historical row ownership", async () => {
+  for (const protection of ["foreign", "history"] as const) {
+    const number = `TABLE.${crypto.randomUUID()}`;
+    const owner = await fixture({ number, tableAttachments: true, templateMode: true });
+    expect((await poll(owner, await send(owner, {
+      folio_proof: file(),
+      [JSON.stringify(["folio_row_proof", 2])]: file(),
+    }, protection === "history" ? "submit" : "draft"))).status).toBe("completed");
+    const uploads = received.length;
+    const deletes = deleted.length;
+    if (protection === "foreign") {
+      const other = await fixture({ number, tableAttachments: true, templateMode: true });
+      // The safe earlier column must not dispatch before the later protected destination is checked.
+      expect((await poll(other, await send(other, {
+        [JSON.stringify(["folio_row_other", 0])]: file(),
+        [JSON.stringify(["folio_row_proof", 3])]: file(),
+      }))).status).toBe("failed");
+      expect(await draft(other)).toEqual({});
+    } else {
+      const admin = await fixture({ admin: true });
+      const bridge = await openCorrection(owner, admin);
+      expect((await poll(admin, await postCorrection(owner, admin, bridge, {
+        [JSON.stringify(["folio_row_proof", 0])]: file(new Uint8Array(), "safe.TXT"),
+        [JSON.stringify(["folio_row_other", 0])]: file(),
+        [JSON.stringify(["folio_row_proof", 2])]: file(),
+      }))).result?.errorMessage).toContain("ปลายทางไฟล์ซ้ำ");
+    }
+    expect(received.length).toBe(uploads);
+    expect(deleted.length).toBe(deletes);
+  }
+});
+
+test("template table uncertain shared overwrite keeps the complete Draft and holds later slots without DELETE or replay", async () => {
+  const f = await fixture({ tableAttachments: true, templateMode: true });
+  expect((await poll(f, await send(f, {
+    [JSON.stringify(["folio_row_proof", 2])]: file(new Uint8Array([1]), "old.BIN"),
+  }))).status).toBe("completed");
+  const before = await draft(f);
+  const old = fixtureValue(tableRowsSchema.parse(before.rows)[0]?.proof);
+  await resume(f);
+  customLink = old.file_link;
+  customToken = old.file_token;
+  nextMode = "store-then-reject";
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const checkpoint = crypto.randomUUID();
+  expect((await poll(f, await send(f, {
+    [JSON.stringify(["folio_row_proof", 2])]: file(new Uint8Array([2, 3]), "new.BIN"),
+    [JSON.stringify(["folio_row_other", 3])]: file(new Uint8Array([4]), "not-sent.BIN"),
+  }, "draft", checkpoint))).status).toBe("failed");
+  expect(await draft(f)).toEqual(before);
+  expect(providerFiles.get(new URL(old.file_link).pathname)?.bytes).toEqual(new Uint8Array([2, 3]));
+  expect(received.length).toBe(uploads + 1);
+  expect(deleted.length).toBe(deletes);
+  expect((await recover(f, checkpoint)).status).toBe(200);
+  expect((await send(f, {})).status).toBe(409);
+  expect(received.length).toBe(uploads + 1);
+  expect(deleted.length).toBe(deletes);
 });
 
 test("table metadata changes reupload saved original bytes for every physical slot using one root number and year", async () => {
