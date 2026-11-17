@@ -1,6 +1,10 @@
 import { expect, test } from "bun:test";
 
 import {
+  spreadsheetBindingAttempt,
+  spreadsheetBindingOutcome,
+} from "../src/spreadsheet-binding-recovery.js";
+import {
   spreadsheetBindingAnchors,
   spreadsheetColumnAnchor,
   spreadsheetTableColumnsAnchor,
@@ -290,6 +294,132 @@ test("a committed PATCH with a lost acknowledgement is verified instead of rolli
   expect(
     harness.requests.filter((request) => request.method === "POST")
   ).toHaveLength(1);
+});
+
+test.each(["template", "legacy"])(
+  "lost acknowledgement recovers %s attachment settings and permits further authoring",
+  async (mode) => {
+    const attachment =
+      mode === "template"
+        ? {
+            category: null,
+            document_category_id: 7,
+            mode,
+            storage_template_id: "selected-template",
+            template_name: "Selected destination",
+          }
+        : { category: "Legacy destination" };
+    const initial = {
+      ...bindings,
+      fields: [{ ...field, attachment, options: [], type: "text" }],
+    };
+    const savedAttachment =
+      mode === "template"
+        ? {
+            category: null,
+            document_category_id: 7,
+            mode,
+            storage_template_id: "selected-template",
+            template_name: "Selected destination",
+          }
+        : { category: "Legacy destination", mode: "legacy" };
+    const saved = {
+      ...initial,
+      fields: [
+        {
+          ...initial.fields[0],
+          attachment: savedAttachment,
+          label: "Recovered attachment",
+        },
+      ],
+    };
+    const next = {
+      ...saved,
+      fields: [{ ...saved.fields[0], label: "Further authoring" }],
+    };
+    const harness = templateHarness({
+      capabilityResponses: [
+        "read",
+        "write",
+        "verify",
+        "retry",
+        "read",
+        "write",
+        "save",
+      ],
+      responses: [
+        { bindings: initial, revision: 0 },
+        { body: { error: "Lost acknowledgement" }, httpStatus: 502 },
+        { body: { error: "Offline" }, httpStatus: 503 },
+        { bindings: saved, revision: 1 },
+        { bindings: saved, revision: 1 },
+        { bindings: next, revision: 2 },
+        { operationCapability: "poll", operationId: "saved-attachment" },
+        completedOperation({
+          documentKey: "document-key",
+          editorSessionPreserved: true,
+        }),
+      ],
+      spreadsheetBindings: initial,
+    });
+    acknowledgeBridge(harness);
+    await flushPlugin();
+    control(harness, "Title · ชื่อช่อง").value = "Recovered attachment";
+    await click(harness, "บันทึกการแก้ไข");
+    expect(control(harness, "Title · ชื่อช่อง").disabled).toBe(true);
+    await click(harness, "ลองยืนยันอีกครั้ง");
+    expect(control(harness, "Title · ชื่อช่อง").disabled).toBe(false);
+    control(harness, "Title · ชื่อช่อง").value = "Further authoring";
+    await click(harness, "บันทึกการแก้ไข");
+    await expect(
+      harness.window.FormBridge.runAction("save-template")
+    ).resolves.toMatchObject({ ok: true });
+    expect(
+      harness.requests.filter((request) => request.method === "PATCH")
+    ).toHaveLength(2);
+  }
+);
+
+test.each([
+  { category: "Different category" },
+  { document_category_id: 8 },
+  { mode: "legacy" },
+  { storage_template_id: "another-template" },
+  { template_name: "Another destination" },
+])("recovery rejects a truly changed attachment tuple: %j", (changed) => {
+  const value = {
+    ...field,
+    attachment: {
+      category: null,
+      document_category_id: 7,
+      mode: "template",
+      storage_template_id: "selected-template",
+      template_name: "Selected destination",
+    },
+  };
+  const attempt = spreadsheetBindingAttempt({
+    bindings,
+    change: { action: "upsert", kind: "field", value },
+    documentKey: "document-key",
+    revision: 0,
+  });
+  expect(
+    spreadsheetBindingOutcome(attempt, {
+      bindings,
+      documentKey: "document-key",
+      revision: 0,
+    })
+  ).toBe("unchanged");
+  expect(
+    spreadsheetBindingOutcome(attempt, {
+      bindings: {
+        ...bindings,
+        fields: [{ ...value, attachment: { ...value.attachment, ...changed } }],
+      },
+      documentKey: "document-key",
+      revision: 1,
+    })
+  ).toBe("conflict");
 });
 
 test("an unverified PATCH outcome retains the native change and blocks publishing", async () => {

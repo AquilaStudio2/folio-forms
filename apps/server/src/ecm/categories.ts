@@ -15,12 +15,36 @@ export const loadAttachmentCategories = async (ecm: EcmClient) => {
 /** Lock current local mappings until the Field write or publication commits. No provider lookup changes a frozen contract. */
 export const validateAttachmentStorageMappings = async (
   tx: Prisma.TransactionClient,
-  bindings: SpreadsheetBindings
+  bindings: SpreadsheetBindings,
+  previous?: SpreadsheetBindings
 ): Promise<void> => {
+  const previousFields = previous
+    ? [...previous.fields, ...(previous.table?.columns ?? [])]
+    : [];
+  // Draft edits may retain stale choices; publication passes no previous contract.
   const choices = [
     ...bindings.fields,
     ...(bindings.table?.columns ?? []),
-  ].flatMap((field) => (field.attachment ? [field.attachment] : []));
+  ].flatMap((field) => {
+    const choice = field.attachment;
+    const saved = previousFields.find(
+      (entry) => entry.id === field.id
+    )?.attachment;
+    if (
+      !choice ||
+      (saved &&
+        choice.mode === saved.mode &&
+        choice.category === saved.category &&
+        (choice.mode !== "template" ||
+          (saved.mode === "template" &&
+            choice.document_category_id === saved.document_category_id &&
+            choice.storage_template_id === saved.storage_template_id &&
+            choice.template_name === saved.template_name)))
+    ) {
+      return [];
+    }
+    return [choice];
+  });
   for (const choice of choices) {
     if (choice.mode !== "template") {
       fail(

@@ -398,7 +398,11 @@ export const registerSpreadsheetAuthoringRoutes = (
               "กำลังบันทึกเอกสาร กรุณารอให้เสร็จแล้วลองอีกครั้ง"
             );
           }
-          await validateAttachmentStorageMappings(tx, bindings);
+          await validateAttachmentStorageMappings(
+            tx,
+            bindings,
+            previousBindings
+          );
           const updated = await tx.templateDraft.updateMany({
             data: {
               bindingRevision: { increment: 1 },

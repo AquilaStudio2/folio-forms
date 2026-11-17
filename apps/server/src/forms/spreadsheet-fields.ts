@@ -253,6 +253,19 @@ export const spreadsheetBindingsFromFields = (
 
 const sharedType = (type: string): FieldType =>
   type === "boolean" ? FieldType.checkbox : (type as FieldType);
+const attachmentStorageData = (
+  attachment: SpreadsheetBindings["fields"][number]["attachment"]
+) => ({
+  attachment: Boolean(attachment),
+  attachmentCategory: attachment?.category ?? null,
+  attachmentCategoryId:
+    attachment?.mode === "template" ? attachment.document_category_id : null,
+  attachmentStorageMode: attachment?.mode ?? "legacy",
+  attachmentTemplateId:
+    attachment?.mode === "template" ? attachment.storage_template_id : null,
+  attachmentTemplateName:
+    attachment?.mode === "template" ? attachment.template_name : null,
+});
 const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
   const bindings = spreadsheetBindingSchema.parse(input);
   if (
@@ -263,21 +276,7 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
     throw new Error("Options are only supported for spreadsheet dropdowns");
   }
   const rows = bindings.fields.map((field) => ({
-    attachment: Boolean(field.attachment),
-    attachmentCategory: field.attachment?.category ?? null,
-    attachmentCategoryId:
-      field.attachment?.mode === "template"
-        ? field.attachment.document_category_id
-        : null,
-    attachmentStorageMode: field.attachment?.mode ?? "legacy",
-    attachmentTemplateId:
-      field.attachment?.mode === "template"
-        ? field.attachment.storage_template_id
-        : null,
-    attachmentTemplateName:
-      field.attachment?.mode === "template"
-        ? field.attachment.template_name
-        : null,
+    ...attachmentStorageData(field.attachment),
     binding: excelBindingSchema.parse({
       anchor: field.anchor,
       computed: field.computed,
@@ -319,21 +318,7 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
     });
     for (const column of bindings.table.columns) {
       rows.push({
-        attachment: Boolean(column.attachment),
-        attachmentCategory: column.attachment?.category ?? null,
-        attachmentCategoryId:
-          column.attachment?.mode === "template"
-            ? column.attachment.document_category_id
-            : null,
-        attachmentStorageMode: column.attachment?.mode ?? "legacy",
-        attachmentTemplateId:
-          column.attachment?.mode === "template"
-            ? column.attachment.storage_template_id
-            : null,
-        attachmentTemplateName:
-          column.attachment?.mode === "template"
-            ? column.attachment.template_name
-            : null,
+        ...attachmentStorageData(column.attachment),
         binding: excelBindingSchema.parse({
           computed: column.computed,
           id: column.id,
