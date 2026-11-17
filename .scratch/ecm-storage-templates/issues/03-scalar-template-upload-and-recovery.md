@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — ตั้ง Storage Template ใน popup และตรึงสัญญาเมื่อเผยแพร่ Form ใหม่.
 
-**Status:** ready-for-agent
+**Status:** implemented — isolated acceptance passed; integration review/closure pending
 
 **Parent:** [Storage Templates spec](../spec.md)
 
@@ -41,3 +41,15 @@
 DCM อาจเปลี่ยน bytes ที่ URL เดิมก่อน Folio transaction commit การ rollback DB ไม่คืน external bytes ต้องรักษา evidence/hold โดยไม่เพิ่ม automatic write retry หรือ pretend rollback หากยังขาด external settlement proof ให้ HOLD กรณีนั้นอย่างชัดเจน
 
 ## Comments
+
+### Implementation evidence — 2026-11-17
+
+- Branch `feat/storage-templates-03`; base checked before edits: merged02 integration `1d23d50a9bbc4b4ae37014b3c2ed358b50272b7b`.
+- Implementation criteria above are supported by current source, final existing HTTP-seam suite **90 passed / 0 failed**, and actual native smoke described below. Checkboxes remain available for the parent integration acceptance owner; this ticket is not closed from a worktree-only result.
+- Final command: source the private isolated `test.env`, then `bun test --timeout 120000 test/http/ecm-scalar-save-submit.test.ts` from `apps/server`. Covers legacy consumers, new object/array receipts, no-year and year-only saves, same identity, protected/foreign/concurrent destinations, unknown and received-but-uncommitted overwrite, alias HOLD propagation, exact 0/10,000,000-byte files, canonical commit/cleanup/recovery and existing table/Correction/deletion regressions.
+- Final affected Results UI suite: `bun run test:ui test/ui/admin-results-page.test.tsx` from `apps/web` passed **27 tests**, including Admin/Viewer follow-up rendering for nullable-year template mode and preserved legacy category/year display.
+- `bun run check-types` passed for all five configured tasks after final shared safety changes. Scoped Ultracite formatting/lint passed for the eleven changed source/test files. Repository build passed before the final shared lock-order/HOLD-notice additions; parent rebuilds final merged generated outputs.
+- Actual application + ONLYOFFICE9.4 + localhost provider smoke: select A → Save Draft → browser reload/reopen → unchanged Save → select B → Submit. No `fiscal_year` Field; original bytes and exact two-field multipart observed. Saved B reused the original POST token/link, receipt page rendered its canonical URL, provider saw **2 POST / 0 DELETE / 1 resource**. No SDK mocks or direct attachment-operation test payloads substituted for the native flow. Detailed sanitized evidence: `/tmp/folio-storage-templates-03-native-evidence.md`.
+- Durable schema: `EcmAttachmentIdentity` owns unique account/token and account/link; each `EcmAttachmentVersion` remains its original attempt with paired receipt, nullable year, frozen mapping, `identityId` and pre-dispatch `overwriteIdentityIds`. Shared transaction fence precedes row locks in canonical completion/deletion. Downstream04/05/06/07 contract: `/tmp/folio-storage-templates-03-contract.md`.
+- System-map prose/diagram and domain behavior updated. No application originals in RustFS/DB, no retry/search fallback, no live provider call or Production migration. Only isolated DB migrations deployed; parent-owned runtime/data preserved. Own native services/gateway/browser and throwaway runtime sources removed after acceptance.
+- Ticket04 remains required before feature delivery. Parent's latest public `GET /api/beeecm/public/file?token=...` probe established exact original bytes for the single authorized PDF sample, not the all-type matrix. Until04 implements trusted bounded retrieval, changed `docs_number` without a replacement retains explicit retrieval failure. Unknown external overwrite/DELETE settlement remains HOLD without a proven settlement contract; no fake rollback or manual unlock.

@@ -37,6 +37,8 @@
 
 ทบทวน Storage Template authoring วันที่ 17 พฤศจิกายน 2026 บน `feat/storage-templates-02` จาก integration `03c4906`: normal Field metadata เก็บ storage mode/category ID/catalog identity/name; publication ตรวจ local mapping ภายใน transaction แล้วตรึง snapshot ส่วน upload lifecycle ของ mode ใหม่เป็นงานตั๋ว 03 ไม่ถือว่าเปิดใช้ upload ได้จาก authoring ที่เสร็จแล้ว
 
+ทบทวน scalar Storage Template upload วันที่ 17 พฤศจิกายน 2026 บน `feat/storage-templates-03` จาก integration `1d23d50`: new mode ใช้ multipart สอง field, filename ไม่มี suffix และไม่บังคับปี; แยก attempt evidence จาก canonical provider identity พร้อม destination/reference/delete fencing ก่อน dispatch การตรวจรับระบุในตั๋ว 03 ไม่ใช่หลักฐาน Production หรือ all-type original retrieval ซึ่งยังเป็นงาน 04
+
 เอกสารนี้อธิบายพฤติกรรมตาม source ที่ทบทวนและระบุขอบเขตที่ตรวจด้วยระบบทดสอบไว้ท้ายเอกสาร
 
 รายการ source ครอบคลุมหน้าและ layout ฝั่งเว็บ, HTTP routes ของเซิร์ฟเวอร์หลัก, private document worker และ Prisma models
@@ -561,25 +563,26 @@ flowchart TD
         scalarCapture --> scalarValidate["ตรวจ owner / lease / revision / button / native metadata"]
         scalarValidate --> scalarReuse{"ไม่มี File/removal ใหม่ และ metadata เดิม"}
         scalarReuse -->|"ใช่: ไม่ login/upload"| scalarCommit
-        scalarReuse -->|"metadata เปลี่ยน ไม่มี replacement/removal"| scalarOriginal["อ่าน original จาก owned committed receipt: exact ECM origin / no redirect / no Bearer-cookie / actual size"]
+        scalarReuse -->|"metadata เปลี่ยน ไม่มี replacement/removal"| scalarOriginal["legacy: อ่าน owned original; template เปลี่ยนเลข: explicit retrieval error จนงาน 04 พร้อม"]
         scalarOriginal -->|"ครบทุก plan จึงส่ง"| scalarIntent
         scalarOriginal -->|"อ่านไม่ได้ / size ไม่ตรง"| scalarOriginalFail["ไม่เริ่ม upload; canonical เดิมและ pending choice คงอยู่"]
         scalarPick --> scalarRemove["Remove เป็น pending; Cancel คืน saved state ไม่ส่ง HTTP write"]
         scalarRemove --> scalarPending
         scalarReuse -->|"File/removal ใหม่"| scalarIntent["transaction สั้น: Operation + scoped batch และ version intent"]
-        scalarIntent --> scalarPlanned{"มีแผนส่งไฟล์ใหม่"}
-        scalarPlanned -->|"มี"| scalarUpload["ECM client เดิม: multipart bytes ส่งทีละไฟล์ ไม่ resend"]
+        scalarIntent --> scalarAdmission["shared ledger fence: account / destination / owner / history / active attempt"]
+        scalarAdmission --> scalarPlanned{"มีแผนส่งไฟล์ใหม่ที่ปลอดภัย"}
+        scalarPlanned -->|"มี"| scalarUpload["original bytes: template=1 สอง field; legacy=0 policy เดิม; ไม่ resend"]
         scalarPlanned -->|"ไม่มี: removal"| scalarCommit
         scalarUpload --> scalarReceipt{"receipt URL/token ถูกต้อง"}
-        scalarReceipt -->|"ใช่"| scalarDurable["persist receipt ทันที; ประกอบ URL-only workbook"]
+        scalarReceipt -->|"ใช่: object หรือหนึ่งรายการ array"| scalarDurable["persist original receipt/settlement; reconcile canonical provider identity แยกจาก attempt"]
         scalarDurable --> scalarCommit["recheck + atomic document / canonical JSON / references / Operation result"]
-        scalarReceipt -->|"ไม่ทราบผล"| scalarHold["durable hold อิสระจาก Operation timeout; อ่าน canonical เดิมได้"]
+        scalarReceipt -->|"ไม่ทราบผล"| scalarHold["durable hold; canonical คำตอบเดิมอ่านได้ แต่ URL อาจถูกเขียนทับแล้ว"]
         scalarHold --> scalarAdmin["ห้าม Save / Submit / Response delete; ติดต่อ Admin"]
         scalarDurable -->|"known failure / stale / JSON เกิน limit"| scalarCancel["cancel ทั้ง batch; cleanup เฉพาะ new unreferenced Folio files"]
         scalarCancel -->|"cleanup ไม่ยืนยัน"| scalarHold
         scalarCommit --> scalarResume["เปิด Draft กลับเห็น saved URL; clear เฉพาะ File snapshot ที่รับ"]
         scalarCommit --> scalarOld["commit cleanup intent ของรอบนี้ พร้อม new references; retire เฉพาะ obsolete Draft refs"]
-        scalarOld --> scalarFence{"version-row fence และ global refs"}
+        scalarOld --> scalarFence{"identity aliases / destination / global references fence"}
         scalarFence -->|"history / workspace / eligible operation ยังใช้"| scalarResume
         scalarFence -->|"ไม่มี refs: claim ก่อน dispatch"| scalarDelete["DELETE canonical token ครั้งเดียว เฉพาะ initiating operation"]
         scalarDelete -->|"ยืนยันแล้ว"| scalarResume
@@ -657,9 +660,11 @@ Bearer ใน PostgreSQL เข้ารหัสและแยก key ออ�
 
 ไม่มี ECM login UI หรือ public token endpoint และไม่มี credentials/Bearer ใน browser, answers หรือ workbook การเรียก category/upload/delete ที่ถูกปฏิเสธไม่ถูกส่งซ้ำหลัง refresh โดยอัตโนมัติ ไม่ยืนยัน provider จริงรองรับไฟล์ 0 bytes/เข้ารหัส/10 MB การตรวจ HTTP double กับ native browser เป็นหลักฐานคนละประเภท
 
-Scalar และ table-row slots ใช้ File จริงใน host เดิมจน explicit User Save Draft/Submit เท่านั้น Server ตรวจ actual bytes ไม่เชื่อ MIME หรือ Content-Length รับ encrypted/extensionless และ 0 bytes รวมถึง 10,000,000 bytes ไม่เขียน attachment binary ลง RustFS/JSON/XLSX ก่อน external write ตรวจ root scalar `fiscal_year`/`docs_number` ตาม native Field rules และชื่อไฟล์รวม หากผิดหยุดพร้อมระบุ Field/physical row และคง selection ไม่แก้ unsafe characters หรือแทน category เอง
+Scalar และ table-row slots ใช้ File จริงใน host เดิมจน explicit User Save Draft/Submit เท่านั้น Server ตรวจ actual bytes ไม่เชื่อ MIME หรือ Content-Length รับ encrypted/extensionless และ 0 bytes รวมถึง 10,000,000 bytes ไม่เขียน attachment binary ลง RustFS/JSON/XLSX ก่อน external write ตรวจ root scalar `docs_number` ตาม native Field rules; legacy เท่านั้นที่เพิ่ม `fiscal_year` prerequisite ตรวจชื่อไฟล์รวมและหยุดพร้อมระบุ Field/physical row หากผิด ไม่แก้ unsafe characters หรือแทน destination เอง
 
 `POST /api/forms/:publicId/draft` และ `/submit` รับ multipart `payload` กับ `attachment:<bindingId>` สำหรับ scalar หรือ `attachment:<encodeURIComponent(JSON.stringify([bindingId,rowIndex]))>` สำหรับ table โดยมี trusted native `snapshotUrl` และ checkpoint ของรอบนั้น Encode เฉพาะ multipart boundary เพื่อไม่ให้ Content-Disposition เปลี่ยน JSON quotes; server decode/validate หนึ่งครั้ง Host store ยังคง JSON slot key เดิม Client rowIndex เป็นเพียง slot request; server ตรวจ binding/button/physical bounds จาก canonical workbook และตรวจ native edits ก่อนเริ่มส่ง Multipart limit คำนวณจากจำนวน slot จริงของ trusted table ปัจจุบัน Host สร้าง Blob part จาก original File พร้อมชื่อเดิมเพื่อผ่าน renderer disk-file grant โดยไม่เปลี่ยน File identity ใช้ shared ECM client ส่ง original bytes ทีละไฟล์, `template="0"`, root ปี/เลขของ snapshot, หมวด frozen ต่อช่อง/column และ filename UUID version เดิม ไม่มี table upload flow แยก
+
+Published mode `template` ส่งเฉพาะ `template="1"` กับ original-byte `documentFile` ชื่อ `<docs_number>-<frozen template_name>.<original-extension>` คง casing และ extensionless ไม่เพิ่ม UUID/row/version suffix ไม่ส่ง year/number/category/ID แยก และไม่ lookup catalog ปัจจุบันเพื่อเปลี่ยน routing ส่วน mode `legacy` คง multipart/UUID filename เดิมตามย่อหน้าข้างต้น ไม่มีปีได้ใน ledger ของ new mode โดยไม่สร้างปีปลอม
 
 Listener ของ `createApp` ใช้ `maxRequestBodySize: Number.MAX_SAFE_INTEGER` แทน Bun default 128 MiB เพื่อไม่กำหนด aggregate attachment limit ที่ขัดกับ per-file contract ทุก startup ที่ใช้ factory เดียวกันรับ policy นี้ รวม entrypoint ปกติ ไม่ใช้ `0` ซึ่ง Bun 1.4.4 ไม่ได้ตีความว่า unlimited ตัวอ่าน multipart เดิมยังนับ stream จริงก่อน parse ตามจำนวน scalar/table slots ใน trusted current workbook, ตรวจแต่ละ File ไม่เกิน 10,000,000 bytes และตรวจ canonical JSON 262,144 bytes ตามเดิม ไม่เชื่อ Content-Length อย่างเดียว
 
@@ -671,9 +676,15 @@ Canonical scalar เป็น `null` หรือ strict object สี่ค่�
 
 Batch/version intent ไม่มี cascading relation กับ Response จึงไม่เสียหลักฐานเมื่อ Operation failed/expired หรือ Response ถูกลบ Started ที่ไม่มี verified receipt รวม provider HTTP4xx หลังส่ง bytes ไม่มีหลักฐานว่าไม่เขียน และ canceled batch ที่ cleanup ไม่ครบ block mutation ต่อโดยอิสระจากสถานะ Operation การ cleanup claim lock version ร่วมกับ reference creation ก่อน HTTP DELETE และไม่ reuse canceled receipts คำตอบ canonical เดิมยังอ่านได้ หาก Folio response หาย host ตรวจ `GET /api/responses/:id/attachment-operations/:checkpoint` และ poll Operation เดิม ไม่ส่ง bytes ซ้ำ Session storage เก็บเฉพาะ checkpoint ไม่เก็บ File หรือชื่อไฟล์เพื่ออ้างว่ากู้ bytes ได้
 
+`EcmAttachmentIdentity` แยก proven provider resource จาก `EcmAttachmentVersion` ซึ่งเป็น original attempt ที่เก็บ mode/frozen mapping/request/receipt ของตัวเอง Unique `(accountKey,fileToken)` และ `(accountKey,fileLink)` อยู่ที่ identity; attempts หลายครั้งผูก identity เดียวได้เมื่อ paired receipt/destination/ownership ตรงกัน ไม่ rewrite evidence เก่า Receipt ที่ขัดกันเก็บเป็น attempt แต่ไม่ adopt identity และ hold resource ที่เกี่ยวข้อง ไม่มี search/latest fallback
+
+ทุก ledger admission ใช้ transaction advisory fence เดียวก่อน batch/version locks พร้อม durable prepared/started/unknown/received destination reservation ตลอด external request interval ก่อน POST ตรวจ account+filename, owner และ protected Draft/Submission/Correction/workspace/eligible Operation references ของทุก alias ก่อน reference commit และก่อน DELETE ตรวจ fence เดียวกัน Same identity ที่ยังมี reference ไม่สร้าง cleanup; distinct resource ลบหลัง complete snapshot commit เท่านั้น Failed in-place commit คง hold และไม่ DELETE shared saved identity เพื่ออ้าง rollback
+
+Canonical completion และ whole-Response deletion รับ shared ledger fence ก่อน Operation/Response/Form row locks เพื่อไม่กลับลำดับกับ sender/cancel/cleanup Resource ที่ receipt ใหม่จับคู่ ownership ไม่ได้คง state `held` และแสดง mutation notice ต่อเจ้าของ canonical reference เดิมด้วย หลักฐาน `overwriteIdentityIds` ของ attempt เก็บ identities ที่อาจถูกเขียนทับก่อน dispatch แยกจาก `identityId` ที่พิสูจน์ได้จาก receipt จริง
+
 Draft ใช้ `attachmentRemovals: [{bindingId, rowIndex}]` ใน `payload` เดิม โดย scalar ใช้ null และ table ใช้ physical index ที่ server ตรวจซ้ำจาก trusted current workbook ไม่รับ binding/slot แปลก ซ้ำ หรือ File กับ removal ของช่องเดียวกัน ทั้ง removals และ Files ถูกปฏิเสธใน internal row/project request การไม่ส่ง removal หมายถึงคงไฟล์เดิม การ cancel เกิดใน pending host state ไม่เปลี่ยน canonical หรือส่ง DELETE Removal ที่ทำให้แถวว่างทั้งหมดนำแถวนั้นออกจาก compact JSON โดยไม่สลับไฟล์ใน column อื่น
 
-เมื่อปีหรือเลขเปลี่ยน server ใช้ paired receipt ของ Folio ที่ committed และเป็นของ Response/binding/category นั้นเท่านั้นอ่าน bytes เดิม Pending replacement ชนะ original refetch และ removal ไม่ refetch ช่องนั้น ใช้ `original_name` รักษานามสกุล ไม่เดาจาก URL Client ชั้นเดิม fetch เฉพาะ exact origin ของ `ECM_API_URL`, ปฏิเสธ credentials/fragment/redirect, ไม่ส่ง Bearer/cookies และอ่าน stream จริงภายใน 0–10,000,000 bytes พร้อมเทียบ canonical `size_bytes` ก่อนเริ่ม upload ทุกแผน หาก provider ใช้ file origin อื่นต้องทบทวนนโยบาย deployment ไม่เพิ่ม CDN fallback หรือ fetch arbitrary URL
+Legacy mode เมื่อปีหรือเลขเปลี่ยน server ใช้ paired owned committed receipt อ่าน original ตาม exact-origin/no-redirect/size policy เดิม New mode ไม่ upload เมื่อปีเปลี่ยนอย่างเดียว; เมื่อเลขเปลี่ยนและไม่มี replacement คืน explicit `attachment_original_unavailable` จนตั๋ว 04 พิสูจน์ supported original retrieval ไม่ใช้ viewer scraping, RustFS copy หรือบังคับเลือกไฟล์ใหม่ Pending replacement ยังคงชนะ refetch และ removal ไม่ refetch ช่องนั้น
 
 ทุก canonical Draft transition รวม implicit row/project save ย้าย references ไป document key ใหม่ใน transaction เดียว ไม่อาศัย reference ของ Draft เก่าที่ไม่ใช่ canonical แล้ว การ retire refs ไม่แตะ snapshot ที่ Submission/Correction/workspace/eligible Operation หรือ Draft อื่นยังใช้ และนับ surviving refs ทั่วระบบ การ acquire ref กับ deletion claim lock version row เดียวกัน จึง acquire ไปยัง deleting/deletion-unknown version ไม่ได้ Internal workspace/Correction completion รักษา canonical receipt ของ base revision และ references โดยไม่เริ่ม attachment writes
 
@@ -1111,6 +1122,7 @@ ER แสดงความสัมพันธ์หลักสำหรั�
 | Catalog ต่อการเปิด editor | `PdmsProjectCatalogSession` ผูกรายชื่อโครงการกับผู้ใช้ auth session, lease, target และ document |
 | ECM auth และ Document Category | `EcmAuthState` เก็บ encrypted token, expiry, generation และ shared claim; authoring ใช้ numeric category IDs และ local `StorageTemplate` ไม่เก็บ credentials ใน browser |
 | Scalar/table attachment lifecycle และ recovery | `EcmAttachmentBatch` ผูก original checkpoint/actor/lease/document, generation และ independent mutation hold; `EcmAttachmentVersion` เก็บ immutable original intent/paired receipt/request settlement รวม original physical `rowIndex` โดยไม่เก็บ bytes; current canonical `row_index` ย้ายได้ผ่าน trusted mapping; `EcmAttachmentReference` fence references ทุก nested table/scalar snapshot กับ deletion claim; `EcmAttachmentCleanup` เก็บ initiating operation/version/retained form scope, attempt generation, verified actor/evidence และ durable cleanup warning แยกจาก canceled batch โดยไม่มี cascading relations |
+| Canonical provider identity | `EcmAttachmentIdentity` unique ต่อ service account/token และ account/link; attempts เก็บ receipt แยก, nullable year, frozen storage snapshot และ identity FK; shared aliases ใช้ reference/delete fence เดียวกัน Unknown overwrite คง hold ไม่อ้าง DB rollback คืน external bytes |
 | การตรวจย้อนหลังและ cleanup | `AuditEvent` เก็บเหตุการณ์, `ObjectCleanupIntent` เก็บไฟล์หลักที่ต้องลบต่อ, `DeletionTombstone` กันข้อมูลกลับจาก handoff และเก็บ owner จริง/pre-cascade attachment context; `EcmAttachmentCleanup.deletionCaseId` ผูก pending external cleanup กับ case หลัง rows gone โดยไม่พึ่ง upload actor |
 
 AI authoring sessions อยู่ใน workspace ชั่วคราวของบริการ ไม่ได้มี Prisma model ชื่อ AI session ใน schema นี้

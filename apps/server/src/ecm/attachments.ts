@@ -21,11 +21,21 @@ import type {
   TableAttachment,
 } from "../responses/attachment-data";
 import type { EcmClient } from "./client";
+import {
+  lockAttachmentLedger,
+  admitAttachmentDestination,
+  receiveAttachmentIdentity,
+  requireAttachmentReferenceReady,
+  attachmentIdentityReferenced,
+  requireAttachmentDeleteReady,
+  identityVersionIds,
+} from "./identity";
 
 export const lockBatch = async (
   tx: Prisma.TransactionClient,
   operationId: string
 ): Promise<void> => {
+  await lockAttachmentLedger(tx);
   await tx.$queryRaw(
     Prisma.sql`SELECT "operation_id" FROM "ecm_attachment_batches" WHERE "operation_id" = ${operationId}::uuid FOR UPDATE`
   );
@@ -46,7 +56,23 @@ export const attachmentMutationNotice = async (
     },
   });
   if (!batch) {
-    return null;
+    const references = await tx.ecmAttachmentReference.findMany({
+      select: { versionId: true },
+      where: { responseId },
+    });
+    const held = await tx.ecmAttachmentIdentity.findFirst({
+      where: {
+        state: "held",
+        versions: {
+          some: {
+            id: { in: references.map((reference) => reference.versionId) },
+          },
+        },
+      },
+    });
+    return held
+      ? `คำตอบเดิมยังอ่านได้ แต่ทรัพยากรไฟล์ร่วมอาจถูกเขียนทับแล้วและยังยืนยันเจ้าของไม่ได้ กรุณาติดต่อผู้ดูแล ห้ามบันทึก ส่ง ลบคำตอบ หรือส่งไฟล์ซ้ำ รหัสทรัพยากร ${held.id}`
+      : null;
   }
   const versions = await tx.ecmAttachmentVersion.findMany({
     where: {
@@ -66,7 +92,7 @@ export const attachmentMutationNotice = async (
     }
     return `${slot}: ${reason}`;
   });
-  return `${slots.join("; ") || "กำลังตรวจผลรอบแนบเดิม"} ข้อมูลที่บันทึกเดิมยังอ่านได้ กรุณาติดต่อผู้ดูแลก่อนบันทึก ส่ง หรือลบคำตอบ ห้ามส่งไฟล์ซ้ำ รหัสติดตาม ${batch.operationId}`;
+  return `${slots.join("; ") || "กำลังตรวจผลรอบแนบเดิม"} ข้อมูลคำตอบเดิมยังอ่านได้ แต่ไฟล์ที่ URL เดิมอาจถูกเขียนทับแล้วและยังยืนยันไม่ได้ กรุณาติดต่อผู้ดูแลก่อนบันทึก ส่ง หรือลบคำตอบ ห้ามส่งไฟล์ซ้ำ รหัสติดตาม ${batch.operationId}`;
 };
 
 export const requireAttachmentMutationReady = async (
@@ -205,9 +231,10 @@ interface AttachmentPlan {
   filename: string;
   id: string;
   number: string;
-  year: string;
+  year: string | null;
 }
 
+// oxlint-disable-next-line complexity -- Validate both frozen filename policies at the shared boundary.
 const planAttachmentFile = (
   slot: AttachmentSlot,
   target: Record<string, unknown>,
@@ -216,9 +243,10 @@ const planAttachmentFile = (
 ): AttachmentPlan => {
   const { field } = slot;
   const label = `${field.label}${slot.rowIndex === null ? "" : ` / แถว ${slot.rowIndex + 1}`}`;
-  const year = String(data.fiscal_year ?? "");
+  const templateMode = field.attachment?.mode === "template";
+  const year = templateMode ? null : String(data.fiscal_year ?? "");
   const number = String(data.docs_number ?? "");
-  if (!/^\d{4}$/u.test(year)) {
+  if (!templateMode && !/^\d{4}$/u.test(year ?? "")) {
     fail(
       422,
       "invalid_attachment_metadata",
@@ -229,10 +257,16 @@ const planAttachmentFile = (
   if (number.length > 512) {
     fail(422, "invalid_attachment_metadata", "docs_number: ยาวเกิน 512 ตัวอักษร");
   }
-  const category = safeFilenamePart(
-    field.attachment?.category ?? "",
-    "หมวดเอกสาร"
-  );
+  const category = templateMode
+    ? ""
+    : safeFilenamePart(field.attachment?.category ?? "", "หมวดเอกสาร");
+  const templateName =
+    templateMode && field.attachment?.mode === "template"
+      ? safeFilenamePart(
+          field.attachment.template_name ?? "",
+          "แม่แบบจัดเก็บเอกสาร"
+        )
+      : null;
   const original = attachmentSchema
     .pick({ original_name: true, size_bytes: true })
     .safeParse({
@@ -249,7 +283,9 @@ const planAttachmentFile = (
     safeFilenamePart(extension.slice(1), label);
   }
   const filename = safeFilenamePart(
-    `${number}-${id}-${category}${extension}`,
+    templateMode
+      ? `${number}-${templateName}${extension}`
+      : `${number}-${id}-${category}${extension}`,
     label
   );
   if (filename.trim() !== filename || /[. ]$/u.test(filename)) {
@@ -289,7 +325,8 @@ const originalForChangedMetadata = async (
     fail(409, "invalid_attachment", `${label}: ไม่พบหลักฐานไฟล์เดิมที่บันทึกแล้ว`);
   }
   if (
-    version.fiscalYear === String(data.fiscal_year ?? "") &&
+    (field.attachment?.mode === "template" ||
+      version.fiscalYear === String(data.fiscal_year ?? "")) &&
     version.documentNumber === String(data.docs_number ?? "")
   ) {
     return undefined;
@@ -297,6 +334,13 @@ const originalForChangedMetadata = async (
   try {
     if (version.accountKey !== ecm.accountKey()) {
       fail(409, "invalid_attachment", "บัญชีเอกสารแนบไม่ตรงกับไฟล์เดิม");
+    }
+    if (field.attachment?.mode === "template") {
+      fail(
+        502,
+        "attachment_original_unavailable",
+        "ยังไม่มีสัญญาอ่านไฟล์ต้นฉบับสำหรับแม่แบบจัดเก็บเอกสาร"
+      );
     }
     const original = await ecm.originalBytes(saved.file_link, saved.size_bytes);
     return new File([original], saved.original_name);
@@ -446,6 +490,16 @@ export const uploadAttachments = async (
     }
     for (const plan of plans) {
       // oxlint-disable-next-line no-await-in-loop -- Persist or settle each version before the next external mutation.
+      const overwriteIdentityIds = await admitAttachmentDestination(tx, {
+        accountKey: ecm.accountKey(),
+        bindingId: plan.slot.field.id,
+        filename: plan.filename,
+        id: plan.id,
+        operationId: operation.id,
+        responseId: batch.responseId,
+        rowIndex: plan.slot.rowIndex,
+      });
+      // oxlint-disable-next-line no-await-in-loop -- Admission and intent persist in the same transaction.
       await tx.ecmAttachmentVersion.create({
         data: {
           accountKey: ecm.accountKey(),
@@ -454,6 +508,17 @@ export const uploadAttachments = async (
           documentNumber: plan.number,
           filename: plan.filename,
           fiscalYear: plan.year,
+          overwriteIdentityIds,
+          storageMode: plan.slot.field.attachment?.mode ?? "legacy",
+          ...(plan.slot.field.attachment?.mode === "template"
+            ? {
+                documentCategoryId:
+                  plan.slot.field.attachment.document_category_id,
+                storageTemplateId:
+                  plan.slot.field.attachment.storage_template_id,
+                templateName: plan.slot.field.attachment.template_name,
+              }
+            : {}),
           id: plan.id,
           operationId: operation.id,
           originalName: plan.file.name,
@@ -468,10 +533,15 @@ export const uploadAttachments = async (
   for (const plan of plans) {
     const body = new FormData();
     body.set("documentFile", plan.file, plan.filename);
-    body.set("template", "0");
-    body.set("documentYear", plan.year);
-    body.set("documentNumber", plan.number);
-    body.set("documentCategory", plan.category);
+    body.set(
+      "template",
+      plan.slot.field.attachment?.mode === "template" ? "1" : "0"
+    );
+    if (plan.slot.field.attachment?.mode !== "template") {
+      body.set("documentYear", plan.year ?? "");
+      body.set("documentNumber", plan.number);
+      body.set("documentCategory", plan.category);
+    }
     try {
       // oxlint-disable-next-line no-await-in-loop -- Persist or settle each version before the next external mutation.
       const receipt = await ecm.upload(body, async () => {
@@ -490,9 +560,16 @@ export const uploadAttachments = async (
             fail(409, "stale_operation", "รอบแนบไฟล์หยุดแล้ว");
           }
           await requireBatchScope(tx, operation, batch);
+          const overwriteIdentityIds = await admitAttachmentDestination(
+            tx,
+            await tx.ecmAttachmentVersion.findUniqueOrThrow({
+              where: { id: plan.id },
+            })
+          );
           const admitted = await tx.ecmAttachmentVersion.updateMany({
             data: {
               generation: { increment: 1 },
+              overwriteIdentityIds,
               sentAt: new Date(),
               state: "started",
             },
@@ -511,11 +588,20 @@ export const uploadAttachments = async (
       // oxlint-disable-next-line no-await-in-loop -- Persist or settle each version before the next external mutation.
       await prisma.$transaction(async (tx) => {
         await lockBatch(tx, operation.id);
+        const attempt = await tx.ecmAttachmentVersion.findUniqueOrThrow({
+          where: { id: plan.id },
+        });
+        const identityId = await receiveAttachmentIdentity(
+          tx,
+          attempt,
+          receipt
+        );
         const received = await tx.ecmAttachmentVersion.updateMany({
           data: {
             fileLink: receipt.file_link,
             fileToken: receipt.file_token,
             generation: { increment: 1 },
+            identityId,
             receivedAt: new Date(),
             requestSettledAt: new Date(),
             state: "received",
@@ -583,7 +669,7 @@ export const uploadAttachments = async (
       fail(
         502,
         "attachment_upload_failed",
-        `${plan.slot.field.label}${plan.slot.rowIndex === null ? "" : ` / แถว ${plan.slot.rowIndex + 1}`} / หมวด ${plan.category}: ยังยืนยันผลการแนบไฟล์รอบนี้ไม่ได้ ข้อมูลเดิมยังอยู่`
+        `${plan.slot.field.label}${plan.slot.rowIndex === null ? "" : ` / แถว ${plan.slot.rowIndex + 1}`} / หมวด ${plan.category}: ยังยืนยันผลการแนบไฟล์รอบนี้ไม่ได้ คำตอบเดิมยังอยู่ แต่ไฟล์ที่ URL เดิมอาจถูกเขียนทับแล้ว ห้ามส่งซ้ำ กรุณาติดต่อผู้ดูแล`
       );
     }
   }
@@ -688,7 +774,16 @@ export const commitAttachmentBatch = async (
       }
       // oxlint-disable-next-line no-await-in-loop -- Resolve all trusted receipts before locking their versions in one order.
       const version = await tx.ecmAttachmentVersion.findFirst({
+        orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
         where: {
+          storageMode: field.attachmentStorageMode,
+          ...(field.attachmentStorageMode === "template"
+            ? {
+                documentCategoryId: field.attachmentCategoryId,
+                storageTemplateId: field.attachmentTemplateId,
+                templateName: field.attachmentTemplateName,
+              }
+            : {}),
           bindingId: binding.id,
           category: field.attachmentCategory ?? "",
           fileLink: attachment.file_link,
@@ -792,6 +887,8 @@ export const commitAttachmentBatch = async (
     ) {
       fail(409, "invalid_attachment", "ไฟล์นี้อยู่ระหว่างจัดการลบ");
     }
+    // oxlint-disable-next-line no-await-in-loop -- References share the resource and destination admission fence.
+    await requireAttachmentReferenceReady(tx, current, operation.id);
     // oxlint-disable-next-line no-await-in-loop -- Acquire every new canonical reference before retiring the previous Draft.
     await tx.ecmAttachmentReference.upsert({
       create: { responseId, snapshotId, versionId },
@@ -822,9 +919,14 @@ export const commitAttachmentBatch = async (
     retired.map((reference) => reference.versionId)
   )) {
     // oxlint-disable-next-line no-await-in-loop -- Persist only this transition's newly eligible cleanup intent.
-    const remaining = await tx.ecmAttachmentReference.count({
-      where: { versionId },
+    const version = await tx.ecmAttachmentVersion.findUnique({
+      where: { id: versionId },
     });
+    let remaining = true;
+    if (version) {
+      // oxlint-disable-next-line no-await-in-loop -- Count every shared-identity alias before scheduling deletion.
+      remaining = await attachmentIdentityReferenced(tx, version);
+    }
     // oxlint-disable-next-line no-await-in-loop -- Earlier pending or uncertain cleanup is never automatically retried.
     const previous = await tx.ecmAttachmentCleanup.findFirst({
       where: {
@@ -832,10 +934,7 @@ export const commitAttachmentBatch = async (
         versionId,
       },
     });
-    // oxlint-disable-next-line no-await-in-loop -- All candidates are already held under the version-row fence.
-    const version = await tx.ecmAttachmentVersion.findUnique({
-      where: { id: versionId },
-    });
+    // Shared provider identities retain all attempt evidence without scheduling duplicate DELETE.
     if (!remaining && !previous && version?.state === "committed") {
       // oxlint-disable-next-line no-await-in-loop -- Internal transitions retain intent without dispatching an ECM write.
       await tx.ecmAttachmentCleanup.create({
@@ -864,6 +963,7 @@ export const retireResponseAttachments = async (
   formId: string,
   deletionCaseId: string
 ) => {
+  await lockAttachmentLedger(tx);
   const batches = await tx.ecmAttachmentBatch.findMany({
     orderBy: { operationId: "asc" },
     where: { responseId },
@@ -920,9 +1020,7 @@ export const retireResponseAttachments = async (
   });
   const initial: { operationId: string; versionId: string }[] = [];
   for (const version of versions) {
-    const remaining = await tx.ecmAttachmentReference.count({
-      where: { versionId: version.id },
-    });
+    const remaining = await attachmentIdentityReferenced(tx, version);
     const previous = await tx.ecmAttachmentCleanup.findFirst({
       orderBy: { createdAt: "desc" },
       where: {
@@ -1081,7 +1179,8 @@ export const deleteAttachmentCleanup = async (
         "ไม่มี cleanup ที่ยังไม่เคยส่ง DELETE ห้ามส่งคำขอลบซ้ำ กรุณาประสาน PM/ECM"
       );
     }
-    if (await tx.ecmAttachmentReference.count({ where: { versionId } })) {
+    await requireAttachmentDeleteReady(tx, owned);
+    if (await attachmentIdentityReferenced(tx, owned)) {
       await tx.ecmAttachmentCleanup.update({
         data: { state: "protected" },
         where: key,
@@ -1104,6 +1203,10 @@ export const deleteAttachmentCleanup = async (
         ...(operator ? { confirmedBy: operator.id } : {}),
       },
       where: key,
+    });
+    await tx.ecmAttachmentIdentity.update({
+      data: { state: "deleting" },
+      where: { id: owned.identityId ?? "" },
     });
     const claimed = await tx.ecmAttachmentVersion.update({
       data: { generation: { increment: 1 }, state: "deleting" },
@@ -1148,7 +1251,7 @@ export const deleteAttachmentCleanup = async (
           intent.state !== "claimed" ||
           intent.attemptedAt ||
           (operator && !actor) ||
-          (await tx.ecmAttachmentReference.count({ where: { versionId } }))
+          (await attachmentIdentityReferenced(tx, current))
         ) {
           fail(
             409,
@@ -1156,6 +1259,7 @@ export const deleteAttachmentCleanup = async (
             "สิทธิ์หรือหลักฐานเปลี่ยนก่อนส่งคำขอลบ"
           );
         }
+        await requireAttachmentDeleteReady(tx, current);
         await tx.ecmAttachmentCleanup.update({
           data: { attemptedAt: new Date(), state: "started" },
           where: key,
@@ -1179,6 +1283,7 @@ export const deleteAttachmentCleanup = async (
       });
     });
     await prisma.$transaction(async (tx) => {
+      await lockAttachmentLedger(tx);
       await tx.$queryRaw(
         Prisma.sql`SELECT "id" FROM "ecm_attachment_versions" WHERE "id" = ${versionId}::uuid FOR UPDATE`
       );
@@ -1195,9 +1300,29 @@ export const deleteAttachmentCleanup = async (
           "หลักฐานการลบเปลี่ยนแล้ว กรุณาติดต่อผู้ดูแล"
         );
       }
-      await tx.ecmAttachmentVersion.update({
+      const aliases = await identityVersionIds(tx, current);
+      await tx.ecmAttachmentVersion.updateMany({
         data: { generation: { increment: 1 }, state: "deleted" },
-        where: { id: versionId },
+        where: { id: { in: aliases } },
+      });
+      await tx.ecmAttachmentIdentity.update({
+        data: { state: "deleted" },
+        where: { id: current.identityId ?? "" },
+      });
+      await tx.ecmAttachmentCleanup.updateMany({
+        data: {
+          confirmedAt: new Date(),
+          evidence: {
+            deleteProof: "verified-shared-identity-delete-response",
+            sourceVersionId: versionId,
+          },
+          state: "deleted",
+        },
+        where: {
+          attemptedAt: null,
+          state: "pending",
+          versionId: { in: aliases },
+        },
       });
       const cleanup = await tx.ecmAttachmentCleanup.findUniqueOrThrow({
         where: key,
@@ -1236,6 +1361,7 @@ export const deleteAttachmentCleanup = async (
     });
   } catch (error) {
     await prisma.$transaction(async (tx) => {
+      await lockAttachmentLedger(tx);
       await tx.$queryRaw(
         Prisma.sql`SELECT "id" FROM "ecm_attachment_versions" WHERE "id" = ${versionId}::uuid FOR UPDATE`
       );
@@ -1251,6 +1377,10 @@ export const deleteAttachmentCleanup = async (
         where: key,
       });
       if (!intent.attemptedAt) {
+        await tx.ecmAttachmentIdentity.update({
+          data: { state: "active" },
+          where: { id: version.identityId ?? "" },
+        });
         await tx.ecmAttachmentVersion.updateMany({
           data: {
             generation: { increment: 1 },

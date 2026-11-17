@@ -733,8 +733,11 @@ const AdminResultsRoute = () => {
                     ต้นฉบับ: {version.originalName} ({version.sizeBytes} ไบต์)
                   </div>
                   <div>
-                    เลข: {version.documentNumber} / ปี: {version.fiscalYear} /
-                    หมวด: {version.category}
+                    เลข: {version.documentNumber} / ปี:{" "}
+                    {version.fiscalYear ?? "-"} /
+                    {version.storageMode === "template"
+                      ? ` แม่แบบ: ${version.templateName ?? "-"}`
+                      : ` หมวด: ${version.category}`}
                   </div>
                   <div>
                     สถานะไฟล์: {version.state} / cleanup:{" "}

@@ -718,6 +718,20 @@ model EcmAttachmentBatch {
   @@map("ecm_attachment_batches")
 }
 
+/// Canonical proven provider resource; upload attempts remain separate immutable evidence.
+model EcmAttachmentIdentity {
+  id         String @id @default(uuid()) @db.Uuid
+  accountKey String @map("account_key")
+  fileToken  String @map("file_token")
+  fileLink   String @map("file_link")
+  state      String @default("active")
+  versions   EcmAttachmentVersion[]
+
+  @@unique([accountKey, fileToken])
+  @@unique([accountKey, fileLink])
+  @@map("ecm_attachment_identities")
+}
+
 model EcmAttachmentVersion {
   id               String    @id @db.Uuid
   operationId      String    @map("operation_id") @db.Uuid
@@ -729,12 +743,19 @@ model EcmAttachmentVersion {
   filename         String
   originalName     String    @map("original_name")
   sizeBytes        Int       @map("size_bytes")
-  fiscalYear       String    @map("fiscal_year")
+  fiscalYear       String?   @map("fiscal_year")
   documentNumber   String    @map("document_number")
   category         String
   state            String    @default("prepared")
   fileLink         String?   @map("file_link")
-  fileToken        String?   @unique @map("file_token")
+  fileToken        String?   @map("file_token")
+  identityId       String?   @map("identity_id") @db.Uuid
+  identity         EcmAttachmentIdentity? @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  overwriteIdentityIds String[] @default([]) @map("overwrite_identity_ids") @db.Uuid
+  storageMode      String    @default("legacy") @map("storage_mode")
+  templateName     String?   @map("template_name")
+  storageTemplateId String?  @map("storage_template_id") @db.Uuid
+  documentCategoryId Int?    @map("document_category_id")
   sentAt           DateTime? @map("sent_at") @db.Timestamptz(3)
   receivedAt       DateTime? @map("received_at") @db.Timestamptz(3)
   requestSettledAt DateTime? @map("request_settled_at") @db.Timestamptz(3)
@@ -743,6 +764,9 @@ model EcmAttachmentVersion {
 
   @@index([operationId, state])
   @@index([responseId])
+  @@index([identityId])
+  @@index([accountKey, filename])
+  @@index([fileToken])
   @@map("ecm_attachment_versions")
 }
 
