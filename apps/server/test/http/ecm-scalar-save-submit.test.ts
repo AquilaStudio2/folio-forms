@@ -281,18 +281,14 @@ const provider = Bun.serve({
           )
         : providerFiles.get(url.pathname);
       if (saved && originalReadMode.startsWith("same-size-")) {
+        let content = "%PDF converted preview";
+        if (originalReadMode === "same-size-viewer") {
+          content = "<html>viewer</html>";
+        } else if (originalReadMode === "same-size-error") {
+          content = '{"error":"denied"}';
+        }
         const bytes = new Uint8Array(saved.bytes.length);
-        bytes.set(
-          new TextEncoder()
-            .encode(
-              originalReadMode === "same-size-viewer"
-                ? "<html>viewer</html>"
-                : (originalReadMode === "same-size-error"
-                  ? '{"error":"denied"}'
-                  : "%PDF converted preview")
-            )
-            .subarray(0, bytes.length)
-        );
+        bytes.set(new TextEncoder().encode(content).subarray(0, bytes.length));
         return new Response(bytes);
       }
       return saved
@@ -608,6 +604,7 @@ const fixture = async (
     year?: string;
     templateMode?: boolean;
     templateYear?: boolean;
+    templateNameSuffix?: string;
     number?: string;
     table?: boolean;
     tableAttachments?: boolean;
@@ -737,8 +734,7 @@ const fixture = async (
                   document_category_id: 42,
                   mode: "template",
                   storage_template_id: crypto.randomUUID(),
-                  template_name:
-                    field.key === "proof" ? "ก่อหนี้-4_ขยาย(45)" : "นำส่ง",
+                  template_name: `${field.key === "proof" ? "ก่อหนี้-4_ขยาย(45)" : "นำส่ง"}${values.templateNameSuffix ?? ""}`,
                 },
               }
             : {}),
@@ -755,8 +751,7 @@ const fixture = async (
                       document_category_id: 42,
                       mode: "template",
                       storage_template_id: crypto.randomUUID(),
-                      template_name:
-                        column.key === "proof" ? "หลักฐาน-ตาราง" : "อื่น-ตาราง",
+                      template_name: `${column.key === "proof" ? "หลักฐาน-ตาราง" : "อื่น-ตาราง"}${values.templateNameSuffix ?? ""}`,
                     },
                   }
                 : {}),
@@ -1747,19 +1742,16 @@ test.each([
       where: { fileToken: receipt.file_token, responseId: owner.response.id },
     });
     if (invalid !== "origin") {
+      const invalidEvidence = {
+        account: { accountKey: "foreign-account" },
+        binding: { bindingId: "foreign-binding" },
+        "missing-digest": { originalSha256: null },
+        response: { responseId: crypto.randomUUID() },
+        token: { fileToken: "foreign-token" },
+        uncommitted: { state: "received" as const },
+      };
       await prisma.ecmAttachmentVersion.update({
-        data:
-          invalid === "account"
-            ? { accountKey: "foreign-account" }
-            : invalid === "response"
-              ? { responseId: crypto.randomUUID() }
-              : invalid === "binding"
-                ? { bindingId: "foreign-binding" }
-                : invalid === "token"
-                  ? { fileToken: "foreign-token" }
-                  : invalid === "missing-digest"
-                    ? { originalSha256: null }
-                    : { state: "received" },
+        data: invalidEvidence[invalid],
         where: { id: version.id },
       });
     }
@@ -2033,10 +2025,11 @@ test("Correction validates reason, required physical slots and eligibility befor
 test("initial Correction rejects a changed captured workspace base before original retrieval or writes", async () => {
   const owner = await fixture({ templateMode: true });
   const admin = await fixture({ admin: true });
-  expect(
-    (await poll(owner, await send(owner, { folio_proof: file() }, "submit")))
-      .status
-  ).toBe("completed");
+  const operationResult1 = await poll(
+    owner,
+    await send(owner, { folio_proof: file() }, "submit")
+  );
+  expect(operationResult1.status).toBe("completed");
   const submission = await prisma.submission.findFirstOrThrow({
     where: { responseId: owner.response.id },
   });
@@ -2075,13 +2068,10 @@ test("initial Correction rejects a changed captured workspace base before origin
     expect(
       await prisma.correction.count({ where: { submissionId: submission.id } })
     ).toBe(0);
-    expect(
-      (
-        await prisma.submission.findUniqueOrThrow({
-          where: { id: submission.id },
-        })
-      ).data
-    ).toEqual(submission.data);
+    const savedSubmission1 = await prisma.submission.findUniqueOrThrow({
+      where: { id: submission.id },
+    });
+    expect(savedSubmission1.data).toEqual(submission.data);
   } finally {
     captureBarrier = null;
     released.resolve();
@@ -2089,25 +2079,27 @@ test("initial Correction rejects a changed captured workspace base before origin
 });
 
 test("template Correction freezes catalog routing, rejects protected overwrite and reuses scalar/table originals at distinct destinations", async () => {
-  const owner = await fixture({ tableAttachments: true, templateMode: true });
+  const templateNameSuffix = `-${crypto.randomUUID()}`;
+  const owner = await fixture({
+    tableAttachments: true,
+    templateMode: true,
+    templateNameSuffix,
+  });
   const admin = await fixture({ admin: true });
   const scalar = new Uint8Array([6, 0, 255]);
   const row = new Uint8Array();
-  expect(
-    (
-      await poll(
-        owner,
-        await send(
-          owner,
-          {
-            '["folio_row_proof",2]': file(row, "empty.TXT"),
-            folio_proof: file(scalar, "scalar.BIN"),
-          },
-          "submit"
-        )
-      )
-    ).status
-  ).toBe("completed");
+  const operationResult2 = await poll(
+    owner,
+    await send(
+      owner,
+      {
+        '["folio_row_proof",2]': file(row, "empty.TXT"),
+        folio_proof: file(scalar, "scalar.BIN"),
+      },
+      "submit"
+    )
+  );
+  expect(operationResult2.status).toBe("completed");
   const submission = await prisma.submission.findFirstOrThrow({
     where: { responseId: owner.response.id },
   });
@@ -2183,16 +2175,19 @@ test("template Correction freezes catalog routing, rejects protected overwrite a
       `CORRECTION.${owner.response.id}`
     )
   );
-  expect(
-    (await poll(admin, await postCorrection(owner, admin, next, {}, {}, true)))
-      .status
-  ).toBe("completed");
+  const operationResult3 = await poll(
+    admin,
+    await postCorrection(owner, admin, next, {}, {}, true)
+  );
+  expect(operationResult3.status).toBe("completed");
   expect(received.length).toBe(uploads);
   expect(deleted.length).toBe(deletes);
   const saved = await openCorrection(owner, admin);
-  expect(
-    (await poll(admin, await postCorrection(owner, admin, saved))).status
-  ).toBe("completed");
+  const operationResult4 = await poll(
+    admin,
+    await postCorrection(owner, admin, saved)
+  );
+  expect(operationResult4.status).toBe("completed");
   expect(
     received.slice(uploads).map((entry) => ({
       bytes: [...entry.bytes],
@@ -2204,18 +2199,18 @@ test("template Correction freezes catalog routing, rejects protected overwrite a
     {
       bytes: [...scalar],
       fields: ["documentFile", "template"],
-      name: `CORRECTION.${owner.response.id}-ก่อหนี้-4_ขยาย(45).BIN`,
+      name: `CORRECTION.${owner.response.id}-ก่อหนี้-4_ขยาย(45)${templateNameSuffix}.BIN`,
       template: "1",
     },
     {
       bytes: [],
       fields: ["documentFile", "template"],
-      name: `CORRECTION.${owner.response.id}-หลักฐาน-ตาราง.TXT`,
+      name: `CORRECTION.${owner.response.id}-หลักฐาน-ตาราง${templateNameSuffix}.TXT`,
       template: "1",
     },
   ]);
   expect(originalReads.slice(reads).map((entry) => entry.path)).toEqual(
-    Array(2).fill("/api/beeecm/public/file")
+    Array.from({ length: 2 }, () => "/api/beeecm/public/file")
   );
   expect(deleted.length).toBe(deletes);
   const correction = await prisma.correction.findFirstOrThrow({
@@ -2254,27 +2249,20 @@ test("template Correction freezes catalog routing, rejects protected overwrite a
       tableRowsSchema.parse(snapshot.rows)[0]?.proof?.file_link
     );
     const attachment = attachmentSchema.parse(snapshot.proof);
-    expect([
-      ...new Uint8Array(
-        await (await fetch(attachment.file_link)).arrayBuffer()
-      ),
-    ]).toEqual([...scalar]);
+    const download1 = await fetch(attachment.file_link);
+    expect([...new Uint8Array(await download1.arrayBuffer())]).toEqual([
+      ...scalar,
+    ]);
   }
-  expect(
-    (
-      await prisma.submission.findUniqueOrThrow({
-        where: { id: submission.id },
-      })
-    ).data
-  ).toEqual(submission.data);
-  expect(
-    (
-      await prisma.fieldManifest.findUniqueOrThrow({
-        include: { fields: true },
-        where: { id: manifest.id },
-      })
-    ).fields
-  ).toEqual(manifest.fields);
+  const savedSubmission2 = await prisma.submission.findUniqueOrThrow({
+    where: { id: submission.id },
+  });
+  expect(savedSubmission2.data).toEqual(submission.data);
+  const savedManifest1 = await prisma.fieldManifest.findUniqueOrThrow({
+    include: { fields: true },
+    where: { id: manifest.id },
+  });
+  expect(savedManifest1.fields).toEqual(manifest.fields);
   const latest = await openCorrection(owner, admin);
   const protectedCorrection = await poll(
     admin,
@@ -2290,11 +2278,10 @@ test("template Correction freezes catalog routing, rejects protected overwrite a
     await prisma.correction.count({ where: { submissionId: submission.id } })
   ).toBe(1);
   const protectedFile = attachmentSchema.parse(data.proof);
-  expect([
-    ...new Uint8Array(
-      await (await fetch(protectedFile.file_link)).arrayBuffer()
-    ),
-  ]).toEqual([...scalar]);
+  const download2 = await fetch(protectedFile.file_link);
+  expect([...new Uint8Array(await download2.arrayBuffer())]).toEqual([
+    ...scalar,
+  ]);
 });
 
 test("Correction metadata and removal preserve older selected file versions and exports", async () => {
@@ -3103,7 +3090,11 @@ for (const templateMode of [false, true]) {
     expect(after.rows).toEqual([tableRowsSchema.parse(before.rows)[1]]);
     expect(received.length).toBe(uploads);
   });
-  test(`${templateMode ? "template " : ""}table multi-column failure leaves the complete old Draft and never sends the next physical slot`, async () => {
+}
+
+test.each([false, true])(
+  "table multi-column failure leaves the complete old Draft and never sends the next physical slot (template mode: %s)",
+  async (templateMode) => {
     const f = await fixture({ tableAttachments: true, templateMode });
     const initial = await poll(
       f,
@@ -3142,8 +3133,8 @@ for (const templateMode of [false, true]) {
       [3],
     ]);
     expect(await draft(f)).toEqual(before);
-  });
-}
+  }
+);
 
 test("template table rejects invalid Draft files and requires other attachment columns on an attachment-only zero-byte row", async () => {
   const f = await fixture({ tableAttachments: true, templateMode: true });
@@ -3248,8 +3239,9 @@ test("template table duplicate destinations retain physical receipts but share m
     })
   );
   expect(replacement.status).toBe("completed");
+  const savedDraft1 = await draft(f);
   expect(
-    tableRowsSchema.parse((await draft(f)).rows).map((row) => row.proof)
+    tableRowsSchema.parse(savedDraft1.rows).map((row) => row.proof)
   ).toEqual([
     fixtureValue(rows[0]?.proof),
     {
@@ -3265,17 +3257,15 @@ test("template table duplicate destinations retain physical receipts but share m
   );
   expect(deleted.length).toBe(deletes);
   await resume(f);
-  expect(
-    (
-      await poll(
-        f,
-        await send(f, {}, "draft", crypto.randomUUID(), {
-          attachmentRemovals: [{ bindingId: "folio_row_proof", rowIndex: 0 }],
-        })
-      )
-    ).status
-  ).toBe("completed");
-  expect(tableRowsSchema.parse((await draft(f)).rows)).toEqual([
+  const operationResult5 = await poll(
+    f,
+    await send(f, {}, "draft", crypto.randomUUID(), {
+      attachmentRemovals: [{ bindingId: "folio_row_proof", rowIndex: 0 }],
+    })
+  );
+  expect(operationResult5.status).toBe("completed");
+  const savedDraft2 = await draft(f);
+  expect(tableRowsSchema.parse(savedDraft2.rows)).toEqual([
     {
       item: null,
       other: null,
@@ -3317,7 +3307,8 @@ test("template table identical shared receipts keep both physical attempt refere
   await resume(f);
   const uploads = received.length;
   const deletes = deleted.length;
-  expect((await poll(f, await send(f, {}))).status).toBe("completed");
+  const operationResult6 = await poll(f, await send(f, {}));
+  expect(operationResult6.status).toBe("completed");
   expect(received.length).toBe(uploads);
   expect(
     await prisma.ecmAttachmentReference.count({
@@ -3330,20 +3321,16 @@ test("template table identical shared receipts keep both physical attempt refere
     })
   ).toBe(2);
   await resume(f);
+  const operationResult7 = await poll(
+    f,
+    await send(f, {}, "draft", crypto.randomUUID(), {
+      rowChange: { action: "delete", index: 1 },
+    })
+  );
+  expect(operationResult7.status).toBe("completed");
+  const savedDraft3 = await draft(f);
   expect(
-    (
-      await poll(
-        f,
-        await send(f, {}, "draft", crypto.randomUUID(), {
-          rowChange: { action: "delete", index: 1 },
-        })
-      )
-    ).status
-  ).toBe("completed");
-  expect(
-    tableRowsSchema
-      .parse((await draft(f)).rows)
-      .map((row) => row.proof?.row_index)
+    tableRowsSchema.parse(savedDraft3.rows).map((row) => row.proof?.row_index)
   ).toEqual([0, 1]);
   expect(
     await prisma.ecmAttachmentReference.count({
@@ -3364,10 +3351,9 @@ test("template table identical shared receipts keep both physical attempt refere
   expect(replacement.status, String(replacement.result?.errorMessage)).toBe(
     "completed"
   );
+  const savedDraft4 = await draft(f);
   expect(
-    tableRowsSchema
-      .parse((await draft(f)).rows)
-      .map((row) => row.proof?.row_index)
+    tableRowsSchema.parse(savedDraft4.rows).map((row) => row.proof?.row_index)
   ).toEqual([0, 1]);
   expect(
     providerFiles.get(new URL(fixtureValue(customLink)).pathname)?.bytes
@@ -3375,37 +3361,31 @@ test("template table identical shared receipts keep both physical attempt refere
   expect(received.length).toBe(uploads + 1);
   expect(deleted.length).toBe(deletes);
   await resume(f);
+  const operationResult8 = await poll(
+    f,
+    await send(f, {}, "draft", crypto.randomUUID(), {
+      attachmentRemovals: [{ bindingId: "folio_row_proof", rowIndex: 1 }],
+    })
+  );
+  expect(operationResult8.status).toBe("completed");
+  const savedDraft5 = await draft(f);
   expect(
-    (
-      await poll(
-        f,
-        await send(f, {}, "draft", crypto.randomUUID(), {
-          attachmentRemovals: [{ bindingId: "folio_row_proof", rowIndex: 1 }],
-        })
-      )
-    ).status
-  ).toBe("completed");
-  expect(
-    tableRowsSchema
-      .parse((await draft(f)).rows)
-      .map((row) => row.proof?.row_index)
+    tableRowsSchema.parse(savedDraft5.rows).map((row) => row.proof?.row_index)
   ).toEqual([0]);
   expect(deleted.length).toBe(deletes);
   await resume(f);
   const cleanup = Promise.withResolvers<undefined>();
   deleteSettlements.set(fixtureValue(customToken), cleanup);
-  expect(
-    (
-      await poll(
-        f,
-        await send(f, {}, "draft", crypto.randomUUID(), {
-          attachmentRemovals: [{ bindingId: "folio_row_proof", rowIndex: 0 }],
-        })
-      )
-    ).status
-  ).toBe("completed");
+  const operationResult9 = await poll(
+    f,
+    await send(f, {}, "draft", crypto.randomUUID(), {
+      attachmentRemovals: [{ bindingId: "folio_row_proof", rowIndex: 0 }],
+    })
+  );
+  expect(operationResult9.status).toBe("completed");
   await cleanup.promise;
-  expect((await draft(f)).rows).toEqual([]);
+  const savedDraft6 = await draft(f);
+  expect(savedDraft6.rows).toEqual([]);
   expect(deleted.length).toBe(deletes + 1);
   expect(providerFiles.has(new URL(fixtureValue(customLink)).pathname)).toBe(
     false
@@ -3420,21 +3400,18 @@ test("template table plans every destination before POST and rejects foreign or 
       tableAttachments: true,
       templateMode: true,
     });
-    expect(
-      (
-        await poll(
-          owner,
-          await send(
-            owner,
-            {
-              folio_proof: file(),
-              [JSON.stringify(["folio_row_proof", 2])]: file(),
-            },
-            protection === "history" ? "submit" : "draft"
-          )
-        )
-      ).status
-    ).toBe("completed");
+    const operationResult10 = await poll(
+      owner,
+      await send(
+        owner,
+        {
+          folio_proof: file(),
+          [JSON.stringify(["folio_row_proof", 2])]: file(),
+        },
+        protection === "history" ? "submit" : "draft"
+      )
+    );
+    expect(operationResult10.status).toBe("completed");
     const uploads = received.length;
     const deletes = deleted.length;
     if (protection === "foreign") {
@@ -3444,37 +3421,31 @@ test("template table plans every destination before POST and rejects foreign or 
         templateMode: true,
       });
       // The safe earlier column must not dispatch before the later protected destination is checked.
-      expect(
-        (
-          await poll(
-            other,
-            await send(other, {
-              [JSON.stringify(["folio_row_other", 0])]: file(),
-              [JSON.stringify(["folio_row_proof", 3])]: file(),
-            })
-          )
-        ).status
-      ).toBe("failed");
+      const operationResult11 = await poll(
+        other,
+        await send(other, {
+          [JSON.stringify(["folio_row_other", 0])]: file(),
+          [JSON.stringify(["folio_row_proof", 3])]: file(),
+        })
+      );
+      expect(operationResult11.status).toBe("failed");
       expect(await draft(other)).toEqual({});
     } else {
       const admin = await fixture({ admin: true });
       const bridge = await openCorrection(owner, admin);
-      expect(
-        (
-          await poll(
-            admin,
-            await postCorrection(owner, admin, bridge, {
-              folio_proof: file(new Uint8Array(), "safe-scalar.TXT"),
-              [JSON.stringify(["folio_row_proof", 0])]: file(
-                new Uint8Array(),
-                "safe.TXT"
-              ),
-              [JSON.stringify(["folio_row_other", 0])]: file(),
-              [JSON.stringify(["folio_row_proof", 2])]: file(),
-            })
-          )
-        ).result?.errorMessage
-      ).toContain("ปลายทางไฟล์ซ้ำ");
+      const operationResult12 = await poll(
+        admin,
+        await postCorrection(owner, admin, bridge, {
+          folio_proof: file(new Uint8Array(), "safe-scalar.TXT"),
+          [JSON.stringify(["folio_row_proof", 0])]: file(
+            new Uint8Array(),
+            "safe.TXT"
+          ),
+          [JSON.stringify(["folio_row_other", 0])]: file(),
+          [JSON.stringify(["folio_row_proof", 2])]: file(),
+        })
+      );
+      expect(operationResult12.result?.errorMessage).toContain("ปลายทางไฟล์ซ้ำ");
     }
     expect(received.length).toBe(uploads);
     expect(deleted.length).toBe(deletes);
@@ -3483,19 +3454,16 @@ test("template table plans every destination before POST and rejects foreign or 
 
 test("template table uncertain shared overwrite keeps the complete Draft and holds later slots without DELETE or replay", async () => {
   const f = await fixture({ tableAttachments: true, templateMode: true });
-  expect(
-    (
-      await poll(
-        f,
-        await send(f, {
-          [JSON.stringify(["folio_row_proof", 2])]: file(
-            new Uint8Array([1]),
-            "old.BIN"
-          ),
-        })
-      )
-    ).status
-  ).toBe("completed");
+  const operationResult13 = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 2])]: file(
+        new Uint8Array([1]),
+        "old.BIN"
+      ),
+    })
+  );
+  expect(operationResult13.status).toBe("completed");
   const before = await draft(f);
   const old = fixtureValue(tableRowsSchema.parse(before.rows)[0]?.proof);
   await resume(f);
@@ -3505,36 +3473,35 @@ test("template table uncertain shared overwrite keeps the complete Draft and hol
   const uploads = received.length;
   const deletes = deleted.length;
   const checkpoint = crypto.randomUUID();
-  expect(
-    (
-      await poll(
-        f,
-        await send(
-          f,
-          {
-            [JSON.stringify(["folio_row_proof", 2])]: file(
-              new Uint8Array([2, 3]),
-              "new.BIN"
-            ),
-            [JSON.stringify(["folio_row_other", 3])]: file(
-              new Uint8Array([4]),
-              "not-sent.BIN"
-            ),
-          },
-          "draft",
-          checkpoint
-        )
-      )
-    ).status
-  ).toBe("failed");
+  const operationResult14 = await poll(
+    f,
+    await send(
+      f,
+      {
+        [JSON.stringify(["folio_row_proof", 2])]: file(
+          new Uint8Array([2, 3]),
+          "new.BIN"
+        ),
+        [JSON.stringify(["folio_row_other", 3])]: file(
+          new Uint8Array([4]),
+          "not-sent.BIN"
+        ),
+      },
+      "draft",
+      checkpoint
+    )
+  );
+  expect(operationResult14.status).toBe("failed");
   expect(await draft(f)).toEqual(before);
   expect(providerFiles.get(new URL(old.file_link).pathname)?.bytes).toEqual(
     new Uint8Array([2, 3])
   );
   expect(received.length).toBe(uploads + 1);
   expect(deleted.length).toBe(deletes);
-  expect((await recover(f, checkpoint)).status).toBe(200);
-  expect((await send(f, {})).status).toBe(409);
+  const recovery1 = await recover(f, checkpoint);
+  expect(recovery1.status).toBe(200);
+  const admission1 = await send(f, {});
+  expect(admission1.status).toBe(409);
   expect(received.length).toBe(uploads + 1);
   expect(deleted.length).toBe(deletes);
 });
@@ -3584,42 +3551,35 @@ test("template table removes overwritten row A and reuses surviving B original b
   const f = await fixture({ tableAttachments: true, templateMode: true });
   customToken = crypto.randomUUID();
   customLink = `${provider.url.origin}/files/${crypto.randomUUID()}`;
-  expect(
-    (
-      await poll(
-        f,
-        await send(f, {
-          [JSON.stringify(["folio_row_proof", 0])]: file(
-            new Uint8Array([1]),
-            "same.BIN"
-          ),
-          [JSON.stringify(["folio_row_proof", 2])]: file(
-            new Uint8Array([2]),
-            "same.BIN"
-          ),
-        })
-      )
-    ).status
-  ).toBe("completed");
+  const operationResult15 = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 0])]: file(
+        new Uint8Array([1]),
+        "same.BIN"
+      ),
+      [JSON.stringify(["folio_row_proof", 2])]: file(
+        new Uint8Array([2]),
+        "same.BIN"
+      ),
+    })
+  );
+  expect(operationResult15.status).toBe("completed");
   await resume(f);
   const uploads = received.length;
   const deletes = deleted.length;
-  expect(
-    (
-      await poll(
-        f,
-        await send(f, {}, "draft", crypto.randomUUID(), {
-          rowChange: { action: "delete", index: 0 },
-        })
-      )
-    ).status
-  ).toBe("completed");
+  const operationResult16 = await poll(
+    f,
+    await send(f, {}, "draft", crypto.randomUUID(), {
+      rowChange: { action: "delete", index: 0 },
+    })
+  );
+  expect(operationResult16.status).toBe("completed");
   expect(received.length).toBe(uploads);
   expect(deleted.length).toBe(deletes);
+  const savedDraft7 = await draft(f);
   expect(
-    tableRowsSchema
-      .parse((await draft(f)).rows)
-      .map((row) => row.proof?.row_index)
+    tableRowsSchema.parse(savedDraft7.rows).map((row) => row.proof?.row_index)
   ).toEqual([1]);
   await resume(f);
   snapshots.set(
@@ -3643,9 +3603,8 @@ test("template table removes overwritten row A and reuses surviving B original b
   ).toEqual([
     { bytes: [2], name: `SURVIVOR.${f.response.id}-หลักฐาน-ตาราง.BIN` },
   ]);
-  const saved = fixtureValue(
-    tableRowsSchema.parse((await draft(f)).rows)[0]?.proof
-  );
+  const savedDraft8 = await draft(f);
+  const saved = fixtureValue(tableRowsSchema.parse(savedDraft8.rows)[0]?.proof);
   expect(saved.row_index).toBe(1);
   expect(providerFiles.get(new URL(saved.file_link).pathname)?.bytes).toEqual(
     new Uint8Array([2])
@@ -3654,42 +3613,36 @@ test("template table removes overwritten row A and reuses surviving B original b
 
 test("template table metadata reuse reads every shifted physical slot through the shared trusted original reader", async () => {
   const f = await fixture({ tableAttachments: true, templateMode: true });
-  expect(
-    (
-      await poll(
-        f,
-        await send(f, {
-          [JSON.stringify(["folio_row_proof", 0])]: file(
-            new Uint8Array(),
-            "empty.TXT"
-          ),
-          [JSON.stringify(["folio_row_proof", 2])]: file(
-            new Uint8Array([0, 255, 7]),
-            "binary.BIN"
-          ),
-          [JSON.stringify(["folio_row_other", 2])]: file(
-            new TextEncoder().encode("<html>original</html>"),
-            "original.html"
-          ),
-          [JSON.stringify(["folio_row_other", 3])]: file(
-            new Uint8Array([8]),
-            "extensionless"
-          ),
-        })
-      )
-    ).status
-  ).toBe("completed");
+  const operationResult17 = await poll(
+    f,
+    await send(f, {
+      [JSON.stringify(["folio_row_proof", 0])]: file(
+        new Uint8Array(),
+        "empty.TXT"
+      ),
+      [JSON.stringify(["folio_row_proof", 2])]: file(
+        new Uint8Array([0, 255, 7]),
+        "binary.BIN"
+      ),
+      [JSON.stringify(["folio_row_other", 2])]: file(
+        new TextEncoder().encode("<html>original</html>"),
+        "original.html"
+      ),
+      [JSON.stringify(["folio_row_other", 3])]: file(
+        new Uint8Array([8]),
+        "extensionless"
+      ),
+    })
+  );
+  expect(operationResult17.status).toBe("completed");
   await resume(f);
-  expect(
-    (
-      await poll(
-        f,
-        await send(f, {}, "draft", crypto.randomUUID(), {
-          rowChange: { action: "delete", index: 1 },
-        })
-      )
-    ).status
-  ).toBe("completed");
+  const operationResult18 = await poll(
+    f,
+    await send(f, {}, "draft", crypto.randomUUID(), {
+      rowChange: { action: "delete", index: 1 },
+    })
+  );
+  expect(operationResult18.status).toBe("completed");
   await resume(f);
   snapshots.set(
     f.documentKey,
@@ -3706,7 +3659,7 @@ test("template table metadata reuse reads every shifted physical slot through th
     "completed"
   );
   expect(originalReads.slice(reads).map((read) => read.path)).toEqual(
-    Array(4).fill("/api/beeecm/public/file")
+    Array.from({ length: 4 }, () => "/api/beeecm/public/file")
   );
   expect(
     received.slice(uploads).map((entry) => ({
@@ -3741,7 +3694,8 @@ test("template table metadata reuse reads every shifted physical slot through th
       template: "1",
     },
   ]);
-  const rows = tableRowsSchema.parse((await draft(f)).rows);
+  const savedDraft9 = await draft(f);
+  const rows = tableRowsSchema.parse(savedDraft9.rows);
   expect(
     rows.map((row) => row.proof?.row_index ?? row.other?.row_index)
   ).toEqual([0, 1, 2]);
@@ -6115,19 +6069,24 @@ test("template whole-Response deletion protects surviving alias B and deletes th
   const other = await fixture({ templateMode: true });
   const admin = await fixture({ admin: true });
   const viewer = await fixture({ viewer: true });
-  expect(
-    (await poll(owner, await send(owner, { folio_proof: file() }))).status
-  ).toBe("completed");
-  const first = attachmentSchema.parse((await draft(owner)).proof);
+  const operationResult19 = await poll(
+    owner,
+    await send(owner, { folio_proof: file() })
+  );
+  expect(operationResult19.status).toBe("completed");
+  const savedDraft10 = await draft(owner);
+  const first = attachmentSchema.parse(savedDraft10.proof);
   await resume(owner);
   customToken = first.file_token;
   customLink = first.file_link;
   const replacement = new Uint8Array([83, 72, 65, 82, 69, 68]);
-  expect(
-    (await poll(owner, await send(owner, { folio_proof: file(replacement) })))
-      .status
-  ).toBe("completed");
-  const current = attachmentSchema.parse((await draft(owner)).proof);
+  const operationResult20 = await poll(
+    owner,
+    await send(owner, { folio_proof: file(replacement) })
+  );
+  expect(operationResult20.status).toBe("completed");
+  const savedDraft11 = await draft(owner);
+  const current = attachmentSchema.parse(savedDraft11.proof);
   expect(current.file_link).toBe(first.file_link);
   const aliases = await prisma.ecmAttachmentVersion.findMany({
     orderBy: { sentAt: "asc" },
@@ -6156,9 +6115,8 @@ test("template whole-Response deletion protects surviving alias B and deletes th
     discarded: true,
   });
   expect(deleted.length).toBe(before);
-  expect(
-    new Uint8Array(await (await fetch(current.file_link)).arrayBuffer())
-  ).toEqual(replacement);
+  const download3 = await fetch(current.file_link);
+  expect(new Uint8Array(await download3.arrayBuffer())).toEqual(replacement);
   const denied = await app.handle(
     new Request(`http://test.local/api/admin/responses/${other.response.id}`, {
       body: JSON.stringify({ confirm: true }),
@@ -6182,7 +6140,8 @@ test("template whole-Response deletion protects surviving alias B and deletes th
     discarded: true,
   });
   expect(deleted.slice(before)).toEqual([current.file_token]);
-  expect((await fetch(current.file_link)).status).toBe(404);
+  const download4 = await fetch(current.file_link);
+  expect(download4.status).toBe(404);
   expect(received.length).toBe(uploads);
   const tracked = await followUpFor(admin, surviving.operationId);
   expect(tracked).toMatchObject({ responseDeleted: true });
@@ -6283,7 +6242,8 @@ test.each(["failed", "unknown"] as const)(
     const saved = await poll(owner, await send(owner, { folio_proof: file() }));
     expect(saved.status).toBe("completed");
     await resume(owner);
-    const original = attachmentSchema.parse((await draft(owner)).proof);
+    const savedDraft12 = await draft(owner);
+    const original = attachmentSchema.parse(savedDraft12.proof);
     customToken = original.file_token;
     customLink = original.file_link;
     const replacement = await poll(
@@ -6327,7 +6287,7 @@ test.each(["failed", "unknown"] as const)(
         expect.arrayContaining([
           expect.objectContaining({
             canDelete: false,
-            cleanupState: expect.stringMatching(/^(pending|unknown)$/u),
+            cleanupState: expect.stringMatching(/^(?:pending|unknown)$/u),
             referenced: false,
           }),
         ])
