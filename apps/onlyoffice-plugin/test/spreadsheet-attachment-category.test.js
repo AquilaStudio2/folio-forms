@@ -13,13 +13,20 @@ const button = (harness, text) =>
   descendants(harness.body).find(
     (node) => node.tagName === "BUTTON" && node.textContent === text
   );
+const savedChoice = {
+  category: null,
+  document_category_id: 1,
+  mode: "template",
+  storage_template_id: "saved-template",
+  template_name: "หมวดเดิม",
+};
 
 test("category dialog preserves a saved destination through an outage and a renamed upstream list without writing on cancel", async () => {
   const state = {
     fields: [
       {
         anchor: "folio_proof",
-        attachment: { category: "หมวดเดิม" },
+        attachment: savedChoice,
         computed: false,
         id: "folio_proof",
         key: "attachment_1",
@@ -35,7 +42,11 @@ test("category dialog preserves a saved destination through an outage and a rena
     table: null,
     version: 1,
   };
-  let categories = ["หมวดใหม่"];
+  let categories = [{ id: 2, type: "หมวดใหม่" }];
+  const templates = [
+    { document_category_id: 1, id: "saved-template", template_name: "หมวดเดิม" },
+    { document_category_id: 2, id: "new-template", template_name: "หมวดใหม่" },
+  ];
   let outage = true;
   const response = (url) => {
     if (String(url).endsWith("/attachment-categories")) {
@@ -44,7 +55,7 @@ test("category dialog preserves a saved destination through an outage and a rena
             body: { error: "ecm_unavailable", message: "ระบบเอกสารแนบไม่พร้อม" },
             httpStatus: 503,
           }
-        : { categories };
+        : { categories, templates };
     }
     return { bindings: state, documentKey: "document-key", revision: 0 };
   };
@@ -72,7 +83,7 @@ test("category dialog preserves a saved destination through an outage and a rena
   const category = control(popup, "หมวดหมู่จัดเก็บเอกสาร");
   expect(category.disabled).toBe(true);
   expect(button(popup, "ยืนยันและบันทึก").disabled).toBe(true);
-  expect(state.fields[0].attachment.category).toBe("หมวดเดิม");
+  expect(state.fields[0].attachment).toEqual(savedChoice);
   button(popup, "ยกเลิก").click();
   await flushPlugin();
   outage = false;
@@ -80,27 +91,46 @@ test("category dialog preserves a saved destination through an outage and a rena
   await flushPlugin();
   const refreshed = control(popup, "หมวดหมู่จัดเก็บเอกสาร");
   expect(refreshed.value).toBe("");
-  expect(refreshed.children.map((option) => option.value)).toEqual([
-    "",
-    "หมวดใหม่",
-  ]);
+  expect(refreshed.children.map((option) => option.value)).toEqual(["", "2"]);
   expect(button(popup, "ยืนยันและบันทึก").disabled).toBe(true);
-  expect(state.fields[0].attachment.category).toBe("หมวดเดิม");
+  expect(state.fields[0].attachment).toEqual(savedChoice);
   button(popup, "ยกเลิก").click();
   await flushPlugin();
   expect(popup.methodInvocations).toContainEqual({
-    args: ["asc.test-plugin", 430, 360, true],
+    args: ["asc.test-plugin", 430, 430, true],
     method: "ShowInputHelper",
   });
   expect(popup.methodCalls).toContain("UnShowInputHelper");
   expect(
     descendants(harness.body).some((node) => node.tagName === "DIALOG")
   ).toBe(false);
-  categories = ["หมวดเดิม", "หมวดใหม่"];
+  categories = [
+    { id: 1, type: "หมวดเดิม" },
+    { id: 2, type: "หมวดใหม่" },
+  ];
   button(harness, "เปลี่ยนหมวด").click();
   await flushPlugin();
-  expect(control(popup, "หมวดหมู่จัดเก็บเอกสาร").value).toBe("หมวดเดิม");
+  expect(control(popup, "หมวดหมู่จัดเก็บเอกสาร").value).toBe("1");
   expect(button(popup, "ยืนยันและบันทึก").disabled).toBe(false);
+  const categorySelect = control(popup, "หมวดหมู่จัดเก็บเอกสาร");
+  const templateSelect = control(popup, "แม่แบบจัดเก็บเอกสาร");
+  categorySelect.value = "2";
+  categorySelect.dispatchEvent({ type: "change" });
+  expect(templateSelect.value).toBe("");
+  expect(button(popup, "ยืนยันและบันทึก").disabled).toBe(true);
+  expect(templateSelect.children.map((option) => option.value)).toEqual([
+    "",
+    "new-template",
+  ]);
+  templates.splice(0, 1);
+  button(popup, "ยกเลิก").click();
+  await flushPlugin();
+  button(harness, "เปลี่ยนหมวด").click();
+  await flushPlugin();
+  expect(
+    control(popup, "หมวดหมู่จัดเก็บเอกสาร").children.map((option) => option.value)
+  ).toEqual(["", "2"]);
+  expect(button(popup, "ยืนยันและบันทึก").disabled).toBe(true);
   button(popup, "ยกเลิก").click();
   await flushPlugin();
   expect(popup.requests).toEqual([]);

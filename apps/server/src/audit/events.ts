@@ -51,6 +51,7 @@ type FormAuditErrorCode =
   | "editor_lease_inactive"
   | "force_save_failed"
   | "invalid_template"
+  | "attachment_template_stale"
   | "form_has_responses"
   | "form_not_draft"
   | "handoff_unavailable"
@@ -188,6 +189,7 @@ export async function createAccountFailureAudit({
 }
 
 const formAuditErrorCodes: Record<string, true> = {
+  attachment_template_stale: true,
   blank_template_unavailable: true,
   callback_claim_invalid: true,
   callback_document_unavailable: true,

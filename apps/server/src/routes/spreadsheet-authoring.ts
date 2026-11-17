@@ -11,7 +11,7 @@ import type { SpreadsheetBindings } from "../documents/spreadsheets/contract";
 import { savedSpreadsheetUploadPocBindingComplete } from "../documents/spreadsheets/upload-poc";
 import {
   loadAttachmentCategories,
-  validateAttachmentCategoryChanges,
+  validateAttachmentStorageMappings,
 } from "../ecm/categories";
 import type { EcmClient } from "../ecm/client";
 import { lockActiveEditorLease } from "../editor/leases";
@@ -238,7 +238,7 @@ export const registerSpreadsheetAuthoringRoutes = (
         if (context.form.documentKind !== "xlsx") {
           fail(409, "invalid_field_config", "แบบฟอร์มนี้ไม่รองรับช่องแนบ Excel");
         }
-        return { categories: await loadAttachmentCategories(ecm, context) };
+        return await loadAttachmentCategories(ecm);
       }
     )
     .get(
@@ -398,13 +398,7 @@ export const registerSpreadsheetAuthoringRoutes = (
               "กำลังบันทึกเอกสาร กรุณารอให้เสร็จแล้วลองอีกครั้ง"
             );
           }
-          await validateAttachmentCategoryChanges(
-            tx,
-            ecm,
-            context,
-            previousBindings,
-            bindings
-          );
+          await validateAttachmentStorageMappings(tx, bindings);
           const updated = await tx.templateDraft.updateMany({
             data: {
               bindingRevision: { increment: 1 },

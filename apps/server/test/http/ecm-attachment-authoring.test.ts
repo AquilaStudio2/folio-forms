@@ -1,3 +1,4 @@
+// oxlint-disable no-await-in-loop no-loop-func -- Each catalog race settles its native callback and restores the shared Form before the next request.
 // oxlint-disable unicorn/no-await-expression-member -- Keep sequential HTTP assertions adjacent to their requests, matching the existing HTTP suites.
 import { afterAll, beforeAll, expect, test } from "bun:test";
 
@@ -11,7 +12,10 @@ import { processSpreadsheet } from "../../src/documents/spreadsheets/engine";
 import { XLSX_CONTENT_TYPE } from "../../src/documents/spreadsheets/workbook";
 import { actionEditorCapability } from "../../src/editor/authorization";
 import { claimEditorLease } from "../../src/editor/leases";
-import { spreadsheetDraftFieldData } from "../../src/forms/spreadsheet-fields";
+import {
+  spreadsheetDraftFieldData,
+  spreadsheetManifestFieldData,
+} from "../../src/forms/spreadsheet-fields";
 import { xlsxEditorOpening } from "../../src/onlyoffice";
 import { putObject, deleteObject } from "../../src/storage";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
@@ -32,11 +36,19 @@ let capability = "";
 let categoryStatus = 200;
 let categoryNames = ["เอกสารประกอบ"];
 let publishCapability = "";
+const storageTemplateId: string = crypto.randomUUID();
+const templateChoice = {
+  category: null,
+  document_category_id: 0,
+  mode: "template" as const,
+  storage_template_id: storageTemplateId,
+  template_name: `authoring-${fixtureId}`,
+};
 const [proof] = spreadsheetBindingSchema.parse({
   fields: [
     {
       anchor: "folio_proof",
-      attachment: { category: null },
+      attachment: { category: null, mode: "template" },
       id: "folio_proof",
       key: "attachment_1",
       label: "หลักฐาน",
@@ -61,8 +73,12 @@ let snapshot = fixtureWorkbook({
     folio_year: "'Form'!$B$1",
   },
 });
+let beforeSnapshot: (() => Promise<void>) | null = null;
 const native = Bun.serve({
-  fetch: () => new Response(snapshot),
+  async fetch() {
+    await beforeSnapshot?.();
+    return new Response(snapshot);
+  },
   hostname: "127.0.0.1",
   port: 0,
 });
@@ -269,7 +285,11 @@ test("Admin reads actual ECM category names through scoped Folio authoring witho
     )
   );
   expect(response.status).toBe(200);
-  expect(await response.json()).toEqual({ categories: ["เอกสารประกอบ"] });
+  const catalog = await response.json();
+  expect(catalog).toMatchObject({
+    categories: [{ id: 0, type: "เอกสารประกอบ" }],
+  });
+  expect(JSON.stringify(catalog)).not.toContain("isolated-provider-bearer");
   expect(providerRequests).toEqual([
     "POST /api/beeecm/public/login",
     "GET /api/beeecm/public/document/category",
@@ -337,7 +357,7 @@ test("ordinary Draft slot cannot convert without saved native marker binding and
   const before = await (await authoringRequest("spreadsheet-bindings")).json();
   const rejected = await upsert({
     ...ordinary,
-    attachment: { category: null },
+    attachment: proof.attachment,
   });
   expect(rejected.status).toBe(422);
   expect(await rejected.json()).toMatchObject({
@@ -364,7 +384,7 @@ test("explicit verified old Draft conversion preserves binding placement and all
     (
       await upsert({
         ...proof,
-        attachment: { category: null },
+        attachment: proof.attachment,
         key: "renamed_attachment",
       })
     ).status
@@ -375,7 +395,7 @@ test("explicit verified old Draft conversion preserves binding placement and all
   expect(configured.bindings.fields).toContainEqual(
     expect.objectContaining({
       anchor: proof.anchor,
-      attachment: { category: null },
+      attachment: proof.attachment,
       id: proof.id,
       key: "renamed_attachment",
     })
@@ -395,7 +415,7 @@ test("explicit verified old Draft conversion preserves binding placement and all
     (
       await upsert({
         ...proof,
-        attachment: { category: null },
+        attachment: proof.attachment,
         key: "renamed_attachment",
       })
     ).status
@@ -462,7 +482,72 @@ test.each(["marker-only", "misplaced", "duplicate"] as const)(
   }
 );
 
-test("incomplete attachment Draft settings save; publication requires category and both scalar metadata Fields", async () => {
+const catalogRequest = (method: string, body: unknown, suffix = "") =>
+  app.handle(
+    new Request(`http://test.local/api/admin/storage-templates${suffix}`, {
+      body: JSON.stringify(body),
+      headers: {
+        Authorization: `Bearer ${bearer}`,
+        "Content-Type": "application/json",
+      },
+      method,
+    })
+  );
+test("Storage Template authoring rejects forged, renamed, moved and deleted local mappings without losing Draft configuration", async () => {
+  const created = await catalogRequest("POST", {
+    document_category_id: 0,
+    template_name: templateChoice.template_name,
+  });
+  expect(created.status).toBe(200);
+  const { template } = (await created.json()) as { template: { id: string } };
+  templateChoice.storage_template_id = template.id;
+  expect((await upsert({ ...proof, attachment: templateChoice })).status).toBe(
+    200
+  );
+  expect(
+    (
+      await upsert({
+        ...proof,
+        attachment: {
+          ...templateChoice,
+          storage_template_id: storageTemplateId,
+        },
+      })
+    ).status
+  ).toBe(422);
+  expect(
+    (
+      await catalogRequest(
+        "PATCH",
+        {
+          document_category_id: 0,
+          template_name: `${templateChoice.template_name}-renamed`,
+        },
+        `/${template.id}`
+      )
+    ).status
+  ).toBe(200);
+  expect((await upsert({ ...proof, attachment: templateChoice })).status).toBe(
+    422
+  );
+  expect(
+    (
+      await catalogRequest(
+        "PATCH",
+        {
+          document_category_id: 0,
+          template_name: templateChoice.template_name,
+        },
+        `/${template.id}`
+      )
+    ).status
+  ).toBe(200);
+  const saved = await authoringRequest("spreadsheet-bindings");
+  expect(await saved.json()).toMatchObject({
+    bindings: { fields: [{ attachment: templateChoice }] },
+  });
+});
+test("incomplete attachment Draft saves; publication requires a Storage Template and docs_number, not fiscal_year", async () => {
   expect((await upsert(proof)).status).toBe(200);
   const publish = await authoringRequest(
     "publish",
@@ -475,12 +560,16 @@ test("incomplete attachment Draft settings save; publication requires category a
     error: "attachment_category_required",
   });
   expect(
-    (await upsert({ ...proof, attachment: { category: "หมวดสมมติ" } })).status
+    (
+      await upsert({
+        ...proof,
+        attachment: { ...templateChoice, template_name: "หมวดสมมติ" },
+      })
+    ).status
   ).toBe(422);
-  expect(
-    (await upsert({ ...proof, attachment: { category: "เอกสารประกอบ" } }))
-      .status
-  ).toBe(200);
+  expect((await upsert({ ...proof, attachment: templateChoice })).status).toBe(
+    200
+  );
   const metadataMissing = await authoringRequest(
     "publish",
     "POST",
@@ -493,14 +582,14 @@ test("incomplete attachment Draft settings save; publication requires category a
   });
 });
 
-test("category outage and upstream rename preserve saved name, binding, Tag and required settings", async () => {
+test("category outage and upstream rename preserve saved template, binding, Tag and required settings", async () => {
   categoryNames = ["หมวดชื่อใหม่"];
   expect((await authoringRequest("attachment-categories")).status).toBe(200);
   categoryStatus = 503;
   expect((await authoringRequest("attachment-categories")).status).toBe(503);
   const renamed = {
     ...proof,
-    attachment: { category: "เอกสารประกอบ" },
+    attachment: templateChoice,
     key: "supporting_document",
     required: true,
   };
@@ -509,7 +598,12 @@ test("category outage and upstream rename preserve saved name, binding, Tag and 
   const body = (await saved.json()) as { bindings: { fields: unknown[] } };
   expect(body.bindings.fields).toEqual([renamed]);
   expect(
-    (await upsert({ ...renamed, attachment: { category: "ไม่เคยเลือก" } })).status
+    (
+      await upsert({
+        ...renamed,
+        attachment: { ...templateChoice, template_name: "ไม่เคยเลือก" },
+      })
+    ).status
   ).toBe(422);
   expect(
     (await authoringRequest("attachment-categories", "GET", undefined, ""))
@@ -577,7 +671,7 @@ test("attachment column settings share one category across rows and retain colum
     anchor: "folio_items",
     columns: [
       {
-        attachment: { category: "หมวดคอลัมน์" },
+        attachment: templateChoice,
         computed: false,
         id: "folio_evidence",
         key: "evidence",
@@ -626,10 +720,7 @@ test("complete saved categories publish offline without User metadata values and
       })
     ).status
   ).toBe(200);
-  for (const [id, key] of [
-    ["folio_year", "fiscal_year"],
-    ["folio_number", "docs_number"],
-  ]) {
+  for (const [id, key] of [["folio_number", "docs_number"]]) {
     expect(
       // oxlint-disable-next-line no-await-in-loop -- Each Field PATCH consumes the previous revision.
       (await upsert({ ...proof, anchor: id, attachment: undefined, id, key }))
@@ -644,7 +735,6 @@ test("complete saved categories publish offline without User metadata values and
       documentKey,
       spreadsheetAnchors: [
         ["folio_proof", "'Form'!$B$3"],
-        ["folio_year", "'Form'!$B$1"],
         ["folio_number", "'Form'!$B$2"],
       ],
     },
@@ -662,7 +752,7 @@ test("complete saved categories publish offline without User metadata values and
     (
       await upsert({
         ...proof,
-        attachment: { category: "เอกสารประกอบ" },
+        attachment: templateChoice,
         key: "supporting_document",
         required: true,
       })
@@ -678,6 +768,86 @@ test("complete saved categories publish offline without User metadata values and
       bindings: spreadsheetBindingSchema.parse(nativeSettingsBody.bindings),
     })
   ).workbook;
+  for (const mutation of ["rename", "move", "delete"] as const) {
+    beforeSnapshot = async () => {
+      beforeSnapshot = null;
+      categoryStatus = 200;
+      const response = await app.handle(
+        new Request(
+          `http://test.local/api/admin/storage-templates/${templateChoice.storage_template_id}`,
+          {
+            body: JSON.stringify(
+              mutation === "delete"
+                ? { confirm: true }
+                : {
+                    document_category_id: mutation === "move" ? 1 : 0,
+                    template_name:
+                      mutation === "rename"
+                        ? `${templateChoice.template_name}-changed`
+                        : templateChoice.template_name,
+                  }
+            ),
+            headers: {
+              Authorization: `Bearer ${bearer}`,
+              "Content-Type": "application/json",
+            },
+            method: mutation === "delete" ? "DELETE" : "PATCH",
+          }
+        )
+      );
+      expect(response.status).toBe(200);
+    };
+    const racing = await authoringRequest(
+      "publish",
+      "POST",
+      {
+        documentKey,
+        spreadsheetAnchors: [
+          ["folio_proof", "'Form'!$B$3"],
+          ["folio_number", "'Form'!$B$2"],
+        ],
+      },
+      publishCapability
+    );
+    expect(racing.status).toBe(202);
+    const started = (await racing.json()) as { operationId: string };
+    expect(await operationResult(started.operationId)).toMatchObject({
+      error: "attachment_template_stale",
+      status: "failed",
+    });
+    const restored = await app.handle(
+      new Request(
+        `http://test.local/api/admin/storage-templates${mutation === "delete" ? "" : `/${templateChoice.storage_template_id}`}`,
+        {
+          body: JSON.stringify({
+            document_category_id: 0,
+            template_name: templateChoice.template_name,
+          }),
+          headers: {
+            Authorization: `Bearer ${bearer}`,
+            "Content-Type": "application/json",
+          },
+          method: mutation === "delete" ? "POST" : "PATCH",
+        }
+      )
+    );
+    expect(restored.status).toBe(200);
+    const restoredBody = (await restored.json()) as {
+      template: { id: string };
+    };
+    templateChoice.storage_template_id = restoredBody.template.id;
+    expect(
+      (
+        await upsert({
+          ...proof,
+          attachment: templateChoice,
+          key: "supporting_document",
+          required: true,
+        })
+      ).status
+    ).toBe(200);
+  }
+  categoryStatus = 503;
   const beforeRequests = providerRequests.length;
   const published = await authoringRequest(
     "publish",
@@ -686,7 +856,6 @@ test("complete saved categories publish offline without User metadata values and
       documentKey,
       spreadsheetAnchors: [
         ["folio_proof", "'Form'!$B$3"],
-        ["folio_year", "'Form'!$B$1"],
         ["folio_number", "'Form'!$B$2"],
       ],
     },
@@ -867,7 +1036,7 @@ test.each(["missing", "duplicate"] as const)(
   async (controlState) => {
     const bindings = spreadsheetBindingSchema.parse({
       fields: [
-        { ...proof, attachment: { category: "เอกสารประกอบ" } },
+        { ...proof, attachment: templateChoice },
         {
           ...proof,
           anchor: "folio_year",
@@ -928,3 +1097,193 @@ test.each(["missing", "duplicate"] as const)(
   },
   120_000
 );
+
+test("duplicates keep independent links and frozen new choices; legacy duplicates require explicit mapping without copying answers or files", async () => {
+  const legacyPublicId = crypto.randomUUID().replaceAll("-", "");
+  const legacyFormId = crypto.randomUUID();
+  const legacyTemplateId = crypto.randomUUID();
+  const legacyResponseId = crypto.randomUUID();
+  const savedData = {
+    supporting_document: {
+      file_link: "https://example.test/saved-original",
+      file_token: "saved-token",
+      original_name: "original.txt",
+      size_bytes: 0,
+    },
+  };
+  const legacyBindings = spreadsheetBindingSchema.parse({
+    fields: [
+      {
+        ...proof,
+        attachment: { category: "เอกสารเดิม", mode: "legacy" },
+        key: "supporting_document",
+      },
+    ],
+    table: null,
+    version: 1,
+  });
+  const legacyObjectKey = `tests/${fixtureId}/legacy.xlsx`;
+  await putObject(legacyObjectKey, snapshot, XLSX_CONTENT_TYPE);
+  await prisma.form.create({
+    data: {
+      createdBy: adminId,
+      documentKind: "xlsx",
+      id: legacyFormId,
+      publicId: legacyPublicId,
+      publishedTemplate: {
+        create: {
+          contentHash: "legacy-fixture",
+          documentKey: `legacy-${fixtureId}`,
+          id: legacyTemplateId,
+          manifest: {
+            create: {
+              configurationHash: "legacy-fixture",
+              fields: { create: spreadsheetManifestFieldData(legacyBindings) },
+            },
+          },
+          objectKey: legacyObjectKey,
+          version: 1,
+        },
+      },
+      status: "published",
+      title: "Legacy source",
+      version: 1,
+    },
+  });
+  await prisma.response.create({
+    data: {
+      draftData: savedData,
+      draftDocumentKey: `legacy-draft-${fixtureId}`,
+      draftObjectKey: legacyObjectKey,
+      formId: legacyFormId,
+      id: legacyResponseId,
+      publishedTemplateId: legacyTemplateId,
+      publishedVersion: 1,
+      userId: adminId,
+    },
+  });
+  const rename = await app.handle(
+    new Request(
+      `http://test.local/api/admin/storage-templates/${templateChoice.storage_template_id}`,
+      {
+        body: JSON.stringify({
+          document_category_id: 0,
+          template_name: `${templateChoice.template_name}-after-publication`,
+        }),
+        headers: {
+          Authorization: `Bearer ${bearer}`,
+          "Content-Type": "application/json",
+        },
+        method: "PATCH",
+      }
+    )
+  );
+  expect(rename.status).toBe(200);
+  for (const sourcePublicId of [publicId, legacyPublicId]) {
+    const duplicate = await app.handle(
+      new Request(
+        `http://test.local/api/admin/forms/${sourcePublicId}/duplicate`,
+        {
+          body: "{}",
+          headers: {
+            Authorization: `Bearer ${bearer}`,
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        }
+      )
+    );
+    expect(duplicate.status).toBe(200);
+    const body = (await duplicate.json()) as {
+      form: {
+        publicId: string;
+        activeDraftCount: number;
+        submissionCount: number;
+      };
+    };
+    expect(body.form.publicId).not.toBe(sourcePublicId);
+    expect(body.form).toMatchObject({
+      activeDraftCount: 0,
+      submissionCount: 0,
+    });
+    const configResponse = await app.handle(
+      new Request(
+        `http://test.local/api/admin/forms/${body.form.publicId}/editor-config`,
+        {
+          headers: { Authorization: `Bearer ${bearer}` },
+        }
+      )
+    );
+    expect(configResponse.status).toBe(200);
+    const config = (await configResponse.json()) as {
+      bridge: { documentKey: string; capabilities: Record<string, string> };
+      config: {
+        editorConfig: {
+          plugins: {
+            options: Record<
+              string,
+              { spreadsheetBindings?: SpreadsheetBindings }
+            >;
+          };
+        };
+      };
+    };
+    const copied = Object.values(
+      config.config.editorConfig.plugins.options
+    ).find((entry) => entry.spreadsheetBindings)?.spreadsheetBindings;
+    expect(
+      copied?.fields.find((field) => field.attachment)?.attachment
+    ).toEqual(
+      sourcePublicId === publicId
+        ? templateChoice
+        : {
+            category: null,
+            document_category_id: null,
+            mode: "template",
+            storage_template_id: null,
+            template_name: null,
+          }
+    );
+    const rejected = await app.handle(
+      new Request(
+        `http://test.local/api/admin/forms/${body.form.publicId}/publish`,
+        {
+          body: JSON.stringify({
+            documentKey: config.bridge.documentKey,
+            spreadsheetAnchors: [["folio_proof", "'Form'!$B$3"]],
+          }),
+          headers: {
+            Authorization: `Bearer ${bearer}`,
+            "Content-Type": "application/json",
+            "X-Editor-Capability": config.bridge.capabilities.publish ?? "",
+          },
+          method: "POST",
+        }
+      )
+    );
+    expect(rejected.status).toBe(422);
+    expect(await rejected.json()).toMatchObject({
+      error:
+        sourcePublicId === publicId
+          ? "attachment_template_stale"
+          : "attachment_category_required",
+    });
+    const original = await app.handle(
+      new Request(`http://test.local/api/forms/${sourcePublicId}`, {
+        headers: { Authorization: `Bearer ${bearer}` },
+      })
+    );
+    expect(original.status).toBe(200);
+    expect(await original.json()).toMatchObject({ form: { published: true } });
+  }
+  const legacyDraft = await app.handle(
+    new Request(
+      `http://test.local/api/responses/${legacyResponseId}/draft/json`,
+      {
+        headers: { Authorization: `Bearer ${bearer}` },
+      }
+    )
+  );
+  expect(legacyDraft.status).toBe(200);
+  expect(await legacyDraft.json()).toEqual(savedData);
+});

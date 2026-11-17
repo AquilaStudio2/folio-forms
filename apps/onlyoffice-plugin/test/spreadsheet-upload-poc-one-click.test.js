@@ -14,6 +14,21 @@ const input = (harness, title) =>
       node.tagName === "LABEL" && node.children[0]?.textContent === title
   )?.children[1];
 const empty = () => ({ fields: [], table: null, version: 1 });
+const choice = (name) => ({
+  category: null,
+  document_category_id: 1,
+  mode: "template",
+  storage_template_id: `template-${name}`,
+  template_name: name,
+});
+const catalog = (names) => ({
+  categories: [{ id: 1, type: "หลักฐาน" }],
+  templates: names.map((name) => ({
+    document_category_id: 1,
+    id: `template-${name}`,
+    template_name: name,
+  })),
+});
 
 const setup = async ({
   bindings = empty(),
@@ -36,7 +51,9 @@ const setup = async ({
   let conversionPaused = false;
   const response = async (url, init) => {
     if (String(url).endsWith("/attachment-categories")) {
-      return typeof categories === "function" ? categories() : { categories };
+      return typeof categories === "function"
+        ? categories()
+        : catalog(categories);
     }
     if (String(url).includes("/operations/")) {
       return { operation: { result: saveResult, status: "completed" } };
@@ -139,8 +156,13 @@ const confirmCategory = async (harness, category = "หลักฐาน") => {
     return;
   }
   const select = descendants(dialog).find((node) => node.tagName === "SELECT");
-  select.value = category;
+  select.value = "1";
   select.dispatchEvent({ type: "change" });
+  const [, template] = descendants(dialog).filter(
+    (node) => node.tagName === "SELECT"
+  );
+  template.value = `template-${category}`;
+  template.dispatchEvent({ type: "change" });
   descendants(dialog)
     .find(
       (node) => node.tagName === "BUTTON" && node.textContent === "ยืนยันและบันทึก"
@@ -184,7 +206,7 @@ test("confirmation creates a configured attachment and repeat placement reuses t
   expect(state().fields).toHaveLength(1);
   const [field] = state().fields;
   expect(field).toMatchObject({
-    attachment: { category: "หลักฐาน" },
+    attachment: choice("หลักฐาน"),
     key: "attachment_1",
     label: "ไฟล์แนบ 1",
     required: false,
@@ -273,7 +295,7 @@ test("existing table column is reused with its metadata and body projection", as
   expect(state().table.columns).toEqual([
     {
       ...bindings.table.columns[0],
-      attachment: { category: "หลักฐาน" },
+      attachment: choice("หลักฐาน"),
       placeholder: null,
     },
   ]);
@@ -648,7 +670,7 @@ test("cancelling during category loading ignores the late result and reopening f
   const { harness, state, projections } = await setup({
     categories: () => {
       loads += 1;
-      return loads === 1 ? pending.promise : { categories: ["หมวดใหม่"] };
+      return loads === 1 ? pending.promise : catalog(["หมวดใหม่"]);
     },
   });
   action(harness).click();
@@ -662,25 +684,25 @@ test("cancelling during category loading ignores the late result and reopening f
     preventDefault() {},
   });
   await flushPlugin();
-  pending.resolve({ categories: ["ผลเก่าที่มาช้า"] });
+  pending.resolve(catalog(["ผลเก่าที่มาช้า"]));
   await flushPlugin();
   expect(state()).toEqual(empty());
   expect(projections).toEqual([]);
   expect(dialog.hidden).toBe(true);
   await click(harness, "หมวดใหม่");
   expect(loads).toBe(2);
-  expect(state().fields[0].attachment).toEqual({ category: "หมวดใหม่" });
+  expect(state().fields[0].attachment).toEqual(choice("หมวดใหม่"));
 });
 
 test.each([
-  { categories: [] },
+  catalog([]),
   { body: { error: "ecm_unavailable" }, httpStatus: 503 },
 ])(
   "empty or failed category loading blocks creation until a successful explicit retry: %j",
   async (first) => {
     let available = false;
     const { harness, state, projections } = await setup({
-      categories: () => (available ? { categories: ["หลักฐาน"] } : first),
+      categories: () => (available ? catalog(["หลักฐาน"]) : first),
     });
     action(harness).click();
     await flushPlugin();
@@ -700,7 +722,7 @@ test.each([
       .click();
     await flushPlugin();
     await confirmCategory(harness);
-    expect(state().fields[0].attachment).toEqual({ category: "หลักฐาน" });
+    expect(state().fields[0].attachment).toEqual(choice("หลักฐาน"));
   }
 );
 
@@ -709,7 +731,7 @@ test("Escape cancels after retry moves focus outside the popup content", async (
   const { harness, state, projections } = await setup({
     categories: () =>
       available
-        ? { categories: ["หลักฐาน"] }
+        ? catalog(["หลักฐาน"])
         : { body: { error: "ecm_unavailable" }, httpStatus: 503 },
   });
   action(harness).click();
@@ -738,7 +760,7 @@ test("Escape cancels after retry moves focus outside the popup content", async (
 test("changing a saved category and later editing Title and Tag keep one attachment without creating another native button", async () => {
   let category = "หมวดเดิม";
   const { harness, state, projections } = await setup({
-    categories: () => ({ categories: [category] }),
+    categories: () => catalog([category]),
   });
   await click(harness, category);
   const original = structuredClone(state().fields[0]);
@@ -751,7 +773,7 @@ test("changing a saved category and later editing Title and Tag keep one attachm
   await flushPlugin();
   await confirmCategory(harness, category);
   expect(state().fields).toEqual([
-    { ...original, attachment: { category: "หมวดใหม่" } },
+    { ...original, attachment: choice("หมวดใหม่") },
   ]);
   expect(projections).toHaveLength(1);
   input(harness, "Title · ชื่อช่อง").value = "เอกสารยืนยัน";
@@ -765,7 +787,7 @@ test("changing a saved category and later editing Title and Tag keep one attachm
   expect(state().fields).toEqual([
     {
       ...original,
-      attachment: { category: "หมวดใหม่" },
+      attachment: choice("หมวดใหม่"),
       key: "confirmation",
       label: "เอกสารยืนยัน",
     },
@@ -791,7 +813,7 @@ test("an existing scalar is converted only after its button is saved and a faile
   expect(state().fields).toMatchObject([
     {
       ...original,
-      attachment: { category: "หลักฐาน" },
+      attachment: choice("หลักฐาน"),
     },
   ]);
   const conversion = harness.requests.findIndex(
@@ -841,7 +863,7 @@ test("automatic conversion keeps authoring locked between its proof save and cat
   await flushPlugin();
   expect(stayedLocked).toBe(true);
   expect(pendingChoiceRetained).toBe(true);
-  expect(state().fields[0].attachment).toEqual({ category: "หลักฐาน" });
+  expect(state().fields[0].attachment).toEqual(choice("หลักฐาน"));
   expect(projections).toHaveLength(1);
   expect(action(harness).disabled).toBe(false);
 });
@@ -855,7 +877,7 @@ test("category chooser rejects forged, stale and unlisted choices without changi
   ).message;
   const choose = {
     ...opening,
-    category: "หลักฐาน",
+    choice: choice("หลักฐาน"),
     source: "folio-attachment-category-popup-host",
     type: "choose",
   };
@@ -871,7 +893,7 @@ test("category chooser rejects forged, stale and unlisted choices without changi
       { bridgeId: "wrong-bridge" },
       { channelId: "wrong-channel" },
       { documentKey: "wrong-document" },
-      { category: "not-in-current-list" },
+      { choice: choice("not-in-current-list") },
     ].map((change) => ({
       data: { ...choose, ...change },
       origin: harness.parentOrigin,
@@ -897,7 +919,7 @@ test("category chooser rejects forged, stale and unlisted choices without changi
   await flushPlugin();
   expect(state()).toEqual(empty());
   await confirmCategory(harness);
-  expect(state().fields[0].attachment).toEqual({ category: "หลักฐาน" });
+  expect(state().fields[0].attachment).toEqual(choice("หลักฐาน"));
   expect(harness.categoryPopup.requests).toEqual([]);
 });
 
@@ -924,7 +946,7 @@ test("a retry discards an older category response and a shown chooser has no hum
   const { harness, state } = await setup({
     categories: () => {
       loads += 1;
-      return loads === 1 ? pending.promise : { categories: ["รายการล่าสุด"] };
+      return loads === 1 ? pending.promise : catalog(["รายการล่าสุด"]);
     },
   });
   action(harness).click();
@@ -942,20 +964,17 @@ test("a retry discards an older category response and a shown chooser has no hum
     source: harness.parentWindow,
   });
   await flushPlugin();
-  pending.resolve({ categories: ["รายการเก่า"] });
+  pending.resolve(catalog(["รายการเก่า"]));
   await flushPlugin();
   const select = descendants(harness.categoryPopup.body).find(
     (node) => node.tagName === "SELECT"
   );
-  expect(select.children.map((option) => option.value)).toEqual([
-    "",
-    "รายการล่าสุด",
-  ]);
+  expect(select.children.map((option) => option.value)).toEqual(["", "1"]);
   harness.expireCapabilityRequests();
   await flushPlugin();
   expect(action(harness).disabled).toBe(true);
   await confirmCategory(harness, "รายการล่าสุด");
-  expect(state().fields[0].attachment.category).toBe("รายการล่าสุด");
+  expect(state().fields[0].attachment.template_name).toBe("รายการล่าสุด");
 });
 
 test("unloading the primary cancels its category request and ignores late results", async () => {
@@ -966,7 +985,7 @@ test("unloading the primary cancels its category request and ignores late result
   action(harness).click();
   await flushPlugin();
   harness.emitWindowEvent("beforeunload");
-  pending.resolve({ categories: ["หลักฐาน"] });
+  pending.resolve(catalog(["หลักฐาน"]));
   await flushPlugin();
   expect(state()).toEqual(empty());
   expect(projections).toEqual([]);
@@ -1038,11 +1057,11 @@ test("background category UI rejects forged host state and stale close messages"
   const select = descendants(popup.body).find(
     (node) => node.tagName === "SELECT"
   );
-  expect(select.children.map((option) => option.value)).toEqual(["", "หลักฐาน"]);
+  expect(select.children.map((option) => option.value)).toEqual(["", "1"]);
   expect(
     popup.body.children.find((node) => node.tagName === "MAIN").hidden
   ).toBe(false);
   expect(state()).toEqual(empty());
   await confirmCategory(harness);
-  expect(state().fields[0].attachment.category).toBe("หลักฐาน");
+  expect(state().fields[0].attachment.template_name).toBe("หลักฐาน");
 });

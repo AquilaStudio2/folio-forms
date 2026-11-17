@@ -15,6 +15,7 @@ import { databaseErrorCode } from "../db-errors";
 import { spreadsheetEditorSaveOptions } from "../documents/spreadsheets/editor-save-proof";
 import { spreadsheetAnchorSnapshotSchema } from "../documents/spreadsheets/save-snapshot";
 import { savedSpreadsheetUploadPocButtons } from "../documents/spreadsheets/upload-poc";
+import { validateAttachmentStorageMappings } from "../ecm/categories";
 import {
   actionEditorCapability,
   requireActionEditorAuthorization,
@@ -630,8 +631,10 @@ export function registerFormAuthoringRoutes(
             );
           }
           if (form.documentKind === "xlsx") {
-            validateSpreadsheetPublication(
-              await spreadsheetDraftBindings(templateDraft.id)
+            const bindings = await spreadsheetDraftBindings(templateDraft.id);
+            validateSpreadsheetPublication(bindings);
+            await prisma.$transaction((tx) =>
+              validateAttachmentStorageMappings(tx, bindings)
             );
           }
           const operationId = crypto.randomUUID();

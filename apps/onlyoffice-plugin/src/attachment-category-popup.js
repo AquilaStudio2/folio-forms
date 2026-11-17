@@ -23,10 +23,16 @@ export const initializeAttachmentCategoryPopup = (
   caption.textContent = "หมวดหมู่จัดเก็บเอกสาร";
   const select = document.createElement("select");
   label.append(caption, select);
+  const templateLabel = document.createElement("label");
+  const templateCaption = document.createElement("span");
+  templateCaption.textContent = "แม่แบบจัดเก็บเอกสาร";
+  const templateSelect = document.createElement("select");
+  templateLabel.append(templateCaption, templateSelect);
   const status = document.createElement("p");
   status.id = "attachment-category-status";
   status.setAttribute("role", "status");
   select.setAttribute("aria-describedby", status.id);
+  templateSelect.setAttribute("aria-describedby", status.id);
   const actions = document.createElement("div");
   actions.className = "actions";
   const button = (text) => {
@@ -39,7 +45,15 @@ export const initializeAttachmentCategoryPopup = (
   const cancel = button("ยกเลิก");
   const confirm = button("ยืนยันและบันทึก");
   actions.append(retry, cancel, confirm);
-  container.append(heading, description, saved, label, status, actions);
+  container.append(
+    heading,
+    description,
+    saved,
+    label,
+    templateLabel,
+    status,
+    actions
+  );
   document.body.append(container);
   const post = (type, extra = {}) =>
     host.top.postMessage(
@@ -67,29 +81,58 @@ export const initializeAttachmentCategoryPopup = (
       hide();
     }
   };
+  const selectedTemplate = () =>
+    state?.templates.find(
+      (entry) =>
+        entry.id === templateSelect.value &&
+        String(entry.document_category_id) === select.value
+    );
+  const updateTemplates = (currentId = "") => {
+    templateSelect.replaceChildren();
+    const placeholder = document.createElement("option");
+    placeholder.value = "";
+    placeholder.textContent = "เลือกแม่แบบจัดเก็บเอกสาร";
+    templateSelect.append(placeholder);
+    for (const entry of state?.templates ?? []) {
+      if (String(entry.document_category_id) !== select.value) {
+        continue;
+      }
+      const option = document.createElement("option");
+      option.value = entry.id;
+      option.textContent = entry.template_name;
+      templateSelect.append(option);
+    }
+    templateSelect.value = currentId;
+    templateSelect.disabled = select.disabled || !select.value;
+    confirm.disabled = !selectedTemplate();
+  };
   const update = (message) => {
     const fresh = requestId !== message.requestId;
     const previousStatus = state?.status;
     ({ requestId, state } = message);
     description.textContent = `${state.target} ยืนยันเพื่อบันทึกช่องแนบและต้นแบบ ไฟล์ยังไม่อัปโหลด`;
-    saved.textContent = state.currentCategory
-      ? `หมวดเดิม: ${state.currentCategory}`
-      : "ยังไม่ได้เลือกหมวด";
+    saved.textContent = state.currentChoice?.template_name
+      ? `แม่แบบเดิม: ${state.currentChoice.template_name}`
+      : "ยังไม่ได้เลือกแม่แบบ";
     if (fresh || previousStatus !== state.status || state.status !== "ready") {
       select.replaceChildren();
-      for (const name of ["", ...state.categories]) {
+      for (const entry of [
+        { id: "", type: "เลือกหมวดหมู่" },
+        ...state.categories,
+      ]) {
         const option = document.createElement("option");
-        option.value = name;
-        option.textContent = name || "เลือกหมวดหมู่";
+        option.value = String(entry.id);
+        option.textContent = entry.type;
         select.append(option);
       }
-      select.value = state.categories.includes(state.currentCategory)
-        ? state.currentCategory
+      select.value = state.categories.some(
+        (entry) => entry.id === state.currentChoice?.document_category_id
+      )
+        ? String(state.currentChoice.document_category_id)
         : "";
     }
     select.disabled = state.status !== "ready";
-    confirm.disabled =
-      select.disabled || !state.categories.includes(select.value);
+    updateTemplates(state.currentChoice?.storage_template_id);
     retry.hidden = state.status !== "empty" && state.status !== "error";
     status.textContent =
       state.status === "loading"
@@ -104,7 +147,7 @@ export const initializeAttachmentCategoryPopup = (
       const opening = requestId;
       plugin.executeMethod(
         "ShowInputHelper",
-        [plugin.info.guid, 430, 360, true],
+        [plugin.info.guid, 430, 430, true],
         () => {
           if (!destroyed && requestId === opening) {
             cancel.focus();
@@ -114,17 +157,20 @@ export const initializeAttachmentCategoryPopup = (
       );
     }
   };
-  select.addEventListener("change", () => {
-    confirm.disabled =
-      select.disabled || !state?.categories.includes(select.value);
+  select.addEventListener("change", () => updateTemplates());
+  templateSelect.addEventListener("change", () => {
+    confirm.disabled = !selectedTemplate();
   });
   confirm.addEventListener("click", () => {
-    if (
-      requestId &&
-      !confirm.disabled &&
-      state.categories.includes(select.value)
-    ) {
-      post("choose", { category: select.value });
+    const entry = selectedTemplate();
+    if (requestId && !confirm.disabled && entry) {
+      post("choose", {
+        choice: {
+          document_category_id: entry.document_category_id,
+          storage_template_id: entry.id,
+          template_name: entry.template_name,
+        },
+      });
     }
   });
   retry.addEventListener("click", () => {
@@ -164,7 +210,17 @@ export const initializeAttachmentCategoryPopup = (
       typeof message.state.target === "string" &&
       ["loading", "ready", "empty", "error"].includes(message.state.status) &&
       Array.isArray(message.state.categories) &&
-      message.state.categories.every((name) => typeof name === "string")
+      Array.isArray(message.state.templates) &&
+      message.state.categories.every(
+        (entry) =>
+          Number.isSafeInteger(entry.id) && typeof entry.type === "string"
+      ) &&
+      message.state.templates.every(
+        (entry) =>
+          typeof entry.id === "string" &&
+          Number.isSafeInteger(entry.document_category_id) &&
+          typeof entry.template_name === "string"
+      )
     ) {
       update(message);
     } else if (

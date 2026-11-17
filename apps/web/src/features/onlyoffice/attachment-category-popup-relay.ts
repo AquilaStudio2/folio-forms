@@ -8,9 +8,18 @@ export interface AttachmentCategoryPopupScope {
 
 interface CategoryState {
   target: string;
-  currentCategory: string | null;
+  currentChoice: {
+    document_category_id: number | null;
+    storage_template_id: string | null;
+    template_name: string | null;
+  } | null;
   status: "loading" | "ready" | "empty" | "error";
-  categories: string[];
+  categories: { id: number; type: string }[];
+  templates: {
+    id: string;
+    document_category_id: number;
+    template_name: string;
+  }[];
   error: string | null;
 }
 
@@ -18,21 +27,41 @@ const parseState = (value: unknown): CategoryState | null => {
   if (
     !isRecord(value) ||
     !isNonEmptyString(value.target) ||
-    (value.currentCategory !== null &&
-      typeof value.currentCategory !== "string") ||
+    (value.currentChoice !== null &&
+      (!isRecord(value.currentChoice) ||
+        (value.currentChoice.document_category_id !== null &&
+          !Number.isSafeInteger(value.currentChoice.document_category_id)) ||
+        (value.currentChoice.storage_template_id !== null &&
+          typeof value.currentChoice.storage_template_id !== "string") ||
+        (value.currentChoice.template_name !== null &&
+          typeof value.currentChoice.template_name !== "string"))) ||
     !["loading", "ready", "empty", "error"].includes(String(value.status)) ||
     !Array.isArray(value.categories) ||
-    !value.categories.every(isNonEmptyString) ||
+    !value.categories.every(
+      (entry) =>
+        isRecord(entry) &&
+        Number.isSafeInteger(entry.id) &&
+        isNonEmptyString(entry.type)
+    ) ||
+    !Array.isArray(value.templates) ||
+    !value.templates.every(
+      (entry) =>
+        isRecord(entry) &&
+        isNonEmptyString(entry.id) &&
+        Number.isSafeInteger(entry.document_category_id) &&
+        isNonEmptyString(entry.template_name)
+    ) ||
     (value.error !== null && typeof value.error !== "string")
   ) {
     return null;
   }
   return {
-    categories: value.categories,
-    currentCategory: value.currentCategory,
+    categories: value.categories as CategoryState["categories"],
+    currentChoice: value.currentChoice as CategoryState["currentChoice"],
     error: value.error,
     status: value.status as CategoryState["status"],
     target: value.target,
+    templates: value.templates as CategoryState["templates"],
   };
 };
 
@@ -184,16 +213,39 @@ export const createAttachmentCategoryPopupRelay = ({
       }
       if (
         message.type === "choose" &&
-        (!isNonEmptyString(message.category) ||
+        (!isRecord(message.choice) ||
           state?.status !== "ready" ||
-          !state.categories.includes(message.category))
+          !state.categories.some(
+            (entry) =>
+              entry.id ===
+              (message.choice as Record<string, unknown>).document_category_id
+          ) ||
+          !state.templates.some(
+            (entry) =>
+              entry.id ===
+                (message.choice as Record<string, unknown>)
+                  .storage_template_id &&
+              entry.document_category_id ===
+                (message.choice as Record<string, unknown>)
+                  .document_category_id &&
+              entry.template_name ===
+                (message.choice as Record<string, unknown>).template_name
+          ))
       ) {
         return;
       }
       post(primary, {
         requestId,
         type: message.type,
-        ...(message.type === "choose" ? { category: message.category } : {}),
+        ...(message.type === "choose" && isRecord(message.choice)
+          ? {
+              choice: {
+                document_category_id: message.choice.document_category_id,
+                storage_template_id: message.choice.storage_template_id,
+                template_name: message.choice.template_name,
+              },
+            }
+          : {}),
       });
     },
     isPopupSource(source: MessageEventSource | null) {
