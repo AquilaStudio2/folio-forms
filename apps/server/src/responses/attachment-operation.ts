@@ -423,7 +423,8 @@ export const startAttachmentOperation = async (options: {
       const batch = await prisma.ecmAttachmentBatch.findUnique({
         where: { operationId: operation.id },
       });
-      let errorMessage = "แนบไฟล์ไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาตรวจช่องแนบหรือติดต่อผู้ดูแล";
+      let errorMessage =
+        "แนบไฟล์ไม่สำเร็จ คำตอบเดิมยังอยู่ แต่ยังยืนยันเนื้อหาไฟล์ที่ URL เดิมไม่ได้ กรุณาติดต่อผู้ดูแล";
       if (
         error instanceof HttpError ||
         (error instanceof Error && error.name === "SpreadsheetValidationError")
@@ -432,7 +433,7 @@ export const startAttachmentOperation = async (options: {
       }
       if (batch && batch.state !== "canceled") {
         const detail = error instanceof HttpError ? `${error.message} ` : "";
-        errorMessage = `${detail}ยังยืนยันผลไฟล์แนบหรือการลบรอบที่ยกเลิกไม่ได้ ข้อมูลเดิมยังอยู่ กรุณาติดต่อผู้ดูแลก่อนบันทึก ส่ง หรือลบคำตอบ ห้ามส่งไฟล์ซ้ำ`;
+        errorMessage = `${detail}ยังยืนยันผลไฟล์แนบหรือการลบรอบที่ยกเลิกไม่ได้ คำตอบเดิมยังอยู่ แต่ไฟล์ที่ URL เดิมอาจถูกเขียนทับแล้ว กรุณาติดต่อผู้ดูแลก่อนบันทึก ส่ง หรือลบคำตอบ ห้ามส่งไฟล์ซ้ำ`;
       }
       await updateOperationFailed(
         operation.id,

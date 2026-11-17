@@ -132,6 +132,7 @@ const received: {
   category: unknown;
   template: unknown;
   token: string;
+  fields: string[];
 }[] = [];
 const deleted: string[] = [];
 const deleteSnapshots: { token: string; data: unknown; references: number }[] =
@@ -146,6 +147,7 @@ let deleteMalformed = false;
 let logins = 0;
 let loginRejects = false;
 let nextMode:
+  | "object"
   | "ok"
   | "malformed"
   | "body-failure"
@@ -231,7 +233,7 @@ const provider = Bun.serve({
     if (url.pathname.endsWith("/file") && request.method === "DELETE") {
       const token = fixtureValue(url.searchParams.get("token"));
       deleted.push(token);
-      const owned = await prisma.ecmAttachmentVersion.findUniqueOrThrow({
+      const owned = await prisma.ecmAttachmentVersion.findFirstOrThrow({
         where: { fileToken: token },
       });
       const canonical = await prisma.response.findUnique({
@@ -288,6 +290,7 @@ const provider = Bun.serve({
       received.push({
         bytes: new Uint8Array(await file.arrayBuffer()),
         category: body.get("documentCategory"),
+        fields: [...body.keys()].toSorted(),
         name: file.name,
         number: body.get("documentNumber"),
         template: body.get("template"),
@@ -295,12 +298,16 @@ const provider = Bun.serve({
         year: body.get("documentYear"),
       });
       const intent = await prisma.ecmAttachmentVersion.findFirstOrThrow({
-        where: { filename: file.name },
+        where: { filename: file.name, state: "started" },
       });
       expect(intent).toMatchObject({
-        category: body.get("documentCategory"),
-        documentNumber: body.get("documentNumber"),
-        fiscalYear: body.get("documentYear"),
+        ...(body.get("template") === "0"
+          ? {
+              category: body.get("documentCategory"),
+              documentNumber: body.get("documentNumber"),
+              fiscalYear: body.get("documentYear"),
+            }
+          : { fiscalYear: null }),
         sizeBytes: fixtureValue(received.at(-1)).bytes.byteLength,
         state: "started",
       });
@@ -364,7 +371,10 @@ const provider = Bun.serve({
         });
       }
       return Response.json({
-        data: [{ file_link: link, file_token: token }],
+        data:
+          nextMode === "object"
+            ? { file_link: link, file_token: token }
+            : [{ file_link: link, file_token: token }],
         msg: "ok",
         status: 200,
       });
@@ -523,6 +533,8 @@ const pollSchema = z.object({
 const fixture = async (
   values: {
     year?: string;
+    templateMode?: boolean;
+    templateYear?: boolean;
     number?: string;
     table?: boolean;
     tableAttachments?: boolean;
@@ -638,6 +650,38 @@ const fixture = async (
       )
     );
   }
+  if (values.templateMode) {
+    publishedBindings = spreadsheetBindingSchema.parse({
+      ...publishedBindings,
+      fields: publishedBindings.fields
+        .filter((field) => values.templateYear || field.key !== "fiscal_year")
+        .map((field) => ({
+          ...field,
+          ...(field.attachment
+            ? {
+                attachment: {
+                  category: null,
+                  document_category_id: 42,
+                  mode: "template",
+                  storage_template_id: crypto.randomUUID(),
+                  template_name:
+                    field.key === "proof" ? "ก่อหนี้-4_ขยาย(45)" : "นำส่ง",
+                },
+              }
+            : {}),
+        })),
+    });
+    const prepared = await processSpreadsheet(unprotectSpreadsheet(template), {
+      bindings: publishedBindings,
+    });
+    template = protectSpreadsheet(
+      prepared.workbook,
+      resolveSpreadsheetContract(
+        publishedBindings,
+        readSpreadsheetWorkbook(prepared.workbook)
+      )
+    );
+  }
   if (values.project) {
     publishedBindings = spreadsheetBindingSchema.parse({
       ...publishedBindings,
@@ -666,6 +710,9 @@ const fixture = async (
   }
   if (values.number !== undefined) {
     snapshot = replaceCell(snapshot, "B2", values.number);
+  }
+  if (values.templateMode && values.number === undefined) {
+    snapshot = replaceCell(snapshot, "B2", `DOC.${id}`);
   }
   snapshots.set(documentKey, snapshot);
   const form = await prisma.form.create({
@@ -998,6 +1045,60 @@ const postCorrection = (
     )
   );
 };
+/* oxlint-disable no-await-expression-member no-use-before-define -- Public HTTP response assertions stay inline; registered tests run after helper initialization. */
+test("template scalar saves without year and replaces same provider identity without deleting current bytes", async () => {
+  const owner = await fixture({ number: "กทอ.67-00-0001", templateMode: true });
+  const start = received.length;
+  const deletes = deleted.length;
+  nextMode = "object";
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }))).status
+  ).toBe("completed");
+  const first = attachmentSchema.parse((await draft(owner)).proof);
+  expect(received[start]).toMatchObject({
+    bytes: new Uint8Array([0, 255, 7, 1]),
+    category: null,
+    fields: ["documentFile", "template"],
+    name: "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+    number: null,
+    template: "1",
+    year: null,
+  });
+  expect((await draft(owner)).fiscal_year).toBeUndefined();
+  await resume(owner);
+  expect((await poll(owner, await send(owner, {}))).status).toBe("completed");
+  expect(received.length).toBe(start + 1);
+  await resume(owner);
+  customToken = first.file_token;
+  customLink = first.file_link;
+  nextMode = "object";
+  expect(
+    (
+      await poll(
+        owner,
+        await send(
+          owner,
+          {
+            folio_proof: file(new Uint8Array([9, 8]), "Replacement.BIN"),
+          },
+          "submit"
+        )
+      )
+    ).status
+  ).toBe("completed");
+  const submission = await prisma.submission.findFirstOrThrow({
+    orderBy: { createdAt: "desc" },
+    where: { responseId: owner.response.id },
+  });
+  expect(jsonValue(submission.data)).toMatchObject({
+    proof: { ...first, original_name: "Replacement.BIN", size_bytes: 2 },
+  });
+  expect(providerFiles.get(new URL(first.file_link).pathname)?.bytes).toEqual(
+    new Uint8Array([9, 8])
+  );
+  expect(deleted.length).toBe(deletes);
+});
+/* oxlint-enable no-await-expression-member no-use-before-define */
 test("Correction authenticates independent bearer and cookie credentials while preserving native capability-only requests", async () => {
   const owner = await fixture();
   const admin = await fixture({ admin: true });
@@ -1160,6 +1261,286 @@ const resume = async (f: Fixture) => {
     await readObject(fixtureValue(saved.draftObjectKey))
   );
 };
+/* oxlint-disable no-await-expression-member -- These HTTP regressions assert the awaited public response at the call site. */
+test("template protected destination stops a foreign owner before POST", async () => {
+  const number = `FOREIGN.${crypto.randomUUID()}`;
+  const owner = await fixture({ number, templateMode: true });
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }))).status
+  ).toBe("completed");
+  const other = await fixture({ number, templateMode: true });
+  const uploads = received.length;
+  expect(
+    (await poll(other, await send(other, { folio_proof: file() }))).status
+  ).toBe("failed");
+  expect(received.length).toBe(uploads);
+  expect(await draft(other)).toEqual({});
+});
+
+test("template immutable history prevents in-place overwrite before POST", async () => {
+  const owner = await fixture({ templateMode: true });
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }, "submit")))
+      .status
+  ).toBe("completed");
+  const admin = await fixture({ admin: true });
+  const bridge = await openCorrection(owner, admin);
+  const uploads = received.length;
+  expect(
+    (
+      await poll(
+        admin,
+        await postCorrection(owner, admin, bridge, { folio_proof: file() })
+      )
+    ).status
+  ).toBe("failed");
+  expect(received.length).toBe(uploads);
+});
+
+test("template unknown overwrite retains canonical answer but reports mutable URL and never resends or deletes", async () => {
+  const owner = await fixture({ templateMode: true });
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }))).status
+  ).toBe("completed");
+  const saved = await draft(owner);
+  const first = attachmentSchema.parse(saved.proof);
+  await resume(owner);
+  customToken = first.file_token;
+  customLink = first.file_link;
+  nextMode = "store-then-reject";
+  const before = deleted.length;
+  const checkpoint = crypto.randomUUID();
+  const failed = await poll(
+    owner,
+    await send(
+      owner,
+      {
+        folio_proof: file(new Uint8Array([4, 3, 2]), "New.BIN"),
+      },
+      "draft",
+      checkpoint
+    )
+  );
+  expect(failed.status).toBe("failed");
+  expect(await draft(owner)).toEqual(saved);
+  expect(providerFiles.get(new URL(first.file_link).pathname)?.bytes).toEqual(
+    new Uint8Array([4, 3, 2])
+  );
+  expect(deleted.length).toBe(before);
+  const uploads = received.length;
+  expect((await recover(owner, checkpoint)).status).toBe(200);
+  expect((await send(owner, { folio_proof: file() })).status).toBe(409);
+  expect(received.length).toBe(uploads);
+});
+
+test("unproven provider alias receipt holds the protected owner's mutations without adopting or deleting its resource", async () => {
+  const owner = await fixture({ templateMode: true });
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }))).status
+  ).toBe("completed");
+  const saved = await draft(owner);
+  const first = attachmentSchema.parse(saved.proof);
+  const other = await fixture({ templateMode: true });
+  customToken = first.file_token;
+  customLink = first.file_link;
+  const before = deleted.length;
+  expect(
+    (await poll(other, await send(other, { folio_proof: file() }))).status
+  ).toBe("failed");
+  const status = await app.handle(
+    new Request(
+      `http://test.local/api/responses/${owner.response.id}/attachment-status`,
+      { headers: { Authorization: `Bearer ${owner.bearer}` } }
+    )
+  );
+  expect(await status.json()).toMatchObject({
+    mutationNotice: expect.stringContaining("เขียนทับ"),
+  });
+  const deletion = await app.handle(
+    new Request(`http://test.local/api/responses/${owner.response.id}`, {
+      headers: { Authorization: `Bearer ${owner.bearer}` },
+      method: "DELETE",
+    })
+  );
+  expect(deletion.status).toBe(409);
+  expect(await draft(owner)).toEqual(saved);
+  expect(await draft(other)).toEqual({});
+  expect(deleted.length).toBe(before);
+});
+
+test("template year-only edits preserve ordinary answers without uploading unchanged attachments", async () => {
+  const owner = await fixture({
+    templateMode: true,
+    templateYear: true,
+    year: "",
+  });
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }))).status
+  ).toBe("completed");
+  const saved = attachmentSchema.parse((await draft(owner)).proof);
+  await resume(owner);
+  snapshots.set(
+    owner.documentKey,
+    replaceCell(fixtureValue(snapshots.get(owner.documentKey)), "B1", "2575")
+  );
+  const uploads = received.length;
+  const authentication = logins;
+  expect((await poll(owner, await send(owner, {}))).status).toBe("completed");
+  const canonical = await draft(owner);
+  expect(canonical.fiscal_year).toBe("2575");
+  expect(attachmentSchema.parse(canonical.proof)).toEqual(saved);
+  expect(received.length).toBe(uploads);
+  expect(logins).toBe(authentication);
+});
+
+test("template docs_number change without replacement stays explicit retrieval error without external fallback", async () => {
+  const owner = await fixture({ templateMode: true });
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }))).status
+  ).toBe("completed");
+  const saved = await draft(owner);
+  await resume(owner);
+  snapshots.set(
+    owner.documentKey,
+    replaceCell(fixtureValue(snapshots.get(owner.documentKey)), "B2", "CHANGED")
+  );
+  const uploads = received.length;
+  const reads = originalReads.length;
+  expect((await poll(owner, await send(owner, {}))).status).toBe("failed");
+  expect(received.length).toBe(uploads);
+  expect(originalReads.length).toBe(reads);
+  expect(await draft(owner)).toEqual(saved);
+});
+
+test.each([0, 10_000_000])(
+  "template scalar preserves %i original bytes and extensionless filename",
+  async (size) => {
+    const owner = await fixture({ templateMode: true });
+    const bytes = new Uint8Array(size);
+    if (size) {
+      bytes[size - 1] = 255;
+    }
+    expect(
+      (
+        await poll(
+          owner,
+          await send(
+            owner,
+            { folio_proof: file(bytes, "extensionless") },
+            "submit"
+          )
+        )
+      ).status
+    ).toBe("completed");
+    expect(received.at(-1)?.bytes).toEqual(bytes);
+    expect(received.at(-1)?.name.endsWith("-ก่อหนี้-4_ขยาย(45)")).toBe(true);
+  }
+);
+
+test("template distinct replacement keeps B usable with persistent old-file cleanup warning", async () => {
+  const owner = await fixture({ templateMode: true });
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }))).status
+  ).toBe("completed");
+  const first = attachmentSchema.parse((await draft(owner)).proof);
+  await resume(owner);
+  const cleanup = Promise.withResolvers<undefined>();
+  deleteSettlements.set(first.file_token, cleanup);
+  deleteFails = true;
+  expect(
+    (
+      await poll(
+        owner,
+        await send(owner, {
+          folio_proof: file(new Uint8Array([6]), "Replacement.BIN"),
+        })
+      )
+    ).status
+  ).toBe("completed");
+  await cleanup.promise;
+  const second = attachmentSchema.parse((await draft(owner)).proof);
+  expect(second.file_token).not.toBe(first.file_token);
+  const status = () =>
+    app.handle(
+      new Request(
+        `http://test.local/api/responses/${owner.response.id}/attachment-status`,
+        { headers: { Authorization: `Bearer ${owner.bearer}` } }
+      )
+    );
+  expect(await (await status()).json()).toMatchObject({
+    cleanupWarning: expect.any(String),
+    mutationNotice: null,
+  });
+  const before = deleted.length;
+  await resume(owner);
+  expect((await poll(owner, await send(owner, {}))).status).toBe("completed");
+  expect(deleted.length).toBe(before);
+  expect(await (await status()).json()).toMatchObject({
+    cleanupWarning: expect.any(String),
+    mutationNotice: null,
+  });
+  expect(attachmentSchema.parse((await draft(owner)).proof)).toEqual(second);
+});
+
+test("template received same-identity overwrite cannot pretend rollback after canonical admission expires", async () => {
+  const owner = await fixture({ templateMode: true });
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }))).status
+  ).toBe("completed");
+  const saved = await draft(owner);
+  const first = attachmentSchema.parse(saved.proof);
+  await resume(owner);
+  customToken = first.file_token;
+  customLink = first.file_link;
+  const entered = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  receiptBarrier = { enter: () => entered.resolve(), release: release.promise };
+  const deletes = deleted.length;
+  const accepted = await send(owner, {
+    folio_proof: file(new Uint8Array([7, 6]), "Replacement.BIN"),
+  });
+  await entered.promise;
+  await prisma.editorLease.delete({ where: { id: owner.lease.id } });
+  release.resolve();
+  const failed = await poll(owner, accepted);
+  expect(failed.status).toBe("failed");
+  expect(await draft(owner)).toEqual(saved);
+  expect(deleted.length).toBe(deletes);
+  expect(providerFiles.get(new URL(first.file_link).pathname)?.bytes).toEqual(
+    new Uint8Array([7, 6])
+  );
+  const status = await app.handle(
+    new Request(
+      `http://test.local/api/responses/${owner.response.id}/attachment-status`,
+      { headers: { Authorization: `Bearer ${owner.bearer}` } }
+    )
+  );
+  expect(await status.json()).toMatchObject({
+    mutationNotice: expect.stringContaining("เขียนทับ"),
+  });
+});
+
+test("template concurrent unknown destination cannot dispatch another owner's write", async () => {
+  const number = `CONCURRENT.${crypto.randomUUID()}`;
+  const owner = await fixture({ number, templateMode: true });
+  const other = await fixture({ number, templateMode: true });
+  const entered = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  receiveBarrier = { enter: () => entered.resolve(), release: release.promise };
+  const accepted = await send(owner, { folio_proof: file() });
+  await entered.promise;
+  const uploads = received.length;
+  try {
+    expect(
+      (await poll(other, await send(other, { folio_proof: file() }))).status
+    ).toBe("failed");
+    expect(received.length).toBe(uploads);
+  } finally {
+    release.resolve();
+  }
+  expect((await poll(owner, accepted)).status).toBe("completed");
+});
+/* oxlint-enable no-await-expression-member */
 test("Correction validates reason, required physical slots and eligibility before provider writes", async () => {
   const owner = await fixture({ tableAttachments: true });
   const admin = await fixture({ admin: true });
@@ -2634,6 +3015,10 @@ test("replacement wins over metadata refetch and invalid removal plans cannot wr
   );
   expect(operationOutcome25.status).toBe("completed");
   await resume(f);
+  const oldCanonical = await draft(f);
+  const oldProof = attachmentSchema.parse(oldCanonical.proof);
+  const oldCleanup = Promise.withResolvers<undefined>();
+  deleteSettlements.set(oldProof.file_token, oldCleanup);
   snapshots.set(
     f.documentKey,
     replaceCell(fixtureValue(snapshots.get(f.documentKey)), "B2", "DOC.44")
@@ -2647,6 +3032,7 @@ test("replacement wins over metadata refetch and invalid removal plans cannot wr
   );
   expect(operationOutcome26.status).toBe("completed");
   expect(originalReads.length).toBe(reads);
+  await oldCleanup.promise;
   expect([...fixtureValue(received.at(-1)).bytes]).toEqual([8, 9]);
   const canonicalData27 = await draft(f);
   expect(attachmentSchema.parse(canonicalData27.proof).original_name).toBe(
@@ -2716,7 +3102,7 @@ test("Draft replacement preserves globally shared and immutable historical refer
     expect(operationOutcome30.status).toBe("completed");
     const canonical = await draft(f);
     const old = attachmentSchema.parse(canonical.proof);
-    const version = await prisma.ecmAttachmentVersion.findUniqueOrThrow({
+    const version = await prisma.ecmAttachmentVersion.findFirstOrThrow({
       where: { fileToken: old.file_token },
     });
     const protectedSnapshot = `protected-${crypto.randomUUID()}`;
@@ -2805,7 +3191,7 @@ test("implicit row saves reconcile canonical references without ECM writes befor
   const saved = await prisma.response.findUniqueOrThrow({
     where: { id: f.response.id },
   });
-  const version = await prisma.ecmAttachmentVersion.findUniqueOrThrow({
+  const version = await prisma.ecmAttachmentVersion.findFirstOrThrow({
     where: { fileToken: old.file_token },
   });
   expect(
@@ -2893,7 +3279,7 @@ test("internal project save preserves files and canonical references while metad
     })
   ).toBe(batches);
   await resume(f);
-  const version = await prisma.ecmAttachmentVersion.findUniqueOrThrow({
+  const version = await prisma.ecmAttachmentVersion.findFirstOrThrow({
     where: { fileToken: old.file_token },
   });
   expect(
@@ -2954,7 +3340,7 @@ test("an in-flight DELETE fences stale canonical receipt reference acquisition t
     const operationOutcome43 = await poll(f, await send(f, {}));
     expect(operationOutcome43.status).toBe("failed");
     expect(received.length).toBe(uploads);
-    const version = await prisma.ecmAttachmentVersion.findUniqueOrThrow({
+    const version = await prisma.ecmAttachmentVersion.findFirstOrThrow({
       where: { fileToken: old.file_token },
     });
     expect(version.state).toBe("deleting");
@@ -3054,7 +3440,7 @@ test("workspace and immutable Correction transitions retain canonical files and 
     )
   );
   expect(workspaceSave.status).toBe("completed");
-  const version = await prisma.ecmAttachmentVersion.findUniqueOrThrow({
+  const version = await prisma.ecmAttachmentVersion.findFirstOrThrow({
     where: { fileToken: proof.file_token },
   });
   expect(
@@ -3241,7 +3627,7 @@ test("final Admin Correction replaces scalar and table files while preserving th
     expect(new Uint8Array(await response.arrayBuffer())).toEqual(
       attachment.file_token === scalar.file_token ? originalScalar : originalRow
     );
-    const version = await prisma.ecmAttachmentVersion.findUniqueOrThrow({
+    const version = await prisma.ecmAttachmentVersion.findFirstOrThrow({
       where: { fileToken: attachment.file_token },
     });
     expect(
@@ -3630,7 +4016,7 @@ test.each([262_144, 262_145])(
   async (target) => {
     const f = await fixture();
     customToken = crypto.randomUUID().replaceAll("-", "").repeat(2);
-    customLink = `${provider.url.origin}/files/boundary`;
+    customLink = `${provider.url.origin}/files/boundary-${crypto.randomUUID()}`;
     const expected = {
       docs_number: "DOC.42",
       fiscal_year: "2570",
@@ -3776,7 +4162,7 @@ test("Results exposes trusted unknown-upload follow-up without allowing an Admin
               bindingId: z.string(),
               category: z.string(),
               filename: z.string(),
-              fiscalYear: z.string(),
+              fiscalYear: z.string().nullable(),
               rowIndex: z.number().nullable(),
               state: z.string(),
             })
@@ -4453,7 +4839,7 @@ test("whole-Response deletion retires its references and deletes only unshared F
   const canonical = await draft(owner);
   const unshared = attachmentSchema.parse(canonical.proof);
   const shared = attachmentSchema.parse(canonical.other);
-  const sharedVersion = await prisma.ecmAttachmentVersion.findUniqueOrThrow({
+  const sharedVersion = await prisma.ecmAttachmentVersion.findFirstOrThrow({
     where: { fileToken: shared.file_token },
   });
   const sharedSnapshot = `shared-${crypto.randomUUID()}`;
@@ -4972,7 +5358,7 @@ test("whole-Response deletion permits only an Admin first cleanup after proven n
   expect(saved.status).toBe("completed");
   const savedDraft = await draft(owner);
   const proof = attachmentSchema.parse(savedDraft.proof);
-  const version = await prisma.ecmAttachmentVersion.findUniqueOrThrow({
+  const version = await prisma.ecmAttachmentVersion.findFirstOrThrow({
     where: { fileToken: proof.file_token },
   });
   await prisma.ecmAuthState.update({

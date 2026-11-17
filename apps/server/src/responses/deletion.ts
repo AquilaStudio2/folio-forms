@@ -19,6 +19,7 @@ import {
   retireResponseAttachments,
 } from "../ecm/attachments";
 import type { EcmClient } from "../ecm/client";
+import { lockAttachmentLedger } from "../ecm/identity";
 import { fail } from "../http/errors";
 import { operationMetadata } from "../operations/model";
 import {
@@ -154,6 +155,7 @@ export async function deleteResponseData({
   }
   const result = await prisma.$transaction(
     async (tx) => {
+      await lockAttachmentLedger(tx);
       // Admission locks Form before editor lease; deletion uses the same outer fence.
       const scope = await tx.response.findUnique({
         select: { formId: true },

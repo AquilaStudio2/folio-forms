@@ -16,7 +16,7 @@ const attachmentFollowUpReason = (
   responseDeleted: boolean
 ): string => {
   if (mutationHeld) {
-    return "ข้อมูลเดิมยังอ่านได้ แต่ยังยืนยันคำขอหรือการลบรอบที่ยกเลิกไม่ได้ ห้ามบันทึก ส่ง หรือลบคำตอบ";
+    return "คำตอบเดิมยังอ่านได้ แต่ไฟล์ที่ URL เดิมอาจถูกเขียนทับแล้ว ยังยืนยันคำขอหรือการลบรอบที่ยกเลิกไม่ได้ ห้ามบันทึก ส่ง หรือลบคำตอบ";
   }
   if (cleanupPending) {
     if (responseDeleted) {
@@ -89,9 +89,30 @@ export const attachmentFollowUps = async (formPublicId?: string) => {
       },
     },
   });
+  const aliases = await prisma.ecmAttachmentVersion.findMany({
+    select: { id: true, identityId: true },
+    where: {
+      identityId: {
+        in: versions.flatMap((version) =>
+          version.identityId ? [version.identityId] : []
+        ),
+      },
+    },
+  });
+  const identities = await prisma.ecmAttachmentIdentity.findMany({
+    where: {
+      id: {
+        in: aliases.flatMap((alias) =>
+          alias.identityId ? [alias.identityId] : []
+        ),
+      },
+    },
+  });
   const references = await prisma.ecmAttachmentReference.findMany({
     select: { versionId: true },
-    where: { versionId: { in: versions.map((version) => version.id) } },
+    where: {
+      versionId: { in: [...versions, ...aliases].map((version) => version.id) },
+    },
   });
   return operationIds.flatMap((operationId) => {
     const batch = batches.find(
@@ -174,12 +195,19 @@ export const attachmentFollowUps = async (formPublicId?: string) => {
         ),
         responseDeleted: !response,
         responseId,
+        // oxlint-disable-next-line complexity -- Present alias ownership and durable cleanup evidence together.
         versions: entries.map((version) => {
           const cleanup = intents.find(
             (intent) => intent.versionId === version.id
           );
           const referenced = references.some(
-            (reference) => reference.versionId === version.id
+            (reference) =>
+              reference.versionId === version.id ||
+              aliases.some(
+                (alias) =>
+                  alias.id === reference.versionId &&
+                  alias.identityId === version.identityId
+              )
           );
           return {
             bindingId: version.bindingId,
@@ -187,6 +215,12 @@ export const attachmentFollowUps = async (formPublicId?: string) => {
               (!cleanup ||
                 (cleanup.state === "pending" && !cleanup.attemptedAt)) &&
               !referenced &&
+              version.identityId &&
+              identities.some(
+                (identity) =>
+                  identity.id === version.identityId &&
+                  identity.state === "active"
+              ) &&
               version.requestSettledAt &&
               ((version.state === "committed" && cleanup !== undefined) ||
                 (version.state === "received" &&
@@ -198,13 +232,16 @@ export const attachmentFollowUps = async (formPublicId?: string) => {
             confirmedAt: cleanup?.confirmedAt ?? null,
             confirmedBy: cleanup?.confirmedBy ?? null,
             deleteAttemptedAt: cleanup?.attemptedAt ?? null,
+            documentCategoryId: version.documentCategoryId,
             documentNumber: version.documentNumber,
             evidence: cleanup?.evidence ?? null,
             filename: version.filename,
             fiscalYear: version.fiscalYear,
             generation: version.generation,
             id: version.id,
+            identityId: version.identityId,
             originalName: version.originalName,
+            overwriteIdentityIds: version.overwriteIdentityIds,
             receivedAt: version.receivedAt,
             referenced,
             requestSettledAt: version.requestSettledAt,
@@ -212,7 +249,10 @@ export const attachmentFollowUps = async (formPublicId?: string) => {
             sentAt: version.sentAt,
             sizeBytes: version.sizeBytes,
             state: version.state,
+            storageMode: version.storageMode,
+            storageTemplateId: version.storageTemplateId,
             tag: version.tag,
+            templateName: version.templateName,
           };
         }),
       },

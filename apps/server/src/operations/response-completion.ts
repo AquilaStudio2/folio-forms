@@ -9,6 +9,7 @@ import {
 
 import { validateResponseDocument } from "../documents/native-eligibility";
 import { commitAttachmentBatch } from "../ecm/attachments";
+import { lockAttachmentLedger } from "../ecm/identity";
 import { fail, HttpError } from "../http/errors";
 import { jsonRecord } from "../http/input";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
@@ -143,6 +144,7 @@ export async function completeSubmitOperation(
   ];
   await prisma.$transaction(
     async (tx) => {
+      await lockAttachmentLedger(tx);
       const claimed = await tx.operation.updateMany({
         data: { updatedAt: new Date() },
         where: { id: operation.id, status: OperationStatus.processing },
@@ -350,6 +352,7 @@ export async function completeCorrectionWorkspaceOperation(
   ].filter((key): key is string => Boolean(key));
   await prisma.$transaction(
     async (tx) => {
+      await lockAttachmentLedger(tx);
       await tx.$queryRaw(
         Prisma.sql`SELECT "id" FROM "responses" WHERE "id" = ${metadata.responseId}::uuid FOR UPDATE`
       );
@@ -487,6 +490,7 @@ export async function completeCorrectionOperation(
   ].filter((key): key is string => Boolean(key));
   await prisma.$transaction(
     async (tx) => {
+      await lockAttachmentLedger(tx);
       const [lockedResponse] = await tx.$queryRaw<{ id: string }[]>(
         Prisma.sql`
           SELECT "id"

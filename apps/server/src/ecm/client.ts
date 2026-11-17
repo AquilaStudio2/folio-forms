@@ -576,30 +576,33 @@ export class EcmClient {
     );
     const parsed = z
       .object({
-        data: z
-          .array(
-            z.object({
-              file_link: z.url().refine((value) => {
-                const url = new URL(value);
-                return (
-                  !url.username &&
-                  !url.password &&
-                  !url.hash &&
-                  (url.protocol === "https:" ||
-                    (url.protocol === "http:" &&
-                      ["localhost", "127.0.0.1", "[::1]"].includes(
-                        url.hostname
-                      )))
-                );
-              }),
-              file_token: z
-                .string()
-                .min(1)
-                .max(16_384)
-                .regex(/^[!-~]+$/u),
-            })
-          )
-          .length(1),
+        data: z.preprocess(
+          (value) => (Array.isArray(value) ? value : [value]),
+          z
+            .array(
+              z.object({
+                file_link: z.url().refine((value) => {
+                  const url = new URL(value);
+                  return (
+                    !url.username &&
+                    !url.password &&
+                    !url.hash &&
+                    (url.protocol === "https:" ||
+                      (url.protocol === "http:" &&
+                        ["localhost", "127.0.0.1", "[::1]"].includes(
+                          url.hostname
+                        )))
+                  );
+                }),
+                file_token: z
+                  .string()
+                  .min(1)
+                  .max(16_384)
+                  .regex(/^[!-~]+$/u),
+              })
+            )
+            .length(1)
+        ),
         status: z.literal(200),
       })
       .safeParse(await jsonBody(response));

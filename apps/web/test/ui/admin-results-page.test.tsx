@@ -878,9 +878,14 @@ describe("Fiscal year results search", () => {
   });
 });
 
-it.each(["admin", "viewer"] as const)(
-  "%s can expand retained attachment tracking without reviving a deleted Response",
-  async (role) => {
+it.each([
+  ["admin", "legacy"],
+  ["viewer", "legacy"],
+  ["admin", "template"],
+  ["viewer", "template"],
+] as const)(
+  "%s can expand retained %s attachment tracking without reviving a deleted Response",
+  async (role, storageMode) => {
     sessionRole = role;
     listResponse = () => Response.json(resultsPayload([]));
     attachmentFollowUps = [
@@ -906,18 +911,21 @@ it.each(["admin", "viewer"] as const)(
           {
             bindingId: "folio_attachment",
             canDelete: true,
-            category: "หลักฐาน",
+            category: storageMode === "legacy" ? "หลักฐาน" : "",
             cleanupState: "pending",
             confirmedAt: null,
             confirmedBy: null,
             deleteAttemptedAt: null,
+            documentCategoryId: null,
             documentNumber: "DOC",
             evidence: null,
             filename: "DOC-unique-หลักฐาน.TXT",
-            fiscalYear: "2570",
+            fiscalYear: storageMode === "legacy" ? "2570" : null,
             generation: 2,
             id: "66666666-6666-4666-8666-666666666666",
+            identityId: "66666666-6666-4666-8666-666666666666",
             originalName: "original.TXT",
+            overwriteIdentityIds: [],
             receivedAt: "2026-11-14T03:00:01.000Z",
             referenced: false,
             requestSettledAt: "2026-11-14T03:00:01.000Z",
@@ -925,7 +933,10 @@ it.each(["admin", "viewer"] as const)(
             sentAt: "2026-11-14T03:00:00.000Z",
             sizeBytes: 49,
             state: "received",
+            storageMode,
+            storageTemplateId: null,
             tag: "items.proof",
+            templateName: storageMode === "template" ? "ก่อหนี้-4_ขยาย(45)" : null,
           },
         ],
       },
@@ -950,6 +961,13 @@ it.each(["admin", "viewer"] as const)(
     expect(screen.getByText(/ลบคำตอบแล้ว \(หลักฐานติดตามเท่านั้น\)/u)).toBeVisible();
     expect(
       screen.getByRole("heading", { name: "items.proof / แถว 3 (index 2)" })
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        storageMode === "template"
+          ? /เลข: DOC \/ ปี: - \/ แม่แบบ: ก่อหนี้-4_ขยาย\(45\)/u
+          : /เลข: DOC \/ ปี: 2570 \/ หมวด: หลักฐาน/u
+      )
     ).toBeVisible();
     expect(screen.getByText(/^เริ่มส่ง:/u)).toHaveTextContent(
       /เริ่มส่ง:.*\d{1,2}:\d{2}.*receipt:.*\d{1,2}:\d{2}/u

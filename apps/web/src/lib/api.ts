@@ -271,7 +271,13 @@ export interface AttachmentFollowUp {
     filename: string;
     originalName: string;
     sizeBytes: number;
-    fiscalYear: string;
+    fiscalYear: string | null;
+    storageMode: string;
+    templateName: string | null;
+    documentCategoryId: number | null;
+    storageTemplateId: string | null;
+    identityId: string | null;
+    overwriteIdentityIds: string[];
     documentNumber: string;
     category: string;
     state: string;
