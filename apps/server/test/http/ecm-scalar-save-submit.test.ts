@@ -448,6 +448,7 @@ const provider = Bun.serve({
     return new Response(null, { status: 404 });
   },
   hostname: "127.0.0.1",
+  idleTimeout: 120,
   port: 0,
 });
 const previousEnvironment = Object.fromEntries(
@@ -1588,9 +1589,11 @@ test("template original stalled stream expires its real transport budget before 
   );
   originalReadMode = "stalled";
   const uploads = received.length;
+  const started = Date.now();
   expect((await poll(owner, await send(owner, {}), 115_000)).status).toBe(
     "failed"
   );
+  expect(Date.now() - started).toBeGreaterThanOrEqual(90_000);
   expect(received.length).toBe(uploads);
   expect(await draft(owner)).toEqual(saved);
 }, 120_000);
