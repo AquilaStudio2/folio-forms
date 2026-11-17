@@ -4,7 +4,7 @@
 
 **Blocked by:** 01 — Admin จัดการ Storage Template catalog ครบ CRUD.
 
-**Status:** completed — targeted HTTP/application checks and actual isolated ONLYOFFICE smoke passed; integration owner rebuilds generated workflow artifacts.
+**Status:** resolved
 
 **Parent:** [Storage Templates spec](../spec.md)
 
@@ -84,3 +84,11 @@ Storage mode ใหม่มีอยู่ใน published contract หลั�
 - Changed only this test scenario: after confirmed settlement, reopen through the existing authenticated editor-config HTTP endpoint and consume its returned lease/native opening key before the new Save. No global fixture auto-renew, expiry-dependent assertion, production source/TTL/timeout change, or weaker sender/cleanup/repeated-delete guard.
 - Scoped one-file lint/format passed. The repaired late-receipt case plus the existing forged-scope/expired-lease guard passed `2/2`, `79` assertions, `138` filtered, in `3.28 s`, using the dedicated review database and callback `18883`. This post-change result does not explain the previous elapsed time or replace the parent's remaining root gates.
 - Sanitized diagnostics/proof remain in `review-fixes/root-lease-diagnostic.json` and `lease-fixture-repair-evidence.json`. Removed temporary diagnostic/cleanup scripts; deleted and confirmed absence of the `12` remaining review-fixture objects. Database/worktree remain retained; no live DCM/PDMS request or unnecessary native replay.
+
+### Parent integration disposition — 2026-11-17
+
+Frozen authoring/publication/duplicate behavior plus individually repaired stale choices and semantic lost-acknowledgement recovery are supported by E02/E08/E09/ROOT. Publication and true-conflict guards remain intact.
+
+- Delivery branch `feat/ecm-storage-templates`; production source `d8162b8`, final fixture merge `baf64cb`. See the [canonical acceptance matrix](../acceptance-matrix.md) for final integrated HTTP/native/export/root/review evidence and exact source qualifications. This disposition is based on observed consumer behavior and source review, not copied worktree checkboxes or counts alone.
+- Final Standards and Spec rechecks have no code findings. Workflow/source inventory/rendered guide were rebuilt and opened; owned test runtimes/databases/bucket/worktrees and private scaffolds were removed after retaining evidence. Original checkout and existing user services remain; no user schema/answer migration, push or deployment. Normal coordinated live authentication is not represented as zero DB writes.
+- Provider all-type/boundary/overwrite/settlement/deployed-version and human release evidence remain HOLD. One authorized synthetic PDF remains for the user to remove; local resolution is not provider/Production approval.

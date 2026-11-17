@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Scalar Save Draft/Submit แบบ template mode พร้อม identity และ failure safety.
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 **Parent:** [Storage Templates spec](../spec.md)
 
@@ -12,22 +12,22 @@
 
 ## Acceptance criteria
 
-- [ ] ระบุ supported provider download flow ที่เริ่มจาก `file_link` ของ original upload receipt และพิสูจน์ backend retrieval ของ exact original bytes ไม่พึ่ง undocumented private viewer/PDF.js routes
-- [ ] Server ใช้เฉพาะ committed canonical reference ที่ตรวจ Response, binding/slot, account, token/link และ expected size แล้ว; forged client URL/token, foreign account/owner หรือ stale reference ไม่ทำให้ fetch arbitrary source
-- [ ] เมื่อ docs_number เปลี่ยนและไม่มี replacement ระบบโหลดต้นฉบับอัตโนมัติแล้วส่ง original bytes ด้วย frozen template name/new number ไม่ขอให้ User เลือกไฟล์เดิมซ้ำ
-- [ ] Pending replacement มี precedence และไม่ถูกแทนด้วยไฟล์เก่า; unchanged และ year-only change ใน new modeไม่ fetch/upload/login โดยไม่จำเป็น ส่วน legacy year/number semantics คงเดิม
-- [ ] Viewer/redirect/download flow ต้องตรวจ URL/origin ทุก hop, credentials propagation, bounded stream/timeout, expected size และ errors ไม่ส่ง service credentials ออกนอก origin ที่อนุญาต
-- [ ] ไม่ถือ HTTP 200, matching Content-Length, MIME หรือ viewer เปิดได้เป็น proof ต้นฉบับ ปฏิเสธ viewer/error/converted preview ที่ไม่ใช่ original ขณะยังรองรับ original HTML ที่ User แนบจริง
-- [ ] Provider double ใช้ known original bytes/hash พิสูจน์ binary, text/HTML, image/document, encrypted/password-protected, extensionless, zero-byte และ 10,000,000-byte retrieval/re-upload ไม่แปลงไฟล์/นามสกุล
-- [ ] Redirect นอก trust policy, expired/unauthorized link, HTML viewer แทนต้นฉบับ, wrong size, oversized stream, timeout และ malformed response ทำให้หยุดก่อน external upload ใหม่และรักษา saved canonical data
-- [ ] ไม่ persist attachment originals ใน RustFS/DB/base64/workbook ไม่เพิ่ม fallback archive, force reselection, search download fallback หรือ automatic write retry
-- [ ] Saved B commit แล้วจึงทำ eligible distinct-identity A cleanup ตาม reference fencing; same identity/aliases ไม่ถูก DELETE เพื่อชดเชยการเปลี่ยนเลข
-- [ ] Failure หลัง external write ใช้ original Operation/identity evidence และ hold ของ 03 ไม่แกล้งว่า A bytes ถูก restore หรือนำ receipt ที่ยังไม่ commit ไปใช้รอบใหม่
-- [ ] Existing HTTP seam พิสูจน์ User เปลี่ยนเลข → save → reload receipt/document → Submit พร้อม actual original bytes ที่ provider ได้รับ และ failure ที่ไม่มี upload ใหม่
-- [ ] Smoke native Draft ที่ reopen แล้วเปลี่ยน docs_number โดยไม่เปิด picker พร้อมตรวจ persisted URL และ bytes ของไฟล์ที่ได้ ไม่ใช้ direct helper test แทน User path
+- [x] ระบุ supported provider download flow ที่เริ่มจาก `file_link` ของ original upload receipt และพิสูจน์ backend retrieval ของ exact original bytes ไม่พึ่ง undocumented private viewer/PDF.js routes
+- [x] Server ใช้เฉพาะ committed canonical reference ที่ตรวจ Response, binding/slot, account, token/link และ expected size แล้ว; forged client URL/token, foreign account/owner หรือ stale reference ไม่ทำให้ fetch arbitrary source
+- [x] เมื่อ docs_number เปลี่ยนและไม่มี replacement ระบบโหลดต้นฉบับอัตโนมัติแล้วส่ง original bytes ด้วย frozen template name/new number ไม่ขอให้ User เลือกไฟล์เดิมซ้ำ
+- [x] Pending replacement มี precedence และไม่ถูกแทนด้วยไฟล์เก่า; unchanged และ year-only change ใน new modeไม่ fetch/upload/login โดยไม่จำเป็น ส่วน legacy year/number semantics คงเดิม
+- [x] Viewer/redirect/download flow ต้องตรวจ URL/origin ทุก hop, credentials propagation, bounded stream/timeout, expected size และ errors ไม่ส่ง service credentials ออกนอก origin ที่อนุญาต
+- [x] ไม่ถือ HTTP 200, matching Content-Length, MIME หรือ viewer เปิดได้เป็น proof ต้นฉบับ ปฏิเสธ viewer/error/converted preview ที่ไม่ใช่ original ขณะยังรองรับ original HTML ที่ User แนบจริง
+- [x] Provider double ใช้ known original bytes/hash พิสูจน์ binary, text/HTML, image/document, encrypted/password-protected, extensionless, zero-byte และ 10,000,000-byte retrieval/re-upload ไม่แปลงไฟล์/นามสกุล
+- [x] Redirect นอก trust policy, expired/unauthorized link, HTML viewer แทนต้นฉบับ, wrong size, oversized stream, timeout และ malformed response ทำให้หยุดก่อน external upload ใหม่และรักษา saved canonical data
+- [x] ไม่ persist attachment originals ใน RustFS/DB/base64/workbook ไม่เพิ่ม fallback archive, force reselection, search download fallback หรือ automatic write retry
+- [x] Saved B commit แล้วจึงทำ eligible distinct-identity A cleanup ตาม reference fencing; same identity/aliases ไม่ถูก DELETE เพื่อชดเชยการเปลี่ยนเลข
+- [x] Failure หลัง external write ใช้ original Operation/identity evidence และ hold ของ 03 ไม่แกล้งว่า A bytes ถูก restore หรือนำ receipt ที่ยังไม่ commit ไปใช้รอบใหม่
+- [x] Existing HTTP seam พิสูจน์ User เปลี่ยนเลข → save → reload receipt/document → Submit พร้อม actual original bytes ที่ provider ได้รับ และ failure ที่ไม่มี upload ใหม่
+- [x] Smoke native Draft ที่ reopen แล้วเปลี่ยน docs_number โดยไม่เปิด picker พร้อมตรวจ persisted URL และ bytes ของไฟล์ที่ได้ ไม่ใช้ direct helper test แทน User path
 - [ ] Before release ต้องมี authorized DCM runtime evidence ของ supported download flow และชนิด/ขอบเขตไฟล์ที่กำหนด ใช้ synthetic files และไม่เรียก live API หากยังไม่ได้รับอนุญาตรอบนั้น
-- [ ] หากหา supported flow/contract ไม่ได้ ให้ทำ reachable local investigation/guards จนครบ บันทึก exact missing prerequisite และ HOLD delivery/release ของเส้นทางนี้ ไม่ปิดตั๋วว่าเสร็จ ไม่เปลี่ยน DCM-only หรือเปิดคำถามข้อ 1 ซ้ำ
-- [ ] อัปเดต affected original-reuse callers/fixtures และ workflow/system-map พร้อมแยก simulated proof จาก actual provider acceptance
+- [x] หากหา supported flow/contract ไม่ได้ ให้ทำ reachable local investigation/guards จนครบ บันทึก exact missing prerequisite และ HOLD delivery/release ของเส้นทางนี้ ไม่ปิดตั๋วว่าเสร็จ ไม่เปลี่ยน DCM-only หรือเปิดคำถามข้อ 1 ซ้ำ
+- [x] อัปเดต affected original-reuse callers/fixtures และ workflow/system-map พร้อมแยก simulated proof จาก actual provider acceptance
 
 ## Notes
 
@@ -69,3 +69,11 @@ public collection ที่ตรวจใน research ไม่เผยแพ�
 - Changed `docs_number` without opening the picker or selecting another File. The real backend performed one authenticated original GET, uploaded exact28-byte B with matching SHA-256 under the changed filename, then deleted the old unreferenced shared resource once. Final unchanged Submit displayed the normal successful-submission message without navigating to a receipt page or adding file writes: totals **3 uploads,1 DELETE,1 original GET**. All multipart uploads had exactly `documentFile` and `template`; all filenames retained the uppercase `BIN` extension without a row/version suffix. The provider's saved link was an HTML viewer, not a direct original response.
 - A first synthetic Save was rejected before any upload because the browser formula-control automation had not committed its cell value; the pending File survived. The actual committed SDK value then saved successfully. Incorrect frame/close selectors and assumed receipt navigation were automation failures, not hidden application failures.
 - Parent also exercised the actual integrated original reader against the sole authorized live629-byte PDF. Shared login200/public GET200, exact full bytes and SHA-256 passed; no additional live file upload or DELETE occurred. Research records the initial untraced unavailable attempt and the remaining provider-matrix limits.
+
+### Parent integration disposition — 2026-11-17
+
+Implementation and local original-reuse acceptance are complete, including one exact live PDF read; required before-release all-type/boundary/provider evidence is NOT complete. AC14 remains unchecked and the ticket is not resolved, as AC15 requires.
+
+- Delivery branch `feat/ecm-storage-templates`; production source `d8162b8`, final fixture merge `baf64cb`. See the [canonical acceptance matrix](../acceptance-matrix.md) for final integrated HTTP/native/export/root/review evidence and exact source qualifications. This disposition is based on observed consumer behavior and source review, not copied worktree checkboxes or counts alone.
+- Final Standards and Spec rechecks have no code findings. Workflow/source inventory/rendered guide were rebuilt and opened; owned test runtimes/databases/bucket/worktrees and private scaffolds were removed after retaining evidence. Original checkout and existing user services remain; no user schema/answer migration, push or deployment. Normal coordinated live authentication is not represented as zero DB writes.
+- Provider all-type/boundary/overwrite/settlement/deployed-version and human release evidence remain HOLD. One authorized synthetic PDF remains for the user to remove; local resolution is not provider/Production approval.

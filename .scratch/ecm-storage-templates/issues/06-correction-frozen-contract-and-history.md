@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — เปลี่ยน docs_number โดย reuse original bytes จาก DCM แห่งเดียว; 05 — Table attachments แบบ Storage Template รักษา physical rows และ shared-identity safety.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Parent:** [Storage Templates spec](../spec.md)
 
@@ -12,21 +12,21 @@
 
 ## Acceptance criteria
 
-- [ ] Correction ใช้ storage mode/category/template snapshot ของ Submission ที่แก้ ไม่อ่าน master ปัจจุบันมา redirect routing; legacy Correction คง legacy contract
-- [ ] ตรวจ Admin authorization, reason, currently submitted/latest eligibility, base revision, capability/lease และ requiredness ตามเดิมก่อน external writes ไม่ใช้ flow นี้แก้ Draft ของ User โดยตรง
-- [ ] Final explicit Save Correction เท่านั้นที่ upload selected replacements หรือ original bytes เมื่อ metadata เปลี่ยน; internal project/workspace saves ไม่ upload/delete
-- [ ] Scalar และ table physical-row slots ใช้ shared trusted-original and identity paths ที่ผ่าน 04/05 ไม่สร้าง adapter/cache หรือ cleanup policy แยกเฉพาะ Correction
-- [ ] Before dispatch ป้องกัน destination ที่ Submission/older Correction/other owner/workspace/eligible Operation ยัง reference อยู่; same name/token overwrite ที่ทำลาย protected bytes ต้องหยุดก่อน write ไม่อ้าง frozen JSON ว่าปกป้องเนื้อหา URL ได้
-- [ ] New valid revision เก็บ document/JSON/receipt/reference ของ captured snapshot ครบ ไม่แก้ URL/token หรือ evidence ของ older revisions
-- [ ] Replacing/removing current file ไม่ทำให้ older revision สูญเสียไฟล์ และไม่มี DELETE shared canonical/protected identity หรือ cleanup จาก token inequality เพียงอย่างเดียว
-- [ ] Catalog rename/move/delete ระหว่างเปิด workspace ไม่เปลี่ยน published choice และไม่ทำให้ live lookup เปลี่ยนปลายทางย้อนหลัง
-- [ ] Pending Files/removals ข้าม internal workspace document transition ได้เฉพาะ verified scope/physical-row mapping; ambiguity คง editor/pending state และหยุดก่อน remount ทำไฟล์หาย
-- [ ] Final completion ยอมรับเฉพาะ captured snapshot; newer unsaved File/removal ไม่ถูกล้างหรือแสดงว่าบันทึกแล้ว ไม่ส่งต่อเข้า operation ถัดไปอัตโนมัติ
-- [ ] In-place external overwrite/unknown commit ใช้ durable original-operation evidence และ hold ที่ถูกต้อง ไม่สัญญา external rollback หรือ resend หลัง timeout
-- [ ] Existing HTTP seam พิสูจน์ Correction reason/eligibility/requiredness, frozen routing หลัง catalog changes, original-byte number change, physical slots, protected-reference rejection ก่อน upload และ selected historical revision ที่ยังถูกต้อง
-- [ ] Smoke real ONLYOFFICE Correction ของทั้ง legacy/new Form ตรวจ workspace/internal-save no-write, final save, old Submission/Correction read และ actual selected-revision exports
-- [ ] หาก filename grammar เดิมทำให้แก้ slot โดยไม่ overwrite protected history ไม่ได้ ให้รายงาน protected conflict อย่างชัดเจน ไม่เพิ่ม suffix หรือปลด guard เอง; feature acceptance ต้องแยก allowed success path จาก safe rejection
-- [ ] อัปเดต affected Correction callers/fixtures และ workflow/domain/system map ใน change เดียวกัน ไม่เปลี่ยนสิทธิ์ Viewer/User หรือ main-document viewer
+- [x] Correction ใช้ storage mode/category/template snapshot ของ Submission ที่แก้ ไม่อ่าน master ปัจจุบันมา redirect routing; legacy Correction คง legacy contract
+- [x] ตรวจ Admin authorization, reason, currently submitted/latest eligibility, base revision, capability/lease และ requiredness ตามเดิมก่อน external writes ไม่ใช้ flow นี้แก้ Draft ของ User โดยตรง
+- [x] Final explicit Save Correction เท่านั้นที่ upload selected replacements หรือ original bytes เมื่อ metadata เปลี่ยน; internal project/workspace saves ไม่ upload/delete
+- [x] Scalar และ table physical-row slots ใช้ shared trusted-original and identity paths ที่ผ่าน 04/05 ไม่สร้าง adapter/cache หรือ cleanup policy แยกเฉพาะ Correction
+- [x] Before dispatch ป้องกัน destination ที่ Submission/older Correction/other owner/workspace/eligible Operation ยัง reference อยู่; same name/token overwrite ที่ทำลาย protected bytes ต้องหยุดก่อน write ไม่อ้าง frozen JSON ว่าปกป้องเนื้อหา URL ได้
+- [x] New valid revision เก็บ document/JSON/receipt/reference ของ captured snapshot ครบ ไม่แก้ URL/token หรือ evidence ของ older revisions
+- [x] Replacing/removing current file ไม่ทำให้ older revision สูญเสียไฟล์ และไม่มี DELETE shared canonical/protected identity หรือ cleanup จาก token inequality เพียงอย่างเดียว
+- [x] Catalog rename/move/delete ระหว่างเปิด workspace ไม่เปลี่ยน published choice และไม่ทำให้ live lookup เปลี่ยนปลายทางย้อนหลัง
+- [x] Pending Files/removals ข้าม internal workspace document transition ได้เฉพาะ verified scope/physical-row mapping; ambiguity คง editor/pending state และหยุดก่อน remount ทำไฟล์หาย
+- [x] Final completion ยอมรับเฉพาะ captured snapshot; newer unsaved File/removal ไม่ถูกล้างหรือแสดงว่าบันทึกแล้ว ไม่ส่งต่อเข้า operation ถัดไปอัตโนมัติ
+- [x] In-place external overwrite/unknown commit ใช้ durable original-operation evidence และ hold ที่ถูกต้อง ไม่สัญญา external rollback หรือ resend หลัง timeout
+- [x] Existing HTTP seam พิสูจน์ Correction reason/eligibility/requiredness, frozen routing หลัง catalog changes, original-byte number change, physical slots, protected-reference rejection ก่อน upload และ selected historical revision ที่ยังถูกต้อง
+- [x] Smoke real ONLYOFFICE Correction ของทั้ง legacy/new Form ตรวจ workspace/internal-save no-write, final save, old Submission/Correction read และ actual selected-revision exports
+- [x] หาก filename grammar เดิมทำให้แก้ slot โดยไม่ overwrite protected history ไม่ได้ ให้รายงาน protected conflict อย่างชัดเจน ไม่เพิ่ม suffix หรือปลด guard เอง; feature acceptance ต้องแยก allowed success path จาก safe rejection
+- [x] อัปเดต affected Correction callers/fixtures และ workflow/domain/system map ใน change เดียวกัน ไม่เปลี่ยนสิทธิ์ Viewer/User หรือ main-document viewer
 
 ## Notes
 
@@ -75,3 +75,11 @@ Private wrapper `/tmp/folio-storage-templates-runtime/ticket06.env` was sourced 
 - Independently inspected all6 actual XLSX exports (template/legacy × original/Correction1/older Correction1 selected after Correction2). Every full SHA-256 and size matched the retained export evidence; every worksheet value and external hyperlink matched that selected revision, not the latest.
 - Parsed every ZIP XML/VML part: no OLE/control/shape/drawing anchor, embedded file, separate `file_token` field or literal service Bearer remained. Empty drawing/VML containers are not controls. This is inspection of actual exported packages, not copied renderer input.
 - Extracted all6 actual PDF texts/links; document numbers and links matched each selected revision, including older Correction1. These retained06 artifacts complement, not replace, final08 execution on the current delivery source.
+
+### Parent integration disposition — 2026-11-17
+
+Frozen new/legacy Correction, protected history and selected-revision actual exports are supported by E06/E08/ROOT. Submitted fixtures isolate only the post-Submit next-round start; no uninterrupted default journey or human policy approval is claimed.
+
+- Delivery branch `feat/ecm-storage-templates`; production source `d8162b8`, final fixture merge `baf64cb`. See the [canonical acceptance matrix](../acceptance-matrix.md) for final integrated HTTP/native/export/root/review evidence and exact source qualifications. This disposition is based on observed consumer behavior and source review, not copied worktree checkboxes or counts alone.
+- Final Standards and Spec rechecks have no code findings. Workflow/source inventory/rendered guide were rebuilt and opened; owned test runtimes/databases/bucket/worktrees and private scaffolds were removed after retaining evidence. Original checkout and existing user services remain; no user schema/answer migration, push or deployment. Normal coordinated live authentication is not represented as zero DB writes.
+- Provider all-type/boundary/overwrite/settlement/deployed-version and human release evidence remain HOLD. One authorized synthetic PDF remains for the user to remove; local resolution is not provider/Production approval.

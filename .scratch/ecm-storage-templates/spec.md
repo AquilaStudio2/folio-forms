@@ -1,9 +1,9 @@
 # Folio DCM Storage Templates — Specification
 
-Status: ready-for-agent
+Status: ready-for-human
 Decision baseline: ข้อสรุปล่าสุดใน planning.md ณ 2026-11-17
 Delivery scope: ผู้ใช้อนุมัติ implementation บน integration branch และ isolated test database เมื่อ 2026-11-17; ไม่อนุมัติ deploy หรือ migration ข้อมูลใช้งานจริง
-Human review: implementation authorized; final behavior/provider acceptance pending
+Human review: implementation authorized; local implementation/automated review complete; final behavior/provider acceptance pending — release HOLD
 
 ## Problem Statement
 
@@ -391,3 +391,12 @@ Cross-cutting validation/authorization/accessibility/legacy compatibility ต้
 - Final native acceptance imported only `/tmp/folio-storage-templates-integration` production source `90b9e9b4235629a876343a5b8bd81d3e8ab2e2d8` after SOURCE READY. Actual new/legacy native journeys, role/read/export/deletion/unknown-hold evidence and retained6 XLSX+6 PDF plus ordinary-unsaved XLSX are recorded in the matrix.08 made no production changes; parent owns final review, rendered workflow and ticket closure.
 - Eligible submitted fixtures used only post-Submit next-round `/start` isolation. Existing default auto-next-Draft/Correction eligibility limitation remains unchanged and disclosed; uninterrupted default flow is not claimed.
 - The single authorized PDF is not all-type, boundary, same-identity overwrite or settlement proof. Parent conservatively chose one sample within the user's scenario/cleanup constraints; remaining live coverage is unexercised, not a claim that other types were prohibited. Release remains HOLD for exact missing provider/human prerequisites;08 made no live calls or cleanup.
+
+### Final local delivery and remaining acceptance — 2026-11-17
+
+- โค้ดทุกตั๋วรวมบน `feat/ecm-storage-templates` ใน delivery checkout เดียว Production source `d8162b8`, fixture-only merge `baf64cb` ผ่าน actual changed-path native และ final root checks ตาม [canonical acceptance matrix](acceptance-matrix.md) Full journey เดิมตรึง source90b; ไม่อ้างว่ารันทุก native path ใหม่หลัง test/docs-only changes
+- รีวิว Standards พบ stale-choice repair และ possible serializer duplication; Spec พบ stale-choice repair และ nested-key-order recovery แก้ทั้งสองบั๊กและ private serializer ด้วย implementer ใหม่ตัวเดียว แล้ว fresh two-axis recheck ไม่เหลือ code findings Actual integration native พิสูจน์ repair สองช่องทีละช่อง, publication ยัง block จน choice ครบ, committed-PATCH acknowledgement503 กู้ด้วยผลจริง แล้วแก้ต่อ/save/publish ได้โดยไม่ทิ้ง ordinary cell
+- HTTP 505 กรณีไม่ซ้ำจาก 39 suites ผ่านแบบ resumed runs ไม่ใช่หนึ่ง uninterrupted green run กรณี late receipt รอบแรกเกินอายุ fixture lease90วินาที เปลี่ยนเฉพาะ test ให้เปิด editor-config จริงหลัง settlement; actual integration changed case กับ expired-lease guard ผ่านโดยไม่เปลี่ยน production TTL/timeout และไม่เดาว่าทำไมรอบเดิมช้า รายละเอียดทุก gate/ข้อจำกัดอยู่ใน matrix
+- **Resolved local:**01,02,03,05,06,07. **Ready-for-human, ไม่ปิดว่าเสร็จ:**04 และ08 เพราะ before-release AC14 ของทั้งสองยังขาด provider all-type/boundary และหลักฐานภายนอกที่กำหนด ขอบเขต all-type/DCM-only/full CRUD ไม่ได้ลดลง ต้องมี supported contract/runtime matrix, same-identity/no-extra-DELETE/settlement, deployed revision และ human acceptance ก่อน release ไม่ถามข้อ1–3ซ้ำ
+- อัปเดตและเปิด rendered workflow จริงแล้ว เก็บ sanitized native/export/verification evidence แยกจาก temporary runtime ลบ worktrees ทดสอบ13แห่ง, DBทดสอบ8ฐาน, private bucket, owned worker/gateway/browser/profiles และ credentials/probes แล้ว เก็บ integration checkout/branch และเอกสารไว้ ไม่มี push/deploy หรือ migrate/reset schema/คำตอบของฐานผู้ใช้เดิม Shared live authentication ใช้ cache/coordinator ตามปกติ ไม่อ้างว่าไม่มี auth-state write
+- DCM จริงยังเหลือเพียง `กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).pdf` 629bytes ใต้ `2. มติและการก่อหนี้` ให้ผู้ใช้ลบเอง ไม่ใช้ชื่อสำรอง ไม่ overwrite/DELETE เพิ่ม และนำ private receipt ออกจากเครื่องมือทดสอบแล้ว ไม่อ้างว่าลิงก์ public/shared เป็น private หรือเก็บ bytes ประวัติแบบ immutable

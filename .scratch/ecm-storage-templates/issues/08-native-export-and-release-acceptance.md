@@ -4,7 +4,7 @@
 
 **Blocked by:** 06 — Final Correction ใช้ frozen Storage Template และปกป้องประวัติ; 07 — Response deletion ปลอดภัยต่อ shared file identity และติดตาม cleanup ต่อได้.
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
 
 **Parent:** [Storage Templates spec](../spec.md)
 
@@ -12,25 +12,25 @@
 
 ## Acceptance criteria
 
-- [ ] รวม 01–07 และตรวจ behavior บน delivery integration checkout เดียว ไม่ใช้ผล passing ของ worktree/branch แยกมาแทน final integrated result
-- [ ] Actual Admin page ทำ persisted list/filter/create/rename/move/delete confirmation ครบ category ID/type semantics ถูกต้อง และไม่มี User/Viewer write access
-- [ ] Real ONLYOFFICE external popup ใช้ dependent category/template selects ทั้ง scalar/table, empty/error/reload, Cancel/Escape/focus และ dirty guards ไม่เปลี่ยนเป็น demo/sidebar flow
-- [ ] Complete native journey: author/save/publish no-year new-mode Form → duplicate new link → User Save Draft/reopen/replace/Submit → Admin final Correction → selected-revision views/exports → authorized Response deletion/follow-up
-- [ ] Legacy published Form/old Draft/Submission/Correction ใช้ contract เดิม ไม่มี file/data migration; catalog changes และ duplicate ไม่เปลี่ยน original link, saved URLs/tokens หรือประวัติ
-- [ ] User/Admin/Viewer read-only results ใช้สิทธิ์เดิมและเลือก revision จริง ไม่ทำ upload หรือเปิด mutation controls จากหน้าดู
-- [ ] Read-only workbook และ downloaded XLSX/PDF จริงใช้ saved `file_link` แทน attachment buttons ของ revision ที่กำลังดู ไม่ substitute latest/search/path-derived URLs เมื่อประวัติมีปัญหา
-- [ ] ตรวจ workbook/export package จริงว่าไม่มี separate file_token fields/hidden metadata/service Bearer/credentials และไม่แก้ canonical editable workbook เพื่อทำ export
-- [ ] ส่ง provider URL ตามจริง โดยระบุ caveat ว่า token อาจอยู่ใน query และ URL เป็น public ตาม accepted policy ไม่อ้าง privacy หรือ immutable DCM bytes จาก frozen Folio config
-- [ ] Pending File/removal ขัดขวาง export ที่จะทำให้เข้าใจว่าบันทึกแล้ว; export ไม่ upload ไม่ปล่อย fake URL/blob/filename และ ordinary unsaved Fill Download ยังใช้ได้เมื่อไม่มี attachment change ค้าง
-- [ ] Native scalar/table docs_number change ไม่ต้องเปิด picker เพื่อเลือกไฟล์เดิมใหม่ ได้ exact original bytes จาก DCM-only flow; same-identity overwrite ไม่ DELETE ซ้ำ และ cleanup failure หลัง B commit แสดง warning ค้าง
-- [ ] UI controls มี labels, keyboard access, correct focus และ slot/row-specific safe errors; User เห็น unknown-outcome hold ต่างจาก successful save with cleanup warning
-- [ ] Existing HTTP integration suites และ affected native/UI checks ผ่านแบบรวม ครอบคลุม catalog races, persisted modes, global names, original bytes/limits, physical rows, protected history/shared identity และ no automatic write retries
+- [x] รวม 01–07 และตรวจ behavior บน delivery integration checkout เดียว ไม่ใช้ผล passing ของ worktree/branch แยกมาแทน final integrated result
+- [x] Actual Admin page ทำ persisted list/filter/create/rename/move/delete confirmation ครบ category ID/type semantics ถูกต้อง และไม่มี User/Viewer write access
+- [x] Real ONLYOFFICE external popup ใช้ dependent category/template selects ทั้ง scalar/table, empty/error/reload, Cancel/Escape/focus และ dirty guards ไม่เปลี่ยนเป็น demo/sidebar flow
+- [x] Complete native journey: author/save/publish no-year new-mode Form → duplicate new link → User Save Draft/reopen/replace/Submit → Admin final Correction → selected-revision views/exports → authorized Response deletion/follow-up
+- [x] Legacy published Form/old Draft/Submission/Correction ใช้ contract เดิม ไม่มี file/data migration; catalog changes และ duplicate ไม่เปลี่ยน original link, saved URLs/tokens หรือประวัติ
+- [x] User/Admin/Viewer read-only results ใช้สิทธิ์เดิมและเลือก revision จริง ไม่ทำ upload หรือเปิด mutation controls จากหน้าดู
+- [x] Read-only workbook และ downloaded XLSX/PDF จริงใช้ saved `file_link` แทน attachment buttons ของ revision ที่กำลังดู ไม่ substitute latest/search/path-derived URLs เมื่อประวัติมีปัญหา
+- [x] ตรวจ workbook/export package จริงว่าไม่มี separate file_token fields/hidden metadata/service Bearer/credentials และไม่แก้ canonical editable workbook เพื่อทำ export
+- [x] ส่ง provider URL ตามจริง โดยระบุ caveat ว่า token อาจอยู่ใน query และ URL เป็น public ตาม accepted policy ไม่อ้าง privacy หรือ immutable DCM bytes จาก frozen Folio config
+- [x] Pending File/removal ขัดขวาง export ที่จะทำให้เข้าใจว่าบันทึกแล้ว; export ไม่ upload ไม่ปล่อย fake URL/blob/filename และ ordinary unsaved Fill Download ยังใช้ได้เมื่อไม่มี attachment change ค้าง
+- [x] Native scalar/table docs_number change ไม่ต้องเปิด picker เพื่อเลือกไฟล์เดิมใหม่ ได้ exact original bytes จาก DCM-only flow; same-identity overwrite ไม่ DELETE ซ้ำ และ cleanup failure หลัง B commit แสดง warning ค้าง
+- [x] UI controls มี labels, keyboard access, correct focus และ slot/row-specific safe errors; User เห็น unknown-outcome hold ต่างจาก successful save with cleanup warning
+- [x] Existing HTTP integration suites และ affected native/UI checks ผ่านแบบรวม ครอบคลุม catalog races, persisted modes, global names, original bytes/limits, physical rows, protected history/shared identity และ no automatic write retries
 - [ ] Before release มี authorized DCM evidence ของ supported original-download flow ทุก in-scope file type/boundary, filename ที่มีขีด/extensionless, actual object receipt และ same-token/link no-extra-DELETE; ใช้ synthetic fixtures ตรวจ collision ก่อน write และไม่ retry unknown writes
-- [ ] หากยังไม่มีสิทธิ์ live API หรือ provider capability/settlement proof ที่ต้องใช้ ให้รายงาน exact missing prerequisite, tested/untested และ HOLD release ไม่เรียก live ด้วยสิทธิ์เก่าที่หมดขอบเขต ไม่ขอคำตอบข้อ 1–3 ซ้ำ และไม่ลด all-type/DCM-only/CRUD scope
-- [ ] เตือน duplicate-name/shared-URL limitation ก่อนเปิดใช้ ไม่อ้างว่าไฟล์ทุกช่อง/แถว independent; ownership/history guards และ safe conflict rejection ยังคงทำงาน
-- [ ] ปิด traceability ของ stories 1–112 และ acceptance ทุกตั๋ว ระบุ observed verification กับ outstanding human/provider approval แยกกัน ไม่ mark resolved จากเอกสารหรือ test count เพียงอย่างเดียว
-- [ ] อัปเดต domain/workflow/system map พร้อม generated outputs ตาม repo convention เปิดตรวจ rendered guide จริง และใช้ root scripts ตรวจ format/lint/type/build ที่เกี่ยวข้องก่อน commit
-- [ ] นำ throwaway probes/fixtures/services ที่สร้างเฉพาะรอบทดสอบออกหลังเก็บ sanitized evidence ไม่เก็บ credentials/tokens/private receipts ใน public repo และไม่กระทบ runtime/ข้อมูลที่ผู้ใช้มีอยู่ก่อน
+- [x] หากยังไม่มีสิทธิ์ live API หรือ provider capability/settlement proof ที่ต้องใช้ ให้รายงาน exact missing prerequisite, tested/untested และ HOLD release ไม่เรียก live ด้วยสิทธิ์เก่าที่หมดขอบเขต ไม่ขอคำตอบข้อ 1–3 ซ้ำ และไม่ลด all-type/DCM-only/CRUD scope
+- [x] เตือน duplicate-name/shared-URL limitation ก่อนเปิดใช้ ไม่อ้างว่าไฟล์ทุกช่อง/แถว independent; ownership/history guards และ safe conflict rejection ยังคงทำงาน
+- [x] ปิด traceability ของ stories 1–112 และ acceptance ทุกตั๋ว ระบุ observed verification กับ outstanding human/provider approval แยกกัน ไม่ mark resolved จากเอกสารหรือ test count เพียงอย่างเดียว
+- [x] อัปเดต domain/workflow/system map พร้อม generated outputs ตาม repo convention เปิดตรวจ rendered guide จริง และใช้ root scripts ตรวจ format/lint/type/build ที่เกี่ยวข้องก่อน commit
+- [x] นำ throwaway probes/fixtures/services ที่สร้างเฉพาะรอบทดสอบออกหลังเก็บ sanitized evidence ไม่เก็บ credentials/tokens/private receipts ใน public repo และไม่กระทบ runtime/ข้อมูลที่ผู้ใช้มีอยู่ก่อน
 
 ## Notes
 
@@ -56,3 +56,11 @@
 - Parent reported final integration root lint/format, types5/5, build3/3, UI267, plugin312, spreadsheet116 and503 distinct HTTP cases across all39 suites. These are parent-run results, not08-run full gates. Workflow/domain behavior is unchanged by this documentation-only ticket; owner prose already covers the observed paths. Parent retains generated workflow/rendered-guide, two-axis review and closure.
 - No live DCM/PDMS calls by08. Parent's one629-byte PDF proves only that sample; remaining all-type/boundary/overwrite/no-extra-DELETE/settlement/deployed-revision evidence is unexercised and keeps release HOLD. This does not assert that the user prohibited all other file types. Public/shared URLs can expose later bytes; frozen Folio metadata does not make provider files independent or immutable.
 - Cleanup completed: released only own browser; stopped exact own backend/provider/frontend/Chrome services; removed gateway08, own private scripts/env/accounts/Files/provider-double continuity archive/shadow/cache/profile/wrapper. Isolated DB08, worktree, sanitized evidence and exports remain. Parent/user runtimes, original checkout and real provider files were untouched. No ticket is closed from counts or documentation.
+
+### Parent integration disposition — 2026-11-17
+
+Local native/export/role/deletion/unknown acceptance and all112-story/135-criterion traceability are complete, with qualified default-next-Draft fixtures. Before-release provider AC14 remains unchecked; human/provider acceptance is still required.
+
+- Delivery branch `feat/ecm-storage-templates`; production source `d8162b8`, final fixture merge `baf64cb`. See the [canonical acceptance matrix](../acceptance-matrix.md) for final integrated HTTP/native/export/root/review evidence and exact source qualifications. This disposition is based on observed consumer behavior and source review, not copied worktree checkboxes or counts alone.
+- Final Standards and Spec rechecks have no code findings. Workflow/source inventory/rendered guide were rebuilt and opened; owned test runtimes/databases/bucket/worktrees and private scaffolds were removed after retaining evidence. Original checkout and existing user services remain; no user schema/answer migration, push or deployment. Normal coordinated live authentication is not represented as zero DB writes.
+- Provider all-type/boundary/overwrite/settlement/deployed-version and human release evidence remain HOLD. One authorized synthetic PDF remains for the user to remove; local resolution is not provider/Production approval.

@@ -1,7 +1,7 @@
 {
-  "commit": "5aca0b5a379a73dfa306da243ab3c283465fd8bc",
+  "commit": "baf64cb590b5390954d7f9f233f59f26f1405ceb",
   "branch": "feat/ecm-storage-templates",
-  "source_fingerprint": "2e94ae05af8529a131a115740567113cab10a85b1d8b6b2c8ce4899eaa85ef17",
+  "source_fingerprint": "80af484663ab2ca1c376b38da2547e3c2c5974a2e1c7b77307d12de1ce68667e",
   "source_files": 325,
   "pages": [
     {
@@ -722,7 +722,7 @@
       "method": "POST",
       "path": "/api/admin/forms/:publicId/spreadsheet-bindings/recover",
       "file": "apps/server/src/routes/spreadsheet-authoring.ts",
-      "line": 452
+      "line": 456
     },
     {
       "method": "GET",

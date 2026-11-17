@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 **Parent:** [Storage Templates spec](../spec.md)
 
@@ -12,21 +12,21 @@
 
 ## Acceptance criteria
 
-- [ ] เพิ่ม persisted catalog ที่มี identity ภายใน, `template_name` และ numeric `document_category_id`; migration ใช้ isolated database และไม่ reset/เปลี่ยน Responses หรือไฟล์เดิม
-- [ ] Admin navigation เปิดหน้าจริงที่มี category select **หัวข้อเอกสาร**, persisted list/filter และ create/edit/delete controls ครบ ไม่ใช่ mock data หรือหน้า create/list อย่างเดียว
-- [ ] โหลด category ผ่าน backend/shared ECM auth เดิม ใช้ `type` แสดงผลและ `id` เป็นค่า/filter key; categories ที่ชื่อเหมือนกันแต่ ID ต่างกันไม่ถูกยุบรวม
-- [ ] Create บันทึกชื่อกับ category ID ที่ backend ตรวจจาก provider evidence ที่ใช้ได้ ปฏิเสธ arbitrary/unknown ID, blank/control/unsafe filename metadata โดยไม่ rewrite ชื่อเงียบ ๆ
-- [ ] `template_name` ไม่ซ้ำทั้ง catalog แม้คนละหมวด มี database uniqueness ป้องกัน concurrent create/update และคืน error ที่ Admin แก้ได้
-- [ ] Update เปลี่ยนชื่อและหมวดที่ผูกได้จริง หลัง reload รายการหมวดเก่าและใหม่ตรงข้อมูลที่บันทึก ไม่เหลือ selection ที่ผิดหมวด
-- [ ] Delete มี confirmation พร้อม Cancel/Escape และ focus behavior ที่ใช้ keyboard ได้; cancel ไม่ mutate และยืนยันสำเร็จแล้วรายการหายจาก future choices
-- [ ] แยก loading, empty และ provider/API error ชัดเจน คงข้อมูล/ข้อความที่กำลังแก้เมื่อบันทึกล้มเหลว ไม่แสดงผลสำเร็จจาก optimistic state เพียงอย่างเดียว
-- [ ] Provider outage ไม่ล้าง saved catalog; เปลี่ยน category ต้องมี valid evidence ส่วนลบ local mapping ไม่ต้องเรียก DCM file mutation
-- [ ] Backend ทุก catalog-management action ตรวจ enabled Admin; direct User/Viewer/unauthenticated requests ถูกปฏิเสธโดยไม่ทำ ECM login/file writes แทนผู้ไม่มีสิทธิ์
-- [ ] Browser/response/log evidence ไม่เปิดเผย service credentials/Bearer; ใช้ coordinator/token-renewal policy เดิม ไม่เพิ่ม cron/config/dependency
-- [ ] CRUD ไม่สร้าง/แก้/ลบ template/folder/category ใน DCM และไม่ upload/rename/re-upload/DELETE file ไม่เปลี่ยน Published Template หรือ canonical answers
-- [ ] Existing HTTP integration seam กับ isolated persistence/provider double พิสูจน์ persisted CRUD/filter, invalid IDs, global duplicates รวม race, permissions และไม่มี external file writes
-- [ ] Smoke หน้า Admin จริงครบ create → reload/filter → rename/move → cancel delete → confirm delete พร้อม empty/error และ keyboard paths ไม่ใช้ tests แทน actual UI proof
-- [ ] อัปเดต domain/workflow/system map ที่กระทบและตรวจด้วย scripts ของ repo ใน change นี้ ไม่อ้าง provider routing acceptance จากการสร้าง catalog สำเร็จ
+- [x] เพิ่ม persisted catalog ที่มี identity ภายใน, `template_name` และ numeric `document_category_id`; migration ใช้ isolated database และไม่ reset/เปลี่ยน Responses หรือไฟล์เดิม
+- [x] Admin navigation เปิดหน้าจริงที่มี category select **หัวข้อเอกสาร**, persisted list/filter และ create/edit/delete controls ครบ ไม่ใช่ mock data หรือหน้า create/list อย่างเดียว
+- [x] โหลด category ผ่าน backend/shared ECM auth เดิม ใช้ `type` แสดงผลและ `id` เป็นค่า/filter key; categories ที่ชื่อเหมือนกันแต่ ID ต่างกันไม่ถูกยุบรวม
+- [x] Create บันทึกชื่อกับ category ID ที่ backend ตรวจจาก provider evidence ที่ใช้ได้ ปฏิเสธ arbitrary/unknown ID, blank/control/unsafe filename metadata โดยไม่ rewrite ชื่อเงียบ ๆ
+- [x] `template_name` ไม่ซ้ำทั้ง catalog แม้คนละหมวด มี database uniqueness ป้องกัน concurrent create/update และคืน error ที่ Admin แก้ได้
+- [x] Update เปลี่ยนชื่อและหมวดที่ผูกได้จริง หลัง reload รายการหมวดเก่าและใหม่ตรงข้อมูลที่บันทึก ไม่เหลือ selection ที่ผิดหมวด
+- [x] Delete มี confirmation พร้อม Cancel/Escape และ focus behavior ที่ใช้ keyboard ได้; cancel ไม่ mutate และยืนยันสำเร็จแล้วรายการหายจาก future choices
+- [x] แยก loading, empty และ provider/API error ชัดเจน คงข้อมูล/ข้อความที่กำลังแก้เมื่อบันทึกล้มเหลว ไม่แสดงผลสำเร็จจาก optimistic state เพียงอย่างเดียว
+- [x] Provider outage ไม่ล้าง saved catalog; เปลี่ยน category ต้องมี valid evidence ส่วนลบ local mapping ไม่ต้องเรียก DCM file mutation
+- [x] Backend ทุก catalog-management action ตรวจ enabled Admin; direct User/Viewer/unauthenticated requests ถูกปฏิเสธโดยไม่ทำ ECM login/file writes แทนผู้ไม่มีสิทธิ์
+- [x] Browser/response/log evidence ไม่เปิดเผย service credentials/Bearer; ใช้ coordinator/token-renewal policy เดิม ไม่เพิ่ม cron/config/dependency
+- [x] CRUD ไม่สร้าง/แก้/ลบ template/folder/category ใน DCM และไม่ upload/rename/re-upload/DELETE file ไม่เปลี่ยน Published Template หรือ canonical answers
+- [x] Existing HTTP integration seam กับ isolated persistence/provider double พิสูจน์ persisted CRUD/filter, invalid IDs, global duplicates รวม race, permissions และไม่มี external file writes
+- [x] Smoke หน้า Admin จริงครบ create → reload/filter → rename/move → cancel delete → confirm delete พร้อม empty/error และ keyboard paths ไม่ใช้ tests แทน actual UI proof
+- [x] อัปเดต domain/workflow/system map ที่กระทบและตรวจด้วย scripts ของ repo ใน change นี้ ไม่อ้าง provider routing acceptance จากการสร้าง catalog สำเร็จ
 
 ## Notes
 
@@ -52,3 +52,11 @@ Implemented on `feat/storage-templates-01`, worktree `/tmp/folio-storage-templat
 - `CONTEXT.md` already defines Document Category identity and Storage Template catalog semantics, so it is intentionally unchanged. Updated workflow map source, page diagram/table and catalog/API/auth/failure explanations. Integration owner must regenerate workflow artifacts and run `docs:workflow:build` / `docs:workflow:check` after merging all source changes.
 - No live DCM/PDMS contact, `.env` change, DCM template/folder mutation, upload, rename or file DELETE. Provider routing acceptance is separate and is not established by catalog CRUD.
 
+
+### Parent integration disposition — 2026-11-17
+
+Persisted Admin CRUD/filter/category-ID behavior, authorization and keyboard/error paths are supported by E01/E08/ROOT.
+
+- Delivery branch `feat/ecm-storage-templates`; production source `d8162b8`, final fixture merge `baf64cb`. See the [canonical acceptance matrix](../acceptance-matrix.md) for final integrated HTTP/native/export/root/review evidence and exact source qualifications. This disposition is based on observed consumer behavior and source review, not copied worktree checkboxes or counts alone.
+- Final Standards and Spec rechecks have no code findings. Workflow/source inventory/rendered guide were rebuilt and opened; owned test runtimes/databases/bucket/worktrees and private scaffolds were removed after retaining evidence. Original checkout and existing user services remain; no user schema/answer migration, push or deployment. Normal coordinated live authentication is not represented as zero DB writes.
+- Provider all-type/boundary/overwrite/settlement/deployed-version and human release evidence remain HOLD. One authorized synthetic PDF remains for the user to remove; local resolution is not provider/Production approval.

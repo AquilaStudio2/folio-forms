@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Scalar Save Draft/Submit แบบ template mode พร้อม identity และ failure safety.
 
-**Status:** in-review — implementation and isolated table/native acceptance complete; parent integration review pending
+**Status:** resolved
 
 **Parent:** [Storage Templates spec](../spec.md)
 
@@ -67,3 +67,11 @@
 
 - Merged05 into `feat/ecm-storage-templates` at `d399a810f89cede072d621cf3a3b94202ce80b9c` with no conflicts. Parent generated the client and deployed only `20261117031000_attachment_reference_rows` to the task-owned integration DB; all36 migrations are applied there, without reset.
 - Parent unfiltered scalar/table HTTP file on the delivery integration checkout: **139 passed,0 failed**, 539.25 seconds. This includes the04 captured-source fix and05 current-row/source selection, not just a table-only regex. The complete repository HTTP workflow run, final native/export acceptance08 and two-axis review remain separate gates.
+
+### Parent integration disposition — 2026-11-17
+
+Physical-row/gap/zero-byte behavior, verified row transitions, surviving current-B digest reuse and shared-identity safety are supported by E05/E08/ROOT without invented row/version filename suffixes.
+
+- Delivery branch `feat/ecm-storage-templates`; production source `d8162b8`, final fixture merge `baf64cb`. See the [canonical acceptance matrix](../acceptance-matrix.md) for final integrated HTTP/native/export/root/review evidence and exact source qualifications. This disposition is based on observed consumer behavior and source review, not copied worktree checkboxes or counts alone.
+- Final Standards and Spec rechecks have no code findings. Workflow/source inventory/rendered guide were rebuilt and opened; owned test runtimes/databases/bucket/worktrees and private scaffolds were removed after retaining evidence. Original checkout and existing user services remain; no user schema/answer migration, push or deployment. Normal coordinated live authentication is not represented as zero DB writes.
+- Provider all-type/boundary/overwrite/settlement/deployed-version and human release evidence remain HOLD. One authorized synthetic PDF remains for the user to remove; local resolution is not provider/Production approval.

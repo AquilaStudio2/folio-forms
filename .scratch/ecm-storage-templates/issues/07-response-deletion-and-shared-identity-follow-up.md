@@ -4,7 +4,7 @@
 
 **Blocked by:** 03 — Scalar Save Draft/Submit แบบ template mode พร้อม identity และ failure safety.
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 **Parent:** [Storage Templates spec](../spec.md)
 
@@ -12,20 +12,20 @@
 
 ## Acceptance criteria
 
-- [ ] Owner discard ใช้ได้เฉพาะ Draft ของตน Admin whole-Response deletion และ Viewer read-only คงสิทธิ์/confirmation เดิม ไม่ให้ arbitrary client URL/token เป็น deletion authority
-- [ ] Response deletion เก็บ durable trusted attachment context ของ Draft/Submission/Correction/workspace/eligible Operations ก่อนลบ rows; ไม่ลด scope เหลือเฉพาะ latest receipt
-- [ ] คำนวณ surviving references/aliases ที่ canonical provider identity หลัง retire references ของ Response ที่ลบ ไม่ถือ separate version/attempt rows หรือ token inequality ว่าไฟล์แยกกันเสมอ
-- [ ] Existing admission/reference/deletion fencing ป้องกัน race ที่ reference เกิดใหม่ระหว่าง no-reference check และ dispatch DELETE; shared/protected/current B identity ไม่ถูกลบ
-- [ ] DELETE ทำได้เฉพาะ known owned received/committed identity ที่มี request settlement และไม่มี surviving references ไม่มี search/client-token ownership inference
-- [ ] Unknown upload, unconfirmed in-place overwrite หรือ previously dispatched uncertain DELETE ยังคง evidence-based hold ไม่ใช้เวลารอ/empty search/operator note ปลดหรือ resend
-- [ ] Same-token overwrite evidence จาก 03 ไม่ทำให้ deletion follow-up ส่ง DELETE สำหรับ retired A แล้วลบ B ที่ยังใช้อยู่; known shared references ยังคง protected หลัง reload/restart
-- [ ] การลบข้อมูลกับ confirmed external cleanup แสดงผลแยกกัน Old public URL อาจเปิดได้ขณะ cleanup ค้าง ต้องมี persistent warning ไม่แสดงว่าไฟล์ถูกลบจาก JSON disappearance เพียงอย่างเดียว
-- [ ] Existing Results tracking ยังอ่าน evidence ได้โดย Admin/Viewer หลัง Response deletion โดยไม่คืน answers เป็น normal Response row; เฉพาะ current enabled Admin ทำ authorized first cleanup ตาม evidence เดิมได้
-- [ ] Ordinary saves หรือเปิดหน้าใหม่ไม่ retry upload/delete ไม่ล้าง warning และไม่ adopt late receipt เป็นคำตอบ; late receipts ใช้ follow-up ตาม scope/fence จริง
-- [ ] Archive คง files/history และไม่ dispatch file deletion Catalog CRUD และ duplicate Form ไม่สร้าง deletion cases หรือ cleanup ของ User
-- [ ] Existing HTTP seam พิสูจน์ deletion authorization, confirmed/unconfirmed outcomes, shared identity across surviving snapshots/Responses, concurrent reference claims, crash/late receipt และ durable tracking หลังลบ Response
-- [ ] Smoke actual deletion/confirmation และ Results follow-up ด้วย synthetic Responses/provider double ตรวจ saved B URL ของ reference ที่ยังเหลือและ persistent warning หลัง reload
-- [ ] อัปเดต cleanup/deletion consumers, fixtures และ workflow/system map โดย reuse existing recovery/follow-up surface ไม่เพิ่ม dashboard, automatic retry queue หรือ manual unlock ที่ไร้หลักฐาน
+- [x] Owner discard ใช้ได้เฉพาะ Draft ของตน Admin whole-Response deletion และ Viewer read-only คงสิทธิ์/confirmation เดิม ไม่ให้ arbitrary client URL/token เป็น deletion authority
+- [x] Response deletion เก็บ durable trusted attachment context ของ Draft/Submission/Correction/workspace/eligible Operations ก่อนลบ rows; ไม่ลด scope เหลือเฉพาะ latest receipt
+- [x] คำนวณ surviving references/aliases ที่ canonical provider identity หลัง retire references ของ Response ที่ลบ ไม่ถือ separate version/attempt rows หรือ token inequality ว่าไฟล์แยกกันเสมอ
+- [x] Existing admission/reference/deletion fencing ป้องกัน race ที่ reference เกิดใหม่ระหว่าง no-reference check และ dispatch DELETE; shared/protected/current B identity ไม่ถูกลบ
+- [x] DELETE ทำได้เฉพาะ known owned received/committed identity ที่มี request settlement และไม่มี surviving references ไม่มี search/client-token ownership inference
+- [x] Unknown upload, unconfirmed in-place overwrite หรือ previously dispatched uncertain DELETE ยังคง evidence-based hold ไม่ใช้เวลารอ/empty search/operator note ปลดหรือ resend
+- [x] Same-token overwrite evidence จาก 03 ไม่ทำให้ deletion follow-up ส่ง DELETE สำหรับ retired A แล้วลบ B ที่ยังใช้อยู่; known shared references ยังคง protected หลัง reload/restart
+- [x] การลบข้อมูลกับ confirmed external cleanup แสดงผลแยกกัน Old public URL อาจเปิดได้ขณะ cleanup ค้าง ต้องมี persistent warning ไม่แสดงว่าไฟล์ถูกลบจาก JSON disappearance เพียงอย่างเดียว
+- [x] Existing Results tracking ยังอ่าน evidence ได้โดย Admin/Viewer หลัง Response deletion โดยไม่คืน answers เป็น normal Response row; เฉพาะ current enabled Admin ทำ authorized first cleanup ตาม evidence เดิมได้
+- [x] Ordinary saves หรือเปิดหน้าใหม่ไม่ retry upload/delete ไม่ล้าง warning และไม่ adopt late receipt เป็นคำตอบ; late receipts ใช้ follow-up ตาม scope/fence จริง
+- [x] Archive คง files/history และไม่ dispatch file deletion Catalog CRUD และ duplicate Form ไม่สร้าง deletion cases หรือ cleanup ของ User
+- [x] Existing HTTP seam พิสูจน์ deletion authorization, confirmed/unconfirmed outcomes, shared identity across surviving snapshots/Responses, concurrent reference claims, crash/late receipt และ durable tracking หลังลบ Response
+- [x] Smoke actual deletion/confirmation และ Results follow-up ด้วย synthetic Responses/provider double ตรวจ saved B URL ของ reference ที่ยังเหลือและ persistent warning หลัง reload
+- [x] อัปเดต cleanup/deletion consumers, fixtures และ workflow/system map โดย reuse existing recovery/follow-up surface ไม่เพิ่ม dashboard, automatic retry queue หรือ manual unlock ที่ไร้หลักฐาน
 
 ## Notes
 
@@ -53,3 +53,11 @@
 
 - Merged into `feat/ecm-storage-templates` at `6c0ef6fc95a126f190e17348c9392f366f9d2bf6` without conflicts. Parent ran the same deletion/follow-up HTTP selection on the integration checkout using its isolated DB/callback: **20 passed, 0 failed, 71 filtered**, 809 `expect` calls, 43.11 seconds.
 - This is integrated HTTP proof, not a replacement for the native worktree evidence above or final combined native/export acceptance. Final review and ticket closure remain pending.
+
+### Parent integration disposition — 2026-11-17
+
+Authorized Response deletion, shared-reference preservation and durable follow-up are supported by E07/E08/ROOT. The late-receipt fixture now reopens through real editor-config after settlement; original expiry/sender/delete guards remain unchanged.
+
+- Delivery branch `feat/ecm-storage-templates`; production source `d8162b8`, final fixture merge `baf64cb`. See the [canonical acceptance matrix](../acceptance-matrix.md) for final integrated HTTP/native/export/root/review evidence and exact source qualifications. This disposition is based on observed consumer behavior and source review, not copied worktree checkboxes or counts alone.
+- Final Standards and Spec rechecks have no code findings. Workflow/source inventory/rendered guide were rebuilt and opened; owned test runtimes/databases/bucket/worktrees and private scaffolds were removed after retaining evidence. Original checkout and existing user services remain; no user schema/answer migration, push or deployment. Normal coordinated live authentication is not represented as zero DB writes.
+- Provider all-type/boundary/overwrite/settlement/deployed-version and human release evidence remain HOLD. One authorized synthetic PDF remains for the user to remove; local resolution is not provider/Production approval.
