@@ -2024,6 +2024,64 @@ test("Correction validates reason, required physical slots and eligibility befor
   expect(deleted.length).toBe(deletes);
 });
 
+test("initial Correction rejects a changed captured workspace base before original retrieval or writes", async () => {
+  const owner = await fixture({ templateMode: true });
+  const admin = await fixture({ admin: true });
+  expect(
+    (await poll(owner, await send(owner, { folio_proof: file() }, "submit")))
+      .status
+  ).toBe("completed");
+  const submission = await prisma.submission.findFirstOrThrow({
+    where: { responseId: owner.response.id },
+  });
+  const bridge = await openCorrection(owner, admin);
+  snapshots.set(
+    bridge.documentKey,
+    replaceCell(
+      fixtureValue(snapshots.get(bridge.documentKey)),
+      "B2",
+      "UNSAFE.BASE"
+    )
+  );
+  const entered = Promise.withResolvers<undefined>();
+  const released = Promise.withResolvers<undefined>();
+  captureBarrier = {
+    enter: () => entered.resolve(),
+    release: released.promise,
+  };
+  const reads = originalReads.length;
+  const uploads = received.length;
+  const deletes = deleted.length;
+  try {
+    const pending = postCorrection(owner, admin, bridge);
+    await entered.promise;
+    await prisma.editorLease.updateMany({
+      data: { workspaceBaseDocumentKey: `unrelated-${crypto.randomUUID()}` },
+      where: { targetId: owner.response.id, targetType: "correction" },
+    });
+    captureBarrier = null;
+    released.resolve();
+    const accepted = await pending;
+    expect(accepted.status).toBe(409);
+    expect(originalReads.length).toBe(reads);
+    expect(received.length).toBe(uploads);
+    expect(deleted.length).toBe(deletes);
+    expect(
+      await prisma.correction.count({ where: { submissionId: submission.id } })
+    ).toBe(0);
+    expect(
+      (
+        await prisma.submission.findUniqueOrThrow({
+          where: { id: submission.id },
+        })
+      ).data
+    ).toEqual(submission.data);
+  } finally {
+    captureBarrier = null;
+    released.resolve();
+  }
+});
+
 test("Correction metadata and removal preserve older selected file versions and exports", async () => {
   const owner = await fixture();
   const admin = await fixture({ admin: true });
