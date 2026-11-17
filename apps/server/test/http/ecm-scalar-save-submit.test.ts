@@ -2033,8 +2033,7 @@ test("initial Correction rejects a changed captured workspace base before origin
   const uploads = received.length;
   const deletes = deleted.length;
   try {
-    const accepted = await postCorrection(owner, admin, bridge);
-    expect(accepted.status).toBe(202);
+    const pending = postCorrection(owner, admin, bridge);
     await entered.promise;
     await prisma.editorLease.updateMany({
       data: { workspaceBaseDocumentKey: `unrelated-${crypto.randomUUID()}` },
@@ -2042,7 +2041,8 @@ test("initial Correction rejects a changed captured workspace base before origin
     });
     captureBarrier = null;
     released.resolve();
-    expect((await poll(admin, accepted)).status).toBe("failed");
+    const accepted = await pending;
+    expect(accepted.status).toBe(409);
     expect(originalReads.length).toBe(reads);
     expect(received.length).toBe(uploads);
     expect(deleted.length).toBe(deletes);
