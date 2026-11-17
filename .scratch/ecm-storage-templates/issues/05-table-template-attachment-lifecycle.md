@@ -12,23 +12,23 @@
 
 ## Acceptance criteria
 
-- [ ] Table column ใช้ frozen category/template/mode เดียวกันทุกแถวและหนึ่งไฟล์ต่อ physical-row slot ไม่เปิดให้ User เลือก template รายแถว
-- [ ] ใช้ trusted physical-row position และ published binding ไม่ใช้ compact JSON array index แทน `row_index`; blank gaps และ multiple attachment columns ไม่ cross-wire ไฟล์
-- [ ] Attachment-only rows รวม saved/selected zero-byte files ถูกเก็บเป็น active rows และ Submit ตรวจ required ordinary/attachment columns อื่นทั้งหมด
-- [ ] Fully empty rows ที่ไม่มี input/file ไม่ถูกบังคับแนบเพียงเพราะมีปุ่ม; invalid selected file ยังทำให้ Draft save ไม่ผ่าน
-- [ ] Save Draft → reopen → replace/remove/cancel → Submit แสดง canonical receipt/URL ของ slot ที่ถูกต้องโดยใช้ native picker/buttons เดิม
-- [ ] Existing supported append/delete-selected รักษา references และ pending Files ด้วย verified document/row mapping โดยไม่ upload/delete จาก internal save
-- [ ] Unsupported/stale/ambiguous mapping หยุดก่อนทำข้อมูลหรือ pending selections หาย ไม่เพิ่ม stable row ID/Tag ใหม่เพื่อหลบข้อจำกัด
-- [ ] วางแผน duplicate destinations ทั้ง batch ก่อน dispatch และตรวจ owner/history/reference/admission fencing ไม่รอ token collision หลังเขียนแล้วจึงค่อยป้องกัน
-- [ ] คง filename grammar ที่ไม่มี row/version suffix ยอมรับเพียงข้อจำกัดชื่อซ้ำที่ planning อนุมัติ ไม่รับรอง independence หาก provider reuse identity
-- [ ] Same-identity receipt ไม่ถูก DELETE จาก replacement/canceled-batch cleanup และไม่สร้าง independent-version evidence ปลอม Foreign/protected destination conflicts หยุดก่อน write
-- [ ] หลายไฟล์ส่งตาม existing sequential plan และ commit document/JSON/references เป็น complete snapshot เดียว Failure กลาง batch ไม่มี partial Submission และไม่เริ่มไฟล์ถัดไปโดยเดาผล
-- [ ] Unknown upload/overwrite, receipt collision, late response และ commit failure ใช้ durable evidence/hold ของ 03 ไม่ rollback external bytes, retry write หรือ DELETE shared identity
-- [ ] Errors ระบุ column/slot และ physical row ที่ User แก้ได้โดยไม่เผย secrets คง size/JSON/requiredness/security boundaries เดิม
-- [ ] Existing HTTP seam พิสูจน์ physical gaps, multiple columns, attachment-only zero-byte rows, empty/active requiredness, row shifts, duplicate destinations และ partial/unknown batch โดย provider bytes/receipts จริงของ test double
-- [ ] Smoke actual ONLYOFFICE ตั้ง template ให้คอลัมน์ แนบอย่างน้อยสอง physical rows ที่มี gap บันทึก/เปิด/ส่งและตรวจ persisted URLs; แสดง duplicate-name limitation ตามผลจริง
-- [ ] เมื่อรวม 04 แล้ว table docs_number change ใช้ shared trusted-original flow ครบทุก saved slot ไม่สร้าง table-specific storage/cache หรือ download bypass
-- [ ] อัปเดต affected table consumers/fixtures และ workflow/system map โดยไม่เปลี่ยน legacy published table behavior หรือข้อมูลเดิม
+- [x] Table column ใช้ frozen category/template/mode เดียวกันทุกแถวและหนึ่งไฟล์ต่อ physical-row slot ไม่เปิดให้ User เลือก template รายแถว
+- [x] ใช้ trusted physical-row position และ published binding ไม่ใช้ compact JSON array index แทน `row_index`; blank gaps และ multiple attachment columns ไม่ cross-wire ไฟล์
+- [x] Attachment-only rows รวม saved/selected zero-byte files ถูกเก็บเป็น active rows และ Submit ตรวจ required ordinary/attachment columns อื่นทั้งหมด
+- [x] Fully empty rows ที่ไม่มี input/file ไม่ถูกบังคับแนบเพียงเพราะมีปุ่ม; invalid selected file ยังทำให้ Draft save ไม่ผ่าน
+- [x] Save Draft → reopen → replace/remove/cancel → Submit แสดง canonical receipt/URL ของ slot ที่ถูกต้องโดยใช้ native picker/buttons เดิม
+- [x] Existing supported append/delete-selected รักษา references และ pending Files ด้วย verified document/row mapping โดยไม่ upload/delete จาก internal save
+- [x] Unsupported/stale/ambiguous mapping หยุดก่อนทำข้อมูลหรือ pending selections หาย ไม่เพิ่ม stable row ID/Tag ใหม่เพื่อหลบข้อจำกัด
+- [x] วางแผน duplicate destinations ทั้ง batch ก่อน dispatch และตรวจ owner/history/reference/admission fencing ไม่รอ token collision หลังเขียนแล้วจึงค่อยป้องกัน
+- [x] คง filename grammar ที่ไม่มี row/version suffix ยอมรับเพียงข้อจำกัดชื่อซ้ำที่ planning อนุมัติ ไม่รับรอง independence หาก provider reuse identity
+- [x] Same-identity receipt ไม่ถูก DELETE จาก replacement/canceled-batch cleanup และไม่สร้าง independent-version evidence ปลอม Foreign/protected destination conflicts หยุดก่อน write
+- [x] หลายไฟล์ส่งตาม existing sequential plan และ commit document/JSON/references เป็น complete snapshot เดียว Failure กลาง batch ไม่มี partial Submission และไม่เริ่มไฟล์ถัดไปโดยเดาผล
+- [x] Unknown upload/overwrite, receipt collision, late response และ commit failure ใช้ durable evidence/hold ของ 03 ไม่ rollback external bytes, retry write หรือ DELETE shared identity
+- [x] Errors ระบุ column/slot และ physical row ที่ User แก้ได้โดยไม่เผย secrets คง size/JSON/requiredness/security boundaries เดิม
+- [x] Existing HTTP seam พิสูจน์ physical gaps, multiple columns, attachment-only zero-byte rows, empty/active requiredness, row shifts, duplicate destinations และ partial/unknown batch โดย provider bytes/receipts จริงของ test double
+- [x] Smoke actual ONLYOFFICE ตั้ง template ให้คอลัมน์ แนบอย่างน้อยสอง physical rows ที่มี gap บันทึก/เปิด/ส่งและตรวจ persisted URLs; แสดง duplicate-name limitation ตามผลจริง
+- [x] เมื่อรวม 04 แล้ว table docs_number change ใช้ shared trusted-original flow ครบทุก saved slot ไม่สร้าง table-specific storage/cache หรือ download bypass
+- [x] อัปเดต affected table consumers/fixtures และ workflow/system map โดยไม่เปลี่ยน legacy published table behavior หรือข้อมูลเดิม
 
 ## Notes
 
@@ -46,6 +46,8 @@
 - Draft/workspace completion passes verified `attachmentTransition` to the shared commit. Submit/final Correction preserve positions without passing the working-document transition to a differently named final snapshot. Reference creation remains under03 ownership/resource fencing. Shared originals use only current referenced row attempts; unknown ambiguous/missing digests fail before writes without guessing newest evidence.
 - Isolated DB name checked before generation/migrations: `folio_storage_templates05_20261117_c1db2ece`; HTTP callback18383. No shared/Production migration, reset, or live ECM/PDMS call.
 - Final isolated verification: server `check-types` PASS; `bun test --cwd apps/server --timeout 120000 test/http/ecm-scalar-save-submit.test.ts --test-name-pattern '^(template )?table '` PASS27/27 (116.84s). This is the table-specific run, not a claim that the full scalar/integration suite passed.
+- Merged parent source-resolver integration `1ec9e7a7807ea133347081aa85e788a5afb68db2`. The sole conflict retained05 current-row reference metadata together with the trusted captured workspace/base `attachmentSourceSnapshot`; Draft/workspace-only transition arguments remain intact. Final combined scalar/table verification is recorded separately from the earlier table-only run.
+- Final combined source verification after that merge: server `check-types` PASS; unfiltered `bun test --cwd apps/server --timeout 120000 test/http/ecm-scalar-save-submit.test.ts` PASS139/139 (417.54s). This exercises the shared03 cancellation/late-receipt/commit-failure protocol as well as05 tables and the fixed04 captured-source paths; it is not a claim that every repository HTTP suite or live provider matrix was exercised.
 - Behavioral HTTP coverage: legacy/new-mode physical gaps, multiple columns, selected/saved zero-byte rows, ordinary/attachment requiredness, empty rows, append/delete-selected, stale/forged slots, removals, sequential partial/unknown batches, same-identity replacement/removal, foreign/history pre-dispatch conflicts, identical shared receipts through unchanged save/replacement/partial/last removal, all-slot original reuse after shifts, and surviving B reuse after A deletion. Provider-double receipts and original bytes—not mocked SDK return values—supply assertions.
 - Actual native lifecycle used own server18288/provider18289/web15274/gateway18082 and own Chrome CDP18505/profile. Form `9d690894c4e34225825a9050e893afbe`, Submission `e5d414fc-c0cb-44c9-ad41-5524d4d1f3db`: selected rows0/2 with a gap and zero-byte file; pending Files survived append without upload; Save/reload preserved receipts; Submit reported required `B10`/`B12` without writes; replacement selection/cancel/save, same-identity overwrite with no DELETE, pending removal across delete-gap mapping2→1, removal with surviving shared row0, and Submit all passed. Final Submission JSON retained the zero-byte row and canonical receipt.
 - Actual Admin column chooser on duplicated synthetic Form `ae9747f914b64a188487d291de45e6b1` changed the proof column to `อื่น-ตาราง` and reported saved configuration/template; provider upload count unchanged. Its initial stale catalog-ID fixture was corrected only in the synthetic Draft before the successful native configuration proof.
