@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 
 import { Prisma, prisma } from "@onlyoffice/db";
 import type { EcmAttachmentBatch, EditorLease } from "@onlyoffice/db";
+import { z } from "zod";
 
 import type { SpreadsheetContract } from "../documents/spreadsheets/contract";
 import { extractSpreadsheetData } from "../documents/spreadsheets/workbook";
@@ -386,12 +387,22 @@ const originalForChangedMetadata = async (
     fail(409, "invalid_attachment", `${label}: ไม่พบเอกสารต้นฉบับที่บันทึกแล้ว`);
   }
   const references = await prisma.ecmAttachmentReference.findMany({
-    select: { versionId: true },
+    select: { versionId: true, rowIndex: true },
     where: { responseId, snapshotId },
   });
-  const version = await prisma.ecmAttachmentVersion.findFirst({
+  const versions = await prisma.ecmAttachmentVersion.findMany({
+    take: slot.rowIndex === null ? 1 : undefined,
     where: {
-      id: { in: references.map((reference) => reference.versionId) },
+      id: {
+        in: references
+          .filter(
+            (reference) =>
+              slot.rowIndex === null ||
+              reference.rowIndex === null ||
+              reference.rowIndex === slot.rowIndex
+          )
+          .map((reference) => reference.versionId),
+      },
       bindingId: field.id,
       category: field.attachment?.category ?? "",
       fileLink: saved.file_link,
@@ -404,19 +415,35 @@ const originalForChangedMetadata = async (
       tag: slot.tag,
     },
   });
+  const [version] = versions;
   if (!version) {
     fail(409, "invalid_attachment", `${label}: ไม่พบหลักฐานไฟล์เดิมที่บันทึกแล้ว`);
   }
   if (
-    (field.attachment?.mode === "template" ||
-      version.fiscalYear === String(data.fiscal_year ?? "")) &&
-    version.documentNumber === String(data.docs_number ?? "")
+    versions.every(
+      (candidate) =>
+        (field.attachment?.mode === "template" ||
+          candidate.fiscalYear === String(data.fiscal_year ?? "")) &&
+        candidate.documentNumber === String(data.docs_number ?? "")
+    )
   ) {
     return undefined;
   }
   try {
-    if (version.accountKey !== ecm.accountKey()) {
+    if (
+      versions.some((candidate) => candidate.accountKey !== ecm.accountKey())
+    ) {
       fail(409, "invalid_attachment", "บัญชีเอกสารแนบไม่ตรงกับไฟล์เดิม");
+    }
+    // Current table aliases prove one resource, not independent bytes for indistinguishable rows.
+    if (
+      slot.rowIndex !== null &&
+      field.attachment?.mode === "template" &&
+      (versions.some((candidate) => !candidate.originalSha256) ||
+        new Set(versions.map((candidate) => candidate.originalSha256)).size !==
+          1)
+    ) {
+      fail(502, "attachment_original_unavailable", "หลักฐานต้นฉบับรายแถวกำกวม");
     }
     if (
       !version.fileLink ||
@@ -792,7 +819,8 @@ export const commitAttachmentBatch = async (
   tx: Prisma.TransactionClient,
   operation: Operation,
   data: Record<string, unknown>,
-  snapshotId: string
+  snapshotId: string,
+  rowTransition?: unknown
 ): Promise<void> => {
   await lockBatch(tx, operation.id);
   const batch = await tx.ecmAttachmentBatch.findUnique({
@@ -846,7 +874,7 @@ export const commitAttachmentBatch = async (
     return;
   }
   checkAttachmentJsonBytes(data);
-  const versions: string[] = [];
+  const versions = new Map<string, number | null>();
   const sourceSnapshot = await attachmentSourceSnapshot(
     tx,
     operation,
@@ -854,12 +882,38 @@ export const commitAttachmentBatch = async (
   );
   const currentReferences = sourceSnapshot
     ? await tx.ecmAttachmentReference.findMany({
-        select: { versionId: true },
+        select: { versionId: true, rowIndex: true },
         where: { responseId, snapshotId: sourceSnapshot },
       })
     : [];
   const currentVersionIds = new Set(
     currentReferences.map((reference) => reference.versionId)
+  );
+  const transition = rowTransition
+    ? z
+        .object({
+          fromDocumentKey: z.string(),
+          toDocumentKey: z.string(),
+          rowMapping: z.array(z.number().int().nonnegative().nullable()),
+        })
+        .parse(rowTransition)
+    : undefined;
+  if (
+    transition &&
+    (transition.fromDocumentKey !== operation.documentKey ||
+      transition.toDocumentKey !== snapshotId)
+  ) {
+    fail(409, "invalid_attachment", "หลักฐานการย้ายแถวไม่ตรงกับเอกสารรอบนี้");
+  }
+  const currentRows = new Map(
+    currentReferences.map((reference) => [
+      reference.versionId,
+      reference.rowIndex === null
+        ? null
+        : transition
+          ? (transition.rowMapping[reference.rowIndex] ?? undefined)
+          : reference.rowIndex,
+    ])
   );
   for (const field of fields) {
     const { binding } = field;
@@ -923,21 +977,51 @@ export const commitAttachmentBatch = async (
           tag: field.tag,
         },
       });
-      const version =
-        candidates.find(
-          (candidate) =>
-            candidate.operationId === operation.id &&
-            candidate.rowIndex ===
-              (column ? tableAttachmentSchema.parse(value).row_index : null)
-        ) ??
-        candidates.find((candidate) => currentVersionIds.has(candidate.id));
+      const uploaded = candidates.find(
+        (candidate) =>
+          candidate.operationId === operation.id &&
+          candidate.rowIndex ===
+            (column ? tableAttachmentSchema.parse(value).row_index : null)
+      );
+      const rowIndex = column
+        ? tableAttachmentSchema.parse(value).row_index
+        : null;
+      // Current snapshot positions follow only verified row transitions, never immutable upload positions.
+      const selected = column
+        ? uploaded
+          ? [uploaded]
+          : candidates.filter(
+              (candidate) =>
+                currentVersionIds.has(candidate.id) &&
+                candidate.state === "committed" &&
+                (currentRows.get(candidate.id) === null ||
+                  currentRows.get(candidate.id) === rowIndex)
+            )
+        : [
+            uploaded ??
+              candidates.find((candidate) =>
+                currentVersionIds.has(candidate.id)
+              ),
+          ];
       if (
-        !version ||
-        (version.state === "received" && version.operationId !== operation.id)
+        !selected.length ||
+        selected.some(
+          (version) =>
+            !version ||
+            (version.state === "received" &&
+              version.operationId !== operation.id)
+        )
       ) {
         fail(409, "invalid_attachment", "ไม่พบหลักฐานไฟล์ของคำตอบรอบนี้");
       }
-      versions.push(version.id);
+      for (const version of selected) {
+        if (version) {
+          versions.set(
+            version.id,
+            uploaded ? rowIndex : (currentRows.get(version.id) ?? null)
+          );
+        }
+      }
     }
   }
   const references = await tx.ecmAttachmentReference.findMany({
@@ -1002,7 +1086,7 @@ export const commitAttachmentBatch = async (
   );
   const lockedIds = [
     ...new Set([
-      ...versions,
+      ...versions.keys(),
       ...retired.map((reference) => reference.versionId),
     ]),
   ].toSorted();
@@ -1011,7 +1095,7 @@ export const commitAttachmentBatch = async (
       Prisma.sql`SELECT "id" FROM "ecm_attachment_versions" WHERE "id" IN (${Prisma.join(lockedIds.map((id) => Prisma.sql`${id}::uuid`))}) ORDER BY "id" FOR UPDATE`
     );
   }
-  for (const versionId of versions) {
+  for (const [versionId, rowIndex] of versions) {
     // oxlint-disable-next-line no-await-in-loop -- Recheck after the shared reference-versus-delete version fence.
     const current = await tx.ecmAttachmentVersion.findUniqueOrThrow({
       where: { id: versionId },
@@ -1026,8 +1110,8 @@ export const commitAttachmentBatch = async (
     await requireAttachmentReferenceReady(tx, current, operation.id);
     // oxlint-disable-next-line no-await-in-loop -- Acquire every new canonical reference before retiring the previous Draft.
     await tx.ecmAttachmentReference.upsert({
-      create: { responseId, snapshotId, versionId },
-      update: {},
+      create: { responseId, snapshotId, versionId, rowIndex },
+      update: { rowIndex },
       where: { versionId_snapshotId: { snapshotId, versionId } },
     });
   }
@@ -1045,7 +1129,7 @@ export const commitAttachmentBatch = async (
   await tx.ecmAttachmentVersion.updateMany({
     data: { state: "committed" },
     where: {
-      id: { in: versions },
+      id: { in: [...versions.keys()] },
       operationId: operation.id,
       state: "received",
     },

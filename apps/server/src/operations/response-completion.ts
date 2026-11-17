@@ -66,7 +66,13 @@ export async function completeDraftOperation(
   ];
   await prisma.$transaction(
     async (tx) => {
-      await commitAttachmentBatch(tx, operation, data, nextDocumentKey);
+      await commitAttachmentBatch(
+        tx,
+        operation,
+        data,
+        nextDocumentKey,
+        metadata.attachmentTransition
+      );
       const updated = await tx.response.updateMany({
         data: {
           draftData: jsonValue(metadata.data),
@@ -327,7 +333,8 @@ export async function completeCorrectionWorkspaceOperation(
         tx,
         operation,
         metadata.data ?? {},
-        nextDocumentKey
+        nextDocumentKey,
+        metadata.attachmentTransition
       );
       const updated = await tx.editorLease.updateMany({
         data: {
