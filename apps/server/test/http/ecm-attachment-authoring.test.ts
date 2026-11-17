@@ -527,9 +527,17 @@ test("Storage Template authoring rejects forged, renamed, moved and deleted loca
       )
     ).status
   ).toBe(200);
-  expect((await upsert({ ...proof, attachment: templateChoice })).status).toBe(
-    422
-  );
+  expect(
+    (
+      await upsert({
+        ...proof,
+        anchor: "folio_stale_selection",
+        attachment: templateChoice,
+        id: "folio_stale_selection",
+        key: "stale_selection",
+      })
+    ).status
+  ).toBe(422);
   expect(
     (
       await catalogRequest(
@@ -547,6 +555,142 @@ test("Storage Template authoring rejects forged, renamed, moved and deleted loca
     bindings: { fields: [{ attachment: templateChoice }] },
   });
 });
+test.each(["rename", "delete"] as const)(
+  "two stale attachment choices allow individual Draft repair after catalog %s",
+  async (mutation) => {
+    const created = await catalogRequest("POST", {
+      document_category_id: 0,
+      template_name: `repair-${mutation}-${fixtureId}`,
+    });
+    expect(created.status).toBe(200);
+    const { template } = (await created.json()) as {
+      template: { id: string; template_name: string };
+    };
+    const choice = {
+      ...templateChoice,
+      storage_template_id: template.id,
+      template_name: template.template_name,
+    };
+    const scalar = { ...proof, attachment: choice };
+    const column = {
+      attachment: choice,
+      id: "folio_repair_column",
+      key: "evidence",
+      label: "หลักฐานรายแถว",
+      offset: 0,
+      type: "text",
+    };
+    const table = {
+      anchor: "folio_repair_table",
+      columns: [column],
+      id: "folio_repair_table",
+      key: "repair_items",
+      label: "รายการ",
+    };
+    expect((await upsert(scalar)).status).toBe(200);
+    expect((await upsert(table, "table")).status).toBe(200);
+    expect(
+      (
+        await catalogRequest(
+          mutation === "delete" ? "DELETE" : "PATCH",
+          mutation === "delete"
+            ? { confirm: true }
+            : {
+                document_category_id: 0,
+                template_name: `${template.template_name}-renamed`,
+              },
+          `/${template.id}`
+        )
+      ).status
+    ).toBe(200);
+    const ordinary = {
+      ...proof,
+      anchor: "folio_repair_ordinary",
+      attachment: undefined,
+      id: "folio_repair_ordinary",
+      key: "docs_number",
+      label: "Keep my Draft",
+    };
+    expect((await upsert(ordinary)).status).toBe(200);
+    const rejected = await upsert({
+      ...ordinary,
+      anchor: "folio_rejected",
+      attachment: choice,
+      id: "folio_rejected",
+      key: "rejected",
+    });
+    expect(rejected.status).toBe(422);
+    expect(await rejected.json()).toMatchObject({
+      error: "attachment_template_stale",
+    });
+    expect(
+      (await upsert({ ...scalar, label: "Retained stale choice" })).status
+    ).toBe(200);
+    const beforeDelete = await authoringRequest("spreadsheet-bindings");
+    const { revision: deleteRevision } = (await beforeDelete.json()) as {
+      revision: number;
+    };
+    expect(
+      (
+        await authoringRequest("spreadsheet-bindings", "PATCH", {
+          change: { action: "delete", id: proof.id, kind: "field" },
+          documentKey,
+          revision: deleteRevision,
+        })
+      ).status
+    ).toBe(200);
+    expect(
+      (await upsert({ ...scalar, attachment: templateChoice })).status
+    ).toBe(200);
+    const blocked = await authoringRequest(
+      "publish",
+      "POST",
+      { documentKey, spreadsheetAnchors: [] },
+      publishCapability
+    );
+    expect(blocked.status).toBe(422);
+    expect(await blocked.json()).toMatchObject({
+      error: "attachment_template_stale",
+    });
+    expect(
+      (await upsert({ ...column, attachment: templateChoice }, "column")).status
+    ).toBe(200);
+    const saved = await authoringRequest("spreadsheet-bindings");
+    const payload = (await saved.json()) as {
+      bindings: SpreadsheetBindings;
+      revision: number;
+    };
+    expect(payload.bindings.fields).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ attachment: templateChoice, id: proof.id }),
+        expect.objectContaining({ key: "docs_number", label: "Keep my Draft" }),
+      ])
+    );
+    expect(payload.bindings.table?.columns).toEqual([
+      expect.objectContaining({ attachment: templateChoice, id: column.id }),
+    ]);
+    expect(
+      (
+        await authoringRequest("spreadsheet-bindings", "PATCH", {
+          change: { action: "delete", id: table.id, kind: "table" },
+          documentKey,
+          revision: payload.revision,
+        })
+      ).status
+    ).toBe(200);
+    const current = await authoringRequest("spreadsheet-bindings");
+    const { revision } = (await current.json()) as { revision: number };
+    expect(
+      (
+        await authoringRequest("spreadsheet-bindings", "PATCH", {
+          change: { action: "delete", id: ordinary.id, kind: "field" },
+          documentKey,
+          revision,
+        })
+      ).status
+    ).toBe(200);
+  }
+);
 test("incomplete attachment Draft saves; publication requires a Storage Template and docs_number, not fiscal_year", async () => {
   expect((await upsert(proof)).status).toBe(200);
   const publish = await authoringRequest(
