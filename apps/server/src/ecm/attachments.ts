@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+
 import { Prisma, prisma } from "@onlyoffice/db";
 import type { EcmAttachmentBatch, EditorLease } from "@onlyoffice/db";
 
@@ -232,6 +234,7 @@ interface AttachmentPlan {
   id: string;
   number: string;
   year: string | null;
+  sha256: string | null;
 }
 
 // oxlint-disable-next-line complexity -- Validate both frozen filename policies at the shared boundary.
@@ -295,7 +298,17 @@ const planAttachmentFile = (
       `${label}: ชื่อไฟล์รวมไม่ปลอดภัย กรุณาตรวจ docs_number และให้ Admin ตรวจหมวดเอกสาร`
     );
   }
-  return { category, file, filename, id, number, slot, target, year };
+  return {
+    category,
+    file,
+    filename,
+    id,
+    number,
+    slot,
+    target,
+    year,
+    sha256: null,
+  };
 };
 
 const originalForChangedMetadata = async (
@@ -303,12 +316,21 @@ const originalForChangedMetadata = async (
   saved: Attachment,
   responseId: string,
   data: Record<string, unknown>,
-  ecm: EcmClient
-): Promise<File | undefined> => {
+  ecm: EcmClient,
+  snapshotId: string | null
+): Promise<{ file: File; sha256: string | null } | undefined> => {
   const { field } = slot;
   const label = `${field.label}${slot.rowIndex === null ? "" : ` / แถว ${slot.rowIndex + 1}`}`;
+  if (!snapshotId) {
+    fail(409, "invalid_attachment", `${label}: ไม่พบเอกสารต้นฉบับที่บันทึกแล้ว`);
+  }
+  const references = await prisma.ecmAttachmentReference.findMany({
+    select: { versionId: true },
+    where: { responseId, snapshotId },
+  });
   const version = await prisma.ecmAttachmentVersion.findFirst({
     where: {
+      id: { in: references.map((reference) => reference.versionId) },
       bindingId: field.id,
       category: field.attachment?.category ?? "",
       fileLink: saved.file_link,
@@ -335,15 +357,24 @@ const originalForChangedMetadata = async (
     if (version.accountKey !== ecm.accountKey()) {
       fail(409, "invalid_attachment", "บัญชีเอกสารแนบไม่ตรงกับไฟล์เดิม");
     }
-    if (field.attachment?.mode === "template") {
-      fail(
-        502,
-        "attachment_original_unavailable",
-        "ยังไม่มีสัญญาอ่านไฟล์ต้นฉบับสำหรับแม่แบบจัดเก็บเอกสาร"
-      );
+    if (
+      !version.fileLink ||
+      !version.fileToken ||
+      (field.attachment?.mode === "template" && !version.originalSha256)
+    ) {
+      fail(502, "attachment_original_unavailable", "ไม่มีหลักฐาน hash ต้นฉบับ");
     }
-    const original = await ecm.originalBytes(saved.file_link, saved.size_bytes);
-    return new File([original], saved.original_name);
+    const original = await ecm.originalBytes(
+      version.fileLink,
+      version.fileToken,
+      version.sizeBytes,
+      field.attachment?.mode === "template" ? "template" : "legacy",
+      version.originalSha256
+    );
+    return {
+      file: new File([original], saved.original_name),
+      sha256: version.originalSha256,
+    };
   } catch {
     fail(
       502,
@@ -448,19 +479,31 @@ const planAttachmentUploads = async (
     const saved =
       value === null || value === undefined ? null : schema.parse(value);
     let file = files.get(slot.key);
+    let sha256: string | null = null;
     if (!file && saved) {
       // Only an owned committed receipt can supply original bytes or metadata.
       // oxlint-disable-next-line no-await-in-loop -- Fetch and validate every original before the first external write.
-      file = await originalForChangedMetadata(
+      const original = await originalForChangedMetadata(
         slot,
         saved,
         responseId,
         data,
-        ecm
+        ecm,
+        input.operation.documentKey
       );
+      file = original?.file;
+      sha256 = original?.sha256 ?? null;
     }
     if (file) {
-      plans.push(planAttachmentFile(slot, target, file, data));
+      const plan = planAttachmentFile(slot, target, file, data);
+      if (slot.field.attachment?.mode === "template" && !sha256) {
+        const hash = createHash("sha256");
+        for await (const chunk of file.stream()) {
+          hash.update(chunk);
+        }
+        sha256 = hash.digest("hex");
+      }
+      plans.push({ ...plan, sha256 });
     }
   }
   checkAttachmentJsonBytes(data);
@@ -525,6 +568,7 @@ export const uploadAttachments = async (
           responseId: batch.responseId,
           rowIndex: plan.slot.rowIndex,
           sizeBytes: plan.file.size,
+          originalSha256: plan.sha256,
           tag: plan.slot.tag,
         },
       });
@@ -737,6 +781,15 @@ export const commitAttachmentBatch = async (
   }
   checkAttachmentJsonBytes(data);
   const versions: string[] = [];
+  const currentReferences = operation.documentKey
+    ? await tx.ecmAttachmentReference.findMany({
+        select: { versionId: true },
+        where: { responseId, snapshotId: operation.documentKey },
+      })
+    : [];
+  const currentVersionIds = new Set(
+    currentReferences.map((reference) => reference.versionId)
+  );
   for (const field of fields) {
     const { binding } = field;
     if (
@@ -773,9 +826,12 @@ export const commitAttachmentBatch = async (
         continue;
       }
       // oxlint-disable-next-line no-await-in-loop -- Resolve all trusted receipts before locking their versions in one order.
-      const version = await tx.ecmAttachmentVersion.findFirst({
-        orderBy: [{ receivedAt: "desc" }, { id: "desc" }],
+      const candidates = await tx.ecmAttachmentVersion.findMany({
         where: {
+          OR: [
+            { operationId: operation.id },
+            { id: { in: [...currentVersionIds] } },
+          ],
           storageMode: field.attachmentStorageMode,
           ...(field.attachmentStorageMode === "template"
             ? {
@@ -796,6 +852,14 @@ export const commitAttachmentBatch = async (
           tag: field.tag,
         },
       });
+      const version =
+        candidates.find(
+          (candidate) =>
+            candidate.operationId === operation.id &&
+            candidate.rowIndex ===
+              (column ? tableAttachmentSchema.parse(value).row_index : null)
+        ) ??
+        candidates.find((candidate) => currentVersionIds.has(candidate.id));
       if (
         !version ||
         (version.state === "received" && version.operationId !== operation.id)
