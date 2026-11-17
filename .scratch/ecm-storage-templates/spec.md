@@ -384,3 +384,10 @@ Cross-cutting validation/authorization/accessibility/legacy compatibility ต้
 - ครั้งแรกได้401 จาก cached service token จึงยังไม่สรุป method support; explicit read รอบถัดไปผ่าน shared coordinator login200 และ GET200 `application/pdf`
 - ได้629 bytes และ SHA-256 ตรง original fixture ครบ `4293a5cdab0808afc75f3e0e985f6f3cb5c7cfd457f9bb094d4c178375a8e21d` จึงยืนยัน backend original-byte path สำหรับ PDF ตัวอย่างนี้ได้แล้ว รายละเอียด raw receipt/token ไม่อยู่ใน repo
 - ข้อนี้แทนข้อจำกัดเดิมที่ยังหา usable backend path ไม่ได้ แต่ยังไม่ใช่ all-type/zero/10MB/encrypted/extensionless หรือ provider-version guarantee งาน04ต้องตรวจ shared authenticated bounded reader และ regression matrix ก่อนส่งมอบ; ไม่ใช้ HTML viewer เป็นไฟล์ ไม่เพิ่มที่เก็บต้นฉบับสำรอง
+
+### Integrated acceptance traceability — 2026-11-17
+
+- [Canonical acceptance matrix](acceptance-matrix.md) maps every story1–112 and every acceptance criterion of tickets01–08 to named evidence, source revision and outstanding gates. It separates earlier worktree results, final delivery-integration native results and provider/human release approval.
+- Final native acceptance imported only `/tmp/folio-storage-templates-integration` production source `90b9e9b4235629a876343a5b8bd81d3e8ab2e2d8` after SOURCE READY. Actual new/legacy native journeys, role/read/export/deletion/unknown-hold evidence and retained6 XLSX+6 PDF plus ordinary-unsaved XLSX are recorded in the matrix.08 made no production changes; parent owns final review, rendered workflow and ticket closure.
+- Eligible submitted fixtures used only post-Submit next-round `/start` isolation. Existing default auto-next-Draft/Correction eligibility limitation remains unchanged and disclosed; uninterrupted default flow is not claimed.
+- The single authorized PDF is not all-type, boundary, same-identity overwrite or settlement proof. Parent conservatively chose one sample within the user's scenario/cleanup constraints; remaining live coverage is unexercised, not a claim that other types were prohibited. Release remains HOLD for exact missing provider/human prerequisites;08 made no live calls or cleanup.
