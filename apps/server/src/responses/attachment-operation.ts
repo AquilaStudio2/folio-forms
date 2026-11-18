@@ -439,7 +439,12 @@ export const startAttachmentOperation = async (options: {
         operation.id,
         "document_save_failed",
         undefined,
-        { errorMessage }
+        {
+          errorMessage,
+          ...(error instanceof HttpError
+            ? { attachmentErrorReason: error.code }
+            : {}),
+        }
       );
     } finally {
       clearInterval(heartbeat);
