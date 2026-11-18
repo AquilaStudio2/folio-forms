@@ -64,6 +64,68 @@ const protectedCellChanged = (
     (before.value ?? null) !== (after?.value ?? null)) ||
   (!before && after?.value !== null && after?.value !== undefined);
 
+const validateAttachmentTableStructure = (
+  previous: SpreadsheetWorkbook,
+  current: SpreadsheetWorkbook
+): void => {
+  const before = spreadsheetXmlTree(
+    templateArchiveText(previous.archive, previous.sheetPath)
+  );
+  const after = spreadsheetXmlTree(
+    templateArchiveText(current.archive, current.sheetPath)
+  );
+  const [protection] = spreadsheetXmlChildren(after, "sheetProtection");
+  // Row counts cannot prove identity; retain the native structural barriers.
+  if (
+    !["1", "true"].includes(protection?.attributes.sheet ?? "") ||
+    !["1", "true"].includes(protection?.attributes.sort ?? "") ||
+    !["1", "true"].includes(protection?.attributes.autoFilter ?? "") ||
+    [
+      "sort",
+      "autoFilter",
+      "insertRows",
+      "deleteRows",
+      "insertColumns",
+      "deleteColumns",
+      "formatCells",
+      "formatRows",
+      "formatColumns",
+    ].some((attribute) =>
+      ["0", "false"].includes(protection?.attributes[attribute] ?? "")
+    ) ||
+    JSON.stringify(
+      spreadsheetXmlChildren(before, "sortState").map(serializeSpreadsheetXml)
+    ) !==
+      JSON.stringify(
+        spreadsheetXmlChildren(after, "sortState").map(serializeSpreadsheetXml)
+      )
+  ) {
+    throw new Error("ยังยืนยันตำแหน่งไฟล์กับแถวไม่ได้ ยังไม่บันทึก กรุณาคงหน้านี้ไว้");
+  }
+};
+
+const validateAttachmentCellProtection = (
+  current: SpreadsheetWorkbook,
+  contract: SpreadsheetContract
+): void => {
+  const [formats] = spreadsheetXmlChildren(
+    spreadsheetXmlTree(templateArchiveText(current.archive, "xl/styles.xml")),
+    "cellXfs"
+  );
+  const styles = formats ? spreadsheetXmlChildren(formats, "xf") : [];
+  for (const slot of spreadsheetAttachmentSlots(contract)) {
+    const style = styles[current.cells.get(slot.address)?.style ?? 0];
+    if (
+      !style ||
+      ["0", "false"].includes(
+        spreadsheetXmlChildren(style, "protection")[0]?.attributes.locked ?? ""
+      )
+    ) {
+      throw new Error("ยังยืนยันตำแหน่งไฟล์กับแถวไม่ได้ ยังไม่บันทึก กรุณาคงหน้านี้ไว้");
+    }
+  }
+};
+
 export const validateSpreadsheetEdits = (
   previous: SpreadsheetWorkbook,
   current: SpreadsheetWorkbook,
@@ -82,62 +144,8 @@ export const validateSpreadsheetEdits = (
     }
   }
   if (contract.table?.columns.some((column) => column.attachment)) {
-    const [before, after] = [previous, current].map((workbook) =>
-      spreadsheetXmlTree(
-        templateArchiveText(workbook.archive, workbook.sheetPath)
-      )
-    );
-    if (!before || !after) {
-      throw new Error("The worksheet structure is unavailable");
-    }
-    const [protection] = spreadsheetXmlChildren(after, "sheetProtection");
-    // Row counts cannot prove identity; retain the native structural barriers.
-    if (
-      !["1", "true"].includes(protection?.attributes.sheet ?? "") ||
-      !["1", "true"].includes(protection?.attributes.sort ?? "") ||
-      !["1", "true"].includes(protection?.attributes.autoFilter ?? "") ||
-      [
-        "sort",
-        "autoFilter",
-        "insertRows",
-        "deleteRows",
-        "insertColumns",
-        "deleteColumns",
-        "formatCells",
-        "formatRows",
-        "formatColumns",
-      ].some((attribute) =>
-        ["0", "false"].includes(protection?.attributes[attribute] ?? "")
-      ) ||
-      JSON.stringify(
-        spreadsheetXmlChildren(before, "sortState").map(serializeSpreadsheetXml)
-      ) !==
-        JSON.stringify(
-          spreadsheetXmlChildren(after, "sortState").map(serializeSpreadsheetXml)
-        )
-    ) {
-      throw new Error(
-        "ยังยืนยันตำแหน่งไฟล์กับแถวไม่ได้ ยังไม่บันทึก กรุณาคงหน้านี้ไว้"
-      );
-    }
-    const [formats] = spreadsheetXmlChildren(
-      spreadsheetXmlTree(templateArchiveText(current.archive, "xl/styles.xml")),
-      "cellXfs"
-    );
-    const styles = formats ? spreadsheetXmlChildren(formats, "xf") : [];
-    for (const slot of spreadsheetAttachmentSlots(contract)) {
-      const style = styles[current.cells.get(slot.address)?.style ?? 0];
-      if (
-        !style ||
-        ["0", "false"].includes(
-          spreadsheetXmlChildren(style, "protection")[0]?.attributes.locked ?? ""
-        )
-      ) {
-        throw new Error(
-          "ยังยืนยันตำแหน่งไฟล์กับแถวไม่ได้ ยังไม่บันทึก กรุณาคงหน้านี้ไว้"
-        );
-      }
-    }
+    validateAttachmentTableStructure(previous, current);
+    validateAttachmentCellProtection(current, contract);
   }
   const inputs = spreadsheetInputRanges(contract, locked);
   const addresses = new Set([

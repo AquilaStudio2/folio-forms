@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — ทุกตาราง XLSX เหลืออย่างน้อยหนึ่งแถวและปุ่มแนบครบ.
 
-**Status:** ready-for-agent
+**Status:** in-progress — integrated; targeted HTTP/native-control checks pass; full gesture/role matrix awaits final-source acceptance
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US52–63; H08 และ U02
 
@@ -63,3 +63,12 @@ Blocker 02 จำเป็นเพราะตั๋วนี้ตรวจ na
 - Negative native cases: Data ribbon/context-menu ascending, descending and custom sort on the mapped table, including sort from an ordinary column; drag/drop whole rows/columns; whole-row and whole-column Cut/Paste and Copy/Paste onto mapped rows/columns; native Insert/Delete; cross-row Merge; moving the table to another sheet; paste a URL or copied drawing/button into attachment cells. Test consecutive combinations and Undo/Redo. The editor must refuse the structural command, or save must fail before writes/remount with unchanged canonical state and pending selections. Merely unchanged row count or a warning is not a pass.
 - Hidden/filter cases: use preconfigured filtered/hidden rows/columns and zero-height/zero-width attachment geometry. Activate only targets whose native object anchor, binding marker and physical row agree. Verify no visible-index substitution or action on a neighboring file. Record inaccessible/ambiguous targets as blocked or unverified; never infer success from absence of a visible button.
 - Keep source artifacts and sanitized observations for every native command. Native gestures, old-session behavior, keyboard/OLE activation over locked cells, hidden/zero-geometry combinations and HTTP regressions remain unverified until the parent runs them. DCM identity/settlement/type-size evidence and release authorization remain separate external prerequisites.
+
+### Integration corrections and evidence — 2026-11-18
+
+- Integrated as `c0387cf9c07e20439084536833f3dfa50142fc42`, followed by integration-owner source/test corrections. Structural and attachment-cell protection checks were separated into two private validators to retain all checks without suppressing the complexity rule. XML fixture removal now handles the actual serialized non-self-closing protection element.
+- The old-artifact HTTP regression exposed a real delivery bug: native storage keys created by `objectKey(..., "xlsx")` end in `/xlsx`, not `.xlsx`. Delivery now uses the owning Form's trusted document kind rather than a filename suffix. No artifact rename, canonical/history rewrite or migration was added. Correction fixtures now choose the submitted workspace key without first requiring an absent Draft key.
+- Supporting tests now use the real composite reference identity, full authenticated fixture identity, trusted saved receipt locals and a correctly typed byte view without casts or extra byte copies.
+- Observed after repairs: six targeted actual-app HTTP cases passed, 348 assertions, covering unsafe captures and old stored User Draft/Admin Correction artifacts in both durable legacy/template modes. Stored canonical bytes/data/keys and provider dispatch counts remained unchanged on protected delivery/rejection. Spreadsheet-unit passed 118 tests, 324 assertions. Root format/lint and typecheck 5/5 passed; server types were fresh, four tasks cached. Plugin build also passed in the preceding check.
+- Actual browser pilot on the pre-final source: HeadlessChrome/150.0.0.0 and ONLYOFFICE 9.4.0-129 showed disabled native sort/filter/insert/delete/merge controls. A real protected managed OLE opened through native context menu `Edit object`; a real disk-backed 4-byte File could be selected, canceled, confirmed as pending and observed after reopening. This is not proof of every shortcut or gesture. The attempted newer-candidate sequence did not complete before the isolated auth session expired; no File recovery is claimed.
+- Full final-source U02 matrix, keyboard/OLE activation, hidden/zero-geometry, four role/contract combinations and combined loading/continuation behavior remain for integrated acceptance. No real DCM or Production acceptance is claimed.

@@ -189,7 +189,14 @@ export function xlsxEditorOpening(
       env.EDITOR_CAPABILITY_SECRET
     )
       // Rotate pre-guard native caches without changing canonical document identity.
-      .update(JSON.stringify(["protected-physical-rows", documentKey, ownerScope, opening.data]))
+      .update(
+        JSON.stringify([
+          "protected-physical-rows",
+          documentKey,
+          ownerScope,
+          opening.data,
+        ])
+      )
       .digest("hex")}`,
     openingId: opening.data,
   };

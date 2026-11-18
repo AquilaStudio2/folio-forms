@@ -126,13 +126,14 @@ export function registerOnlyOfficeRoutes(
           );
         }
       }
-      if (query.readonly !== "1" && objectKey.endsWith(".xlsx")) {
+      if (query.readonly !== "1") {
         const workspace = await prisma.editorLease.findFirst({
           select: { targetId: true },
           where: { targetType: "correction", workspaceDocumentKey: key },
         });
         const response = await prisma.response.findFirst({
           select: {
+            form: { select: { documentKind: true } },
             prefillSnapshot: { select: { lockedFields: true } },
             publishedTemplateId: true,
           },
@@ -140,16 +141,14 @@ export function registerOnlyOfficeRoutes(
             ? { id: workspace.targetId }
             : { draftDocumentKey: key },
         });
-        if (response) {
+        if (response?.form.documentKind === "xlsx") {
           const bytes = await readObject(objectKey);
           const contract = await spreadsheetContractForTemplate(
             response.publishedTemplateId,
             readSpreadsheetWorkbook(bytes)
           );
-          const lockedFields = (response.prefillSnapshot?.lockedFields ?? {}) as Record<
-            string,
-            unknown
-          >;
+          const lockedFields = (response.prefillSnapshot?.lockedFields ??
+            {}) as Record<string, unknown>;
           return new Response(
             protectSpreadsheet(
               bytes,

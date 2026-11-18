@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `108fb942dc434b8d7f4e3079852039f3ebdfc36a`
+Commit: `c0387cf9c07e20439084536833f3dfa50142fc42`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -77,24 +77,24 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | POST | `/api/legacy-sso/switch/confirm` | `apps/server/src/routes/legacy-sso.ts:55` |
 | POST | `/api/legacy-sso/switch/cancel` | `apps/server/src/routes/legacy-sso.ts:61` |
 | POST | `/api/legacy-sso/session` | `apps/server/src/routes/legacy-sso.ts:67` |
-| GET | `/onlyoffice/document/:key` | `apps/server/src/routes/onlyoffice.ts:62` |
-| GET | `/onlyoffice-plugin/config.json` | `apps/server/src/routes/onlyoffice.ts:132` |
-| GET | `/onlyoffice-plugin/pdms-project/config.json` | `apps/server/src/routes/onlyoffice.ts:172` |
-| GET | `/onlyoffice-plugin/pdms-project/index.html` | `apps/server/src/routes/onlyoffice.ts:200` |
-| GET | `/onlyoffice-plugin/pdms-project/popup.js` | `apps/server/src/routes/onlyoffice.ts:201` |
-| GET | `/onlyoffice-plugin/attachment-category/config.json` | `apps/server/src/routes/onlyoffice.ts:202` |
-| GET | `/onlyoffice-plugin/attachment-category/index.html` | `apps/server/src/routes/onlyoffice.ts:234` |
-| GET | `/onlyoffice-plugin/attachment-category/popup.js` | `apps/server/src/routes/onlyoffice.ts:238` |
-| GET | `/onlyoffice-plugin/upload-poc/config.json` | `apps/server/src/routes/onlyoffice.ts:242` |
-| GET | `/onlyoffice-plugin/upload-poc/index.html` | `apps/server/src/routes/onlyoffice.ts:271` |
-| GET | `/onlyoffice-plugin/upload-poc/picker.js` | `apps/server/src/routes/onlyoffice.ts:272` |
-| GET | `/onlyoffice-plugin` | `apps/server/src/routes/onlyoffice.ts:273` |
-| GET | `/onlyoffice-plugin/` | `apps/server/src/routes/onlyoffice.ts:274` |
-| GET | `/onlyoffice-plugin/index.html` | `apps/server/src/routes/onlyoffice.ts:275` |
-| GET | `/onlyoffice-plugin/plugin.js` | `apps/server/src/routes/onlyoffice.ts:276` |
-| GET | `/onlyoffice-plugin/resources/light/settings.svg` | `apps/server/src/routes/onlyoffice.ts:277` |
-| GET | `/onlyoffice-plugin/resources/dark/settings.svg` | `apps/server/src/routes/onlyoffice.ts:280` |
-| POST | `/onlyoffice/callback` | `apps/server/src/routes/onlyoffice.ts:283` |
+| GET | `/onlyoffice/document/:key` | `apps/server/src/routes/onlyoffice.ts:67` |
+| GET | `/onlyoffice-plugin/config.json` | `apps/server/src/routes/onlyoffice.ts:181` |
+| GET | `/onlyoffice-plugin/pdms-project/config.json` | `apps/server/src/routes/onlyoffice.ts:221` |
+| GET | `/onlyoffice-plugin/pdms-project/index.html` | `apps/server/src/routes/onlyoffice.ts:249` |
+| GET | `/onlyoffice-plugin/pdms-project/popup.js` | `apps/server/src/routes/onlyoffice.ts:250` |
+| GET | `/onlyoffice-plugin/attachment-category/config.json` | `apps/server/src/routes/onlyoffice.ts:251` |
+| GET | `/onlyoffice-plugin/attachment-category/index.html` | `apps/server/src/routes/onlyoffice.ts:283` |
+| GET | `/onlyoffice-plugin/attachment-category/popup.js` | `apps/server/src/routes/onlyoffice.ts:287` |
+| GET | `/onlyoffice-plugin/upload-poc/config.json` | `apps/server/src/routes/onlyoffice.ts:291` |
+| GET | `/onlyoffice-plugin/upload-poc/index.html` | `apps/server/src/routes/onlyoffice.ts:320` |
+| GET | `/onlyoffice-plugin/upload-poc/picker.js` | `apps/server/src/routes/onlyoffice.ts:321` |
+| GET | `/onlyoffice-plugin` | `apps/server/src/routes/onlyoffice.ts:322` |
+| GET | `/onlyoffice-plugin/` | `apps/server/src/routes/onlyoffice.ts:323` |
+| GET | `/onlyoffice-plugin/index.html` | `apps/server/src/routes/onlyoffice.ts:324` |
+| GET | `/onlyoffice-plugin/plugin.js` | `apps/server/src/routes/onlyoffice.ts:325` |
+| GET | `/onlyoffice-plugin/resources/light/settings.svg` | `apps/server/src/routes/onlyoffice.ts:326` |
+| GET | `/onlyoffice-plugin/resources/dark/settings.svg` | `apps/server/src/routes/onlyoffice.ts:329` |
+| POST | `/onlyoffice/callback` | `apps/server/src/routes/onlyoffice.ts:332` |
 | GET | `/api/operations/:id` | `apps/server/src/routes/operations.ts:19` |
 | POST | `/api/editor/pdms-project-catalog/retry` | `apps/server/src/routes/pdms-project-catalog.ts:101` |
 | POST | `/api/integrations/prefill/handoffs` | `apps/server/src/routes/prefill.ts:29` |

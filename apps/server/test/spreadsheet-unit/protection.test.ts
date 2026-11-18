@@ -192,7 +192,7 @@ describe("spreadsheet input permissions and protected layout", () => {
 
   test("keeps attachment cells locked while ordinary body cells remain editable", () => {
     const { bytes, contract } = setup();
-    const scalar = contract.fields[0];
+    const [scalar] = contract.fields;
     const column = contract.table?.columns[1];
     if (!scalar || !column) {
       throw new Error("Fixture lacks attachment fields");
@@ -219,7 +219,9 @@ describe("spreadsheet input permissions and protected layout", () => {
     expect(
       descendants(xml.sheet, "sheetProtection")[0]?.attributes
     ).toMatchObject({ autoFilter: "1", sort: "1" });
-    const previous = readSpreadsheetWorkbook(protectSpreadsheet(bytes, contract));
+    const previous = readSpreadsheetWorkbook(
+      protectSpreadsheet(bytes, contract)
+    );
     expect(() =>
       validateSpreadsheetEdits(previous, changed(previous, "A4", 12), contract)
     ).not.toThrow();
@@ -248,7 +250,11 @@ describe("spreadsheet input permissions and protected layout", () => {
           "</worksheet>",
           '<sortState ref="A4:D8"><sortCondition ref="A4:A8"/></sortState></worksheet>'
         ),
-      (xml: string) => xml.replace(/<sheetProtection\b[^>]*\/>/u, ""),
+      (xml: string) =>
+        xml.replace(
+          /<sheetProtection\b[^>]*(?:\/>|>[\s\S]*?<\/sheetProtection>)/u,
+          ""
+        ),
       (xml: string) => xml.replace('sort="1"', 'sort="0"'),
       (xml: string) => xml.replace('sort="1"', ""),
     ]) {
