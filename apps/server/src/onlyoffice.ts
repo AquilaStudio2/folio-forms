@@ -153,6 +153,7 @@ export interface EditorOptions {
   };
   publicId: string;
   responseId?: string;
+  submissionId?: string;
   tagAliases?: Record<string, string>;
 }
 

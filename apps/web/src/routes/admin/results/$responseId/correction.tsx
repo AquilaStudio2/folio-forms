@@ -4,6 +4,7 @@ import {
   Link,
   useNavigate,
   useParams,
+  useSearch,
 } from "@tanstack/react-router";
 import { useEffect, useRef, useState } from "react";
 
@@ -18,6 +19,12 @@ const AdminCorrectionRoute = () => {
   const { responseId } = useParams({
     from: "/admin/results/$responseId/correction",
   });
+  const { submissionId } = useSearch({
+    from: "/admin/results/$responseId/correction",
+  });
+  const editorConfigUrl = submissionId
+    ? `/api/admin/results/${responseId}/correction/editor-config?submissionId=${encodeURIComponent(submissionId)}`
+    : `/api/admin/results/${responseId}/correction/editor-config`;
   const [reason, setReason] = useState("");
   const [saveRequest, setSaveRequest] = useState(0);
   const [revision, setRevision] = useState(0);
@@ -129,7 +136,7 @@ const AdminCorrectionRoute = () => {
       </Card>
       <Card className="min-h-[640px] overflow-hidden p-0">
         <OnlyOfficeEditor
-          configUrl={`/api/admin/results/${responseId}/correction/editor-config`}
+          configUrl={editorConfigUrl}
           onBridgeMessage={handleBridgeMessage}
           onDirtyChange={setDirty}
           trackNativeDirty
@@ -146,4 +153,8 @@ const AdminCorrectionRoute = () => {
 
 export const Route = createFileRoute("/admin/results/$responseId/correction")({
   component: AdminCorrectionRoute,
+  validateSearch: (search) => ({
+    submissionId:
+      typeof search.submissionId === "string" ? search.submissionId : undefined,
+  }),
 });

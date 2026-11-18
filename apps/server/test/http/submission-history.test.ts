@@ -355,7 +355,10 @@ for (const kind of ["docx", "xlsx"] as const) {
       ...correctedBytes,
     ]);
 
-    // A delayed callback must not commit to an old submission after a newer send.
+    // A correction opened against the second submission still targets that
+    // exact submission even after a newer (third) submission supersedes it —
+    // editing a specific historical submission must not silently flip onto
+    // whichever submission is now latest for the response.
     const nextEditor = (await (
       await get(`${base}/correction/editor-config`)
     ).json()) as EditorConfigBody;
@@ -367,16 +370,27 @@ for (const kind of ["docx", "xlsx"] as const) {
       where: { id: pendingId },
     });
     const third = await createSubmission("third", "2026-01-03T00:00:00Z");
-    await expect(
-      completeCorrectionOperation(
-        pending,
-        { ...operationMetadata(pending.metadata), data: { name: "stale" } },
-        correctedBytes
-      )
-    ).rejects.toMatchObject({ code: "stale_operation", httpStatus: 409 });
+    const pendingMetadata = operationMetadata(pending.metadata);
+    expect(pendingMetadata.submissionId).toBe(second.id);
+    const thirdCorrectedBytes = documentFixture(kind, "corrected again");
+    await putObject(pendingMetadata.finalObjectKey, thirdCorrectedBytes);
+    await completeCorrectionOperation(
+      pending,
+      { ...pendingMetadata, data: { name: "corrected again" } },
+      thirdCorrectedBytes
+    );
     expect(
       await prisma.correction.count({ where: { responseId: response.id } })
-    ).toBe(2);
+    ).toBe(3);
+    expect(
+      await prisma.correction.findFirst({
+        orderBy: { revision: "desc" },
+        where: { responseId: response.id },
+      })
+    ).toMatchObject({
+      data: { name: "corrected again" },
+      submissionId: second.id,
+    });
     expect(await (await get(base)).json()).toMatchObject({
       result: { data: { name: "third" }, revision: 0, submissionId: third.id },
     });

@@ -445,7 +445,7 @@ const AdminResultDetailRoute = () => {
               />
               {canManage ? (
                 <Link
-                  search={{ form: undefined }}
+                  search={{ form: undefined, submissionId: undefined }}
                   to="/admin/results/$responseId/correction"
                   params={{ responseId }}
                 >

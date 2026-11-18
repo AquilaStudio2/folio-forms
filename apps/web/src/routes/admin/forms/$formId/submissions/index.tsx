@@ -1,6 +1,6 @@
 // oxlint-disable unicorn/filename-case -- TanStack Router requires this dynamic route filename.
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
-import { ArrowLeft, ArrowUpRight, FileCheck2 } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, FileCheck2, Pencil } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
@@ -9,12 +9,15 @@ import { ListPagination } from "@/components/list-pagination";
 import { Badge, Card, Notice, Spinner } from "@/components/ui";
 import { apiGet, formatDate } from "@/lib/api";
 import type { Submission } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { paginateItems } from "@/lib/pagination";
 
 const SubmissionsRoute = () => {
   const { formId } = useParams({
     from: "/admin/forms/$formId/submissions",
   });
+  const { user } = useAuth();
+  const canEdit = user?.role === "admin";
   const [rows, setRows] = useState<Submission[]>([]);
   const [page, setPage] = useState(1);
   const { items: visibleRows, pagination } = paginateItems({
@@ -106,6 +109,16 @@ const SubmissionsRoute = () => {
               >
                 Inspect <ArrowUpRight size={15} />
               </Link>
+              {canEdit && row.responseId ? (
+                <Link
+                  search={{ form: undefined, submissionId: row.id }}
+                  to="/admin/results/$responseId/correction"
+                  params={{ responseId: row.responseId }}
+                  className="inline-flex items-center gap-1 text-sm font-semibold"
+                >
+                  แก้ไข <Pencil size={15} />
+                </Link>
+              ) : null}
             </div>
           </div>
         ))}

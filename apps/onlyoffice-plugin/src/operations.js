@@ -108,6 +108,9 @@ export function createOperations(
       const responseId = encodeURIComponent(
         requireOption(options.responseId, "responseId")
       );
+      const submissionIdQuery = options.submissionId
+        ? `?submissionId=${encodeURIComponent(options.submissionId)}`
+        : "";
       return {
         body: {
           data: data.data,
@@ -129,7 +132,7 @@ export function createOperations(
               }
             : {}),
         },
-        path: `${API_ROUTES.ADMIN_RESULTS}/${responseId}/correction${action === ACTIONS.SAVE_CORRECTION_WORKSPACE ? "/workspace" : ""}`,
+        path: `${API_ROUTES.ADMIN_RESULTS}/${responseId}/correction${action === ACTIONS.SAVE_CORRECTION_WORKSPACE ? "/workspace" : ""}${submissionIdQuery}`,
       };
     }
 

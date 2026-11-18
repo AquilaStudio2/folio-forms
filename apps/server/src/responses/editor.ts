@@ -58,26 +58,28 @@ export async function correctionEditorConfig(
   responseId: string,
   identity: Identity,
   pdmsOpeningId?: string,
-  pdmsProjects: PdmsProjectsConfiguration | null = null
+  pdmsProjects: PdmsProjectsConfiguration | null = null,
+  submissionId?: string
 ): Promise<Record<string, unknown>> {
   validateId(responseId, "Response");
+  if (submissionId) {
+    validateId(submissionId, "Submission");
+  }
   const response = await prisma.response.findUnique({
-    include: {
-      prefillSnapshot: true,
-      submissions: {
-        include: { corrections: { orderBy: { revision: "desc" }, take: 1 } },
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-        take: 1,
-      },
-    },
+    include: { prefillSnapshot: true },
     where: { id: responseId },
   });
-  const submission = response?.submissions[0];
-  if (
-    !response ||
-    response.status !== ResponseStatus.submitted ||
-    !submission
-  ) {
+  const submission = submissionId
+    ? await prisma.submission.findUnique({
+        include: { corrections: { orderBy: { revision: "desc" }, take: 1 } },
+        where: { id: submissionId },
+      })
+    : await prisma.submission.findFirst({
+        include: { corrections: { orderBy: { revision: "desc" }, take: 1 } },
+        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+        where: { responseId },
+      });
+  if (!response || !submission || submission.responseId !== responseId) {
     fail(404, "not_found", "Submitted Response was not found");
   }
   const form = await prisma.form.findUnique({
@@ -202,32 +204,24 @@ export async function correctionEditorConfig(
       await deleteObjectUnlessCanonical(priorLease.workspaceObjectKey);
     }
   }
-  const currentRevision = await prisma.response.findUnique({
+  const currentSubmission = await prisma.submission.findUnique({
     select: {
-      status: true,
-      submissions: {
-        orderBy: [{ createdAt: "desc" }, { id: "desc" }],
+      corrections: {
+        orderBy: { revision: "desc" },
         select: {
-          corrections: {
-            orderBy: { revision: "desc" },
-            select: {
-              documentKey: true,
-              id: true,
-              objectKey: true,
-              revision: true,
-            },
-            take: 1,
-          },
           documentKey: true,
           id: true,
           objectKey: true,
+          revision: true,
         },
         take: 1,
       },
+      documentKey: true,
+      id: true,
+      objectKey: true,
     },
-    where: { id: response.id },
+    where: { id: submission.id },
   });
-  const currentSubmission = currentRevision?.submissions[0];
   const currentLatest = currentSubmission?.corrections[0];
   const currentBaseRevision = currentLatest?.revision ?? 0;
   const currentBaseDocumentKey =
@@ -235,8 +229,7 @@ export async function correctionEditorConfig(
   const currentSourceObjectKey =
     currentLatest?.objectKey ?? currentSubmission?.objectKey;
   if (
-    currentRevision?.status !== ResponseStatus.submitted ||
-    currentSubmission?.id !== submission.id ||
+    !currentSubmission ||
     currentBaseRevision !== baseRevision ||
     currentBaseDocumentKey !== baseDocumentKey ||
     currentSourceObjectKey !== sourceObjectKey
@@ -245,14 +238,18 @@ export async function correctionEditorConfig(
     fail(
       409,
       "stale_document",
-      "The Response changed while the correction editor was opening"
+      "The Submission changed while the correction editor was opening"
     );
   }
   await createResponseAudit({
     action: currentLatest ? "view_correction" : "view_response",
     actorId: identity.id,
     outcome: AuditOutcome.success,
-    safeMetadata: { revision: currentBaseRevision, state: "submitted" },
+    safeMetadata: {
+      revision: currentBaseRevision,
+      state:
+        response.status === ResponseStatus.submitted ? "submitted" : "draft",
+    },
     targetId: currentLatest?.id ?? response.id,
     targetType: currentLatest ? "correction" : "response",
   });
@@ -321,6 +318,7 @@ export async function correctionEditorConfig(
         prefill: lockedPrefillForSnapshot(response.prefillSnapshot),
         publicId: form.publicId,
         responseId: response.id,
+        submissionId: submission.id,
         tagAliases:
           form.documentKind !== "xlsx" && form.publishedTemplate?.objectKey
             ? onlyOfficeFieldTagAliases(

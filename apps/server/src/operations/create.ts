@@ -66,7 +66,7 @@ export async function createOperation(input: {
         input.metadata.action === "save-correction" ||
         input.metadata.action === "save-correction-workspace"
       ) {
-        const [actor, workspace, response] = await Promise.all([
+        const [actor, workspace, response, submission] = await Promise.all([
           tx.user.findFirst({
             where: { enabled: true, id: input.actorId, role: "admin" },
           }),
@@ -83,19 +83,17 @@ export async function createOperation(input: {
             },
           }),
           tx.response.findUnique({
-            include: {
-              submissions: {
+            where: { id: input.responseId },
+          }),
+          input.submissionId
+            ? tx.submission.findUnique({
                 include: {
                   corrections: { orderBy: { revision: "desc" }, take: 1 },
                 },
-                orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-                take: 1,
-              },
-            },
-            where: { id: input.responseId },
-          }),
+                where: { id: input.submissionId },
+              })
+            : null,
         ]);
-        const submission = response?.submissions[0];
         const latest = submission?.corrections[0];
         if (
           !actor ||
@@ -103,9 +101,8 @@ export async function createOperation(input: {
           !workspace ||
           !response ||
           response.formId !== input.formId ||
-          response.status !== "submitted" ||
           !submission ||
-          submission.id !== input.submissionId ||
+          submission.responseId !== response.id ||
           (latest?.revision ?? 0) !== input.metadata.baseRevision ||
           (latest?.documentKey ?? submission.documentKey) !==
             input.metadata.baseDocumentKey

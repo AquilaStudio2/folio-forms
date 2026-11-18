@@ -76,11 +76,13 @@ export function registerResultRoutes(
     async ({
       request,
       params,
+      query,
       body,
       set,
     }: {
       request: Request;
       params: { id: string };
+      query: { submissionId?: string };
       body: unknown;
       set: { status?: number | string };
     }) => {
@@ -91,26 +93,29 @@ export function registerResultRoutes(
       const { actor: identity } = authorization;
       requireAdmin(identity);
       validateId(params.id, "Response");
+      if (query.submissionId) {
+        validateId(query.submissionId, "Submission");
+      }
       const input = correctionInput(body, workspaceOnly);
       const response = await prisma.response.findUnique({
-        include: {
-          prefillSnapshot: true,
-          submissions: {
+        include: { prefillSnapshot: true },
+        where: { id: params.id },
+      });
+      const submission = query.submissionId
+        ? await prisma.submission.findUnique({
+            include: {
+              corrections: { orderBy: { revision: "desc" }, take: 1 },
+            },
+            where: { id: query.submissionId },
+          })
+        : await prisma.submission.findFirst({
             include: {
               corrections: { orderBy: { revision: "desc" }, take: 1 },
             },
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-            take: 1,
-          },
-        },
-        where: { id: params.id },
-      });
-      const submission = response?.submissions[0];
-      if (
-        !response ||
-        response.status !== ResponseStatus.submitted ||
-        !submission
-      ) {
+            where: { responseId: params.id },
+          });
+      if (!response || !submission || submission.responseId !== params.id) {
         fail(404, "not_found", "Submitted Response was not found");
       }
       const form = await prisma.form.findUnique({
@@ -580,7 +585,8 @@ export function registerResultRoutes(
           params.id,
           identity,
           query.pdmsOpeningId,
-          dependencies.pdmsProjects
+          dependencies.pdmsProjects,
+          query.submissionId
         );
       }
     )

@@ -703,7 +703,11 @@ export function registerFormAuthoringRoutes(
         requireAdmin(identity);
         const form = await findFormByPublicId(params.publicId);
         const submissions = await prisma.submission.findMany({
-          include: { form: true, owner: true },
+          include: {
+            form: true,
+            owner: true,
+            response: { select: { status: true } },
+          },
           orderBy: { createdAt: "desc" },
           where: { formId: form.id },
         });
@@ -713,6 +717,7 @@ export function registerFormAuthoringRoutes(
               documentKind: submission.form.documentKind,
               formPublicId: submission.form.publicId,
               formTitle: submission.form.title,
+              responseStatus: submission.response.status,
               userEmail: submission.owner.email,
             })
           ),

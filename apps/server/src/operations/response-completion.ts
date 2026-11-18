@@ -351,24 +351,21 @@ export async function completeCorrectionWorkspaceOperation(
         metadata
       );
       const current = await tx.response.findUnique({
-        include: {
-          submissions: {
+        where: { id: metadata.responseId },
+      });
+      const submission = metadata.submissionId
+        ? await tx.submission.findUnique({
             include: {
               corrections: { orderBy: { revision: "desc" }, take: 1 },
             },
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-            take: 1,
-          },
-        },
-        where: { id: metadata.responseId },
-      });
-      const submission = current?.submissions[0];
+            where: { id: metadata.submissionId },
+          })
+        : null;
       const latest = submission?.corrections[0];
       if (
         !current ||
-        current.status !== ResponseStatus.submitted ||
         !submission ||
-        submission.id !== metadata.submissionId ||
+        submission.responseId !== current.id ||
         (latest?.revision ?? 0) !== metadata.baseRevision ||
         (latest?.documentKey ?? submission.documentKey) !==
           metadata.baseDocumentKey
@@ -453,12 +450,7 @@ export async function completeCorrectionOperation(
   const submission = await prisma.submission.findUnique({
     where: { id: submissionId },
   });
-  if (
-    !response ||
-    response.status !== ResponseStatus.submitted ||
-    !submission ||
-    submission.responseId !== responseId
-  ) {
+  if (!response || !submission || submission.responseId !== responseId) {
     fail(409, "stale_operation", "The Submission is no longer correctable");
   }
   if (metadata.documentKind !== "xlsx") {
@@ -487,26 +479,22 @@ export async function completeCorrectionOperation(
             orderBy: { revision: "desc" },
             take: 1,
           },
-          submissions: {
-            include: {
-              corrections: { orderBy: { revision: "desc" }, take: 1 },
-            },
-            orderBy: [{ createdAt: "desc" }, { id: "desc" }],
-            take: 1,
-          },
         },
         where: { id: response.id },
       });
-      const currentSubmission = current?.submissions[0];
+      const currentSubmission = await tx.submission.findUnique({
+        include: {
+          corrections: { orderBy: { revision: "desc" }, take: 1 },
+        },
+        where: { id: submissionId },
+      });
       const latest = currentSubmission?.corrections[0];
       const currentRevision = latest?.revision ?? 0;
       const currentDocumentKey =
         latest?.documentKey ?? currentSubmission?.documentKey;
       if (
         !current ||
-        current.status !== ResponseStatus.submitted ||
         !currentSubmission ||
-        currentSubmission.id !== submissionId ||
         currentSubmission.responseId !== current.id ||
         currentRevision !== baseRevision ||
         currentDocumentKey !== baseDocumentKey

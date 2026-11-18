@@ -150,6 +150,7 @@ export interface Submission {
   documentKind?: DocumentKind;
   id: string;
   responseId?: string;
+  responseStatus?: "draft" | "submitting" | "submitted";
   formPublicId?: string;
   formTitle?: string;
   userEmail?: string;

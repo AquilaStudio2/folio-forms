@@ -249,6 +249,7 @@ export function submissionSummary(
     documentKind?: DocumentKind;
     formPublicId?: string;
     formTitle?: string;
+    responseStatus?: ResponseStatus;
     userEmail?: string;
   } = {}
 ): JsonRecord {
@@ -259,6 +260,7 @@ export function submissionSummary(
     formTitle: extra.formTitle,
     id: submission.id,
     responseId: submission.responseId,
+    responseStatus: extra.responseStatus,
     status: "submitted",
     submittedAt: submission.createdAt,
     userEmail: extra.userEmail,

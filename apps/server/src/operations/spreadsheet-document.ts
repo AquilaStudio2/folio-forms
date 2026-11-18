@@ -184,11 +184,7 @@ export const prepareSpreadsheetOperation = async (
         workspaceObjectKey: metadata.workspaceObjectKey,
       },
     });
-    if (
-      !metadata.workspaceLeaseId ||
-      !workspace ||
-      response.status !== "submitted"
-    ) {
+    if (!metadata.workspaceLeaseId || !workspace) {
       fail(
         409,
         "stale_operation",
