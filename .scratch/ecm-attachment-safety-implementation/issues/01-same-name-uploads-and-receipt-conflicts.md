@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** in-progress — integrated; isolated HTTP naming/receipt paths pass; final full-suite and actual warning/pending smoke remain
+**Status:** ready-for-human
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US01–40, US88; H01–H06, H09–H10 และส่วน receipt warnings ของ U05
 
@@ -12,21 +12,21 @@
 
 ## Acceptance criteria
 
-- [ ] First Submit แล้วเริ่มรอบใหม่ตาม flow ปกติ ใช้เลขเอกสาร/แม่แบบ/extension เดิมส่งรอบที่สองและรอบถัดไปสำเร็จผ่าน actual app HTTP ไม่เปลี่ยนเลข ไม่บังคับ Save Draft ก่อน และไม่สกัด automatic next-round flow เพื่ออ้างว่าผ่าน
-- [ ] Actual template uploads ใช้ชื่อฐานซ้ำได้ทั้ง scalar, หลาย physical rows/columns, ต่าง Responses และ final Save Correction ไม่มี generated counter/timestamp/UUID/row suffix หรือ filename reservation คง original extension/casing, extensionless, literal suffix/dots/whitespace ที่ valid และ unsafe-input rejection ตาม naming decision ล่าสุด
-- [ ] Shared prepare, before-send, receipt, reference และ deletion admission แยก filename-only coincidence จาก actual resource/scope conflict ทุก affected consumer ใช้ contract เดียวกัน ไม่ patch เฉพาะ second Submit และไม่ถอด actor/owner/role/lease/revision/opening/slot/unknown/reference fences
-- [ ] แต่ละ actual upload เก็บ original attempt, destination และ paired receipt ตาม ledger เดิม ทุก current Draft/Submission/Correction snapshot มี canonical metadata ของไฟล์ที่อ้างจริงตาม schema เดิม รวม trusted table row_index ไม่ adopt client receipt หรือเลือก search result แรก/ล่าสุดจากชื่อ
-- [ ] Actual new template upload ที่คืน paired receipt ของ surviving Submission/Correction หยุด canonical commit ด้วย semantic history-conflict reason ส่วน paired receipt ของ own unprotected current Draft หยุดด้วย semantic Draft-conflict reason ทั้งสองมีเหตุผลจำแนกผ่าน HTTP/Operation/host/plugin ตามสิทธิ์ ไม่ใช้ Q3/Q4 เป็นศัพท์ผู้ใช้
-- [ ] Resource ที่มีทั้ง Draft และ history ใช้ history precedence; one-sided/partial/multiple/held aliases และ protected conflicts อื่นคง fail-closed ตามหลักฐาน ไม่เดาประเภทจากชื่อหรือ match ข้างเดียว และไม่ผ่อน same-batch alias safeguards
-- [ ] Warning ระบุ Field/Tag/physical row และ references ที่พิสูจน์ได้ภายใต้สิทธิ์ บอกว่ารอบนี้ยังไม่บันทึก ไม่เผย raw tokens/service secrets/ประวัติของผู้อื่น และไม่อ้างว่า cancel หรือ DB rollback คืน remote bytes ได้
-- [ ] Conflict/failure ไม่ partial commit document/JSON/references/Operation ไม่แก้ history ไม่ล้าง pending ที่ยังอยู่ในหน้า ไม่ DELETE shared resource ไม่ resend/เปลี่ยนชื่อ/สั่ง refresh เพื่อหนี conflict Original receipt/conflict evidence ยังคงตรวจย้อนกลับได้
-- [ ] Unchanged reuse ที่ไม่มี POST ไม่ถูกบล็อกด้วย actual-new-upload policy และไม่บังคับ token ใหม่ Number change อ่าน trusted original พร้อม existing size/hash/origin checks; replacement ใช้ File ใหม่; year-only template edit ไม่ upload เพิ่ม Legacy UUID/Published PoC/frozen contracts และ old filenames/receipts ไม่เปลี่ยน
-- [ ] Existing multipart และ receipt adapter contract คงเดิม: template mode ส่ง original documentFile กับ template ข้อความ "1" โดยไม่เพิ่ม legacy metadata parts รับ valid object/one-item-array receipt และปฏิเสธ malformed receipt ตามเดิม ไม่สร้าง parser/retrieval layer ซ้ำ
-- [ ] Safe diagnostics เก็บ upstream HTTP status/details ที่จำเป็นผ่านช่องทางเดิมก่อนถูก generic adapter error กลืน ไม่ส่ง raw provider body/credentials/tokens ไป browser ไม่เพิ่ม logging subsystem หรือ automatic POST/DELETE retry และไม่เดาสาเหตุ HTTP 500 เดิม
-- [ ] Lost Folio acknowledgement, unknown upload, late canceled receipt, restart และ uncertain DELETE คง original-checkpoint/no-resend/reference fencing behavior B ที่ commit แล้วแต่ cleanup A ค้างยังใช้ได้พร้อม persistent warning ไม่กลายเป็น failed save
-- [ ] ใช้ existing isolated HTTP seam กับ create-new provider model สำหรับ happy path และ explicit history/Draft/partial-alias/unknown models สำหรับ guards ตรวจ canonical JSON/XLSX/receipt และ exact bytes ของ survivors ตาม local history/mapping plan ไม่ใช้ filename-keyed overwrite เป็น universal DCM truth
-- [ ] ทำ targeted browser/plugin smoke ของ warnings และ pending preservation บน changed path ของตั๋วนี้ ไม่รอให้ตั๋ว 06 เป็น verification แรก ปรับ affected consumer tests/fixtures/types และลบ obsolete suffix-only/incidental-wording assertions โดยไม่ลด legacy/security regressions
-- [ ] อัปเดต affected domain/canonical behavior และ system map ใน change เดียวกัน ระบุ source revision และผลที่รันจริง โดยไม่ relabel historical BATCH/provider samples เป็น acceptance ใหม่
+- [x] First Submit แล้วเริ่มรอบใหม่ตาม flow ปกติ ใช้เลขเอกสาร/แม่แบบ/extension เดิมส่งรอบที่สองและรอบถัดไปสำเร็จผ่าน actual app HTTP ไม่เปลี่ยนเลข ไม่บังคับ Save Draft ก่อน และไม่สกัด automatic next-round flow เพื่ออ้างว่าผ่าน
+- [x] Actual template uploads ใช้ชื่อฐานซ้ำได้ทั้ง scalar, หลาย physical rows/columns, ต่าง Responses และ final Save Correction ไม่มี generated counter/timestamp/UUID/row suffix หรือ filename reservation คง original extension/casing, extensionless, literal suffix/dots/whitespace ที่ valid และ unsafe-input rejection ตาม naming decision ล่าสุด
+- [x] Shared prepare, before-send, receipt, reference และ deletion admission แยก filename-only coincidence จาก actual resource/scope conflict ทุก affected consumer ใช้ contract เดียวกัน ไม่ patch เฉพาะ second Submit และไม่ถอด actor/owner/role/lease/revision/opening/slot/unknown/reference fences
+- [x] แต่ละ actual upload เก็บ original attempt, destination และ paired receipt ตาม ledger เดิม ทุก current Draft/Submission/Correction snapshot มี canonical metadata ของไฟล์ที่อ้างจริงตาม schema เดิม รวม trusted table row_index ไม่ adopt client receipt หรือเลือก search result แรก/ล่าสุดจากชื่อ
+- [x] Actual new template upload ที่คืน paired receipt ของ surviving Submission/Correction หยุด canonical commit ด้วย semantic history-conflict reason ส่วน paired receipt ของ own unprotected current Draft หยุดด้วย semantic Draft-conflict reason ทั้งสองมีเหตุผลจำแนกผ่าน HTTP/Operation/host/plugin ตามสิทธิ์ ไม่ใช้ Q3/Q4 เป็นศัพท์ผู้ใช้
+- [x] Resource ที่มีทั้ง Draft และ history ใช้ history precedence; one-sided/partial/multiple/held aliases และ protected conflicts อื่นคง fail-closed ตามหลักฐาน ไม่เดาประเภทจากชื่อหรือ match ข้างเดียว และไม่ผ่อน same-batch alias safeguards
+- [x] Warning ระบุ Field/Tag/physical row และ references ที่พิสูจน์ได้ภายใต้สิทธิ์ บอกว่ารอบนี้ยังไม่บันทึก ไม่เผย raw tokens/service secrets/ประวัติของผู้อื่น และไม่อ้างว่า cancel หรือ DB rollback คืน remote bytes ได้
+- [x] Conflict/failure ไม่ partial commit document/JSON/references/Operation ไม่แก้ history ไม่ล้าง pending ที่ยังอยู่ในหน้า ไม่ DELETE shared resource ไม่ resend/เปลี่ยนชื่อ/สั่ง refresh เพื่อหนี conflict Original receipt/conflict evidence ยังคงตรวจย้อนกลับได้
+- [x] Unchanged reuse ที่ไม่มี POST ไม่ถูกบล็อกด้วย actual-new-upload policy และไม่บังคับ token ใหม่ Number change อ่าน trusted original พร้อม existing size/hash/origin checks; replacement ใช้ File ใหม่; year-only template edit ไม่ upload เพิ่ม Legacy UUID/Published PoC/frozen contracts และ old filenames/receipts ไม่เปลี่ยน
+- [x] Existing multipart และ receipt adapter contract คงเดิม: template mode ส่ง original documentFile กับ template ข้อความ "1" โดยไม่เพิ่ม legacy metadata parts รับ valid object/one-item-array receipt และปฏิเสธ malformed receipt ตามเดิม ไม่สร้าง parser/retrieval layer ซ้ำ
+- [x] Safe diagnostics เก็บ upstream HTTP status/details ที่จำเป็นผ่านช่องทางเดิมก่อนถูก generic adapter error กลืน ไม่ส่ง raw provider body/credentials/tokens ไป browser ไม่เพิ่ม logging subsystem หรือ automatic POST/DELETE retry และไม่เดาสาเหตุ HTTP 500 เดิม
+- [x] Lost Folio acknowledgement, unknown upload, late canceled receipt, restart และ uncertain DELETE คง original-checkpoint/no-resend/reference fencing behavior B ที่ commit แล้วแต่ cleanup A ค้างยังใช้ได้พร้อม persistent warning ไม่กลายเป็น failed save
+- [x] ใช้ existing isolated HTTP seam กับ create-new provider model สำหรับ happy path และ explicit history/Draft/partial-alias/unknown models สำหรับ guards ตรวจ canonical JSON/XLSX/receipt และ exact bytes ของ survivors ตาม local history/mapping plan ไม่ใช้ filename-keyed overwrite เป็น universal DCM truth
+- [x] ทำ targeted browser/plugin smoke ของ warnings และ pending preservation บน changed path ของตั๋วนี้ ไม่รอให้ตั๋ว 06 เป็น verification แรก ปรับ affected consumer tests/fixtures/types และลบ obsolete suffix-only/incidental-wording assertions โดยไม่ลด legacy/security regressions
+- [x] อัปเดต affected domain/canonical behavior และ system map ใน change เดียวกัน ระบุ source revision และผลที่รันจริง โดยไม่ relabel historical BATCH/provider samples เป็น acceptance ใหม่
 
 ## Scope boundaries
 
@@ -75,3 +75,9 @@ Then run the repository's existing integrated type/lint/build checks and actual 
 - During an intermediate fixture variant, immediate Response deletion after an unrelated replacement encountered serialization conflicts while earlier postcommit cleanup could still run. No runtime cleanup change or retry was made. The final acceptance/review must assess that interleaving separately; the generic fixture repair does not prove it cannot return HTTP 500.
 - Root format/lint passed after correcting seven new awaited-member style violations without changing assertions. Updated domain terminology/current naming/admission/semantic-error descriptions and the system map, retaining superseded batch evidence as historical. Workflow generation/check and generated HTML inspection passed before the final paragraph clarification.
 - Actual host/plugin warning and pending-preservation smoke remains pending until the latest native/active-save slices are integrated. No real DCM calls or provider acceptance occurred.
+
+### Final integration evidence — 2026-11-19
+
+- Implementation and local verification complete; ready for human review, not provider/release acceptance. Existing actual-app HTTP246 cases/10,957 assertions and genuine native three normal same-number rounds retain their recorded revisions.
+- Final native own-Draft/history conflict journeys now establish distinct host/plugin reasons, permitted reference context, pending preservation, unchanged canonical snapshots/references and no destructive cleanup. See [final native report N11/N12](../acceptance/06-native-final/report.md).
+- Final production source includes retained-projection and known-commit continuation fixes; configured web282 plus12 lifecycle tests, plugin343 and root types5/5 passed. Provider07/08, settlement09, old-data10 and human review remain separate HOLD. No real DCM/DELETE/push/deploy.

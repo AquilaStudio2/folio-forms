@@ -4,7 +4,7 @@ Status: needs-info
 Execution date: 2026-11-19 (browser timestamps displayed in Asia/Bangkok)  
 Disposition: **partial local acceptance; not release, provider, old-data or human acceptance**.
 
-This is a bounded child handoff. Parent continues the remaining reachable native checks below; their absence is not an unavailable-runtime claim or a user-approved scope reduction. Ticket 06 must not be resolved from passing HTTP suites or the completed subset of native journeys.
+Initial worker N01–N08 and their source hashes remain historical evidence below. The [parent final supplement, N09–N18](acceptance/06-native-final/report.md) records subsequent native work, review fixes and the current bounded disposition without relabeling those earlier runs. Ticket06 remains needs-info; passing HTTP suites or a subset of native journeys does not close the whole native matrix.
 
 ## Authorization, environment and provenance
 
@@ -17,7 +17,7 @@ This is a bounded child handoff. Parent continues the remaining reachable native
 - Hindsight Bank `pdms-knowledge`: **skipped**, because mounted recall selectors do not expose the required bank/types/budget selectors. No bank writes. There are no retrieved `document_id`, `chunk_id`, `source_path`, `stable_document_id` or source revisions to report. Local Markdown and current source are separate evidence.
 - Intended policy owners read: [approved implementation spec](spec.md), [naming owner](../ecm-attachment-safety/spec.md), [safety index](../ecm-attachment-safety/map.md), [native matrix](../ecm-attachment-safety/issues/04-native-table-editing-support.md), [navigation/loading](../ecm-attachment-safety/issues/07-pending-navigation-warning.md), [receipt reasons](../ecm-attachment-safety/issues/09-duplicate-name-guard-policy.md), root `CONTEXT.md`, ADR 0003/0004 and tracker/domain conventions. These are repository Markdown snapshots, not Production evidence. The implementation effort has no `map.md`; its spec links to the original safety index. Original nine Wayfinder tickets were not changed.
 
-### Final source SHA-256
+### Worker handoff source SHA-256 — historical 6563350
 
 | File | SHA-256 |
 | --- | --- |
@@ -234,3 +234,55 @@ Principal HTTP owner: `apps/server/test/http/ecm-scalar-save-submit.test.ts`. Na
 6. Tickets07/08/09 remain distinct provider/evidence gates. No real DCM settlement/DELETE isolation/all-type guarantee follows from this controlled provider. Old-data ticket10 needs separate access/provenance authorization. Human acceptance and any push/deploy authorization remain absent.
 
 No permanent application code was changed by worker06. Parent owns the startup defect fix, suite execution and shared docs/system-map maintenance. This report and ticket preserve the remaining gaps instead of declaring the integrated native matrix complete.
+
+## Parent final integrated disposition — 2026-11-19
+
+Delivery application bytes: `c91472d94fb8ddd8c06f7c08ad2c7709674319b5`. Source implementation01–05 is integrated. Status01/02/04/05 is ready-for-human;03/06 remains needs-info. Provider07/08, settlement09, old-data10 and human acceptance remain separate HOLD. No real DCM/DELETE/push/deploy occurred.
+
+The [final native supplement](acceptance/06-native-final/report.md) is the owner of N09–N18 and exact source/version/method limits. It adds actual retained-Draft next Save, failing-before/passing-after continuation-config failure, own-Draft/history warnings, upload uncertainty/saved-copy/reentry, lost acknowledgement with exact checkpoint, saved-receipt removal/minimum-row/invalid/independent columns, final Viewer/User surfaces, actual beforeunload/File loss, ordinary paste and native hidden geometry/adjacent-slot coupling. Earlier “pending native” statements above are superseded only for those named observations.
+
+### Updated H/U disposition
+
+| ID | Added actual evidence | Current boundary |
+| --- | --- | --- |
+| H01–H03 | N09 real subsequent Draft Save; earlier genuine normal three rounds/eligible Correction/history remain source-bounded | supported within exercised paths; literal-name variants remain HTTP |
+| H04 | N11/N12 actual semantic own-Draft/history warnings, permitted context and canonical/pending preservation | supported named native warnings; foreign-role native combinations not certified |
+| H05/H09 | N13 actual after-store unknown/HOLD/saved copy; N14 actual lost Folio acknowledgement/failed original lookup/exact checkpoint/reentry with no resend; N10 confirmed commit never mislabeled unknown after fix | supported named paths; not real provider settlement or every failure interleaving |
+| H06 | N15/N17 local confirmation/row saves/discard; N14 lookup/reentry adds no upload/delete | supported within named paths |
+| H07/U01 | N15 saved receipt removal plus invalid candidate/zero-byte/independent columns/minimum row; N17 verified pending-preserving append/delete | partial full native contract/state Cartesian matrix |
+| H08/U02 | N17 real guards/drags/no movement/invalid drawing rejection/ordinary paste; N18 actual zero-width geometry and correct adjacent physical slot | no certified successful forbidden mutation or hidden-target invocation/export rejection |
+| H10 | N16 final authenticated Viewer/User native surfaces plus existing HTTP authorization/reference checks | prior P2034/40001 deletion interleaving remains availability risk, not universal race PASS |
+| U03 | N17 actual route/Back/reload/close Stay/Escape/discard and observed local File/ordinary-input loss; N14 original checkpoint survives local discard | supported named Chromium behavior; beforeunload remains best effort |
+| U04 | N13 active inert/keyboard/loading then unknown/HOLD/reentry; N14 true lost-ack state; N10 known-commit blocked on config failure | supported named paths, no manual unlock/cancellation guarantee |
+| U05 | N11/N12 warnings; N09 same-frame later candidate/protected projection/next Save; N06 genuine Correction/later chooser | later confirmed-removal after capture and all queued-generation combinations remain native-unverified |
+| U06 | Final-source N09–N18 supplement earlier source-bounded normal/Correction/history journeys | partial broad final-source matrix; not complete-spec/release acceptance |
+
+### Story-traceability delta
+
+- US23–40/75–79: N11–N14 add real warning, upload uncertainty, saved-copy, original-checkpoint and known-commit observations. They do not replace provider settlement evidence.
+- US41–55: N15/N17 add saved/pending removal, invalid/zero-byte, independent columns and verified row transitions. Full native Cartesian permutations remain unverified.
+- US56–63: N17 adds actual ordinary external paste, guarded structural gestures and prehidden zero-height observations; N18 adds actual zero-width/adjacent physical targeting. Successful cut/move/cross-sheet mutations and hidden-target invocation/export remain unverified.
+- US64–74: N15/N17 add pending/removal navigation and actual Chromium Back/reload/close/prompt/File loss. No browser File persistence or universal prompt guarantee.
+- US80–81: N09/N10 add final Draft continuation/projection; N06 remains the bounded actual Correction/later chooser proof. Later confirmed-removal native interleaving is not asserted.
+- US82–90: evidence/revision/privacy distinctions remain; real provider per-button type/size, settlement, inventory and human acceptance are still separate gates.
+
+### Verification and review resolution
+
+Observed:246 unique actual-app HTTP cases/16 files/10,957 assertions; spreadsheet-unit118/324; native Builder/buttons14/264; plugin343/25 files; final configured web282/19 files plus12 lifecycle tests/76 assertions; final root types5/5, four cached. HTTP server semantics did not change with the later native/host-only fixes. Earlier runner/fixture failures are not relabeled PASS.
+
+Standards Review: one hard P2 and one optional duplication note, fixed627d789; open code findings0. Spec Review: same hard P2 fixed, open code findings0; partial acceptance gates persist. N10 supplies actual failing-before/passing-after evidence, not merely a mock response. No claim of provider/human approval follows.
+
+Remaining risks are explicit in the supplement: cold hidden-column initialization error (literal-width0 HTTP500/engine-3, cause unproved); unverified hidden-target/queued-removal/native combinations; native modal footer clipping; earliest clipboard/permission state not backed up; and earlier concurrent-deletion P2034 availability observation. None was hidden by disabling integrity checks, weakening guards or inventing settlement.
+
+Root build/lint/workflow generation, visual inspection and owned-resource teardown are recorded below only after execution.
+
+### Executed final root checks and teardown
+
+- Root `fix` and `check` passed across all40 integrated changed JS/TS/JSON source/test files. First final lint found a needless async callback in the new blocked-continuation test; removing only that async keyword fixed it. Correct configured web suite then passed again:282 UI tests/19 files plus12 lifecycle tests/76 assertions. Application bytes did not change.
+- Root `check-types` passed5/5, four cached, after that test-only change. Root `build` passed3/3, one cached.
+- `docs:workflow:build` and `docs:workflow:check` passed:312 runtime/deployment files,22 rendered diagrams,25 page declarations,104 API declarations,35 models. Actual offline HTML loaded all22 images; affected08/18/20/21 zoom-in/fit controls, source-link hrefs and current known-commit explanation were exercised. Rendered Correction flow was visually inspected. Source-link filesystem validation also passed.
+- Published final supplement has13 original-format PNGs audited for possible complete file-URL pixels, valid local links and scoped typed evidence. No image-codec dependency added. Initial five worker WebPs retain their earlier separate audit/source.
+- Removed13 clean merged owned worktrees and13 merged task branches using non-force removal and `branch -d`; retained delivery checkout/integration branch, original feature branch and unrelated/prunable worktrees. No global prune.
+- Stopped only owned Vite/application/synthetic-provider services and removed only the owned gateway container. Its supervisor exit137 was expected from deliberate container removal, not an application test failure. All five owned listeners were closed; shared PostgreSQL5433, RustFS9000 and ONLYOFFICE8081 remained reachable.
+- Disposable teardown deleted1503 objects in only `folio-ecm-safety-1426b49032`, verified that bucket absent, dropped only `folio_ecm_safety_1426b49032` and `folio_ecm_safety_http_1426b49032`, and verified both absent. This is synthetic resource teardown, **not** DCM DELETE acceptance, original-request settlement, or erasure of shared native caches. Private fixture/credential/probe files are removed as the final owned-directory cleanup.
+- Original nine Wayfinder issue files had zero committed changes relative to the pre-work baseline. No push/deploy or real DCM call occurred. Local source/tests do not close03/06 native acceptance,07–10 evidence gates or human review.

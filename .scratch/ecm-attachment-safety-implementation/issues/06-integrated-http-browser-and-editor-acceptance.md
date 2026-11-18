@@ -13,16 +13,16 @@
 ## Acceptance criteria
 
 - [x] ตรวจ actual delivery integration source ที่รวม 01–05 แล้ว บันทึก revision และ Working Tree differences/hash ที่เกี่ยวข้อง ไม่ใช้ผล child worktree หรือผลก่อน source เปลี่ยนเป็น acceptance ของชุดรวม
-- [ ] แต่ละ prerequisite ticket มี targeted end-to-end verification ของตนแล้ว ตั๋วนี้ตรวจ cross-feature interaction ไม่ใช้เป็นข้ออ้างส่งตั๋วก่อนหน้าที่มีแต่ scaffold หรือยังไม่รัน changed path
-- [ ] รัน named H01–H10 ผ่าน existing actual-app HTTP seam กับ isolated DB/store และ controlled provider ตรวจ canonical JSON/XLSX/paired receipt/reference/snapshot atomicity/physical targets/no-extra-dispatch ตาม spec ไม่สร้าง seam/mock service layer ใหม่
-- [ ] ยืนยัน first Submit, default next round และ same-number Submit รอบถัดไปจริง ครบ scalar/table/Correction consumers ไม่เปลี่ยนเลข/แม่แบบ บังคับ Save Draft ก่อน หรือสกัด auto-start route เพื่ออ้างว่าปัญหาผ่าน
+- [x] แต่ละ prerequisite ticket มี targeted end-to-end verification ของตนแล้ว ตั๋วนี้ตรวจ cross-feature interaction ไม่ใช้เป็นข้ออ้างส่งตั๋วก่อนหน้าที่มีแต่ scaffold หรือยังไม่รัน changed path
+- [x] รัน named H01–H10 ผ่าน existing actual-app HTTP seam กับ isolated DB/store และ controlled provider ตรวจ canonical JSON/XLSX/paired receipt/reference/snapshot atomicity/physical targets/no-extra-dispatch ตาม spec ไม่สร้าง seam/mock service layer ใหม่
+- [x] ยืนยัน first Submit, default next round และ same-number Submit รอบถัดไปจริง ครบ scalar/table/Correction consumers ไม่เปลี่ยนเลข/แม่แบบ บังคับ Save Draft ก่อน หรือสกัด auto-start route เพื่ออ้างว่าปัญหาผ่าน
 - [ ] Actual browser/ONLYOFFICE journey U01–U06 พิสูจน์ minimum-row/buttons/native guard/navigation/loading/keyboard/focus/pending/unknown/cleanup/newer-pending และ selected historical revision โดยใช้ routes/permissions/Correction eligibility จริง
 - [ ] Matrix ครอบคลุม User Draft/Admin Correction, ordinary XLSX/old PoC/durable legacy/template ตามแต่ละ contract และ saved/pending replacement/removal/invalid/zero-byte/empty gaps/หลาย attachment columns ที่เกี่ยวข้อง ไม่เพิ่ม row commands ให้ Correction
-- [ ] เก็บ actual browser/editor version, command/actions, source/environment/date, before-after workbook/mapping/pending และ sanitized screenshots/transport ที่จำเป็น ไม่ใช้ Builder-only, mocked router/bridge, HTTP 200 หรือจำนวน tests เป็น UI/native proof
-- [ ] Local receipt/history/mapping assertions คง exact-byte protection ตามแผนเดิม Runtime integrity/security checks ไม่ถูกถอด และไม่เพิ่ม byte-comparison/aggregate-capacity workload กลับเข้า provider type/size plan
-- [ ] Regression tests ตรวจ external behavior/boundaries/transitions/semantic errors ไม่พิน exact wording/source text/wiring/mock echoes ลบ obsolete incidental assertions แทนการ re-pin และไม่เปลี่ยน provider double เพื่อซ่อน conflict
-- [ ] ตรวจ affected callsites/types/tests/fixtures และ docs ของแต่ละ implementation slice ครบ ไม่มี counter fallback/compatibility shim/temporary instrumentation/throwaway scaffold ค้างที่ไม่จำเป็น
-- [ ] Domain/canonical behavior และ system map ตรง latest implemented policy โดยเก็บ historical evidence แยก Run root scripts ที่เกี่ยวข้องกับ code change รวม workflow build/check และเปิด generated system map ตรวจภาพ/คำอธิบายจริงตาม repo convention
+- [x] เก็บ actual browser/editor version, command/actions, source/environment/date, before-after workbook/mapping/pending และ sanitized screenshots/transport ที่จำเป็น ไม่ใช้ Builder-only, mocked router/bridge, HTTP 200 หรือจำนวน tests เป็น UI/native proof
+- [x] Local receipt/history/mapping assertions คง exact-byte protection ตามแผนเดิม Runtime integrity/security checks ไม่ถูกถอด และไม่เพิ่ม byte-comparison/aggregate-capacity workload กลับเข้า provider type/size plan
+- [x] Regression tests ตรวจ external behavior/boundaries/transitions/semantic errors ไม่พิน exact wording/source text/wiring/mock echoes ลบ obsolete incidental assertions แทนการ re-pin และไม่เปลี่ยน provider double เพื่อซ่อน conflict
+- [x] ตรวจ affected callsites/types/tests/fixtures และ docs ของแต่ละ implementation slice ครบ ไม่มี counter fallback/compatibility shim/temporary instrumentation/throwaway scaffold ค้างที่ไม่จำเป็น
+- [x] Domain/canonical behavior และ system map ตรง latest implemented policy โดยเก็บ historical evidence แยก Run root scripts ที่เกี่ยวข้องกับ code change รวม workflow build/check และเปิด generated system map ตรวจภาพ/คำอธิบายจริงตาม repo convention
 - [x] รายงาน local result, unverified browser/editor boundary, provider evidence, old-data authorization และ human review แยกกัน หาก runtime เข้าไม่ถึงให้ระบุ exact missing prerequisite และ scenario ที่ยังไม่ผ่าน ไม่ลด scope หรืออ้าง test double แทน
 - [x] ส่ง acceptance report ที่ผูก stories/scenarios/revision กับ observed evidence และ remaining HOLD ให้ pyw1tt ตรวจ ไม่ประกาศ release/Production PASS หรืออนุญาต push/deployจาก local checks
 
@@ -47,3 +47,20 @@ Provider evidence tickets 07–09 และ old-data ticket 10 ไม่บล�
 - คง `needs-info`/ไม่ resolve เพราะ remaining native cases ยัง reachable และ parent รับทำต่อ: actual unknown/checkpoint/reentry/saved-copy; Q3/Q4 host/plugin warning distinction; confirmed removal/invalid/pending combinations; native structural/drag/keyboard/cross-sheet/hidden-zero-geometry targets; route/back/refresh/close/File-loss matrix และ newer confirmed-removal generation หลักฐาน HTTP ไม่แทน native gaps เหล่านี้
 - Private continuation: `local://ecm-safety-06-continuation.md`; live owned tab `safety-native-06` อยู่ Admin legacy Response `0f428025-d045-45fa-a4d8-f7c105452b14`, independent UNKNOWN06/year2567 savedA4bytes และ picker baseline เปิดอยู่ ไม่มี removal staged ชื่อ UNKNOWN06 ไม่ใช่ผล unknown Request ไม่ทิ้งงานหรือ cleanup runtime ของ parent
 - ไม่มี real DCM/PDMS/real DELETE/push/deploy; Hindsight bank discovery skipped เนื่องจาก mounted selectors ไม่รองรับ bank/types/budget ไม่มี bank writes Child ไม่รัน test suites/build/lint/formatters; parent-reported resultsมี provenance แยกใน report ไม่กล่าว all native passed หรือ user-approved scope reduction
+
+### Parent final integrated disposition — 2026-11-19
+
+- [Final native supplement](../acceptance/06-native-final/report.md) adds N09–N18 without relabeling initial N01–N08 source. Includes scoped typed evidence, sanitized native screenshots and separate Standards/Spec review resolutions.
+- Actual lost acknowledgement/original lookup/reentry, own-Draft/history warnings, saved-receipt removal/invalid/zero/minimum-row, navigation/File loss, ordinary paste, native zero-height/zero-width and visible adjacent-slot coupling are now observed. The former generic “not executed” entries are superseded only for these named cases.
+- Source readiness01/02/04/05 is ready-for-human.03/06 remain needs-info: no certified hidden-target invocation/export, successful forbidden structural mutation or full queued-confirmed-removal/role-contract matrix. Cold hidden-column initialization returned a real error; not classified safely rejected. User acceptance remains pending, not silently waived.
+- Tests:246 unique existing actual-app HTTP cases/10,957 assertions; spreadsheet118/324; Builder14/264; final plugin343; configured web282 plus12 lifecycle cases; final root types5/5,4 cached. Parent final report records root lint/build/workflow/visual and owned-resource cleanup separately after execution.
+- Standards hard P2 and the same Spec P2 are fixed627d789 with actual before/after native evidence. No open code finding from those reviews; evidence gates are still open. Existing P2034 deletion interleaving, native modal clipping and earliest clipboard-state uncertainty remain explicit risks.
+- Provider07/08, settlement09, old-data10, human review, real-data/DCM/DELETE and deployment boundaries remain unchanged. No9 Wayfinder ticket was edited or replaced.
+
+### Final root verification — 2026-11-19
+
+- Root fix/check40 owned integrated source/test files passed after removing a needless async test callback; configured web suite passed again282 UI plus12 lifecycle. Final types5/5, build3/3 and workflow build/check22 diagrams/312 sources passed. Actual offline guide loaded22 images and affected zoom/source-link/recovery surfaces were checked.
+- Removed13 clean merged task worktrees/branches; owned gateway/services/listeners and disposable bucket1503 objects/two databases were removed and absence checked. Shared services and delivery/original branches remain. Synthetic teardown is not provider DELETE/finality evidence.
+- Final native supplement publishes13 audited PNGs and valid scoped evidence links. Partial native cells and07–10/human HOLD remain; no blanket acceptance box is checked for those boundaries.
+
+- Final cleanup verified private fixture/credential/provider/probe directory absent and removed six exact owned temporary screenshot originals after preserving audited evidence. No managed safety tab lease remains. Shared browser/native cache erasure and original pre-test clipboard restoration are not claimed.

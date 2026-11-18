@@ -1,0 +1,349 @@
+{
+  "scope": "isolated synthetic runtime, not provider or full native acceptance",
+  "beforeSource": "3652d7a2634a340d24900c509803863b1f8c48c0",
+  "afterSource": "817037ce5e9ec2223aaf4a831ba8652bd447a122",
+  "finalSameApplicationSource": "c91472d94fb8ddd8c06f7c08ad2c7709674319b5",
+  "typedCases": {
+    "retained-draft-4-safe.json": {
+      "source": "3652d7a",
+      "at": "2026-11-18T19:57:19.633Z",
+      "responseId": "0f428025-d045-45fa-a4d8-f7c105452b14",
+      "documentKey": "response-0f428025-d045-45fa-a4d8-f7c105452b14-25a96b12-5ed0-4f88-9e27-6f0f04f78022",
+      "originalName": "original.BIN",
+      "sizeBytes": 4,
+      "receiptPairSha256": "16ffe82c4d742713d7309184577fa974088ed2853e354d3fe5d2138267f40d52",
+      "canonicalProtectedProjectionMatches": true,
+      "ordinaryAnswer": "KEEP PROJECTION",
+      "references": [
+        {
+          "versionId": "909071ac-a4ed-4f48-9fb3-5e4298482535",
+          "rowIndex": null
+        }
+      ],
+      "posts": 16,
+      "deletes": 3
+    },
+    "retained-draft-0-safe.json": {
+      "source": "3652d7a",
+      "at": "2026-11-18T19:59:33.432Z",
+      "responseId": "0f428025-d045-45fa-a4d8-f7c105452b14",
+      "documentKey": "response-0f428025-d045-45fa-a4d8-f7c105452b14-e323f2db-0386-4578-ab0a-30235448c330",
+      "originalName": "zero.BIN",
+      "sizeBytes": 0,
+      "receiptPairSha256": "aa9c32257b4feeb54408889f4e93f2ed0f64e5550aa086d77446168f0b8209b5",
+      "canonicalProtectedProjectionMatches": true,
+      "ordinaryAnswer": "KEEP PROJECTION",
+      "references": [
+        {
+          "versionId": "d84f9f7e-ebbe-45d0-9ec7-10036f5d5f1b",
+          "rowIndex": null
+        }
+      ],
+      "posts": 17,
+      "deletes": 4
+    },
+    "native-q4-before-safe.json": {
+      "scenario": "q4",
+      "stage": "before",
+      "source": "3652d7a",
+      "at": "2026-11-18T20:12:01.499Z",
+      "responseId": "0f0e22f4-27c2-4397-b928-7f893b7f3248",
+      "canonicalUnchanged": false,
+      "canonicalFileSize": 0,
+      "references": [
+        {
+          "versionId": "ed629d28-f1b7-4970-8c95-3f5fa92f0779",
+          "rowIndex": null
+        }
+      ],
+      "operation": {
+        "id": "7a0322a8-ae70-48b5-bc2c-76cf8ebc8d26",
+        "type": "save_draft",
+        "status": "completed",
+        "reason": null
+      },
+      "posts": 18,
+      "deletes": 4
+    },
+    "native-q4-after-safe.json": {
+      "scenario": "q4",
+      "stage": "after",
+      "source": "3652d7a",
+      "at": "2026-11-18T20:13:37.435Z",
+      "responseId": "0f0e22f4-27c2-4397-b928-7f893b7f3248",
+      "canonicalUnchanged": true,
+      "canonicalFileSize": 0,
+      "references": [
+        {
+          "versionId": "ed629d28-f1b7-4970-8c95-3f5fa92f0779",
+          "rowIndex": null
+        }
+      ],
+      "operation": {
+        "id": "ee1b1f4e-d69b-4e46-8b4b-d5772e36c3d1",
+        "type": "save_draft",
+        "status": "failed",
+        "reason": "attachment_draft_receipt_conflict"
+      },
+      "posts": 19,
+      "deletes": 4
+    },
+    "native-q3-before-safe.json": {
+      "scenario": "q3",
+      "stage": "before",
+      "source": "3652d7a",
+      "at": "2026-11-18T20:29:10.617Z",
+      "responseId": "930ee1e4-a807-41a7-8dd0-b69b66559d76",
+      "canonicalUnchanged": false,
+      "canonicalFileSize": null,
+      "references": [],
+      "operation": {
+        "id": "d81cf89a-40be-4a3b-8e41-5673d4df50c4",
+        "type": "save_draft",
+        "status": "completed",
+        "reason": null
+      },
+      "posts": 20,
+      "deletes": 4
+    },
+    "native-q3-after-safe.json": {
+      "scenario": "q3",
+      "stage": "after",
+      "source": "3652d7a",
+      "at": "2026-11-18T20:30:08.834Z",
+      "responseId": "930ee1e4-a807-41a7-8dd0-b69b66559d76",
+      "canonicalUnchanged": true,
+      "canonicalFileSize": null,
+      "references": [],
+      "operation": {
+        "id": "49e5d600-1539-4433-874e-e1c5a165edb8",
+        "type": "save_draft",
+        "status": "failed",
+        "reason": "attachment_history_receipt_conflict"
+      },
+      "posts": 21,
+      "deletes": 4
+    },
+    "native-unknown-before-safe.json": {
+      "scenario": "unknown",
+      "stage": "before",
+      "source": "3652d7a",
+      "at": "2026-11-18T20:18:55.835Z",
+      "responseId": "23ece233-517f-4a6d-a4a7-ab1e0023bb76",
+      "canonicalUnchanged": false,
+      "canonicalFileSize": null,
+      "references": [],
+      "operation": null,
+      "posts": 19,
+      "deletes": 4
+    },
+    "native-unknown-after-safe.json": {
+      "scenario": "unknown",
+      "stage": "after",
+      "source": "3652d7a",
+      "at": "2026-11-18T20:20:21.406Z",
+      "responseId": "23ece233-517f-4a6d-a4a7-ab1e0023bb76",
+      "canonicalUnchanged": true,
+      "canonicalFileSize": null,
+      "references": [],
+      "operation": {
+        "id": "9dbdf47b-207f-419f-8fc3-d89f68d4d352",
+        "type": "save_draft",
+        "status": "failed",
+        "reason": "ecm_rejected"
+      },
+      "posts": 20,
+      "deletes": 4
+    },
+    "native-saved-removal-safe.json": {
+      "source": "3652d7a",
+      "at": "2026-11-18T20:45:57.762Z",
+      "responseId": "0f428025-d045-45fa-a4d8-f7c105452b14",
+      "documentKey": "response-0f428025-d045-45fa-a4d8-f7c105452b14-1d5a69a6-0e1d-4be0-a0fa-01a689b1c9e5",
+      "bodyRows": 1,
+      "canonicalScalarBytes": 0,
+      "canonicalTableBytes": 0,
+      "physicalRowIndex": 0,
+      "ordinaryPreserved": true,
+      "references": [
+        {
+          "versionId": "d84f9f7e-ebbe-45d0-9ec7-10036f5d5f1b",
+          "rowIndex": null
+        },
+        {
+          "versionId": "e62299bc-9be3-4633-9ad8-d17a05683e2e",
+          "rowIndex": 0
+        }
+      ],
+      "posts": 22,
+      "deletes": 4,
+      "localChangesDiscarded": "C10 saved-receipt removal and D10 zero-byte pending selection; canonical C10 retained"
+    },
+    "native-continuation-before-fix-safe.json": {
+      "source": "3652d7a",
+      "scenario": "before-fix",
+      "at": "2026-11-18T21:00:25.504Z",
+      "responseId": "0f428025-d045-45fa-a4d8-f7c105452b14",
+      "operationId": "49ee3c6f-3648-46cb-af88-6b09f83fe5c2",
+      "operationStatus": "completed",
+      "documentKey": "response-0f428025-d045-45fa-a4d8-f7c105452b14-0ee61ede-030d-4a59-a8e0-4e14016465a1",
+      "canonicalScalarBytes": 4,
+      "canonicalTableBytes": 0,
+      "ordinaryPreserved": true,
+      "canonicalProjectionMatches": true,
+      "references": [
+        {
+          "versionId": "0bcdd236-1daa-4bd5-9f44-54cd5029a706",
+          "rowIndex": null
+        },
+        {
+          "versionId": "e62299bc-9be3-4633-9ad8-d17a05683e2e",
+          "rowIndex": 0
+        }
+      ],
+      "posts": 23,
+      "deletes": 5
+    },
+    "native-continuation-after-fix-safe.json": {
+      "source": "817037c",
+      "scenario": "after-fix",
+      "at": "2026-11-18T21:08:48.184Z",
+      "responseId": "0f428025-d045-45fa-a4d8-f7c105452b14",
+      "operationId": "9d280333-f48d-4a6b-8c4c-d43c3db980c3",
+      "operationStatus": "completed",
+      "documentKey": "response-0f428025-d045-45fa-a4d8-f7c105452b14-578bb4f7-d4c0-45c0-b0f1-17f9d16677d7",
+      "canonicalScalarBytes": 3,
+      "canonicalTableBytes": 0,
+      "ordinaryPreserved": true,
+      "canonicalProjectionMatches": true,
+      "references": [
+        {
+          "versionId": "6e05878a-5170-423d-9e52-1cb62af516b0",
+          "rowIndex": null
+        },
+        {
+          "versionId": "e62299bc-9be3-4633-9ad8-d17a05683e2e",
+          "rowIndex": 0
+        }
+      ],
+      "posts": 24,
+      "deletes": 6
+    },
+    "native-continuation-lost-ack-safe.json": {
+      "source": "817037c",
+      "scenario": "lost-ack",
+      "at": "2026-11-18T21:24:27.679Z",
+      "responseId": "0f428025-d045-45fa-a4d8-f7c105452b14",
+      "operationId": "057e4205-df07-4454-8184-71cf64c8e3c6",
+      "operationStatus": "completed",
+      "documentKey": "response-0f428025-d045-45fa-a4d8-f7c105452b14-544d823b-f883-4670-88a2-37cb33298034",
+      "canonicalScalarBytes": 4,
+      "canonicalTableBytes": 0,
+      "ordinaryPreserved": true,
+      "canonicalProjectionMatches": true,
+      "references": [
+        {
+          "versionId": "da7a4159-9f5f-43eb-8762-3a13317ee5fc",
+          "rowIndex": null
+        },
+        {
+          "versionId": "e62299bc-9be3-4633-9ad8-d17a05683e2e",
+          "rowIndex": 0
+        }
+      ],
+      "posts": 25,
+      "deletes": 7
+    },
+    "initialized-hidden06-fixture-safe.json": {
+      "source": "c91472d",
+      "formId": "c05066c1-d8a1-43b7-8d6f-39cdab6e696d",
+      "responseId": "84b2ddc4-9cb5-45d2-99bc-f6a7285a49a5",
+      "sourceResponseId": "2ef31325-5dfc-4d6c-9f0d-5de0b0942219",
+      "storedWidth": 0,
+      "hidden": true,
+      "sha256": "9075d114207f10ed1b579bd8aaa8bef313716a74eda4d5847e54fe4795b28830",
+      "setup": "Owned already-initialized historical Draft fixture only: copied actual blank initialized native workbook; changed only worksheet cols; retained every control/protection part; no submitted status flip, no normal cold-initialization acceptance claim; earlier cold-builder failure retained separately"
+    },
+    "zero-width06-failed-fixture.json": {
+      "formId": "c05066c1-d8a1-43b7-8d6f-39cdab6e696d",
+      "publicId": "e16b914d827a452d8d3be6786a95f8b7",
+      "source": "c91472d",
+      "storedColumnCWidth": 0,
+      "hidden": true,
+      "result": "Editor config HTTP500 internal_error; owned server stack Spreadsheet engine failed (-3), engine.ts229 -> spreadsheet-document.ts175 -> userEditorConfig416. No native editor or file action reached. Not certified safely rejected; cause not established. Separate compatible hidden-column fixture follows; not a replacement of this failed result."
+    }
+  },
+  "finalUserObserved": {
+    "source": "c91472d",
+    "role": "user",
+    "ordinaryInput": true,
+    "drawings": 5,
+    "stayThenExplicitDiscard": true
+  },
+  "historicalHiddenNativeObserved": {
+    "source": "c91472d",
+    "fixture": "initialized historical, not cold initialization",
+    "nativeReached": true,
+    "columnC": 0,
+    "columnD": 96,
+    "c10": {
+      "_x": 221,
+      "_y": 190,
+      "_width": 0,
+      "_height": 19
+    },
+    "d10": {
+      "_x": 221,
+      "_y": 190,
+      "_width": 96,
+      "_height": 19
+    },
+    "drawings": 5,
+    "protected": true,
+    "visibleAdjacentPending": {
+      "host": {
+        "correctTag": true,
+        "wrongTag": false,
+        "pending": true
+      },
+      "primary": "พร้อมเปิดช่องแนบไฟล์ ดูไฟล์ที่บันทึกแล้วหรือเลือกไฟล์ใหม่ การเลือกจะมีผลเมื่อบันทึกฟอร์มสำเร็จ\n\nเพิ่มแถว\nลบแถวที่เลือก"
+    },
+    "hiddenSelection": {
+      "actual": {
+        "row": 9,
+        "col": 2
+      },
+      "pickerOpened": false,
+      "hiddenDrawingWidths": [
+        0,
+        0
+      ]
+    },
+    "explicitLocalDiscard": true
+  },
+  "uiObserved": {
+    "continuationBefore": {
+      "serverCommitConfirmed": true,
+      "falseUnknownNotice": true,
+      "sameFrameAndLaterCandidate": true
+    },
+    "continuationAfter": {
+      "serverCommitConfirmed": true,
+      "falseUnknownNotice": false,
+      "sameFrameAndLaterCandidate": true,
+      "busy": false,
+      "inert": true,
+      "saveDisabled": true
+    },
+    "lostAck": {
+      "operationId": "057e4205-df07-4454-8184-71cf64c8e3c6",
+      "checkpointId": "533c32dc-ddd0-4023-93fd-dc68889ca9a9",
+      "originalServerCompleted": true,
+      "checkpointSurvivedExplicitLocalDiscard": true,
+      "authenticReentryReconciledBeforeMutation": true,
+      "checkpointClearedOnlyAfterVerifiedReconciliation": true,
+      "providerPostCountBeforeAndAfter": 25,
+      "providerDeleteCountBeforeAndAfter": 7
+    }
+  }
+}

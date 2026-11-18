@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** in-progress — integrated; isolated HTTP/native builder and ordinary-browser checks pass; full native surface matrix remains in ticket 06
+**Status:** ready-for-human
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US41–55; H07–H08 และ U01
 
@@ -12,19 +12,19 @@
 
 ## Acceptance criteria
 
-- [ ] Minimum one body row ใช้กับ ordinary XLSX tables, old Published PoC และ durable legacy/template ทั้งมีและไม่มี attachment ไม่รวมหัวตาราง และไม่เพิ่ม row controls ให้ Correction หรือพื้นที่ที่เดิมแก้ไม่ได้
-- [ ] เมื่อเหลือหนึ่ง body row คำสั่ง delete-selected ถูก disabled พร้อมเหตุผลที่เข้าใจได้ Server ตรวจ trusted current document/revision ก่อนเริ่ม mutation ไม่พึ่งปุ่ม disabled, active answer count หรือ attachment-only branch
-- [ ] Builder และ full-mapping consumers ไม่ clear/delete แถวสุดท้าย Direct/stale/racing requests ถูกปฏิเสธโดยไม่เปลี่ยน canonical revision/workbook ranges/input/formulas/validation/buttons/JSON/references
-- [ ] Rejected last-row delete รักษา saved attachment, pending replacement/removal และ invalid-selection state เดิม ไม่มี ECM POST/DELETE และไม่ remount แล้วทำ File หาย
-- [ ] ลบจากสองเหลือหนึ่งได้ตามสิทธิ์และ guards เดิม สั่งลบซ้ำไม่ได้ เพิ่มแถวกลับแล้วลบแถวที่อนุญาตต่อได้ Save Draft/Submit/reopen ใช้งานต่อได้โดยไม่สร้าง empty snapshot แทนการลบที่ถูกห้าม
-- [ ] ไม่มี clear-last-row action หรือ confirmation ใหม่ ไม่ลบแถวอัตโนมัติเพื่อบังคับจำนวน และไม่กลับไปใช้ clear-one/delete-zero proposal เก่า
-- [ ] ทุก configured attachment column มีปุ่มในทุก body-row cell ไม่รวมหัวตาราง แถวใหม่มีปุ่มครบแต่ไม่มีไฟล์/receipt ที่ copy จากแถวต้นแบบ
-- [ ] การนำ File ออกจากคำตอบไม่ลบ control/configuration การลบปุ่มรายเซลล์โดยคง column configuration ต้องไม่ผ่าน trusted saved-button validation ไม่เปลี่ยน incomplete Template Draft rules, immutable Published configuration หรือ read-only/export URL projection
-- [ ] Supported row transitions รักษา identity และ current physical position ของ survivors ไม่ใช้ compact answer index ไม่ rename/reupload unchanged files และ internal row save ไม่ dispatch ECM POST/DELETE
-- [ ] Empty physical row ไม่กลายเป็น active answerเพียงเพราะมีปุ่มแนบ Attachment-only rows รวม zero-byte ยังคง active/requiredness ตาม contract เดิม ไม่มี required-file rule ใหม่จาก minimum-row policy
-- [ ] ใช้ existing HTTP seam ตรวจหนึ่ง row ว่าง/ordinary/saved/zero-byte/pending/removal/invalid states, direct/stale/race และ two-to-one/repeated-delete/append cases ทั้งตารางมีและไม่มีปุ่ม ตรวจ rejected snapshots และ no-write/no-loss
-- [ ] ใช้ actual browser/ONLYOFFICE ตรวจ delete control, keyboard/repeated action, buttons ทุก configured column และ Save/reopen ของ changed path Builder-only proof ไม่แทน native control evidence
-- [ ] ปรับ affected UI/server/builder tests/fixtures/docs และ system map ใน change เดียวกัน คงสิทธิ์เดิมและระบุ source/runtime limits ตามจริง ไม่รัน reproduction เก่าเพื่อยืนยัน user-reported finding ซ้ำ
+- [x] Minimum one body row ใช้กับ ordinary XLSX tables, old Published PoC และ durable legacy/template ทั้งมีและไม่มี attachment ไม่รวมหัวตาราง และไม่เพิ่ม row controls ให้ Correction หรือพื้นที่ที่เดิมแก้ไม่ได้
+- [x] เมื่อเหลือหนึ่ง body row คำสั่ง delete-selected ถูก disabled พร้อมเหตุผลที่เข้าใจได้ Server ตรวจ trusted current document/revision ก่อนเริ่ม mutation ไม่พึ่งปุ่ม disabled, active answer count หรือ attachment-only branch
+- [x] Builder และ full-mapping consumers ไม่ clear/delete แถวสุดท้าย Direct/stale/racing requests ถูกปฏิเสธโดยไม่เปลี่ยน canonical revision/workbook ranges/input/formulas/validation/buttons/JSON/references
+- [x] Rejected last-row delete รักษา saved attachment, pending replacement/removal และ invalid-selection state เดิม ไม่มี ECM POST/DELETE และไม่ remount แล้วทำ File หาย
+- [x] ลบจากสองเหลือหนึ่งได้ตามสิทธิ์และ guards เดิม สั่งลบซ้ำไม่ได้ เพิ่มแถวกลับแล้วลบแถวที่อนุญาตต่อได้ Save Draft/Submit/reopen ใช้งานต่อได้โดยไม่สร้าง empty snapshot แทนการลบที่ถูกห้าม
+- [x] ไม่มี clear-last-row action หรือ confirmation ใหม่ ไม่ลบแถวอัตโนมัติเพื่อบังคับจำนวน และไม่กลับไปใช้ clear-one/delete-zero proposal เก่า
+- [x] ทุก configured attachment column มีปุ่มในทุก body-row cell ไม่รวมหัวตาราง แถวใหม่มีปุ่มครบแต่ไม่มีไฟล์/receipt ที่ copy จากแถวต้นแบบ
+- [x] การนำ File ออกจากคำตอบไม่ลบ control/configuration การลบปุ่มรายเซลล์โดยคง column configuration ต้องไม่ผ่าน trusted saved-button validation ไม่เปลี่ยน incomplete Template Draft rules, immutable Published configuration หรือ read-only/export URL projection
+- [x] Supported row transitions รักษา identity และ current physical position ของ survivors ไม่ใช้ compact answer index ไม่ rename/reupload unchanged files และ internal row save ไม่ dispatch ECM POST/DELETE
+- [x] Empty physical row ไม่กลายเป็น active answerเพียงเพราะมีปุ่มแนบ Attachment-only rows รวม zero-byte ยังคง active/requiredness ตาม contract เดิม ไม่มี required-file rule ใหม่จาก minimum-row policy
+- [x] ใช้ existing HTTP seam ตรวจหนึ่ง row ว่าง/ordinary/saved/zero-byte/pending/removal/invalid states, direct/stale/race และ two-to-one/repeated-delete/append cases ทั้งตารางมีและไม่มีปุ่ม ตรวจ rejected snapshots และ no-write/no-loss
+- [x] ใช้ actual browser/ONLYOFFICE ตรวจ delete control, keyboard/repeated action, buttons ทุก configured column และ Save/reopen ของ changed path Builder-only proof ไม่แทน native control evidence
+- [x] ปรับ affected UI/server/builder tests/fixtures/docs และ system map ใน change เดียวกัน คงสิทธิ์เดิมและระบุ source/runtime limits ตามจริง ไม่รัน reproduction เก่าเพื่อยืนยัน user-reported finding ซ้ำ
 
 ## Scope boundaries
 
@@ -77,3 +77,9 @@ Native browser smoke remains pending: on an ordinary table and each editable att
 - Actual browser: HeadlessChrome/150.0.0.0, ONLYOFFICE 9.4.0-129, isolated app/database/bucket and controlled local provider. Ordinary table showed disabled delete and a visible reason at one body row. Actual Add row enabled deletion; typing `KEEP ROW` in B10 and deleting B11 left one row and disabled deletion again. Saved native XLSX and canonical JSON both retained `KEEP ROW`. Subsequent explicit navigation discard retained the same canonical document key and data. Observed provider events were empty: zero POST/DELETE.
 - Shared domain context, system-map flow/table descriptions and generated guide were updated. Workflow build/check passed for 22 diagrams and 312 runtime/deployment files; the generated HTML loaded all 22 images.
 - This is not full ticket closure: attachment browser surfaces, remaining state/transition matrix and integrated HTTP attachment cases still need ticket 06 evidence. Controlled-provider results do not establish DCM or Production acceptance.
+
+### Final integration evidence — 2026-11-19
+
+- Source and representative native changed paths are ready for human review. Four contracts retain minimum-one-row controls; actual internal row saves preserve physical mappings, pre-existing zero-byte pending and independently usable new-column controls. Native Correction has no row commands.
+- Genuine saved-receipt removal, invalid10,000,001-byte candidate, two independent columns and minimum-row preservation are now documented in [N15/N17](../acceptance/06-native-final/report.md). These supplement enabled HTTP row/history gates; they are not a claim of every Cartesian native permutation.
+- Broader support/role matrix limits remain explicitly in03/06. No provider or Production acceptance and no additional type/size workload.

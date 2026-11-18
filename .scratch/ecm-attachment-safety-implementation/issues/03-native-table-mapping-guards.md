@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 — ทุกตาราง XLSX เหลืออย่างน้อยหนึ่งแถวและปุ่มแนบครบ.
 
-**Status:** in-progress — integrated; targeted HTTP/native-control checks pass; full gesture/role matrix awaits final-source acceptance
+**Status:** needs-info
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US52–63; H08 และ U02
 
@@ -12,20 +12,20 @@
 
 ## Acceptance criteria
 
-- [ ] ใช้ minimum-row/column-button/verified-row-transition contract จากตั๋ว 02 รักษา trusted physical positions และ published column binding ไม่เพิ่ม stable row ID/per-row Tag หรือใช้ compact/visible-row index เป็น identity
-- [ ] Ordinary typing/paste ตาม Field rules และ Undo/Redo ที่ mapping ยังถูกต้องใช้ได้ โดยไม่ถือเป็นการย้ายไฟล์หรือสร้าง receipt Undo ไม่ย้อน pending attachment/committed snapshot/DCM effects และไม่ฟื้น stale receipt
-- [ ] Folio append/delete-selected ใน User Draft รักษา saved/pending/removal/invalid state ของ survivors ผ่าน verified transitions แถวใหม่ไม่ copy File ไม่เพิ่ม row controls ให้ Correction
-- [ ] Sort, drag/move, cut-paste ทั้งแถว/คอลัมน์ และ native insert-delete ไม่ถูกยอมรับเป็นวิธีย้ายไฟล์ที่รองรับ ต้องป้องกันคำสั่งหรือหยุด save ที่ mapping ไม่ยืนยันก่อน external writes/canonical commit รวม same-row-count reorder
-- [ ] Copy/paste URL/drawing/button ไม่สร้างหรือย้าย canonical attachment และไม่ adopt client token/link เป็น ownership evidence
+- [x] ใช้ minimum-row/column-button/verified-row-transition contract จากตั๋ว 02 รักษา trusted physical positions และ published column binding ไม่เพิ่ม stable row ID/per-row Tag หรือใช้ compact/visible-row index เป็น identity
+- [x] Ordinary typing/paste ตาม Field rules และ Undo/Redo ที่ mapping ยังถูกต้องใช้ได้ โดยไม่ถือเป็นการย้ายไฟล์หรือสร้าง receipt Undo ไม่ย้อน pending attachment/committed snapshot/DCM effects และไม่ฟื้น stale receipt
+- [x] Folio append/delete-selected ใน User Draft รักษา saved/pending/removal/invalid state ของ survivors ผ่าน verified transitions แถวใหม่ไม่ copy File ไม่เพิ่ม row controls ให้ Correction
+- [x] Sort, drag/move, cut-paste ทั้งแถว/คอลัมน์ และ native insert-delete ไม่ถูกยอมรับเป็นวิธีย้ายไฟล์ที่รองรับ ต้องป้องกันคำสั่งหรือหยุด save ที่ mapping ไม่ยืนยันก่อน external writes/canonical commit รวม same-row-count reorder
+- [x] Copy/paste URL/drawing/button ไม่สร้างหรือย้าย canonical attachment และไม่ adopt client token/link เป็น ownership evidence
 - [ ] Filter/hidden rows/columns ใช้ file actions ได้เฉพาะเมื่อพิสูจน์ physical target จาก trusted document ได้ Hidden/zero-geometry combinations ต้องมี native proof ก่อนรับรอง ไม่เดา target จากแถวที่มองเห็น
-- [ ] Merge ข้ามแถวหรือย้าย mapped table ข้าม sheet ระหว่างกรอกไม่ผ่าน mapping guard ไม่ใช้ warning อย่างเดียวแทนการป้องกันไฟล์ผิดช่อง
-- [ ] หยุด command ก่อน scope change/remount เมื่อ intercept ได้ และหยุด unproven save ก่อน write/commit เสมอ คง saved snapshot กับ pending Files/removals/invalid selections ใน scope เดิม ไม่ reload/discard/rebind ไปแถวข้างเคียงเพื่อให้ผ่าน
-- [ ] การเลื่อนแถวที่รองรับไม่ rename/reupload และ internal row/project/workspace save ไม่ ECM POST/DELETE คง ownership/history/unknown-operation/reference fencing เดิม
-- [ ] Reconnect/หลายแท็บคง lease/revision/opening/scope guards ไม่ส่งต่อ browser Files ข้ามแท็บ Stale transition ไม่ทิ้ง pending หรือ commit snapshot ผิด
-- [ ] ใช้ existing HTTP seam ตรวจ A/B rows ที่ข้อมูลและ bytes ต่างกัน หลาย attachment columns, empty gaps, saved/pending replacement/removal/invalid/zero-byte states ตรวจ saved JSON/XLSX/current references และ exact bytes ของ survivors ตาม local mapping plan
+- [x] Merge ข้ามแถวหรือย้าย mapped table ข้าม sheet ระหว่างกรอกไม่ผ่าน mapping guard ไม่ใช้ warning อย่างเดียวแทนการป้องกันไฟล์ผิดช่อง
+- [x] หยุด command ก่อน scope change/remount เมื่อ intercept ได้ และหยุด unproven save ก่อน write/commit เสมอ คง saved snapshot กับ pending Files/removals/invalid selections ใน scope เดิม ไม่ reload/discard/rebind ไปแถวข้างเคียงเพื่อให้ผ่าน
+- [x] การเลื่อนแถวที่รองรับไม่ rename/reupload และ internal row/project/workspace save ไม่ ECM POST/DELETE คง ownership/history/unknown-operation/reference fencing เดิม
+- [x] Reconnect/หลายแท็บคง lease/revision/opening/scope guards ไม่ส่งต่อ browser Files ข้ามแท็บ Stale transition ไม่ทิ้ง pending หรือ commit snapshot ผิด
+- [x] ใช้ existing HTTP seam ตรวจ A/B rows ที่ข้อมูลและ bytes ต่างกัน หลาย attachment columns, empty gaps, saved/pending replacement/removal/invalid/zero-byte states ตรวจ saved JSON/XLSX/current references และ exact bytes ของ survivors ตาม local mapping plan
 - [ ] เปิด actual supported browser/ONLYOFFICE ตรวจ native commands และ combinations ข้างต้น แยก User Draft/Admin Correction และ durable legacy/template โดยบันทึก version/command/before-after workbook/mapping/pending/no-extra-write evidence ไม่ใช้ row-count check, VM, Builder หรือ warning อย่างเดียวประกาศ safely rejected
-- [ ] หาก boundary ใดป้องกันหรือตรวจไม่ได้ ให้รายงาน exact unverified boundary และ acceptance ที่ยังไม่ผ่าน ไม่ลด matrix เงียบ ๆ หรืออ้างว่าตั๋วสมบูรณ์เพียงเพราะ unsupported label ปรากฏ
-- [ ] อัปเดต affected consumer tests/fixtures/docs/system map พร้อม changed behavior ไม่ขยายข้อจำกัด fill/Correction ไปห้าม Admin จัด layout ใน Template Draft โดยปริยาย
+- [x] หาก boundary ใดป้องกันหรือตรวจไม่ได้ ให้รายงาน exact unverified boundary และ acceptance ที่ยังไม่ผ่าน ไม่ลด matrix เงียบ ๆ หรืออ้างว่าตั๋วสมบูรณ์เพียงเพราะ unsupported label ปรากฏ
+- [x] อัปเดต affected consumer tests/fixtures/docs/system map พร้อม changed behavior ไม่ขยายข้อจำกัด fill/Correction ไปห้าม Admin จัด layout ใน Template Draft โดยปริยาย
 
 ## Scope boundaries
 
@@ -72,3 +72,10 @@ Blocker 02 จำเป็นเพราะตั๋วนี้ตรวจ na
 - Observed after repairs: six targeted actual-app HTTP cases passed, 348 assertions, covering unsafe captures and old stored User Draft/Admin Correction artifacts in both durable legacy/template modes. Stored canonical bytes/data/keys and provider dispatch counts remained unchanged on protected delivery/rejection. Spreadsheet-unit passed 118 tests, 324 assertions. Root format/lint and typecheck 5/5 passed; server types were fresh, four tasks cached. Plugin build also passed in the preceding check.
 - Actual browser pilot on the pre-final source: HeadlessChrome/150.0.0.0 and ONLYOFFICE 9.4.0-129 showed disabled native sort/filter/insert/delete/merge controls. A real protected managed OLE opened through native context menu `Edit object`; a real disk-backed 4-byte File could be selected, canceled, confirmed as pending and observed after reopening. This is not proof of every shortcut or gesture. The attempted newer-candidate sequence did not complete before the isolated auth session expired; no File recovery is claimed.
 - Full final-source U02 matrix, keyboard/OLE activation, hidden/zero-geometry, four role/contract combinations and combined loading/continuation behavior remain for integrated acceptance. No real DCM or Production acceptance is claimed.
+
+### Final integration evidence and exact remaining native boundary — 2026-11-19
+
+- Source is integrated and HTTP/native changed paths were exercised; this ticket is not certified complete. [Final native report N17/N18](../acceptance/06-native-final/report.md) owns the bounded support matrix.
+- Real protected structural affordances, trusted drags with unchanged anchors, invalid drawing/capture rejection, ordinary external paste, pending retention and verified internal row transitions are observed. Forbidden mutations were not forced through disabled controls.
+- Actual hidden row height0 and actual initialized historical C-column width0/drawing extX0 are observed. Visible adjacent D control genuinely confirms rows.other, not rows.proof. Hidden C namebox selection has no distinct pointer hit region/picker; no hidden-target invocation/export rejection is certified. Cold hidden-column initialization separately failed; literal-width0 returned engine(-3)/HTTP500, cause unproved.
+- Successful cut/reorder/cross-sheet mutation and every role/contract/queued-removal combination remain unverified, not PASS or an approved scope reduction. Human review of this explicit support boundary is pending. Guards/security were not weakened to manufacture evidence.

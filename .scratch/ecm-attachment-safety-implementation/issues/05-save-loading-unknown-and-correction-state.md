@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — เตือนก่อนออกและแยกสถานะไฟล์ที่ยังไม่บันทึก.
 
-**Status:** in-progress
+**Status:** ready-for-human
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US72–81; H09, U04 และส่วน async/pending ของ U05
 
@@ -12,20 +12,20 @@
 
 ## Acceptance criteria
 
-- [ ] Reuse navigation/discard/status contract ของตั๋ว 04 และ existing Operation/pending state แยก active Save, confirmed success/failure, timeout/unknown, postcommit cleanup warning และ completed Correction with newer pending ไม่สร้าง state/persistence subsystem ซ้ำ
-- [ ] Active Save บล็อก native editor/active cell/keyboard edits, file picker, duplicate actions และ app-controlled navigation ครอบคลุม host/plugin/routes ไม่ใช่ loading overlay ที่ยังแก้ workbook ได้
-- [ ] Loading มี accessible status และ focus ตาม platform patterns ผู้ใช้ keyboard ไม่กดส่วนที่ควรถูกบล็อก ไม่ใช้อุปกรณ์ชี้อย่างเดียวพิสูจน์การป้องกัน
-- [ ] Confirmed success/failure จบ loading ตามหลักฐาน Failure รักษา saved canonical answer และ pending ที่ยังอยู่ ไม่ล้าง newer pending ที่ไม่อยู่ใน captured snapshot
-- [ ] HTTP error/timeout อย่างเดียวไม่ถูกถือว่าคำขอเดิมจบโดยไม่มีผล Timeout/unknown เปลี่ยนเป็น persistent unresolved/no-resend notice คง checkpoint/mutation HOLD ไม่ spinner ล็อกทั้งหน้าถาวร
-- [ ] Original-operation recovery และ saved canonical-copy access ตามสิทธิ์ยังใช้ได้ใน unknown state การกลับเข้าหน้าไม่ resend/clear/fence/cancel original request อัตโนมัติ และไม่มี manual unlock จาก token/link/note
-- [ ] Browser refresh/close ยังเป็น best-effort prompt ไม่อ้างว่า loading ห้ามปิดแท็บหรือยกเลิก dispatched request ได้
-- [ ] B ที่ canonical commit สำเร็จแต่ cleanup A ล้ม/unknown ยังคงเป็น successful saved snapshot อ่าน/export ได้ ไม่ full-page lock B แสดง persistent old-public-URL warning Ordinary Save/reload ไม่ retry DELETE หรือทำ warning หาย
+- [x] Reuse navigation/discard/status contract ของตั๋ว 04 และ existing Operation/pending state แยก active Save, confirmed success/failure, timeout/unknown, postcommit cleanup warning และ completed Correction with newer pending ไม่สร้าง state/persistence subsystem ซ้ำ
+- [x] Active Save บล็อก native editor/active cell/keyboard edits, file picker, duplicate actions และ app-controlled navigation ครอบคลุม host/plugin/routes ไม่ใช่ loading overlay ที่ยังแก้ workbook ได้
+- [x] Loading มี accessible status และ focus ตาม platform patterns ผู้ใช้ keyboard ไม่กดส่วนที่ควรถูกบล็อก ไม่ใช้อุปกรณ์ชี้อย่างเดียวพิสูจน์การป้องกัน
+- [x] Confirmed success/failure จบ loading ตามหลักฐาน Failure รักษา saved canonical answer และ pending ที่ยังอยู่ ไม่ล้าง newer pending ที่ไม่อยู่ใน captured snapshot
+- [x] HTTP error/timeout อย่างเดียวไม่ถูกถือว่าคำขอเดิมจบโดยไม่มีผล Timeout/unknown เปลี่ยนเป็น persistent unresolved/no-resend notice คง checkpoint/mutation HOLD ไม่ spinner ล็อกทั้งหน้าถาวร
+- [x] Original-operation recovery และ saved canonical-copy access ตามสิทธิ์ยังใช้ได้ใน unknown state การกลับเข้าหน้าไม่ resend/clear/fence/cancel original request อัตโนมัติ และไม่มี manual unlock จาก token/link/note
+- [x] Browser refresh/close ยังเป็น best-effort prompt ไม่อ้างว่า loading ห้ามปิดแท็บหรือยกเลิก dispatched request ได้
+- [x] B ที่ canonical commit สำเร็จแต่ cleanup A ล้ม/unknown ยังคงเป็น successful saved snapshot อ่าน/export ได้ ไม่ full-page lock B แสดง persistent old-public-URL warning Ordinary Save/reload ไม่ retry DELETE หรือทำ warning หาย
 - [ ] Completed final Correction ที่มี newer File/removal คง editor/browser state ไม่ navigate/remount รับเฉพาะ captured snapshot และแจ้งแยกงานที่บันทึกแล้วจากงานใหม่ที่ยังไม่บันทึก
-- [ ] Retired Correction workspace ไม่ Save ซ้ำ ออกด้วย explicit discard-and-exit ตาม contract หากทำต่อให้เปิด current revision เป็น Correction ใหม่และเลือก File อีกครั้ง ไม่ transfer/reselect File หรือสัญญากู้ bytes หลัง reload
-- [ ] ทดสอบ async interleavings/newer-pending แม้ loading ลดโอกาสเกิด ไม่ลบ safeguard เดิมเพราะสันนิษฐานว่าเลือกไฟล์ใหม่ระหว่างรอไม่ได้
-- [ ] ใช้ actual browser/ONLYOFFICE ตรวจ pointer/keyboard/active-cell/picker/navigation/focus ระหว่าง Save และแต่ละ outcome พร้อม controlled completion/unknown/cleanup scenarios ตรวจ saved state เทียบ pending ไม่ใช้ mock echoes เป็น proof
-- [ ] ใช้ existing HTTP seam พิสูจน์ original checkpoint/no-extra-POST/DELETE/canonical preservation และ cleanup warning persistence ที่เกี่ยวข้อง โดยไม่เพิ่ม timeout/retry/unlock policy ใหม่
-- [ ] ปรับ affected UI/protocol consumers, behavioral regressions และ docs/system map ใน change เดียวกัน ระบุ native/browser source/version และ boundary ที่ยังไม่ตรวจตามจริง
+- [x] Retired Correction workspace ไม่ Save ซ้ำ ออกด้วย explicit discard-and-exit ตาม contract หากทำต่อให้เปิด current revision เป็น Correction ใหม่และเลือก File อีกครั้ง ไม่ transfer/reselect File หรือสัญญากู้ bytes หลัง reload
+- [x] ทดสอบ async interleavings/newer-pending แม้ loading ลดโอกาสเกิด ไม่ลบ safeguard เดิมเพราะสันนิษฐานว่าเลือกไฟล์ใหม่ระหว่างรอไม่ได้
+- [x] ใช้ actual browser/ONLYOFFICE ตรวจ pointer/keyboard/active-cell/picker/navigation/focus ระหว่าง Save และแต่ละ outcome พร้อม controlled completion/unknown/cleanup scenarios ตรวจ saved state เทียบ pending ไม่ใช้ mock echoes เป็น proof
+- [x] ใช้ existing HTTP seam พิสูจน์ original checkpoint/no-extra-POST/DELETE/canonical preservation และ cleanup warning persistence ที่เกี่ยวข้อง โดยไม่เพิ่ม timeout/retry/unlock policy ใหม่
+- [x] ปรับ affected UI/protocol consumers, behavioral regressions และ docs/system map ใน change เดียวกัน ระบุ native/browser source/version และ boundary ที่ยังไม่ตรวจตามจริง
 
 ## Scope boundaries
 
@@ -79,3 +79,10 @@ Blocker 04 เป็น prerequisite ของ navigation/discard behavior ท�
 - Continuation now uses the existing verified native activation seam to restore only authenticated canonical attachment projections, including sparse physical `row_index` values, before enabling editing. It validates all target controls and native single-cell model interfaces first; ordinary answers/history and worksheet/cell protection remain. Backend snapshot and ownership checks are unchanged.
 - The host waits for the pinned frame's exact Operation/key acknowledgement within the existing command deadline. A negative or late native result preserves later work in a known-commit blocked state, not a failed/unknown original upload. The signed configuration lookup uses the same bounded transport deadline. No retry, remount, unprotect, byte comparison or provider policy was added.
 - Executed locally: plugin343 cases across25 files; host continuation36 cases, including foreign/stale acknowledgement rejection and blocked negative acknowledgement; full configured web275 UI cases plus12 lifecycle cases; types5/5, four cached; scoped root check11 files. Final native post-fix acceptance is recorded separately by06, not implied by these runs.
+
+### Final integration evidence and review fix — 2026-11-19
+
+- Source is ready for human review; not universal native/provider acceptance. [N09–N14](../acceptance/06-native-final/report.md) records actual inert/loading/keyboard/focus/duplicate guards, after-store unknown/saved-copy/HOLD/reentry, exact lost-ack checkpoint reconciliation and protected canonical projection before the next genuine File Save.
+- Both review axes found one P2: continuation config retrieval/validation after confirmed commit could incorrectly enter unknown. Fix627d789 keeps known-commit blocked; real failing-before3652d7a/passing-after817037ce proves same frame/later candidate preserved, spinner ended and Save blocked without false unknown or extra POST. Final application bytes matchc91472d.
+- Native final Correction with genuine later chooser candidate and retired-workspace no-resave was exercised earlier with its own revision. Later confirmed-removal after capture/all generation combinations remain native-unverified in06; behavioral regressions do not substitute for those native cases. That acceptance box remains open.
+- Final configured web282 plus12 lifecycle tests, plugin343 and root types5/5 pass. No retry, manual unlock, new timeout policy, remote rollback claim or security weakening.

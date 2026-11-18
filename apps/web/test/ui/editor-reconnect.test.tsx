@@ -866,7 +866,7 @@ it.each([
       send(plugin.source, { type: "bridge-ready" });
       send(plugin.source, { ...receipt, ok: true });
       const retainedDocumentKey = configFailure ? "document-1" : "document-2";
-      await act(async () => {
+      await act(() => {
         send(plugin.source, {
           action: "save-draft",
           body: { documentKey: retainedDocumentKey },

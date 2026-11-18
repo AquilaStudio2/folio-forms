@@ -1,6 +1,6 @@
 # ECM Attachment Safety — สเปก implementation ส่วนที่ยังขาด
 
-Status: ready-for-agent Created: 2026-11-18 Decision baseline: latest resolved decisions ของ ECM Attachment Safety ทั้ง 9 ตั๋ว Source baseline: Working Tree ที่ตรวจวันที่ 2026-11-18; HEAD `ba64bbb969a85589b96dd453783b7dcdbfeccc86` Execution gate: เอกสารสำหรับแตกและตรวจตั๋วเท่านั้น ต้องให้ผู้ใช้ตรวจและอนุมัติตั๋ว implementation ก่อนเริ่มพัฒนา
+Status: needs-info Created: 2026-11-18 Decision baseline: latest resolved decisions ของ ECM Attachment Safety ทั้ง 9 ตั๋ว Original planning source baseline: Working Tree ที่ตรวจวันที่ 2026-11-18; HEAD `ba64bbb969a85589b96dd453783b7dcdbfeccc86` Execution gate: ผู้ใช้อนุมัติให้เริ่ม implementation ในบทสนทนานี้แล้ว โดยให้ commit งานเดิมก่อน ขอบเขต real DCM/ข้อมูลจริง/DELETE/push/deploy ยังต้องใช้สิทธิ์และหลักฐานเฉพาะ ไม่ได้อนุมัติจากตั๋วหรือผลจำลอง
 
 ## Problem Statement
 
@@ -371,3 +371,10 @@ SHA-256 ต่อไปนี้ระบุ Working Tree snapshot ที่ใ�
 [T1]: ../../apps/server/test/http/ecm-scalar-save-submit.test.ts
 [T2]: ../../apps/server/test/http/submission-history.test.ts
 [A]: ../ecm-storage-templates/acceptance-matrix.md
+
+### Implementation disposition — 2026-11-19
+
+- งานเดิมทั้ง branch ถูกเก็บก่อนพัฒนาที่ `838056b1d682fd40623d5db029ad5a1e7c89ad96`; implementation อยู่บน `feat/ecm-attachment-safety-implementation` โดยไม่แก้หรือใช้แทน 9 Wayfinder tickets เดิม
+- Source01–05รวมแล้ว Application baselineล่าสุด `c91472d`;01/02/04/05เป็น ready-for-human ส่วน03/06ยัง needs-info ตาม native support matrix ที่พิสูจน์ได้ ไม่ประกาศสเปก accepted หรือเปลี่ยน policy เพื่อปิดช่องที่ยังไม่ตรวจ
+- [Acceptance report](acceptance-report.md) และ [native supplement N09–N18](acceptance/06-native-final/report.md) แยก revision, actual HTTP/native/browser, before/after bug proof, source-only/unit evidence, partial/unverified และ remaining risks ไว้ชัดเจน ผลเก่าไม่ถูก relabel เป็นผล source ใหม่
+- Provider07/08, original-request settlement09, old-data10 และ human acceptanceยัง HOLD ตาม prerequisites ของตน แม้ local suitesผ่าน ไม่เพิ่ม byte-comparison/aggregate-capacity workload และไม่ถือ teardown ระบบจำลองเป็น provider DELETE/finality evidence
