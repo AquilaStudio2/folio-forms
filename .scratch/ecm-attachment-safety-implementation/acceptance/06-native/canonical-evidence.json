@@ -1,0 +1,1995 @@
+{
+  "at": "2026-11-18T18:29:13.549Z",
+  "environment": "owned isolated browser DB/bucket only",
+  "responses": [
+    {
+      "responseId": "0f428025-d045-45fa-a4d8-f7c105452b14",
+      "owner": "f8fbcde2-e8ad-481e-b54e-99e82b2ad0aa",
+      "form": "Safety legacy",
+      "status": "draft",
+      "snapshots": [
+        {
+          "kind": "draft",
+          "id": "draft:0f428025-d045-45fa-a4d8-f7c105452b14",
+          "documentKey": "response-0f428025-d045-45fa-a4d8-f7c105452b14-44bbdd15-bee5-4232-b2d4-6435be830952",
+          "workbook_sha256": "08885bffaf3946d46eca89783ba71dfc062cb1e5685093b9d1556cd298d284fb",
+          "workbook_bytes": 21919,
+          "bodyRows": 2,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_proof",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 2,
+                "lastColumn": 1,
+                "lastRow": 2,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_proof",
+              "range": {
+                "firstColumn": 2,
+                "firstRow": 9,
+                "lastColumn": 2,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_other",
+              "range": {
+                "firstColumn": 3,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_year",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 0,
+                "lastColumn": 1,
+                "lastRow": 0,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": 2567
+            },
+            {
+              "address": "B2",
+              "value": "UNKNOWN06"
+            },
+            {
+              "address": "B10",
+              "value": null
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": {
+            "rows": [],
+            "proof": {
+              "original_name": "original.BIN",
+              "size_bytes": 4,
+              "row_index": null,
+              "receipt_pair_sha256": "42752399bfd74fc6f1ac7c12dd3b25399aed520067d19a98722b82483b212ee9",
+              "original_sha256": "bdbdce312f5762571faa17f3f4780235ed2c54f966c0f60dace1cddd2634f4f3"
+            },
+            "docs_number": "UNKNOWN06",
+            "fiscal_year": "2567"
+          },
+          "references": [
+            {
+              "versionId": "1568260d-fd02-45a9-9c23-ce97ea2f87a6",
+              "rowIndex": null
+            }
+          ]
+        }
+      ],
+      "references": [
+        {
+          "versionId": "1568260d-fd02-45a9-9c23-ce97ea2f87a6",
+          "snapshotId": "response-0f428025-d045-45fa-a4d8-f7c105452b14-44bbdd15-bee5-4232-b2d4-6435be830952",
+          "rowIndex": null
+        }
+      ],
+      "versions": [
+        {
+          "id": "1568260d-fd02-45a9-9c23-ce97ea2f87a6",
+          "operationId": "4469b0b3-7bdb-4d53-8f4b-a7b52628c0c5",
+          "tag": "proof",
+          "rowIndex": null,
+          "filename": "UNKNOWN06-1568260d-fd02-45a9-9c23-ce97ea2f87a6-หลักฐาน.BIN",
+          "originalName": "original.BIN",
+          "sizeBytes": 4,
+          "state": "committed",
+          "originalSha256": null
+        }
+      ]
+    },
+    {
+      "responseId": "930ee1e4-a807-41a7-8dd0-b69b66559d76",
+      "owner": "f8fbcde2-e8ad-481e-b54e-99e82b2ad0aa",
+      "form": "Safety template",
+      "status": "draft",
+      "snapshots": [
+        {
+          "kind": "draft",
+          "id": "draft:930ee1e4-a807-41a7-8dd0-b69b66559d76",
+          "documentKey": "response-930ee1e4-a807-41a7-8dd0-b69b66559d76-fe485a64-cf78-4201-9c88-f62bf2c380dd",
+          "workbook_sha256": "67449e56cb084a850916f992bd8957b8023716e01cd2b56761f67a79d88bb33e",
+          "workbook_bytes": 21685,
+          "bodyRows": 2,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_proof",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 2,
+                "lastColumn": 1,
+                "lastRow": 2,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_proof",
+              "range": {
+                "firstColumn": 2,
+                "firstRow": 9,
+                "lastColumn": 2,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_other",
+              "range": {
+                "firstColumn": 3,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": null
+            },
+            {
+              "address": "B2",
+              "value": null
+            },
+            {
+              "address": "B10",
+              "value": null
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": null,
+          "references": []
+        },
+        {
+          "kind": "submission",
+          "id": "84059d9c-9a3f-48d2-b82d-ecb36d3228d4",
+          "documentKey": "submission-84059d9c-9a3f-48d2-b82d-ecb36d3228d4-e97fa435-95ab-4829-9620-d7c386f33064",
+          "workbook_sha256": "f4fada13c3404b00aa500c6b58b3fbce44bdf7deab7a280cc08245b84e68e7ee",
+          "workbook_bytes": 21909,
+          "bodyRows": 2,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_proof",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 2,
+                "lastColumn": 1,
+                "lastRow": 2,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_proof",
+              "range": {
+                "firstColumn": 2,
+                "firstRow": 9,
+                "lastColumn": 2,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_other",
+              "range": {
+                "firstColumn": 3,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": null
+            },
+            {
+              "address": "B2",
+              "value": "CORRECTION06"
+            },
+            {
+              "address": "B10",
+              "value": null
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": {
+            "rows": [],
+            "proof": {
+              "original_name": "original.BIN",
+              "size_bytes": 4,
+              "row_index": null,
+              "receipt_pair_sha256": "577e567b841b4312a9696bb7eeb45933ac2afa688d2a795172d01ac9a8ccb9a6",
+              "original_sha256": "bdbdce312f5762571faa17f3f4780235ed2c54f966c0f60dace1cddd2634f4f3"
+            },
+            "docs_number": "CORRECTION06"
+          },
+          "references": [
+            {
+              "versionId": "32517170-e6ad-41de-a6e9-53dc9c3f5b39",
+              "rowIndex": null
+            }
+          ]
+        },
+        {
+          "kind": "correction",
+          "id": "69dd725c-5775-49e0-836a-68e85c5e6c21",
+          "documentKey": "correction-930ee1e4-a807-41a7-8dd0-b69b66559d76-9363f5d0-91b9-4f26-8ec2-3c3af049b0ff",
+          "workbook_sha256": "e7a37a374fc488868bb055655c978121cb78c352147fd999ca6e567df6c27685",
+          "workbook_bytes": 21908,
+          "bodyRows": 2,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_proof",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 2,
+                "lastColumn": 1,
+                "lastRow": 2,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_proof",
+              "range": {
+                "firstColumn": 2,
+                "firstRow": 9,
+                "lastColumn": 2,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_other",
+              "range": {
+                "firstColumn": 3,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": null
+            },
+            {
+              "address": "B2",
+              "value": "CORRECTION06"
+            },
+            {
+              "address": "B10",
+              "value": null
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": {
+            "rows": [],
+            "proof": {
+              "original_name": "replacement.BIN",
+              "size_bytes": 3,
+              "row_index": null,
+              "receipt_pair_sha256": "4472cb0575bc1ad459261757a344dfc32b0a4697242f907e7e37945f45a45970",
+              "original_sha256": "0f6410823fa75f1a9e0f0c657176528d70eafd8b53e52fcd72bab731130881dd"
+            },
+            "docs_number": "CORRECTION06"
+          },
+          "references": [
+            {
+              "versionId": "ed0eddca-ab3b-4406-ad22-9579af1a5beb",
+              "rowIndex": null
+            }
+          ]
+        },
+        {
+          "kind": "correction",
+          "id": "2263690a-63e9-446e-a2cf-1e7974985cb9",
+          "documentKey": "correction-930ee1e4-a807-41a7-8dd0-b69b66559d76-6a8edffe-bdab-4ae4-8bcd-79183b3f068b",
+          "workbook_sha256": "14b1ea247f3cfecf47f8914097cbbc0268e1aa41c11c48180af51fbf263ee892",
+          "workbook_bytes": 22072,
+          "bodyRows": 2,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_proof",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 2,
+                "lastColumn": 1,
+                "lastRow": 2,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_proof",
+              "range": {
+                "firstColumn": 2,
+                "firstRow": 9,
+                "lastColumn": 2,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_other",
+              "range": {
+                "firstColumn": 3,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": null
+            },
+            {
+              "address": "B2",
+              "value": "CORRECTION06"
+            },
+            {
+              "address": "B10",
+              "value": null
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": {
+            "rows": [
+              {
+                "item": null,
+                "other": null,
+                "proof": {
+                  "original_name": "original.BIN",
+                  "size_bytes": 4,
+                  "row_index": 0,
+                  "receipt_pair_sha256": "82c585bede0f53ca7042bdc76603b9b11deb234f61c2cd4ebe1bc799718e58a9",
+                  "original_sha256": "bdbdce312f5762571faa17f3f4780235ed2c54f966c0f60dace1cddd2634f4f3"
+                }
+              },
+              {
+                "item": null,
+                "other": {
+                  "original_name": "replacement.BIN",
+                  "size_bytes": 3,
+                  "row_index": 1,
+                  "receipt_pair_sha256": "0e46e5b01213f8672d3a5cf46109b69afcb50331b580826163a663b2994f8644",
+                  "original_sha256": "0f6410823fa75f1a9e0f0c657176528d70eafd8b53e52fcd72bab731130881dd"
+                },
+                "proof": null
+              }
+            ],
+            "proof": {
+              "original_name": "zero.BIN",
+              "size_bytes": 0,
+              "row_index": null,
+              "receipt_pair_sha256": "56a90495dd1998a9ba2e54e5c4f9f4caba62c82ad4a45aaa531a6e4170989e69",
+              "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "docs_number": "CORRECTION06"
+          },
+          "references": [
+            {
+              "versionId": "e9e510b6-d284-46a3-a739-661a49e2f6f8",
+              "rowIndex": null
+            },
+            {
+              "versionId": "6301e76b-f29b-4998-a960-00fb3ae28c19",
+              "rowIndex": 0
+            },
+            {
+              "versionId": "a9686fd7-0528-4dcc-91ab-55c6fe8c388b",
+              "rowIndex": 1
+            }
+          ]
+        },
+        {
+          "kind": "submission",
+          "id": "34237367-30c9-4b84-8271-f61a69376e71",
+          "documentKey": "submission-34237367-30c9-4b84-8271-f61a69376e71-12ecd884-edf0-4cee-8c5d-502b13bdb81c",
+          "workbook_sha256": "b3faadf096001964b5ebd7c70ab100bfa2f659970ff4a462b5837c80a39db704",
+          "workbook_bytes": 21907,
+          "bodyRows": 2,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_proof",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 2,
+                "lastColumn": 1,
+                "lastRow": 2,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_proof",
+              "range": {
+                "firstColumn": 2,
+                "firstRow": 9,
+                "lastColumn": 2,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_other",
+              "range": {
+                "firstColumn": 3,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": null
+            },
+            {
+              "address": "B2",
+              "value": "CORRECTION06"
+            },
+            {
+              "address": "B10",
+              "value": null
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": {
+            "rows": [],
+            "proof": {
+              "original_name": "zero.BIN",
+              "size_bytes": 0,
+              "row_index": null,
+              "receipt_pair_sha256": "8d3ee880682120e0bb2fa96b93a31e00bf7a012a8d40ced611f4f06af2e67f33",
+              "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "docs_number": "CORRECTION06"
+          },
+          "references": [
+            {
+              "versionId": "8e1b78ff-0ca0-4a3f-b774-cf98e9177bf4",
+              "rowIndex": null
+            }
+          ]
+        }
+      ],
+      "references": [
+        {
+          "versionId": "32517170-e6ad-41de-a6e9-53dc9c3f5b39",
+          "snapshotId": "submission-84059d9c-9a3f-48d2-b82d-ecb36d3228d4-e97fa435-95ab-4829-9620-d7c386f33064",
+          "rowIndex": null
+        },
+        {
+          "versionId": "ed0eddca-ab3b-4406-ad22-9579af1a5beb",
+          "snapshotId": "correction-930ee1e4-a807-41a7-8dd0-b69b66559d76-9363f5d0-91b9-4f26-8ec2-3c3af049b0ff",
+          "rowIndex": null
+        },
+        {
+          "versionId": "e9e510b6-d284-46a3-a739-661a49e2f6f8",
+          "snapshotId": "correction-930ee1e4-a807-41a7-8dd0-b69b66559d76-6a8edffe-bdab-4ae4-8bcd-79183b3f068b",
+          "rowIndex": null
+        },
+        {
+          "versionId": "6301e76b-f29b-4998-a960-00fb3ae28c19",
+          "snapshotId": "correction-930ee1e4-a807-41a7-8dd0-b69b66559d76-6a8edffe-bdab-4ae4-8bcd-79183b3f068b",
+          "rowIndex": 0
+        },
+        {
+          "versionId": "a9686fd7-0528-4dcc-91ab-55c6fe8c388b",
+          "snapshotId": "correction-930ee1e4-a807-41a7-8dd0-b69b66559d76-6a8edffe-bdab-4ae4-8bcd-79183b3f068b",
+          "rowIndex": 1
+        },
+        {
+          "versionId": "8e1b78ff-0ca0-4a3f-b774-cf98e9177bf4",
+          "snapshotId": "submission-34237367-30c9-4b84-8271-f61a69376e71-12ecd884-edf0-4cee-8c5d-502b13bdb81c",
+          "rowIndex": null
+        }
+      ],
+      "versions": [
+        {
+          "id": "32517170-e6ad-41de-a6e9-53dc9c3f5b39",
+          "operationId": "c8ee07a0-7fa2-4231-94f2-f15d24a27b15",
+          "tag": "proof",
+          "rowIndex": null,
+          "filename": "CORRECTION06-ก่อหนี้-4_ขยาย(45).BIN",
+          "originalName": "original.BIN",
+          "sizeBytes": 4,
+          "state": "committed",
+          "originalSha256": "bdbdce312f5762571faa17f3f4780235ed2c54f966c0f60dace1cddd2634f4f3"
+        },
+        {
+          "id": "ed0eddca-ab3b-4406-ad22-9579af1a5beb",
+          "operationId": "7ac4935b-3e44-487e-b267-198779dfcabf",
+          "tag": "proof",
+          "rowIndex": null,
+          "filename": "CORRECTION06-ก่อหนี้-4_ขยาย(45).BIN",
+          "originalName": "replacement.BIN",
+          "sizeBytes": 3,
+          "state": "committed",
+          "originalSha256": "0f6410823fa75f1a9e0f0c657176528d70eafd8b53e52fcd72bab731130881dd"
+        },
+        {
+          "id": "e9e510b6-d284-46a3-a739-661a49e2f6f8",
+          "operationId": "97b19f8f-fcb6-41a1-8a92-201e40119cb1",
+          "tag": "proof",
+          "rowIndex": null,
+          "filename": "CORRECTION06-ก่อหนี้-4_ขยาย(45).BIN",
+          "originalName": "zero.BIN",
+          "sizeBytes": 0,
+          "state": "committed",
+          "originalSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "id": "6301e76b-f29b-4998-a960-00fb3ae28c19",
+          "operationId": "97b19f8f-fcb6-41a1-8a92-201e40119cb1",
+          "tag": "rows.proof",
+          "rowIndex": 0,
+          "filename": "CORRECTION06-ก่อหนี้-4_ขยาย(45).BIN",
+          "originalName": "original.BIN",
+          "sizeBytes": 4,
+          "state": "committed",
+          "originalSha256": "bdbdce312f5762571faa17f3f4780235ed2c54f966c0f60dace1cddd2634f4f3"
+        },
+        {
+          "id": "a9686fd7-0528-4dcc-91ab-55c6fe8c388b",
+          "operationId": "97b19f8f-fcb6-41a1-8a92-201e40119cb1",
+          "tag": "rows.other",
+          "rowIndex": 1,
+          "filename": "CORRECTION06-ก่อหนี้-4_ขยาย(45).BIN",
+          "originalName": "replacement.BIN",
+          "sizeBytes": 3,
+          "state": "committed",
+          "originalSha256": "0f6410823fa75f1a9e0f0c657176528d70eafd8b53e52fcd72bab731130881dd"
+        },
+        {
+          "id": "8e1b78ff-0ca0-4a3f-b774-cf98e9177bf4",
+          "operationId": "f414e7bc-2c4a-46ab-b782-b37ea91e66f9",
+          "tag": "proof",
+          "rowIndex": null,
+          "filename": "CORRECTION06-ก่อหนี้-4_ขยาย(45).BIN",
+          "originalName": "zero.BIN",
+          "sizeBytes": 0,
+          "state": "committed",
+          "originalSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        }
+      ]
+    },
+    {
+      "responseId": "d6e99b35-ea9f-4ebf-8da2-94c090ecaffc",
+      "owner": "f8fbcde2-e8ad-481e-b54e-99e82b2ad0aa",
+      "form": "Safety prehidden geometry",
+      "status": "draft",
+      "snapshots": [
+        {
+          "kind": "draft",
+          "id": "draft:d6e99b35-ea9f-4ebf-8da2-94c090ecaffc",
+          "documentKey": "response-d6e99b35-ea9f-4ebf-8da2-94c090ecaffc-c683e129-e53d-4b61-8566-6af9b8c9c7dd",
+          "workbook_sha256": "6ad08ae09bbcbb9f78d48b2b6cff3a446de2132e1a1a39a655c4a2bc8a98ea5a",
+          "workbook_bytes": 21690,
+          "bodyRows": 2,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_proof",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 2,
+                "lastColumn": 1,
+                "lastRow": 2,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_proof",
+              "range": {
+                "firstColumn": 2,
+                "firstRow": 9,
+                "lastColumn": 2,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_other",
+              "range": {
+                "firstColumn": 3,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": null
+            },
+            {
+              "address": "B2",
+              "value": null
+            },
+            {
+              "address": "B10",
+              "value": null
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": null,
+          "references": []
+        }
+      ],
+      "references": [],
+      "versions": []
+    },
+    {
+      "responseId": "1da2021e-0a9c-45d1-9adf-f649dde4e041",
+      "owner": "841d041a-2b02-4335-a20b-58b08400c76b",
+      "form": "Safety legacy",
+      "status": "draft",
+      "snapshots": [
+        {
+          "kind": "draft",
+          "id": "draft:1da2021e-0a9c-45d1-9adf-f649dde4e041",
+          "documentKey": "response-1da2021e-0a9c-45d1-9adf-f649dde4e041-54f4dd4c-5cd9-4d56-b558-17386db94f4b",
+          "workbook_sha256": "36edc51bdf7c3944a69313e0c5e5c7ba7f2d6ebb1544f6850e72f9ba89f7c807",
+          "workbook_bytes": 17070,
+          "bodyRows": 1,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_proof",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 2,
+                "lastColumn": 1,
+                "lastRow": 2,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_proof",
+              "range": {
+                "firstColumn": 2,
+                "firstRow": 9,
+                "lastColumn": 2,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_other",
+              "range": {
+                "firstColumn": 3,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_year",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 0,
+                "lastColumn": 1,
+                "lastRow": 0,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": 2567
+            },
+            {
+              "address": "B2",
+              "value": "LEGACY06"
+            },
+            {
+              "address": "B10",
+              "value": null
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": {
+            "rows": [],
+            "proof": {
+              "original_name": "replacement.BIN",
+              "size_bytes": 3,
+              "row_index": null,
+              "receipt_pair_sha256": "813e3bae1cafd7d0ad091130127da4ebebb8d884539f17e42123f8e829f65416",
+              "original_sha256": "0f6410823fa75f1a9e0f0c657176528d70eafd8b53e52fcd72bab731130881dd"
+            },
+            "docs_number": "LEGACY06",
+            "fiscal_year": "2567"
+          },
+          "references": [
+            {
+              "versionId": "d2f3e6bb-e961-45f1-81d7-e86abc702936",
+              "rowIndex": null
+            }
+          ]
+        }
+      ],
+      "references": [
+        {
+          "versionId": "d2f3e6bb-e961-45f1-81d7-e86abc702936",
+          "snapshotId": "response-1da2021e-0a9c-45d1-9adf-f649dde4e041-54f4dd4c-5cd9-4d56-b558-17386db94f4b",
+          "rowIndex": null
+        }
+      ],
+      "versions": [
+        {
+          "id": "d2f3e6bb-e961-45f1-81d7-e86abc702936",
+          "operationId": "006b54ef-31bc-4535-b83d-3d63b0cfa08d",
+          "tag": "proof",
+          "rowIndex": null,
+          "filename": "LEGACY06-d2f3e6bb-e961-45f1-81d7-e86abc702936-หลักฐาน.BIN",
+          "originalName": "replacement.BIN",
+          "sizeBytes": 3,
+          "state": "committed",
+          "originalSha256": null
+        },
+        {
+          "id": "d504adc2-2249-4d09-a8d0-b8b4a754d6fd",
+          "operationId": "d5ea966d-dfa7-4a8d-9878-ce7a64802254",
+          "tag": "proof",
+          "rowIndex": null,
+          "filename": "LEGACY06-d504adc2-2249-4d09-a8d0-b8b4a754d6fd-หลักฐาน.BIN",
+          "originalName": "original.BIN",
+          "sizeBytes": 4,
+          "state": "deleting",
+          "originalSha256": null
+        }
+      ]
+    },
+    {
+      "responseId": "0bcec7af-2abf-42e0-acd8-6a2c9b886d13",
+      "owner": "841d041a-2b02-4335-a20b-58b08400c76b",
+      "form": "Safety old Published PoC",
+      "status": "draft",
+      "snapshots": [
+        {
+          "kind": "draft",
+          "id": "draft:0bcec7af-2abf-42e0-acd8-6a2c9b886d13",
+          "documentKey": "response-0bcec7af-2abf-42e0-acd8-6a2c9b886d13-4c673a56-c9fd-4eb5-b375-00ee29dd708f",
+          "workbook_sha256": "4a7a582b29e5b7e7608ac892508c5410819eb9daad2bb5317ce6d30399f8c5cf",
+          "workbook_bytes": 16805,
+          "bodyRows": 1,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_proof",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 2,
+                "lastColumn": 1,
+                "lastRow": 2,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_proof",
+              "range": {
+                "firstColumn": 2,
+                "firstRow": 9,
+                "lastColumn": 2,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_other",
+              "range": {
+                "firstColumn": 3,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": null
+            },
+            {
+              "address": "B2",
+              "value": null
+            },
+            {
+              "address": "B10",
+              "value": null
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": {
+            "rows": [],
+            "proof": null,
+            "docs_number": null
+          },
+          "references": []
+        }
+      ],
+      "references": [],
+      "versions": []
+    },
+    {
+      "responseId": "2ef31325-5dfc-4d6c-9f0d-5de0b0942219",
+      "owner": "841d041a-2b02-4335-a20b-58b08400c76b",
+      "form": "Safety template",
+      "status": "draft",
+      "snapshots": [
+        {
+          "kind": "draft",
+          "id": "draft:2ef31325-5dfc-4d6c-9f0d-5de0b0942219",
+          "documentKey": "response-2ef31325-5dfc-4d6c-9f0d-5de0b0942219-13cba24d-acde-4aab-8d63-3d81c823f708",
+          "workbook_sha256": "88199e1ef0dd328897d352d6ec25e359882160191a1407d38fdac51aeec418cd",
+          "workbook_bytes": 21685,
+          "bodyRows": 2,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_proof",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 2,
+                "lastColumn": 1,
+                "lastRow": 2,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_proof",
+              "range": {
+                "firstColumn": 2,
+                "firstRow": 9,
+                "lastColumn": 2,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_other",
+              "range": {
+                "firstColumn": 3,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": null
+            },
+            {
+              "address": "B2",
+              "value": null
+            },
+            {
+              "address": "B10",
+              "value": null
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": null,
+          "references": []
+        },
+        {
+          "kind": "submission",
+          "id": "f7d165ce-3567-41c9-8a73-d13d7a32c389",
+          "documentKey": "submission-f7d165ce-3567-41c9-8a73-d13d7a32c389-e1732120-b639-473c-a621-dc1343493ae1",
+          "workbook_sha256": "7291e010c2919fead308c1932acff6d51523b88e3380e26cf98c6c2d31301bd8",
+          "workbook_bytes": 21922,
+          "bodyRows": 2,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_proof",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 2,
+                "lastColumn": 1,
+                "lastRow": 2,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_proof",
+              "range": {
+                "firstColumn": 2,
+                "firstRow": 9,
+                "lastColumn": 2,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_other",
+              "range": {
+                "firstColumn": 3,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": null
+            },
+            {
+              "address": "B2",
+              "value": "กทอ.67-00-0001"
+            },
+            {
+              "address": "B10",
+              "value": "AFTER06"
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": {
+            "rows": [
+              {
+                "item": "AFTER06",
+                "other": null,
+                "proof": null
+              }
+            ],
+            "proof": {
+              "original_name": "original.BIN",
+              "size_bytes": 4,
+              "row_index": null,
+              "receipt_pair_sha256": "b2b4c9b4227278a9351d9f640b4a6d9a096ca38a543a42796bf590515524ede6",
+              "original_sha256": "bdbdce312f5762571faa17f3f4780235ed2c54f966c0f60dace1cddd2634f4f3"
+            },
+            "docs_number": "กทอ.67-00-0001"
+          },
+          "references": [
+            {
+              "versionId": "f0e4182f-476e-483e-b4a6-0c15fd77a7cd",
+              "rowIndex": null
+            }
+          ]
+        },
+        {
+          "kind": "submission",
+          "id": "e5f656c4-dbfa-4fd6-a342-701d3a8907c6",
+          "documentKey": "submission-e5f656c4-dbfa-4fd6-a342-701d3a8907c6-2d169ef7-c7af-4900-9ea4-fec8a17f8665",
+          "workbook_sha256": "f5bb0f6080fd2e213a3d30785e14529f2fddf64ee644d608c9d8cba2e2208b59",
+          "workbook_bytes": 21982,
+          "bodyRows": 2,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_proof",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 2,
+                "lastColumn": 1,
+                "lastRow": 2,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_proof",
+              "range": {
+                "firstColumn": 2,
+                "firstRow": 9,
+                "lastColumn": 2,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_other",
+              "range": {
+                "firstColumn": 3,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": null
+            },
+            {
+              "address": "B2",
+              "value": "กทอ.67-00-0001"
+            },
+            {
+              "address": "B10",
+              "value": null
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": {
+            "rows": [
+              {
+                "item": null,
+                "other": null,
+                "proof": {
+                  "original_name": "zero.BIN",
+                  "size_bytes": 0,
+                  "row_index": 0,
+                  "receipt_pair_sha256": "fd255c30ba4438f41209874bba295bcd6f538b32399f6213aa9d76fd358dd9a0",
+                  "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                }
+              }
+            ],
+            "proof": {
+              "original_name": "replacement.BIN",
+              "size_bytes": 3,
+              "row_index": null,
+              "receipt_pair_sha256": "a48dce96d13636a475e3f3cdfab3e7de945cbd82e5a6c0e7a9faed59b988156d",
+              "original_sha256": "0f6410823fa75f1a9e0f0c657176528d70eafd8b53e52fcd72bab731130881dd"
+            },
+            "docs_number": "กทอ.67-00-0001"
+          },
+          "references": [
+            {
+              "versionId": "46475eb1-8328-4ffb-9913-6771cb39db88",
+              "rowIndex": null
+            },
+            {
+              "versionId": "d8a7d18e-fdf4-4e62-ab65-5e81099d8cb2",
+              "rowIndex": 0
+            }
+          ]
+        },
+        {
+          "kind": "submission",
+          "id": "6e7af292-d9a6-4661-b914-137815aa5263",
+          "documentKey": "submission-6e7af292-d9a6-4661-b914-137815aa5263-9bc83160-718b-478b-88cb-fd52c9de36d5",
+          "workbook_sha256": "a10e667ec18c99b42d99f5f898a7dfa501f95da4ca33c8c61804ccc2d16b97f0",
+          "workbook_bytes": 21985,
+          "bodyRows": 2,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_proof",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 2,
+                "lastColumn": 1,
+                "lastRow": 2,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_proof",
+              "range": {
+                "firstColumn": 2,
+                "firstRow": 9,
+                "lastColumn": 2,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_row_other",
+              "range": {
+                "firstColumn": 3,
+                "firstRow": 9,
+                "lastColumn": 3,
+                "lastRow": 10,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": null
+            },
+            {
+              "address": "B2",
+              "value": "กทอ.67-00-0001"
+            },
+            {
+              "address": "B10",
+              "value": null
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": {
+            "rows": [
+              {
+                "item": null,
+                "other": {
+                  "original_name": "original.BIN",
+                  "size_bytes": 4,
+                  "row_index": 1,
+                  "receipt_pair_sha256": "c0b41a1b569caaaf7d444217fd93826762858dee1130e4292058742c885070aa",
+                  "original_sha256": "bdbdce312f5762571faa17f3f4780235ed2c54f966c0f60dace1cddd2634f4f3"
+                },
+                "proof": null
+              }
+            ],
+            "proof": {
+              "original_name": "zero.BIN",
+              "size_bytes": 0,
+              "row_index": null,
+              "receipt_pair_sha256": "31d138f968f13b200cfa711e81a191d7381effac80fa5fe2b4a17bd2002e428c",
+              "original_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            },
+            "docs_number": "กทอ.67-00-0001"
+          },
+          "references": [
+            {
+              "versionId": "64523cd7-4510-4f31-b35c-e0c62d917d84",
+              "rowIndex": null
+            },
+            {
+              "versionId": "4cd757a5-2eae-4588-9908-55e412b1b1e7",
+              "rowIndex": 1
+            }
+          ]
+        }
+      ],
+      "references": [
+        {
+          "versionId": "f0e4182f-476e-483e-b4a6-0c15fd77a7cd",
+          "snapshotId": "submission-f7d165ce-3567-41c9-8a73-d13d7a32c389-e1732120-b639-473c-a621-dc1343493ae1",
+          "rowIndex": null
+        },
+        {
+          "versionId": "46475eb1-8328-4ffb-9913-6771cb39db88",
+          "snapshotId": "submission-e5f656c4-dbfa-4fd6-a342-701d3a8907c6-2d169ef7-c7af-4900-9ea4-fec8a17f8665",
+          "rowIndex": null
+        },
+        {
+          "versionId": "d8a7d18e-fdf4-4e62-ab65-5e81099d8cb2",
+          "snapshotId": "submission-e5f656c4-dbfa-4fd6-a342-701d3a8907c6-2d169ef7-c7af-4900-9ea4-fec8a17f8665",
+          "rowIndex": 0
+        },
+        {
+          "versionId": "64523cd7-4510-4f31-b35c-e0c62d917d84",
+          "snapshotId": "submission-6e7af292-d9a6-4661-b914-137815aa5263-9bc83160-718b-478b-88cb-fd52c9de36d5",
+          "rowIndex": null
+        },
+        {
+          "versionId": "4cd757a5-2eae-4588-9908-55e412b1b1e7",
+          "snapshotId": "submission-6e7af292-d9a6-4661-b914-137815aa5263-9bc83160-718b-478b-88cb-fd52c9de36d5",
+          "rowIndex": 1
+        }
+      ],
+      "versions": [
+        {
+          "id": "f0e4182f-476e-483e-b4a6-0c15fd77a7cd",
+          "operationId": "0943b2c1-eda7-4820-b039-bf9e6277fc73",
+          "tag": "proof",
+          "rowIndex": null,
+          "filename": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+          "originalName": "original.BIN",
+          "sizeBytes": 4,
+          "state": "committed",
+          "originalSha256": "bdbdce312f5762571faa17f3f4780235ed2c54f966c0f60dace1cddd2634f4f3"
+        },
+        {
+          "id": "46475eb1-8328-4ffb-9913-6771cb39db88",
+          "operationId": "3d94ba8a-1e1c-4554-83de-d78865baa1c1",
+          "tag": "proof",
+          "rowIndex": null,
+          "filename": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+          "originalName": "replacement.BIN",
+          "sizeBytes": 3,
+          "state": "committed",
+          "originalSha256": "0f6410823fa75f1a9e0f0c657176528d70eafd8b53e52fcd72bab731130881dd"
+        },
+        {
+          "id": "d8a7d18e-fdf4-4e62-ab65-5e81099d8cb2",
+          "operationId": "3d94ba8a-1e1c-4554-83de-d78865baa1c1",
+          "tag": "rows.proof",
+          "rowIndex": 0,
+          "filename": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+          "originalName": "zero.BIN",
+          "sizeBytes": 0,
+          "state": "committed",
+          "originalSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "id": "64523cd7-4510-4f31-b35c-e0c62d917d84",
+          "operationId": "e7e09e01-e5f4-4bfa-a952-a6af90421b29",
+          "tag": "proof",
+          "rowIndex": null,
+          "filename": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+          "originalName": "zero.BIN",
+          "sizeBytes": 0,
+          "state": "committed",
+          "originalSha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "id": "4cd757a5-2eae-4588-9908-55e412b1b1e7",
+          "operationId": "e7e09e01-e5f4-4bfa-a952-a6af90421b29",
+          "tag": "rows.other",
+          "rowIndex": 1,
+          "filename": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+          "originalName": "original.BIN",
+          "sizeBytes": 4,
+          "state": "committed",
+          "originalSha256": "bdbdce312f5762571faa17f3f4780235ed2c54f966c0f60dace1cddd2634f4f3"
+        }
+      ]
+    },
+    {
+      "responseId": "446d32a0-57bb-4009-97cd-f05ad47f2542",
+      "owner": "841d041a-2b02-4335-a20b-58b08400c76b",
+      "form": "Safety ordinary",
+      "status": "draft",
+      "snapshots": [
+        {
+          "kind": "draft",
+          "id": "draft:446d32a0-57bb-4009-97cd-f05ad47f2542",
+          "documentKey": "response-446d32a0-57bb-4009-97cd-f05ad47f2542-14983c4b-c113-4b4a-8243-914b5ddb3610",
+          "workbook_sha256": "2b6a99a3a6234e216da010fe064f6c787374b45c4d17ea2dedb46b7e08833f10",
+          "workbook_bytes": 7238,
+          "bodyRows": 1,
+          "names": [
+            {
+              "name": "folio_number",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 1,
+                "lastColumn": 1,
+                "lastRow": 1,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_columns_folio_rows",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            },
+            {
+              "name": "folio_column_folio_item",
+              "range": {
+                "firstColumn": 1,
+                "firstRow": 9,
+                "lastColumn": 1,
+                "lastRow": 9,
+                "sheet": "Form"
+              }
+            }
+          ],
+          "ordinaryCells": [
+            {
+              "address": "B1",
+              "value": null
+            },
+            {
+              "address": "B2",
+              "value": null
+            },
+            {
+              "address": "B10",
+              "value": "KEEP ROW"
+            },
+            {
+              "address": "B11",
+              "value": null
+            }
+          ],
+          "data": {
+            "rows": [
+              {
+                "item": "KEEP ROW"
+              }
+            ],
+            "docs_number": null
+          },
+          "references": []
+        }
+      ],
+      "references": [],
+      "versions": []
+    }
+  ],
+  "provider": {
+    "mode": "normal",
+    "events": [
+      {
+        "method": "POST",
+        "name": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 4
+      },
+      {
+        "method": "POST",
+        "name": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 3
+      },
+      {
+        "method": "POST",
+        "name": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 0
+      },
+      {
+        "method": "POST",
+        "name": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 0
+      },
+      {
+        "method": "POST",
+        "name": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 4
+      },
+      {
+        "method": "POST",
+        "name": "LEGACY06-d504adc2-2249-4d09-a8d0-b8b4a754d6fd-หลักฐาน.BIN",
+        "size": 4
+      },
+      {
+        "method": "POST",
+        "name": "LEGACY06-d2f3e6bb-e961-45f1-81d7-e86abc702936-หลักฐาน.BIN",
+        "size": 3
+      },
+      {
+        "method": "DELETE"
+      },
+      {
+        "method": "POST",
+        "name": "CORRECTION06-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 4
+      },
+      {
+        "method": "POST",
+        "name": "CORRECTION06-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 3
+      },
+      {
+        "method": "POST",
+        "name": "CORRECTION06-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 0
+      },
+      {
+        "method": "POST",
+        "name": "CORRECTION06-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 4
+      },
+      {
+        "method": "POST",
+        "name": "CORRECTION06-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 3
+      },
+      {
+        "method": "POST",
+        "name": "CORRECTION06-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 0
+      },
+      {
+        "method": "POST",
+        "name": "UNKNOWN06-1568260d-fd02-45a9-9c23-ce97ea2f87a6-หลักฐาน.BIN",
+        "size": 4
+      }
+    ],
+    "files": 14
+  },
+  "provenance": {
+    "canonicalReadSource": "65633504510d7c862a06522895671414a4b220f2",
+    "initialNativeMutationSource": "1affbc0 plus formatting working-tree bytes subsequently committed8819763",
+    "postFixNativeChecks": "fresh clean open; genuine dirty edit Stay/discard; actual normal Submit/defaultnextcleanExit; legacy baseline and picker oversize rejection",
+    "notProviderAcceptance": true
+  }
+}
