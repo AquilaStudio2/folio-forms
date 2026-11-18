@@ -611,9 +611,25 @@ const uploadOptions = (documentKey: string, bridgeId: string) => ({
   },
 });
 
-it.each([true, false])(
-  "preserves later Draft work and waits for authenticated canonical projection (accepted: %s)",
-  async (accepted) => {
+it.each([
+  "accepted",
+  "negative-ack",
+  "native-deadline",
+  "config-rejection",
+  "config-timeout",
+  "canonical-key",
+  "native-key",
+  "lease",
+  "actor-scope",
+] as const)(
+  "preserves later Draft work and known completion after continuation %s",
+  async (outcome) => {
+    const accepted = outcome === "accepted";
+    const configFailure = ![
+      "accepted",
+      "negative-ack",
+      "native-deadline",
+    ].includes(outcome);
     const initial = {
       ...exportConfig("document-1", "lease"),
       bridge: {
@@ -637,9 +653,28 @@ it.each([true, false])(
           savedData: {},
         },
       },
+      config: {
+        ...initial.config,
+        document: { ...initial.config.document },
+      },
     };
+    if (outcome === "canonical-key") {
+      fresh.bridge.documentKey = "foreign-document";
+    } else if (outcome === "native-key") {
+      fresh.config.document.key = "foreign-native-document";
+    } else if (outcome === "lease") {
+      fresh.bridge.lease = { ...fresh.bridge.lease, id: "foreign-lease" };
+    } else if (outcome === "actor-scope") {
+      fresh.bridge.uploadPoc.scopeIdentity = "foreign-actor/response";
+    }
     transport.get.mockImplementation((path: string) => {
       if (path.includes("continuedOperationId=saved-1")) {
+        if (outcome === "config-rejection") {
+          return Promise.reject(new Error("Configuration unavailable"));
+        }
+        if (outcome === "config-timeout") {
+          return Promise.reject(new DOMException("Timed out", "TimeoutError"));
+        }
         return Promise.resolve(fresh);
       }
       if (path.endsWith("/attachment-status")) {
@@ -662,29 +697,43 @@ it.each([true, false])(
       });
     const onBridge = vi.fn();
     const dirty = vi.fn();
-    const view = render(
-      <OnlyOfficeEditor
-        configUrl="/editor-config"
-        title="Live Draft"
-        onBridgeMessage={onBridge}
-        onDirtyChange={dirty}
-      />
-    );
+    const Consumer = ({ saveRequest = 0 }: { saveRequest?: number }) => {
+      const [status, setStatus] = useState("ready");
+      const [commandReady, setCommandReady] = useState(false);
+      return (
+        <>
+          <output aria-label="Draft continuation status">{status}</output>
+          <button disabled={!commandReady} type="button">
+            Save next Draft
+          </button>
+          <OnlyOfficeEditor
+            configUrl="/editor-config"
+            title="Live Draft"
+            onBridgeMessage={(message) => {
+              onBridge(message);
+              if (message.type === "operation") {
+                setStatus(
+                  message.attachmentCommitUnresolved
+                    ? "recover-original"
+                    : message.status
+                );
+              }
+            }}
+            onCommandReadyChange={setCommandReady}
+            onDirtyChange={dirty}
+            saveRequest={saveRequest}
+          />
+        </>
+      );
+    };
+    const view = render(<Consumer />);
     const office =
       await screen.findByTitle<HTMLIFrameElement>("Office sandbox");
     const plugin = pluginFrame(office);
     const picker = pluginFrame(office);
     send(plugin.source, { type: "bridge-ready" });
     act(() => documentStateChanged?.({ data: true }));
-    view.rerender(
-      <OnlyOfficeEditor
-        configUrl="/editor-config"
-        title="Live Draft"
-        onBridgeMessage={onBridge}
-        onDirtyChange={dirty}
-        saveRequest={1}
-      />
-    );
+    view.rerender(<Consumer saveRequest={1} />);
     expect(office.closest("[inert]")).not.toBeNull();
     send(plugin.source, { requestId: "capture", type: "editor-save-request" });
     send(plugin.source, {
@@ -709,19 +758,50 @@ it.each([true, false])(
       type: "pending-file-candidate",
     };
     send(picker.source, candidate);
-    send(plugin.source, {
+    if (configFailure) {
+      send(picker.source, {
+        ...candidate,
+        bindingId: "folio_file",
+        file: new File(["later"], "later.bin"),
+        rowIndex: null,
+        tag: "file",
+        type: "pending-file-set",
+      });
+      await waitFor(() =>
+        expect(picker.send).toHaveBeenCalledWith(
+          expect.objectContaining({ filename: "later.bin" }),
+          window.location.origin
+        )
+      );
+    }
+    const completion = {
       action: "save-draft",
       operation: { result: { documentKey: "document-2" } },
       operationId: "saved-1",
       status: "completed",
       type: "operation",
-    });
-    await waitFor(() =>
-      expect(plugin.send).toHaveBeenCalledWith(
-        expect.objectContaining({ type: "retain-completed-editor" }),
-        window.location.origin
-      )
-    );
+    };
+    if (outcome === "native-deadline") {
+      vi.useFakeTimers();
+      try {
+        await act(async () => {
+          send(plugin.source, completion);
+          await vi.advanceTimersByTimeAsync(30_000);
+        });
+      } finally {
+        vi.useRealTimers();
+      }
+    } else {
+      send(plugin.source, completion);
+    }
+    if (!configFailure) {
+      await waitFor(() =>
+        expect(plugin.send).toHaveBeenCalledWith(
+          expect.objectContaining({ type: "retain-completed-editor" }),
+          window.location.origin
+        )
+      );
+    }
     expect(office.closest("[inert]")).not.toBeNull();
     const receipt = {
       documentKey: "document-2",
@@ -729,11 +809,14 @@ it.each([true, false])(
       operationId: "saved-1",
       type: "retained-editor-result",
     };
-    send(picker.source, receipt);
-    send(plugin.source, { ...receipt, operationId: "foreign-operation" });
-    expect(office.closest("[inert]")).not.toBeNull();
-    expect(onBridge).not.toHaveBeenCalled();
-    send(plugin.source, receipt);
+    if (!configFailure && outcome !== "native-deadline") {
+      send(picker.source, receipt);
+      send(plugin.source, { ...receipt, operationId: "foreign-operation" });
+      send(plugin.source, { ...receipt, documentKey: "stale-document" });
+      expect(office.closest("[inert]")).not.toBeNull();
+      expect(onBridge).not.toHaveBeenCalled();
+      send(plugin.source, receipt);
+    }
     await waitFor(() =>
       expect(onBridge).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -743,21 +826,49 @@ it.each([true, false])(
         })
       )
     );
+    expect(screen.getByLabelText("Draft continuation status").textContent).toBe(
+      "completed"
+    );
     expect(screen.getByTitle("Office sandbox")).toBe(office);
+    expect(office.closest("[aria-busy]")?.getAttribute("aria-busy")).toBe("false");
     if (!accepted) {
       expect(office.closest("[inert]")).not.toBeNull();
       expect(dirty).toHaveBeenLastCalledWith(true);
-      view.rerender(
-        <OnlyOfficeEditor
-          configUrl="/editor-config"
-          title="Live Draft"
-          onBridgeMessage={onBridge}
-          onDirtyChange={dirty}
-          saveRequest={2}
-        />
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "Save next Draft" })
+          .disabled
+      ).toBe(true);
+      send(plugin.source, { type: "bridge-ready" });
+      send(plugin.source, { ...receipt, ok: true });
+      send(plugin.source, {
+        action: "save-draft",
+        body: { documentKey: "document-2" },
+        capability: "next-save-capability",
+        documentKey: "document-2",
+        requestId: "blocked-next-save",
+        scopeIdentity: "actor/response",
+        snapshotUrl: "http://office.test/later.xlsx",
+        source: "folio-upload-poc",
+        type: "pending-file-save",
+      });
+      await waitFor(() =>
+        expect(plugin.send).toHaveBeenCalledWith(
+          expect.objectContaining({
+            requestId: "blocked-next-save",
+            error: expect.any(String),
+          }),
+          window.location.origin
+        )
       );
-      await act(async () => {});
       expect(transport.postForm).toHaveBeenCalledTimes(1);
+      expect(
+        screen.getByRole<HTMLButtonElement>("button", { name: "Save next Draft" })
+          .disabled
+      ).toBe(true);
+      expect(office.closest("[inert]")).not.toBeNull();
+      expect(screen.getByLabelText("Draft continuation status").textContent).toBe(
+        "completed"
+      );
       return;
     }
     expect(office.closest("[inert]")).toBeNull();
