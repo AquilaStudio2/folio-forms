@@ -157,30 +157,56 @@ test("Save freezes native edits and announces busy before waiting for the pendin
     documentKind: "xlsx",
     scopeIdentity: "actor/response",
     spreadsheetBindings: {
-      version: 1,
-      fields: [{
-        anchor: "folio_file",
-        attachment: { category: "หลักฐาน" },
-        id: "folio_file",
-        key: "file",
-        label: "File",
-        type: "text",
-      }],
+      fields: [
+        {
+          anchor: "folio_file",
+          attachment: { category: "หลักฐาน" },
+          id: "folio_file",
+          key: "file",
+          label: "File",
+          type: "text",
+        },
+      ],
       table: null,
+      version: 1,
     },
+    spreadsheetSelection: { names: { folio_file: "'Form'!$B$10" } },
   });
+  await flushPlugin();
   acknowledgeBridge(harness);
+  await flushPlugin();
+  const openingCheck = harness.messages.find(
+    ({ message }) => message.type === "pending-file-check"
+  ).message;
+  harness.dispatch({
+    data: {
+      ...openingCheck,
+      allowed: true,
+      attachmentCommitUnresolved: false,
+      hasPending: false,
+      source: "folio-upload-poc-host",
+      type: "pending-file-result",
+    },
+    origin: harness.parentOrigin,
+    source: harness.parentWindow,
+  });
   await flushPlugin();
   void harness.window.FormBridge.runAction("save-draft");
   await flushPlugin();
   expect(harness.editorRestriction).toBe("readOnly");
-  expect(harness.messages.some(({ message }) =>
-    message.type === "pending-file-check"
-  )).toBe(true);
-  expect(harness.messages.some(({ message }) =>
-    message.type === "operation" && message.status === "pending" &&
-    message.action === "save-draft"
-  )).toBe(true);
+  expect(
+    harness.messages.some(
+      ({ message }) => message.type === "pending-file-check"
+    )
+  ).toBe(true);
+  expect(
+    harness.messages.some(
+      ({ message }) =>
+        message.type === "operation" &&
+        message.status === "pending" &&
+        message.action === "save-draft"
+    )
+  ).toBe(true);
   expect(await harness.window.FormBridge.runAction("submit")).toMatchObject({
     ignored: true,
     ok: false,
@@ -191,23 +217,29 @@ test("Save freezes native edits and announces busy before waiting for the pendin
 test("only authenticated current Draft completion resumes the same native editor with fresh canonical admission", async () => {
   const harness = createHarness({
     action: "draft",
-    documentKind: "xlsx",
     capabilityResponses: ["first-capability", "second-capability"],
+    documentKind: "xlsx",
     nativeWorkbookCaptureUrl: "http://office.test/live-native-snapshot.xlsx",
-    spreadsheetSelection: { names: { folio_file: "'Form'!$B$10" } },
-    scopeIdentity: "actor/response",
     responses: [
       completedOperation({ documentKey: "committed-first" }),
       completedOperation({ documentKey: "committed-second" }),
     ],
+    scopeIdentity: "actor/response",
     spreadsheetBindings: {
-      version: 1,
-      fields: [{
-        anchor: "folio_file", attachment: { category: "หลักฐาน" },
-        id: "folio_file", key: "file", label: "File", type: "text",
-      }],
+      fields: [
+        {
+          anchor: "folio_file",
+          attachment: { category: "หลักฐาน" },
+          id: "folio_file",
+          key: "file",
+          label: "File",
+          type: "text",
+        },
+      ],
       table: null,
+      version: 1,
     },
+    spreadsheetSelection: { names: { folio_file: "'Form'!$B$10" } },
   });
   const post = harness.parentWindow.postMessage.bind(harness.parentWindow);
   const saves = [];
@@ -216,33 +248,54 @@ test("only authenticated current Draft completion resumes the same native editor
     if (!["pending-file-check", "pending-file-save"].includes(message.type)) {
       return;
     }
-    const result = { allowed: true, hasPending: false, attachmentCommitUnresolved: false };
+    const result = {
+      allowed: true,
+      attachmentCommitUnresolved: false,
+      hasPending: false,
+    };
     if (message.type === "pending-file-save") {
       saves.push(message.body.documentKey);
       Object.assign(result, {
-        operationId: `saved-${saves.length}`,
         operationCapability: "poll-capability",
+        operationId: `saved-${saves.length}`,
         status: "pending",
       });
     }
-    queueMicrotask(() => harness.dispatch({
-      data: { ...message, ...result, source: "folio-upload-poc-host", type: "pending-file-result" },
-      origin: harness.parentOrigin,
-      source: harness.parentWindow,
-    }));
+    queueMicrotask(() =>
+      harness.dispatch({
+        data: {
+          ...message,
+          ...result,
+          source: "folio-upload-poc-host",
+          type: "pending-file-result",
+        },
+        origin: harness.parentOrigin,
+        source: harness.parentWindow,
+      })
+    );
   };
   acknowledgeBridge(harness);
   await flushPlugin();
-  expect(await harness.window.FormBridge.runAction("save-draft")).toMatchObject({ ok: true });
+  expect(await harness.window.FormBridge.runAction("save-draft")).toMatchObject(
+    { ok: true }
+  );
   expect(harness.editorRestriction).toBe("readOnly");
-  const acknowledge = (operationId, documentKey, origin = harness.parentOrigin) => harness.dispatch({
-    data: {
-      bridgeId: harness.bridgeId, source: "folio-parent",
-      type: "retain-completed-editor", operationId, documentKey,
-    },
-    origin,
-    source: harness.parentWindow,
-  });
+  const acknowledge = (
+    operationId,
+    documentKey,
+    origin = harness.parentOrigin
+  ) =>
+    harness.dispatch({
+      data: {
+        bridgeId: harness.bridgeId,
+        documentKey,
+        operationId,
+        source: "folio-parent",
+        type: "retain-completed-editor",
+      },
+      origin,
+      source: harness.parentWindow,
+    });
   acknowledge("saved-1", "committed-first", "https://foreign.test");
   acknowledge("not-this-operation", "committed-first");
   await flushPlugin();
@@ -250,7 +303,9 @@ test("only authenticated current Draft completion resumes the same native editor
   acknowledge("saved-1", "committed-first");
   await flushPlugin();
   expect(harness.editorRestriction).toBe("none");
-  expect(await harness.window.FormBridge.runAction("save-draft")).toMatchObject({ ok: true });
+  expect(await harness.window.FormBridge.runAction("save-draft")).toMatchObject(
+    { ok: true }
+  );
   expect(saves).toEqual(["document-key", "committed-first"]);
   acknowledge("saved-1", "committed-first");
   await flushPlugin();

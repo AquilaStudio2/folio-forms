@@ -35,7 +35,11 @@ const AdminCorrectionRoute = () => {
   const exitDialogRef = useRef<HTMLDialogElement>(null);
   const allowNavigationRef = useRef(false);
   const hasUnsavedChanges =
-    completedWithPendingAttachments || saving || unresolved || dirty || Boolean(reason);
+    completedWithPendingAttachments ||
+    saving ||
+    unresolved ||
+    dirty ||
+    Boolean(reason);
   const navigationBlocker = useBlocker({
     disabled: !hasUnsavedChanges,
     enableBeforeUnload: hasUnsavedChanges,
@@ -79,8 +83,10 @@ const AdminCorrectionRoute = () => {
     ) {
       return;
     }
-    if (retiredWorkspaceRef.current &&
-      bridgeMessage.action === "save-correction-workspace") {
+    if (
+      retiredWorkspaceRef.current &&
+      bridgeMessage.action === "save-correction-workspace"
+    ) {
       return;
     }
     if (bridgeMessage.status === "pending") {
@@ -102,7 +108,8 @@ const AdminCorrectionRoute = () => {
     setUnresolved(false);
     if (
       bridgeMessage.action === "save-correction" &&
-      (bridgeMessage.hasPendingAttachments || bridgeMessage.hasUnsavedDocumentChanges)
+      (bridgeMessage.hasPendingAttachments ||
+        bridgeMessage.hasUnsavedDocumentChanges)
     ) {
       retiredWorkspaceRef.current = true;
       setCompletedWithPendingAttachments(true);
@@ -114,8 +121,11 @@ const AdminCorrectionRoute = () => {
     }
     if (bridgeMessage.action === "save-correction-workspace") {
       setMessage(null);
-      if (bridgeMessage.editorRemountSafe ||
-        (!bridgeMessage.hasPendingAttachments && !bridgeMessage.hasUnsavedDocumentChanges)) {
+      if (
+        bridgeMessage.editorRemountSafe ||
+        (!bridgeMessage.hasPendingAttachments &&
+          !bridgeMessage.hasUnsavedDocumentChanges)
+      ) {
         setRevision((value) => value + 1);
       }
       return;
@@ -149,11 +159,11 @@ const AdminCorrectionRoute = () => {
   if (saving) {
     exitDescription = "กำลังบันทึก Correction กรุณารอผลก่อนออกจากหน้านี้";
   } else if (completedWithPendingAttachments) {
+    exitDescription =
+      "Correction รอบก่อนบันทึกแล้ว การออกจะทิ้งไฟล์ การนำออก และการแก้ไขที่เลือกภายหลังซึ่งยังไม่บันทึก ต้องเปิด Correction ฉบับปัจจุบันแล้วเลือกไฟล์ใหม่ หากต้องการรักษาไฟล์ในหน้านี้ ให้เลือกอยู่ต่อ";
   } else if (unresolved) {
     exitDescription =
       "ยังยืนยันผลคำขอเดิมไม่ได้ การออกไม่ยกเลิกคำขอนั้นและไม่ล้าง checkpoint ไฟล์และการแก้ไขที่ยังไม่บันทึกในหน้านี้จะหาย";
-    exitDescription =
-      "Correction รอบก่อนบันทึกแล้ว การออกจะทิ้งไฟล์ การนำออก และการแก้ไขที่เลือกภายหลังซึ่งยังไม่บันทึก ต้องเปิด Correction ฉบับปัจจุบันแล้วเลือกไฟล์ใหม่ หากต้องการรักษาไฟล์ในหน้านี้ ให้เลือกอยู่ต่อ";
   }
 
   return (
@@ -224,7 +234,13 @@ const AdminCorrectionRoute = () => {
         >
           ระบบจะบันทึกผู้แก้ไข เวลา เหตุผล และข้อมูลฉบับใหม่เป็นประวัติถาวร
         </p>
-        <div ref={feedbackRef} tabIndex={-1} role="status" aria-live="polite" className="outline-none">
+        <div
+          ref={feedbackRef}
+          tabIndex={-1}
+          role="status"
+          aria-live="polite"
+          className="outline-none"
+        >
           {message ? (
             <Notice tone={saving ? "neutral" : "danger"}>{message}</Notice>
           ) : null}
@@ -243,10 +259,14 @@ const AdminCorrectionRoute = () => {
             บันทึก Correction
           </Button>
           {unresolved ? (
-            <Button variant="secondary" disabled={saving} onClick={() => {
-              setSaving(true);
-              setSaveRequest((request) => request + 1);
-            }}>
+            <Button
+              variant="secondary"
+              disabled={saving}
+              onClick={() => {
+                setSaving(true);
+                setSaveRequest((request) => request + 1);
+              }}
+            >
               ตรวจผลคำขอเดิม
             </Button>
           ) : null}

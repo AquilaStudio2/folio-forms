@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `c0387cf9c07e20439084536833f3dfa50142fc42`
+Commit: `30bcc4fa17b9df40b424eeeb32b33ebcdf51da1e`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -19,7 +19,7 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `/admin/forms/$formId` | `apps/web/src/routes/admin/forms/$formId.tsx:6` |
 | `/admin/forms/new` | `apps/web/src/routes/admin/forms/new.tsx:367` |
 | `/admin/` | `apps/web/src/routes/admin/index.tsx:5` |
-| `/admin/results/$responseId/correction` | `apps/web/src/routes/admin/results/$responseId/correction.tsx:245` |
+| `/admin/results/$responseId/correction` | `apps/web/src/routes/admin/results/$responseId/correction.tsx:297` |
 | `/admin/results/$responseId/` | `apps/web/src/routes/admin/results/$responseId/index.tsx:546` |
 | `/admin/results/` | `apps/web/src/routes/admin/results/index.tsx:813` |
 | `/admin/results` | `apps/web/src/routes/admin/results.tsx:5` |
@@ -28,7 +28,7 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `/admin` | `apps/web/src/routes/admin.tsx:35` |
 | `/change-password` | `apps/web/src/routes/change-password.tsx:229` |
 | `/dashboard` | `apps/web/src/routes/dashboard.tsx:383` |
-| `/forms/$publicId/fill` | `apps/web/src/routes/forms/$publicId/fill.tsx:1375` |
+| `/forms/$publicId/fill` | `apps/web/src/routes/forms/$publicId/fill.tsx:1414` |
 | `/forms/$publicId/submissions` | `apps/web/src/routes/forms/$publicId/submissions.tsx:243` |
 | `/handoff` | `apps/web/src/routes/handoff.tsx:59` |
 | `/` | `apps/web/src/routes/index.tsx:26` |
@@ -103,9 +103,9 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | GET | `/prefill/handoff` | `apps/server/src/routes/prefill.ts:162` |
 | GET | `/api/forms/:publicId` | `apps/server/src/routes/public-forms.ts:44` |
 | GET | `/api/forms/:publicId/editor-config` | `apps/server/src/routes/public-forms.ts:81` |
-| GET | `/api/forms/:publicId/my-submissions` | `apps/server/src/routes/public-forms.ts:100` |
-| GET | `/api/forms/:publicId/my-submissions/export` | `apps/server/src/routes/public-forms.ts:110` |
-| POST | `/api/forms/:publicId/start` | `apps/server/src/routes/public-forms.ts:128` |
+| GET | `/api/forms/:publicId/my-submissions` | `apps/server/src/routes/public-forms.ts:104` |
+| GET | `/api/forms/:publicId/my-submissions/export` | `apps/server/src/routes/public-forms.ts:114` |
+| POST | `/api/forms/:publicId/start` | `apps/server/src/routes/public-forms.ts:132` |
 | GET | `/api/responses/:id/attachment-operations/:checkpoint` | `apps/server/src/routes/response-actions.ts:108` |
 | POST | `/api/responses/:id/attachment-operations/:checkpoint/recover` | `apps/server/src/routes/response-actions.ts:155` |
 | POST | `/api/forms/:publicId/draft` | `apps/server/src/routes/response-actions.ts:168` |

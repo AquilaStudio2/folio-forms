@@ -1145,34 +1145,52 @@ test("a completed Draft continues only its original signed native opening and sa
   const rootKey = owner.documentKey;
   const configSchema = z.object({
     bridge: z.object({
-      documentKey: z.string(),
       capabilities: z.record(z.string(), z.string()),
+      documentKey: z.string(),
       lease: z.object({ id: z.string() }),
     }),
     config: z.object({ document: z.object({ key: z.string() }) }),
   });
-  const open = (continuation?: string, root = rootKey, opening = openingId, actor = owner) =>
-    app.handle(new Request(
-      `http://test.local/api/forms/${owner.form.publicId}/editor-config?responseId=${owner.response.id}&action=draft&pdmsOpeningId=${opening}${continuation ? `&continuedOperationId=${continuation}&nativeSessionDocumentKey=${encodeURIComponent(root)}` : ""}`,
-      { headers: { Authorization: `Bearer ${actor.bearer}` } }
-    ));
+  const open = (
+    continuation?: string,
+    root = rootKey,
+    opening = openingId,
+    actor = owner
+  ) =>
+    app.handle(
+      new Request(
+        `http://test.local/api/forms/${owner.form.publicId}/editor-config?responseId=${owner.response.id}&action=draft&pdmsOpeningId=${opening}${continuation ? `&continuedOperationId=${continuation}&nativeSessionDocumentKey=${encodeURIComponent(root)}` : ""}`,
+        { headers: { Authorization: `Bearer ${actor.bearer}` } }
+      )
+    );
   const initial = configSchema.parse(await (await open()).json());
   nativeSnapshotKeys.set(initial.config.document.key, rootKey);
-  const save = (config: z.infer<typeof configSchema>, checkpoint = crypto.randomUUID()) => {
+  const save = (
+    config: z.infer<typeof configSchema>,
+    checkpoint = crypto.randomUUID()
+  ) => {
     const body = new FormData();
-    body.set("payload", JSON.stringify({
-      checkpoint,
-      documentKey: config.bridge.documentKey,
-      responseId: owner.response.id,
-      snapshotUrl: "http://office.test/cache/snapshot.xlsx",
-    }));
-    return app.handle(new Request(
-      `http://test.local/api/forms/${owner.form.publicId}/draft`,
-      { method: "POST", body, headers: {
-        Authorization: `Bearer ${owner.bearer}`,
-        "X-Editor-Capability": fixtureValue(config.bridge.capabilities["save-draft"]),
-      } }
-    ));
+    body.set(
+      "payload",
+      JSON.stringify({
+        checkpoint,
+        documentKey: config.bridge.documentKey,
+        responseId: owner.response.id,
+        snapshotUrl: "http://office.test/cache/snapshot.xlsx",
+      })
+    );
+    return app.handle(
+      new Request(`http://test.local/api/forms/${owner.form.publicId}/draft`, {
+        body,
+        headers: {
+          Authorization: `Bearer ${owner.bearer}`,
+          "X-Editor-Capability": fixtureValue(
+            config.bridge.capabilities["save-draft"]
+          ),
+        },
+        method: "POST",
+      })
+    );
   };
   const uploads = received.length;
   const deletes = deleted.length;
@@ -1186,9 +1204,20 @@ test("a completed Draft continues only its original signed native opening and sa
   expect(continued.config.document.key).toBe(initial.config.document.key);
   expect(continued.bridge.lease.id).toBe(initial.bridge.lease.id);
   expect((await open(first.operationId, "forged-root")).status).toBe(409);
-  expect((await open(first.operationId, rootKey, crypto.randomUUID())).status).toBe(409);
-  expect((await open(first.operationId, rootKey, openingId, foreign)).status).not.toBe(200);
-  snapshots.set(rootKey, replaceCell(fixtureValue(snapshots.get(rootKey)), "B5", "newer ordinary input"));
+  expect(
+    (await open(first.operationId, rootKey, crypto.randomUUID())).status
+  ).toBe(409);
+  expect(
+    (await open(first.operationId, rootKey, openingId, foreign)).status
+  ).not.toBe(200);
+  snapshots.set(
+    rootKey,
+    replaceCell(
+      fixtureValue(snapshots.get(rootKey)),
+      "B5",
+      "newer ordinary input"
+    )
+  );
   const next = await poll(owner, await save(continued));
   expect(next.status).toBe("completed");
   expect(await draft(owner)).toMatchObject({ notes1: "newer ordinary input" });
@@ -5793,10 +5822,11 @@ test("a revoked lease after send cannot commit a late receipt or partial documen
   expect(await draft(f)).toEqual({});
 });
 
-test("cell URLs and client receipt objects never establish attachment ownership or start auth", async () => {
+test("attachment cell URLs cannot change canonical data or start auth", async () => {
   const f = await fixture();
   const start = received.length;
   const beforeLogin = logins;
+  const before = await draft(f);
   snapshots.set(
     f.documentKey,
     replaceCell(
@@ -5805,6 +5835,17 @@ test("cell URLs and client receipt objects never establish attachment ownership 
       "https://attacker.example/forged"
     )
   );
+  const result = await poll(f, await send(f, {}));
+  expect(result.status).toBe("failed");
+  expect(await draft(f)).toEqual(before);
+  expect(received.length).toBe(start);
+  expect(logins).toBe(beforeLogin);
+});
+
+test("client receipt objects never establish attachment ownership or start auth", async () => {
+  const f = await fixture();
+  const start = received.length;
+  const beforeLogin = logins;
   const result = await poll(
     f,
     await send(f, {}, "draft", crypto.randomUUID(), {

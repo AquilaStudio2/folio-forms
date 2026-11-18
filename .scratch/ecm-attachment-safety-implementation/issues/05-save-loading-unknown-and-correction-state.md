@@ -4,7 +4,7 @@
 
 **Blocked by:** 04 — เตือนก่อนออกและแยกสถานะไฟล์ที่ยังไม่บันทึก.
 
-**Status:** ready-for-agent
+**Status:** in-progress
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US72–81; H09, U04 และส่วน async/pending ของ U05
 
@@ -64,3 +64,11 @@ Blocker 04 เป็น prerequisite ของ navigation/discard behavior ท�
 6. Preserve an already in-flight picker confirmation/newer ordinary event across an older completion using real UI/transport barriers where reproducible. Verify no frame remount, candidate/confirmed/saved statuses remain distinct, and closing/canceling the dialog preserves its baseline. Then explicitly save the later work: require fresh canonical key/capability and the same live native session, with correct JSON/XLSX and no extra upload of the older snapshot. Supplementary host/plugin regressions cover queued-event interleavings; do not label simulated bridge messages as actual native UI evidence.
 7. For final Correction with newer File/removal/candidate/ordinary work, verify the original Correction saved while the editor/frame and later browser state remain. A late workspace completion/dirty-clear cannot remount or erase them. Save remains disabled on the retired workspace. Cancel/Escape in exit modal retains work; explicit discard exits without Save/DELETE. Reopen the current revision as a new Correction and choose a File manually; no transfer or byte-recovery promise.
 8. Capture sanitized before/after state, focus/status evidence and provider method counts through the parent driver. Run the named existing HTTP/UI/plugin suites once on integration. Report any native gesture/interleaving not reproducible as unverified, with its exact prerequisite; do not substitute helper tests, provider timeouts, or HTTP 200 for original-request finality or external acceptance.
+
+### Integration owner — partial verification
+
+- Merged through 05 on integration `30bcc4f`; parent corrected the unknown Correction outcome branch so it cannot claim a saved Correction, and retained existing async cleanup-warning behavior.
+- Root format/lint and types 5/5 passed on parent production corrections; web UI 274 cases passed. Initial integrated plugin run exposed obsolete restore/timing assertions and an uninitialized attachment-recovery fixture; these are being corrected without weakening production guards. HTTP forged-cell input now rejects before upload, while a separate valid native snapshot proves client receipt JSON cannot establish ownership (2 cases, 29 assertions passed).
+- Actual ONLYOFFICE 9.4/browser pilot selected and confirmed disk-backed `original.BIN` (4 bytes), typed active-cell `BEFORE` without Enter, and dispatched Save through the host. Native surface remained inert during the delayed original POST; pointer/keyboard attempts did not enter the native frame. Releasing that request once completed canonical JSON with `BEFORE` and the 4-byte receipt. Provider observed one POST with the unchanged approved base.
+- A subsequent ordinary-edit attempt did not establish the expected `AFTER` value. Input readiness/capture must be inspected before claiming subsequent-Save acceptance; no additional provider POST/DELETE occurred. No late-generation continuation or full role/outcome matrix is claimed by this pilot.
+- Native/browser integration acceptance remains in 06. No real DCM, real DELETE, push or deploy was performed.

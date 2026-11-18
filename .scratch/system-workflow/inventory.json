@@ -1,7 +1,7 @@
 {
-  "commit": "c0387cf9c07e20439084536833f3dfa50142fc42",
+  "commit": "30bcc4fa17b9df40b424eeeb32b33ebcdf51da1e",
   "branch": "feat/ecm-attachment-safety-implementation",
-  "source_fingerprint": "171649384a9e93c58ced0d351764897a192d55f1edf0368223cb657bd77a35a9",
+  "source_fingerprint": "f22915703f76496b1740c4c4a0ae3a1597d2c250594824d096667d998f822a82",
   "source_files": 312,
   "pages": [
     {
@@ -52,7 +52,7 @@
     {
       "route": "/admin/results/$responseId/correction",
       "file": "apps/web/src/routes/admin/results/$responseId/correction.tsx",
-      "line": 245
+      "line": 297
     },
     {
       "route": "/admin/results/$responseId/",
@@ -97,7 +97,7 @@
     {
       "route": "/forms/$publicId/fill",
       "file": "apps/web/src/routes/forms/$publicId/fill.tsx",
-      "line": 1375
+      "line": 1414
     },
     {
       "route": "/forms/$publicId/submissions",
@@ -513,19 +513,19 @@
       "method": "GET",
       "path": "/api/forms/:publicId/my-submissions",
       "file": "apps/server/src/routes/public-forms.ts",
-      "line": 100
+      "line": 104
     },
     {
       "method": "GET",
       "path": "/api/forms/:publicId/my-submissions/export",
       "file": "apps/server/src/routes/public-forms.ts",
-      "line": 110
+      "line": 114
     },
     {
       "method": "POST",
       "path": "/api/forms/:publicId/start",
       "file": "apps/server/src/routes/public-forms.ts",
-      "line": 128
+      "line": 132
     },
     {
       "method": "GET",

@@ -459,11 +459,6 @@ test("Correction picker saves only its workspace without inventing a reason, usi
   const pendingCheck = harness.messages.find(
     ({ message }) => message.type === "pending-file-check"
   )?.message;
-  expect(
-    harness.methodInvocations
-      .slice(methodCount)
-      .some(({ method }) => method === "SetEditingRestrictions")
-  ).toBe(false);
   harness.dispatch({
     data: {
       ...pendingCheck,

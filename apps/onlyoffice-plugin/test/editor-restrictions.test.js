@@ -52,7 +52,6 @@ test.each(
 test.each([
   ["template-edit", "save-template", "xlsx", "none"],
   ["draft", "save-draft", "xlsx", "none"],
-  ["correction", "save-correction", "xlsx", "none"],
   ["draft", "save-draft", "docx", "forms"],
 ])(
   "%s %s for %s reports completion only after native editing is restored",
