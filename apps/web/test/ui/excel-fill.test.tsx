@@ -28,7 +28,6 @@ const auth = vi.hoisted(() => ({
   user: { email: "user@example.test", id: "user", role: "user" },
 }));
 const navigation = vi.hoisted(() => ({ navigate: vi.fn() }));
-let deletionWarning: string | null = null;
 vi.mock("@/lib/auth", () => ({
   roleFor: () => "user",
   useAuth: () => ({ loading: false, user: auth.user }),
@@ -80,9 +79,17 @@ vi.mock("@/components/onlyoffice-editor", () => ({
 }));
 beforeEach(() => {
   auth.commandReady = true;
-  deletionWarning = null;
   bridge.captureWorkbook.mockReset();
   navigation.navigate.mockReset();
+  // JSDOM omits dialog methods; these tests do not prove native modality.
+  Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
+    configurable: true,
+    value(this: HTMLDialogElement) { this.open = true; },
+  });
+  Object.defineProperty(HTMLDialogElement.prototype, "close", {
+    configurable: true,
+    value(this: HTMLDialogElement) { this.open = false; },
+  });
 });
 const Fill = Route.options.component as ComponentType;
 const mount = (exportWorkbook?: (init?: RequestInit) => Promise<Response>) => {
@@ -91,16 +98,6 @@ const mount = (exportWorkbook?: (init?: RequestInit) => Promise<Response>) => {
     vi.fn(async (input: string, init?: RequestInit) => {
       if (input.includes("/editor-export/") && exportWorkbook) {
         return exportWorkbook(init);
-      }
-      if (init?.method === "DELETE") {
-        return Response.json({
-          attachmentCleanup: {
-            caseReference: deletionWarning ? "deletion-case" : null,
-            state: deletionWarning ? "pending" : "complete",
-            warning: deletionWarning,
-          },
-          discarded: true,
-        });
       }
       if (init?.method === "POST") {
         return Response.json({
@@ -213,79 +210,57 @@ describe("Excel response actions", () => {
       );
     }
   );
-  it.each(["บันทึกแล้วออก", "ทิ้งฉบับร่าง"])(
-    "keeps the dirty exit prompt actionable during PDF conversion with %s",
-    async (exitAction) => {
-      bridge.captureWorkbook.mockResolvedValue({
-        capability: "test-capability",
-        snapshotUrl: "https://office.test/snapshot",
-      });
-      const pendingConversion = createDeferred<Response>();
-      const convert = vi.fn((_init?: RequestInit) => pendingConversion.promise);
-      mount(convert);
-      const pdf = await screen.findByRole("button", { name: "ดาวน์โหลด PDF" });
-      act(() => bridge.onDirtyChange?.(true));
-      await userEvent.click(pdf);
-      await waitFor(() => expect(convert).toHaveBeenCalledOnce());
-      const signal = convert.mock.calls[0]?.[0]?.signal;
-
-      await userEvent.click(
-        screen.getByRole("button", { name: "ออกจากแบบฟอร์ม" })
-      );
-      expect(
-        screen.getByRole("dialog", { name: "มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก" })
-      ).toBeInTheDocument();
-      expect(signal?.aborted).toBe(false);
-      await userEvent.click(screen.getByRole("button", { name: exitAction }));
-      expect(signal?.aborted).toBe(true);
-      if (exitAction === "บันทึกแล้วออก") {
-        expect(screen.getByTestId("editor")).toHaveAttribute(
-          "data-request",
-          "1"
-        );
-        expect(screen.getByTestId("editor")).toHaveAttribute(
-          "data-action",
-          "save-draft"
-        );
-        expect(navigation.navigate).not.toHaveBeenCalled();
-        await act(async () => {
-          await bridge.onMessage?.({
-            action: "save-draft",
-            bridgeId: "test-bridge",
-            operationId: "saved",
-            source: "form-bridge",
-            status: "completed",
-            type: "operation",
-          });
-        });
-      } else {
-        expect(fetch).toHaveBeenCalledWith(
-          expect.stringContaining("/api/responses/response"),
-          expect.objectContaining({ method: "DELETE" })
-        );
-      }
-      await waitFor(() =>
-        expect(navigation.navigate).toHaveBeenCalledWith({ to: "/dashboard" })
-      );
-      await act(async () =>
-        pendingConversion.resolve(new Response(null, { status: 502 }))
-      );
-      expect(screen.queryByRole("alert")).not.toBeInTheDocument();
-    }
-  );
-  it("keeps a pending-file deletion warning available while Fill exits to the destination shell", async () => {
-    deletionWarning = "ลบข้อมูลคำตอบแล้ว แต่ URL อาจยังเปิดได้ รหัสติดตาม deletion-case";
+  it("discards only local edits during PDF conversion without saving or deleting the response", async () => {
+    bridge.captureWorkbook.mockResolvedValue({
+      capability: "test-capability",
+      snapshotUrl: "https://office.test/snapshot",
+    });
+    const pendingConversion = createDeferred<Response>();
+    const convert = vi.fn((_init?: RequestInit) => pendingConversion.promise);
+    mount(convert);
+    const pdf = await screen.findByRole("button", { name: "ดาวน์โหลด PDF" });
+    act(() => bridge.onDirtyChange?.(true));
+    await userEvent.click(pdf);
+    await waitFor(() => expect(convert).toHaveBeenCalledOnce());
+    const signal = convert.mock.calls[0]?.[0]?.signal;
+    await userEvent.click(
+      screen.getByRole("button", { name: "ออกจากแบบฟอร์ม" })
+    );
+    expect(signal?.aborted).toBe(false);
+    expect(screen.queryByRole("button", { name: "บันทึกแล้วออก" })).toBeNull();
+    const callsBeforeDiscard = vi.mocked(fetch).mock.calls.length;
+    await userEvent.click(
+      screen.getByRole("button", { name: "ทิ้งการเปลี่ยนแปลงและออก" })
+    );
+    expect(signal?.aborted).toBe(true);
+    await waitFor(() =>
+      expect(navigation.navigate).toHaveBeenCalledWith({ to: "/dashboard" })
+    );
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(callsBeforeDiscard);
+    expect(screen.getByTestId("editor")).toHaveAttribute("data-request", "0");
+    await act(async () =>
+      pendingConversion.resolve(new Response(null, { status: 502 }))
+    );
+  });
+  it.each(["cancel", "escape"])("keeps local work when exit is canceled with %s", async (action) => {
     mount();
-    await screen.findByRole("button", { name: "ออกจากแบบฟอร์ม" });
+    await screen.findByTestId("editor");
     act(() => bridge.onDirtyChange?.(true));
     await userEvent.click(
       screen.getByRole("button", { name: "ออกจากแบบฟอร์ม" })
     );
-    await userEvent.click(screen.getByRole("button", { name: "ทิ้งฉบับร่าง" }));
-    await waitFor(() =>
-      expect(navigation.navigate).toHaveBeenCalledWith({ to: "/dashboard" })
+    const callsBeforeCancel = vi.mocked(fetch).mock.calls.length;
+    if (action === "escape") {
+      fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
+    } else {
+      await userEvent.click(screen.getByRole("button", { name: "อยู่หน้านี้ต่อ" }));
+    }
+    expect(navigation.navigate).not.toHaveBeenCalled();
+    expect(vi.mocked(fetch).mock.calls).toHaveLength(callsBeforeCancel);
+    await userEvent.click(
+      screen.getByRole("button", { name: "ออกจากแบบฟอร์ม" })
     );
-    expect(screen.getByText(deletionWarning)).toBeVisible();
+    expect(screen.getByRole("dialog")).toBeVisible();
   });
   it("retries PDF conversion with a fresh capture and keeps unsaved edits", async () => {
     bridge.captureWorkbook

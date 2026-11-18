@@ -17,7 +17,7 @@ import { routeTree } from "@/routeTree.gen";
 
 afterEach(() => window.history.replaceState(null, "", "/"));
 
-it.each(["none", "replacement", "removal"] as const)(
+it.each(["none", "replacement", "removal", "candidate"] as const)(
   "Correction completion preserves a late %s until an explicit exit decision",
   async (lateChange) => {
     const responseId = "11111111-1111-4111-8111-111111111111";
@@ -146,7 +146,7 @@ it.each(["none", "replacement", "removal"] as const)(
     };
     fireEvent.click(screen.getByRole("button", { exact: true, name: "ยกเลิก" }));
     expect(await screen.findByRole("dialog")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { exact: true, name: "อยู่ต่อ" }));
+    fireEvent.click(screen.getByRole("button", { exact: true, name: "อยู่หน้านี้ต่อ" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     );
@@ -211,8 +211,8 @@ it.each(["none", "replacement", "removal"] as const)(
     });
     fireEvent.click(screen.getByRole("button", { exact: true, name: "ยกเลิก" }));
     expect(await screen.findByRole("dialog")).toBeVisible();
-    expect(screen.getByRole("button", { name: "ออกโดยไม่บันทึก" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { exact: true, name: "อยู่ต่อ" }));
+    expect(screen.getByRole("button", { name: "ทิ้งการเปลี่ยนแปลงและออก" })).toBeDisabled();
+    fireEvent.click(screen.getByRole("button", { exact: true, name: "อยู่หน้านี้ต่อ" }));
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     );
@@ -302,9 +302,11 @@ it.each(["none", "replacement", "removal"] as const)(
       );
     if (lateChange !== "none") {
       sendLate({
+        dirty: true,
         file: lateFile,
-        type:
-          lateChange === "replacement"
+        type: lateChange === "candidate"
+          ? "pending-file-candidate"
+          : lateChange === "replacement"
             ? "pending-file-set"
             : "pending-file-remove",
       });
@@ -341,7 +343,7 @@ it.each(["none", "replacement", "removal"] as const)(
       );
       expect(await screen.findByRole("dialog")).toBeVisible();
       fireEvent.click(
-        screen.getByRole("button", { exact: true, name: "อยู่ต่อ" })
+        screen.getByRole("button", { exact: true, name: "อยู่หน้านี้ต่อ" })
       );
       await waitFor(() =>
         expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
@@ -351,7 +353,7 @@ it.each(["none", "replacement", "removal"] as const)(
         screen.getByRole("button", { exact: true, name: "ยกเลิก" })
       );
       fireEvent.click(
-        await screen.findByRole("button", { name: "ออกโดยไม่บันทึก" })
+        await screen.findByRole("button", { name: "ทิ้งการเปลี่ยนแปลงและออก" })
       );
     }
     await waitFor(() =>

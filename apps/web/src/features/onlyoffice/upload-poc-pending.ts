@@ -257,7 +257,7 @@ export class UploadPocPendingFiles {
       transition.tableBindingId !== (table?.id ?? null) ||
       transition.oldRowCount !== oldRowCount ||
       !Number.isSafeInteger(transition.newRowCount) ||
-      Number(transition.newRowCount) < 0 ||
+      Number(transition.newRowCount) < (table ? 1 : 0) ||
       !Array.isArray(transition.rowMapping) ||
       transition.rowMapping.length !== oldRowCount
     ) {
@@ -901,6 +901,9 @@ export class UploadPocPendingFiles {
           throw new Error("เพิ่มแถวได้เฉพาะท้ายตาราง เพื่อรักษาไฟล์ที่เลือกไว้");
         }
       } else if (value.action === "delete-row") {
+        if (rowCount !== null && rowCount < 2) {
+          throw new Error("ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้");
+        }
         if (
           rowCount === null ||
           !Number.isSafeInteger(value.rowIndex) ||

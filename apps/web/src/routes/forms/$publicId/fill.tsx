@@ -39,14 +39,13 @@ import type {
 } from "@/features/onlyoffice/editor-protocol";
 import {
   ApiError,
-  apiDelete,
   apiGet,
   apiPost,
   downloadArtifact,
   formatDateTime,
   safeReturnPath,
 } from "@/lib/api";
-import type { FillMethod, Operation, ResponseDeletionOutcome } from "@/lib/api";
+import type { FillMethod, Operation } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import {
   createDeferred,
@@ -173,11 +172,6 @@ const FillRoute = () => {
     controller: AbortController;
   } | null>(null);
   useEffect(() => () => workbookDownloadRef.current?.controller.abort(), []);
-  const [clearDirtyRequest, setClearDirtyRequest] = useState(0);
-  const [discardBusy, setDiscardBusy] = useState(false);
-  const [deletionCleanupWarning, setDeletionCleanupWarning] = useState<
-    string | null
-  >(null);
   const [submissionHistory, setSubmissionHistory] = useState<
     SubmissionHistoryEntry[]
   >([]);
@@ -190,6 +184,7 @@ const FillRoute = () => {
   const [submissionHistoryRequest, setSubmissionHistoryRequest] = useState(0);
   const [exportingSubmissions, setExportingSubmissions] = useState(false);
   const startErrorRef = useRef<HTMLDivElement>(null);
+  const exitDialogRef = useRef<HTMLDialogElement>(null);
   const exportSaveResolverRef = useRef<{
     reject: (reason?: unknown) => void;
     resolve: (value: boolean | PromiseLike<boolean>) => void;
@@ -201,11 +196,14 @@ const FillRoute = () => {
     proceed: () => void;
     reset: () => void;
   } | null>(null);
+  const hasUnsavedChanges =
+    dirty || nativeSaving ||
+    operation?.status === "pending" || operation?.status === "processing";
   const navigationBlocker = useBlocker({
-    disabled: !dirty,
-    enableBeforeUnload: dirty,
+    disabled: !hasUnsavedChanges,
+    enableBeforeUnload: hasUnsavedChanges,
     shouldBlockFn: () =>
-      shouldBlockDirtyNavigation(dirty, allowNavigationRef.current),
+      shouldBlockDirtyNavigation(hasUnsavedChanges, allowNavigationRef.current),
     withResolver: true,
   });
   useEffect(() => {
@@ -285,10 +283,15 @@ const FillRoute = () => {
       window.removeEventListener("folio:before-reauth", handleReauthentication);
   }, [activeResponseId, dirty]);
   useEffect(() => {
-    if (!exitIntent) {
+    const dialog = exitDialogRef.current;
+    if (!dialog) {
       return;
     }
-    document.querySelector<HTMLElement>("#unsaved-cancel")?.focus();
+    if (exitIntent && !dialog.open) {
+      dialog.showModal();
+    } else if (!exitIntent && dialog.open) {
+      dialog.close();
+    }
   }, [exitIntent]);
   useEffect(() => {
     if (error) {
@@ -500,7 +503,7 @@ const FillRoute = () => {
     }
 
     setDirty(message.hasPendingAttachments === true);
-    if (message.action === "save-draft") {
+    if (message.action === "save-draft" && !message.hasAttachmentCandidates) {
       setEditorRevision((value) => value + 1);
     }
     if (message.hasPendingAttachments) {
@@ -688,8 +691,7 @@ const FillRoute = () => {
     operation?.status === "pending" ||
     operation?.status === "processing" ||
     Boolean(exportAfterSave) ||
-    saveBeforeExit ||
-    discardBusy;
+    saveBeforeExit;
 
   const saveNativeResponse = async (
     action: "save-draft" | "submit",
@@ -818,9 +820,9 @@ const FillRoute = () => {
   const downloadingWorkbook = workbookDownloadPhase !== null;
   const capturingWorkbook = workbookDownloadPhase === "capturing";
   const editorActionDisabled =
-    !editorCommandReady || saveFlowBusy || discardBusy || capturingWorkbook;
+    !editorCommandReady || saveFlowBusy || capturingWorkbook;
   const handleExit = async () => {
-    if (saveFlowBusy || discardBusy) {
+    if (saveFlowBusy) {
       return;
     }
     if (!dirty) {
@@ -837,7 +839,6 @@ const FillRoute = () => {
     if (
       !activeResponseId ||
       saveFlowBusy ||
-      discardBusy ||
       workbookDownloadRef.current?.capturing
     ) {
       return;
@@ -861,7 +862,6 @@ const FillRoute = () => {
     if (
       !activeResponseId ||
       saveFlowBusy ||
-      discardBusy ||
       exportSaveResolverRef.current
     ) {
       return;
@@ -994,103 +994,77 @@ const FillRoute = () => {
     setSaveBeforeExit(false);
     setExitIntent(null);
   };
-  const discardDraft = async () => {
-    if (
-      !activeResponseId ||
-      discardBusy ||
-      saveFlowBusy ||
-      workbookDownloadRef.current?.capturing
-    ) {
+  const discardAndExit = async () => {
+    if (saveFlowBusy || workbookDownloadRef.current?.capturing) {
       return;
     }
     workbookDownloadRef.current?.controller.abort();
-    setDiscardBusy(true);
-    setOperationError(null);
-    try {
-      const outcome = await apiDelete<ResponseDeletionOutcome>(
-        `/api/responses/${activeResponseId}`
-      );
-      // The destination shell reloads durable owner-bound warnings after navigation.
-      setDeletionCleanupWarning(outcome.attachmentCleanup.warning);
-      setDirty(false);
-      setClearDirtyRequest((value) => value + 1);
-      const intent = exitIntent;
-      if (intent === "reauth") {
-        resolveReauthentication(true);
-      } else if (intent === "dashboard") {
-        allowNavigationRef.current = true;
-        await navigate({ to: "/dashboard" });
-      } else {
-        allowNavigationRef.current = true;
-        navigationBlockerRef.current?.proceed();
-      }
-      setExitIntent(null);
-    } catch (caughtError) {
-      setOperationError(
-        formRequestError(caughtError, "ลบฉบับร่างไม่สำเร็จ กรุณาลองใหม่")
-      );
-    } finally {
-      setDiscardBusy(false);
+    allowNavigationRef.current = true;
+    if (exitIntent === "dashboard") {
+      await navigate({ to: "/dashboard" });
+    } else {
+      navigationBlockerRef.current?.proceed();
     }
+    setExitIntent(null);
   };
 
-  const exitPrompt = exitIntent ? (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/35 px-5"
-      role="presentation"
+  const exitPrompt = (
+    <dialog
+      ref={exitDialogRef}
+      aria-labelledby="unsaved-title"
+      className="m-auto w-full max-w-lg rounded-[var(--radius)] border border-[var(--line)] bg-[var(--paper)] p-6 text-[var(--ink)] shadow-xl backdrop:bg-black/35"
+      onCancel={(event) => {
+        event.preventDefault();
+        cancelExit();
+      }}
     >
-      <div
-        className="w-full max-w-lg rounded-[var(--radius)] border border-[var(--line)] bg-[var(--paper)] p-6 shadow-xl"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="unsaved-title"
-      >
-        <h2 id="unsaved-title" className="text-lg font-semibold">
-          มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก
-        </h2>
-        <p className="mt-2 text-sm text-[var(--ink-soft)]">
-          {exitIntent === "reauth"
-            ? "บันทึกฉบับร่างก่อนเข้าสู่ระบบเดิม หรืออยู่ต่อเพื่อยกเลิก"
-            : "บันทึกฉบับร่างก่อนออกจากแบบฟอร์ม หรือทิ้งฉบับร่างนี้อย่างถาวร"}
-        </p>
-        {operationError ? (
-          <div className="mt-4">
-            <Notice tone="danger">{operationError}</Notice>
-          </div>
-        ) : null}
-        <div className="mt-6 flex flex-wrap justify-end gap-2">
-          {exitIntent === "reauth" ? null : (
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={discardDraft}
-              disabled={discardBusy || saveFlowBusy || capturingWorkbook}
-            >
-              {discardBusy ? <Spinner /> : null}
-              {discardBusy ? "กำลังลบ…" : "ทิ้งฉบับร่าง"}
-            </Button>
-          )}
+      <h2 id="unsaved-title" className="text-lg font-semibold">
+        มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก
+      </h2>
+      <p className="mt-2 text-sm text-[var(--ink-soft)]">
+        {exitIntent === "reauth"
+          ? "บันทึกฉบับร่างก่อนเข้าสู่ระบบเดิม หรืออยู่ต่อเพื่อยกเลิก"
+          : saveFlowBusy
+            ? "กำลังบันทึก กรุณารอผลก่อนออกจากหน้านี้"
+            : "ทิ้งเฉพาะไฟล์ การนำออก และการแก้ไขที่ยังไม่บันทึก โดยไม่ลบคำตอบที่บันทึกแล้ว การออกไม่ยกเลิกคำขอที่ส่งไปแล้ว และไม่กู้ไฟล์ที่ยังไม่บันทึกหลังเปิดใหม่"}
+      </p>
+      {operationError ? (
+        <div className="mt-4">
+          <Notice tone="danger">{operationError}</Notice>
+        </div>
+      ) : null}
+      <div className="mt-6 flex flex-wrap justify-end gap-2">
+        <Button
+          id="unsaved-cancel"
+          autoFocus
+          variant="secondary"
+          type="button"
+          onClick={cancelExit}
+        >
+          อยู่หน้านี้ต่อ
+        </Button>
+        {exitIntent === "reauth" ? (
           <Button
             type="button"
             onClick={saveAndExit}
-            disabled={discardBusy || saveFlowBusy || capturingWorkbook}
+            disabled={saveFlowBusy || capturingWorkbook}
           >
             {saveBeforeExit ? <Spinner /> : null}
             {saveBeforeExit ? "กำลังบันทึก…" : "บันทึกแล้วออก"}
           </Button>
+        ) : (
           <Button
-            id="unsaved-cancel"
-            variant="ghost"
+            variant="danger"
             type="button"
-            onClick={cancelExit}
-            disabled={discardBusy || saveFlowBusy}
+            onClick={discardAndExit}
+            disabled={saveFlowBusy || capturingWorkbook}
           >
-            อยู่ต่อ
+            ทิ้งการเปลี่ยนแปลงและออก
           </Button>
-        </div>
+        )}
       </div>
-    </div>
-  ) : null;
+    </dialog>
+  );
 
   return (
     <div className="min-h-screen bg-[var(--canvas)]">
@@ -1102,7 +1076,7 @@ const FillRoute = () => {
             variant="ghost"
             size="sm"
             onClick={handleExit}
-            disabled={discardBusy || saveFlowBusy}
+            disabled={saveFlowBusy}
           >
             <ArrowLeft />
             ออกจากแบบฟอร์ม
@@ -1150,11 +1124,6 @@ const FillRoute = () => {
         {operationError ? (
           <div className="mb-4">
             <Notice tone="danger">{operationError}</Notice>
-          </div>
-        ) : null}
-        {deletionCleanupWarning ? (
-          <div className="mb-4">
-            <Notice>{deletionCleanupWarning}</Notice>
           </div>
         ) : null}
         {workbookDownloadError ? (
@@ -1386,7 +1355,6 @@ const FillRoute = () => {
                 captureWorkbookRef={
                   form.documentKind === "xlsx" ? captureWorkbookRef : undefined
                 }
-                clearDirtyRequest={clearDirtyRequest}
                 configUrl={editorConfigUrl ?? undefined}
                 onBridgeMessage={handleBridgeMessage}
                 onDirtyChange={setDirty}
