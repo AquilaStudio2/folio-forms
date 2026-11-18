@@ -1,35 +1,27 @@
 flowchart TD
     exit(["จะออกจากหน้า fill"])
-    busy{"กำลังบันทึก ส่ง ทิ้งร่าง หรือดาวน์โหลด DOCX"}
-    wait["ปุ่มออกให้รอจนงานจบ"]
-    dirty{"มีการแก้หลังฉบับที่บันทึก"}
+    busy{"กำลัง Save หรือ mutation ที่ต้องรอ"}
+    wait["รอผลก่อนออก ไม่อ้างว่ายกเลิกคำขอเดิม"]
+    dirty{"มี ordinary edits / candidate / pending ที่ยังไม่บันทึก"}
     leave["ไป Dashboard หรือหน้าปลายทาง"]
-    prompt["แสดง dialog งานยังไม่บันทึก"]
-    choice{"เลือกทำอะไร"}
-    captureWait["รอจับสำเนา Excel ก่อนบันทึกหรือทิ้งร่าง"]
-    save["บันทึกแล้วออก"]
-    operation["รอ Save Draft Operation"]
-    result{"บันทึกสำเร็จ"}
-    stay["อยู่ต่อและเก็บค่าที่กำลังพิมพ์"]
-    discard["ทิ้งฉบับร่าง"]
-    erased["ลบ Response และประวัติที่ผูกอยู่"]
+    prompt["native dialog งานยังไม่บันทึก"]
+    choice{"อยู่ต่อหรือทิ้งงาน local"}
+    stay["อยู่หน้านี้ต่อ; Cancel/Escape คงงาน"]
+    discard["ทิ้งเฉพาะ unsaved local changes"]
+    canonical["คง saved Response / history / checkpoint; ไม่ Save หรือ DELETE"]
     reauth["ขอ login ใหม่หรือสลับ PDMS"]
-    saved["บันทึกก่อนหรือยกเลิกการสลับ"]
+    saved["explicit Save ก่อนเปลี่ยน session หรือยกเลิก"]
     expired["หมด session แล้ว"]
     login["เข้าสู่ระบบอีกครั้ง"]
-    reopen["กลับไปฉบับที่บันทึกสำเร็จล่าสุด"]
+    reopen["เปิด saved canonical; ตรวจ original Operation ก่อน mutation ใหม่"]
     exit --> busy
     busy -->|"ใช่"| wait
     busy -->|"ไม่"| dirty
-    dirty -->|"ไม่"| leave
+    dirty -->|"ไม่มี"| leave
     dirty -->|"มี"| prompt --> choice
-    prompt -.->|"กำลังจับสำเนา"| captureWait --> choice
-    choice -->|"บันทึกแล้วออก"| save --> operation --> result
-    result -->|"สำเร็จ"| leave
-    result -->|"ล้มเหลว"| stay
-    choice -->|"อยู่ต่อ"| stay
-    choice -->|"ทิ้งฉบับร่าง"| discard --> erased --> leave
+    choice -->|"อยู่ต่อ / Escape"| stay
+    choice -->|"explicit discard"| discard --> canonical --> leave
     reauth -->|"มีงานค้าง"| saved
-    saved -->|"บันทึกสำเร็จ"| login
+    saved -->|"Save สำเร็จ"| login
     saved -->|"ยกเลิก"| stay
     expired --> login --> reopen

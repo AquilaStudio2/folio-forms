@@ -30,7 +30,7 @@ const conflict = (): never =>
     "ปลายทางไฟล์ซ้ำกับข้อมูล ประวัติ หรือคำขอที่ยังยืนยันไม่ได้ ห้ามเขียนทับ กรุณาติดต่อผู้ดูแล"
   );
 
-/** Only the current own Draft slot may be overwritten; history and uncertain attempts never may. */
+/** Names fence unresolved requests, not ownership of settled template resources. */
 export const admitAttachmentDestination = async (
   tx: Prisma.TransactionClient,
   candidate: Pick<
@@ -42,6 +42,7 @@ export const admitAttachmentDestination = async (
     | "bindingId"
     | "rowIndex"
     | "id"
+    | "storageMode"
   >
 ): Promise<string[]> => {
   await lockAttachmentLedger(tx);
@@ -64,6 +65,20 @@ export const admitAttachmentDestination = async (
       previous.operationId === candidate.operationId &&
       ["prepared", "started", "received"].includes(previous.state)
     ) {
+      continue;
+    }
+    if (
+      candidate.storageMode === "template" &&
+      previous.storageMode === "template" &&
+      previous.state === "committed" &&
+      previous.identityId
+    ) {
+      const identity = await tx.ecmAttachmentIdentity.findUniqueOrThrow({
+        where: { id: previous.identityId },
+      });
+      if (identity.state !== "active") {
+        conflict();
+      }
       continue;
     }
     if (
@@ -183,6 +198,7 @@ export const receiveAttachmentIdentity = async (
     where: { identityId: identity.id },
   });
   if (
+    version.storageMode !== "template" &&
     aliases.some(
       (alias) =>
         alias.responseId !== version.responseId ||
@@ -196,6 +212,106 @@ export const receiveAttachmentIdentity = async (
     return null;
   }
   return identity.id;
+};
+
+/** Classify only exact original receipts; incomplete aliases never prove history. */
+export const templateReceiptConflict = async (
+  tx: Prisma.TransactionClient,
+  version: EcmAttachmentVersion,
+  identityId: string | null
+): Promise<{ code: string; message: string } | null> => {
+  if (version.storageMode !== "template") {
+    return null;
+  }
+  const ambiguous = {
+    code: "attachment_receipt_conflict",
+    message: "ข้อมูลอ้างอิงไฟล์ขัดแย้งหรือยังยืนยันไม่ครบ รอบนี้ยังไม่บันทึก",
+  };
+  if (!identityId) {
+    return ambiguous;
+  }
+  const aliases = await tx.ecmAttachmentVersion.findMany({
+    where: { id: { not: version.id }, identityId },
+  });
+  if (!aliases.length) {
+    return null;
+  }
+  const references = await tx.ecmAttachmentReference.findMany({
+    where: { versionId: { in: aliases.map((alias) => alias.id) } },
+  });
+  const keys = references.map((reference) => reference.snapshotId);
+  const history =
+    (await tx.submission.count({ where: { documentKey: { in: keys } } })) +
+    (await tx.correction.count({ where: { documentKey: { in: keys } } }));
+  let reason = ambiguous;
+  if (history) {
+    const submissions = await tx.submission.findMany({
+      select: { id: true },
+      where: { documentKey: { in: keys }, responseId: version.responseId },
+    });
+    const corrections = await tx.correction.findMany({
+      select: { id: true, revision: true },
+      where: {
+        documentKey: { in: keys },
+        responseId: version.responseId,
+      },
+    });
+    reason = {
+      code: "attachment_history_receipt_conflict",
+      message: `ข้อมูลอ้างอิงไฟล์ตรงกับประวัติเดิม รอบนี้ยังไม่บันทึก${submissions.map((entry) => ` / Submission ${entry.id}`).join("")}${corrections.map((entry) => ` / Correction ${entry.id} / revision ${entry.revision}`).join("")}`,
+    };
+  } else {
+    const response = await tx.response.findUnique({
+      where: { id: version.responseId },
+    });
+    const protectedReferences = references.some(
+      (reference) =>
+        reference.responseId !== version.responseId ||
+        reference.snapshotId !== response?.draftDocumentKey
+    );
+    const protectedScopes =
+      (await tx.editorLease.count({
+        where: {
+          OR: [
+            { workspaceDocumentKey: { in: keys } },
+            { workspaceBaseDocumentKey: { in: keys } },
+          ],
+        },
+      })) +
+      (await tx.operation.count({
+        where: {
+          documentKey: { in: keys },
+          id: { not: version.operationId },
+          status: { in: ["pending", "processing"] },
+        },
+      })) +
+      (await tx.ecmAttachmentCleanup.count({
+        where: {
+          state: { in: ["pending", "claimed", "started", "unknown"] },
+          versionId: { in: aliases.map((alias) => alias.id) },
+        },
+      }));
+    if (
+      references.length &&
+      !protectedReferences &&
+      !protectedScopes &&
+      aliases.every(
+        (alias) =>
+          alias.responseId === version.responseId && alias.state === "committed"
+      )
+    ) {
+      reason = {
+        code: "attachment_draft_receipt_conflict",
+        message: "ข้อมูลอ้างอิงไฟล์ซ้ำกับไฟล์ร่างเดิม รอบนี้ยังไม่บันทึก",
+      };
+    }
+  }
+  // Hold the shared resource before cancellation can schedule any cleanup.
+  await tx.ecmAttachmentIdentity.update({
+    data: { state: "held" },
+    where: { id: identityId },
+  });
+  return reason;
 };
 
 /** Reference admission shares destination and resource fences with upload and DELETE. */

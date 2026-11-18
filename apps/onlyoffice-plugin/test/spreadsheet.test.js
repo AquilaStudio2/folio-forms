@@ -1027,9 +1027,7 @@ test("last-row delete is disabled with a reason and follows trusted native body 
     (node) => node.tagName === "BUTTON" && node.textContent === "ลบแถวที่เลือก"
   );
   expect(remove.disabled).toBe(true);
-  expect(remove.title).toBe(
-    "ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้"
-  );
+  expect(remove.title).toBe("ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้");
   remove.dispatchEvent({ type: "click" });
   await flushPlugin();
   expect(harness.requests).toHaveLength(0);

@@ -29,6 +29,7 @@ import {
   lockAttachmentLedger,
   admitAttachmentDestination,
   receiveAttachmentIdentity,
+  templateReceiptConflict,
   requireAttachmentReferenceReady,
   attachmentIdentityReferenced,
   requireAttachmentDeleteReady,
@@ -546,34 +547,6 @@ const attachmentSnapshot = (
   return extracted;
 };
 
-const numberDuplicateAttachmentFilenames = (
-  plans: readonly AttachmentPlan[]
-): void => {
-  // Reserve natural destinations so a suffix cannot steal another template's filename.
-  const filenames = new Set(plans.map((plan) => plan.filename));
-  const nextSuffixes = new Map<string, number>();
-  for (const plan of plans) {
-    if (plan.slot.field.attachment?.mode !== "template") {
-      continue;
-    }
-    const { filename } = plan;
-    let suffix = nextSuffixes.get(filename) ?? 0;
-    if (suffix > 0) {
-      const dot = plan.file.name.lastIndexOf(".");
-      const extension = dot > 0 ? plan.file.name.slice(dot) : "";
-      const stem = filename.slice(0, filename.length - extension.length);
-      do {
-        plan.filename = `${stem}-(${suffix})${extension}`;
-        suffix += 1;
-      } while (filenames.has(plan.filename));
-      filenames.add(plan.filename);
-    } else {
-      suffix = 1;
-    }
-    nextSuffixes.set(filename, suffix);
-  }
-};
-
 const originalFileSha256 = async (file: File): Promise<string> => {
   const hash = createHash("sha256");
   for await (const chunk of file.stream()) {
@@ -649,7 +622,6 @@ const planAttachmentUploads = async (
       plans.push({ ...plan, sha256 });
     }
   }
-  numberDuplicateAttachmentFilenames(plans);
   checkAttachmentJsonBytes(data);
   return { data, plans };
 };
@@ -685,6 +657,7 @@ export const uploadAttachments = async (
         operationId: operation.id,
         responseId: batch.responseId,
         rowIndex: plan.slot.rowIndex,
+        storageMode: plan.slot.field.attachment?.mode ?? "legacy",
       });
       // oxlint-disable-next-line no-await-in-loop -- Admission and intent persist in the same transaction.
       await tx.ecmAttachmentVersion.create({
@@ -774,7 +747,7 @@ export const uploadAttachments = async (
       });
       // A receipt is retained even if the Folio Operation expired while ECM was sending.
       // oxlint-disable-next-line no-await-in-loop -- Persist or settle each version before the next external mutation.
-      await prisma.$transaction(async (tx) => {
+      const receiptConflict = await prisma.$transaction(async (tx) => {
         await lockBatch(tx, operation.id);
         const attempt = await tx.ecmAttachmentVersion.findUniqueOrThrow({
           where: { id: plan.id },
@@ -823,7 +796,11 @@ export const uploadAttachments = async (
             },
           });
         }
+        return templateReceiptConflict(tx, attempt, identityId);
       });
+      if (receiptConflict) {
+        fail(409, receiptConflict.code, receiptConflict.message);
+      }
       // oxlint-disable-next-line no-await-in-loop -- Persist or settle each version before the next external mutation.
       const active = await prisma.operation.findUnique({
         where: { id: operation.id },
@@ -851,7 +828,7 @@ export const uploadAttachments = async (
         fail(
           error.httpStatus,
           error.code,
-          `${plan.slot.field.label}${plan.slot.rowIndex === null ? "" : ` / แถว ${plan.slot.rowIndex + 1}`} / หมวด ${plan.category}: ${error.message}`
+          `${plan.slot.field.label} / Tag ${plan.slot.tag}${plan.slot.rowIndex === null ? "" : ` / แถว ${plan.slot.rowIndex + 1}`} / หมวด ${plan.category}: ${error.message}`
         );
       }
       fail(

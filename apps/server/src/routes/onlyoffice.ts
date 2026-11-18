@@ -4,8 +4,13 @@ import type { Elysia } from "elysia";
 
 import { registerSpreadsheetBuilderRoutes } from "../documents/spreadsheets/engine";
 import { spreadsheetExportSnapshot } from "../documents/spreadsheets/export-snapshot";
+import { protectSpreadsheet } from "../documents/spreadsheets/protection";
 import { uploadPocGuid } from "../documents/spreadsheets/upload-poc-preview";
-import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
+import {
+  readSpreadsheetWorkbook,
+  XLSX_CONTENT_TYPE,
+} from "../documents/spreadsheets/workbook";
+import { spreadsheetContractForTemplate } from "../forms/spreadsheet-fields";
 import { HttpError, fail } from "../http/errors";
 import { readJsonRecord } from "../http/input";
 import { corsOrigin } from "../http/origins";
@@ -111,6 +116,51 @@ export function registerOnlyOfficeRoutes(
             await responseSpreadsheetExport(
               await readObject(objectKey),
               response.publishedTemplateId
+            ),
+            {
+              headers: {
+                "Cache-Control": "no-store",
+                "Content-Type": XLSX_CONTENT_TYPE,
+              },
+            }
+          );
+        }
+      }
+      if (query.readonly !== "1" && objectKey.endsWith(".xlsx")) {
+        const workspace = await prisma.editorLease.findFirst({
+          select: { targetId: true },
+          where: { targetType: "correction", workspaceDocumentKey: key },
+        });
+        const response = await prisma.response.findFirst({
+          select: {
+            prefillSnapshot: { select: { lockedFields: true } },
+            publishedTemplateId: true,
+          },
+          where: workspace
+            ? { id: workspace.targetId }
+            : { draftDocumentKey: key },
+        });
+        if (response) {
+          const bytes = await readObject(objectKey);
+          const contract = await spreadsheetContractForTemplate(
+            response.publishedTemplateId,
+            readSpreadsheetWorkbook(bytes)
+          );
+          const lockedFields = (response.prefillSnapshot?.lockedFields ?? {}) as Record<
+            string,
+            unknown
+          >;
+          return new Response(
+            protectSpreadsheet(
+              bytes,
+              contract,
+              new Set(
+                workspace
+                  ? []
+                  : Object.keys(lockedFields).filter(
+                      (field) => lockedFields[field] === true
+                    )
+              )
             ),
             {
               headers: {

@@ -935,7 +935,9 @@ export const OnlyOfficeEditor = ({
           data.type === "pending-file-check" &&
           candidateSourcesRef.current.size > 0 && !holder.hasUnresolvedCommit()
         ) {
-          throw new Error("มีการเลือกในกล่องที่ยังไม่ยืนยัน กรุณายืนยันหรือยกเลิกในกล่องก่อนดำเนินการ");
+          throw new Error(
+            "มีการเลือกในกล่องที่ยังไม่ยืนยัน กรุณายืนยันหรือยกเลิกในกล่องก่อนดำเนินการ"
+          );
         }
         const currentOptions =
           options.action === "template-edit"

@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** in-progress — integrated; supporting regressions and ordinary native navigation pass; complete browser state matrix remains in ticket 06
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US64–71, US76–77; U03 และ canonical/no-extra-write ส่วนที่เกี่ยวข้องของ H06/H09
 
@@ -79,3 +79,9 @@ Use the isolated actual app, PostgreSQL/object-store, controlled provider, and s
 - Fill exit is local discard only, not Response deletion or Save-and-exit. Reauthentication's explicit save remains separate.
 - Existing router blocker owns route/back and best-effort unload. Leaving never proves original-request cancellation, clears a checkpoint, or restores browser File bytes.
 - Keep final Correction/newer-pending safeguards and ticket05 native active-save acceptance separate. Record browser/HTTP evidence as unverified until exercised on the integration branch.
+
+### Integration evidence — 2026-11-18
+
+- Integrated at `4fd024a` plus integration-owner corrections. Plugin spreadsheet/picker 64 tests and the four affected web UI suites, 79 tests, passed. Invalid-file setup now asserts the real validation rejection before checking state preservation; incidental message wording is not a test oracle.
+- Actual native editor/browser: HeadlessChrome/150.0.0.0 with ONLYOFFICE 9.4.0-129 in the isolated environment. Edited an ordinary saved XLSX cell, opened the exit dialog, verified safe initial focus on stay and only stay/local-discard choices, pressed Escape and remained on the same page. Reopened and explicitly discarded; navigation reached Dashboard. Saved XLSX/JSON and canonical document key remained unchanged, with zero observed provider POST/DELETE.
+- This proves the ordinary native-edit exit path, not the whole candidate/confirmed/removal/route/back/unload/Correction matrix. Ticket 06 must exercise those actual surfaces; unit/component results are supporting evidence only. No provider or Production acceptance is claimed.

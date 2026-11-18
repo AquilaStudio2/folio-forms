@@ -201,12 +201,17 @@ const savedHost = () => ({ ...options, savedData: { document: { ...saved } } });
 
 test("candidate navigation warning clears on Cancel without clearing confirmed baseline", () => {
   const store = new UploadPocPendingFiles();
-  store.handle({
-    ...scalar,
-    ...options,
-    file: new File(["old"], "confirmed.txt"),
-    type: "pending-file-set",
-  }, options);
+  store.handle(
+    {
+      ...scalar,
+      ...options,
+      file: new File(["old"], "confirmed.txt"),
+      requestId: "confirmed-baseline",
+      source: "folio-upload-poc",
+      type: "pending-file-set",
+    },
+    options
+  );
   const h = open({ store }, scalar);
   h.choose(new File(["new"], "candidate.txt"));
   expect(h.candidates.at(-1).message.dirty).toBe(true);

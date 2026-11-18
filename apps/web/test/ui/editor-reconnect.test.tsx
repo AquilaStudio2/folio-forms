@@ -894,13 +894,21 @@ it("reports candidates independently from ordinary edits and confirmed pending w
     },
   });
   const dirty = vi.fn();
-  render(<OnlyOfficeEditor configUrl="/editor-config" title="Candidates" onDirtyChange={dirty} />);
-  const office = await screen.findByTitle("Office sandbox") as HTMLIFrameElement;
+  render(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Candidates"
+      onDirtyChange={dirty}
+    />
+  );
+  const office = (await screen.findByTitle(
+    "Office sandbox"
+  )) as HTMLIFrameElement;
   const picker = pluginFrame(office);
   const message = {
     documentKey: "document",
-    scopeIdentity: "actor/response",
     requestId: "candidate",
+    scopeIdentity: "actor/response",
     source: "folio-upload-poc",
     type: "pending-file-candidate",
   };
@@ -919,15 +927,17 @@ it("reports candidates independently from ordinary edits and confirmed pending w
   send(picker.source, {
     ...message,
     bindingId: "folio_file",
-    tag: "file",
-    rowIndex: null,
     file: new File([], "confirmed.bin"),
+    rowIndex: null,
+    tag: "file",
     type: "pending-file-set",
   });
-  await waitFor(() => expect(picker.send).toHaveBeenCalledWith(
-    expect.objectContaining({ filename: "confirmed.bin" }),
-    window.location.origin
-  ));
+  await waitFor(() =>
+    expect(picker.send).toHaveBeenCalledWith(
+      expect.objectContaining({ filename: "confirmed.bin" }),
+      window.location.origin
+    )
+  );
   send(picker.source, { ...message, dirty: true });
   send(picker.source, { ...message, dirty: false });
   expect(dirty).toHaveBeenLastCalledWith(true);

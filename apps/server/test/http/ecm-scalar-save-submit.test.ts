@@ -18,6 +18,7 @@ import {
 import {
   readSpreadsheetWorkbook,
   resolveSpreadsheetContract,
+  XLSX_CONTENT_TYPE,
 } from "../../src/documents/spreadsheets/workbook";
 import {
   spreadsheetXmlTree,
@@ -30,6 +31,7 @@ import type { EditorLeaseGrant } from "../../src/editor/leases";
 import { claimEditorLease } from "../../src/editor/leases";
 import { spreadsheetManifestFieldData } from "../../src/forms/spreadsheet-fields";
 import {
+  createDocumentAccessToken,
   xlsxEditorOpening,
   createOnlyOfficeAuthorization,
   createCallbackUserdata,
@@ -156,8 +158,6 @@ let nextMode:
 let rejectUploadAt: number | null = null;
 let customLink: string | null = null;
 let customToken: string | null = null;
-let reuseFilenameIdentity = false;
-const filenameReceipts = new Map<string, { link: string; token: string }>();
 let receiveBarrier: { enter: () => void; release: Promise<void> } | null = null;
 let receiptBarrier: { enter: () => void; release: Promise<void> } | null = null;
 let loginBarrier: { enter: () => void; release: Promise<void> } | null = null;
@@ -355,13 +355,8 @@ const provider = Bun.serve({
       if (!(file instanceof File)) {
         return new Response(null, { status: 400 });
       }
-      const previous = reuseFilenameIdentity
-        ? filenameReceipts.get(file.name)
-        : undefined;
       const token =
-        customToken ??
-        previous?.token ??
-        crypto.randomUUID().replaceAll("-", "").repeat(2);
+        customToken ?? crypto.randomUUID().replaceAll("-", "").repeat(2);
       received.push({
         bytes: new Uint8Array(await file.arrayBuffer()),
         category: body.get("documentCategory"),
@@ -405,12 +400,7 @@ const provider = Bun.serve({
         await barrier.release;
       }
       const link =
-        customLink ??
-        previous?.link ??
-        `${provider.url.origin}/files/${crypto.randomUUID()}`;
-      if (reuseFilenameIdentity) {
-        filenameReceipts.set(file.name, { link, token });
-      }
+        customLink ?? `${provider.url.origin}/files/${crypto.randomUUID()}`;
       providerFiles.set(new URL(link).pathname, {
         bytes: fixtureValue(received.at(-1)).bytes,
         token,
@@ -630,8 +620,6 @@ const fixture = async (
   nextMode = "ok";
   customLink = null;
   customToken = null;
-  reuseFilenameIdentity = false;
-  filenameReceipts.clear();
   deleteFails = false;
   deleteMalformed = false;
   rejectUploadAt = null;
@@ -1214,7 +1202,7 @@ test("a completed Draft continues only its original signed native opening and sa
   expect(deleted.length).toBe(deletes);
 });
 
-test("template scalar saves without year and replaces same provider identity without deleting current bytes", async () => {
+test("template scalar object receipt saves without year but a new upload cannot reuse own Draft receipt", async () => {
   const owner = await fixture({ number: "กทอ.67-00-0001", templateMode: true });
   const start = received.length;
   const deletes = deleted.length;
@@ -1240,31 +1228,36 @@ test("template scalar saves without year and replaces same provider identity wit
   customToken = first.file_token;
   customLink = first.file_link;
   nextMode = "object";
-  expect(
-    (
-      await poll(
-        owner,
-        await send(
-          owner,
-          {
-            folio_proof: file(new Uint8Array([9, 8]), "Replacement.BIN"),
-          },
-          "submit"
-        )
-      )
-    ).status
-  ).toBe("completed");
-  const submission = await prisma.submission.findFirstOrThrow({
-    orderBy: { createdAt: "desc" },
-    where: { responseId: owner.response.id },
-  });
-  expect(jsonValue(submission.data)).toMatchObject({
-    proof: { ...first, original_name: "Replacement.BIN", size_bytes: 2 },
-  });
-  expect(providerFiles.get(new URL(first.file_link).pathname)?.bytes).toEqual(
-    new Uint8Array([9, 8])
+  const refused = await poll(
+    owner,
+    await send(
+      owner,
+      {
+        folio_proof: file(new Uint8Array([9, 8]), "Replacement.BIN"),
+      },
+      "submit"
+    )
   );
+  expect(refused.status).toBe("failed");
+  expect(refused.result).toMatchObject({
+    attachmentErrorReason: "attachment_draft_receipt_conflict",
+    errorMessage: expect.stringContaining("Tag proof"),
+  });
+  expect(attachmentSchema.parse((await draft(owner)).proof)).toEqual(first);
+  expect(
+    await prisma.submission.count({ where: { responseId: owner.response.id } })
+  ).toBe(0);
+  const retained = await prisma.ecmAttachmentVersion.findFirstOrThrow({
+    where: { operationId: refused.operationId },
+  });
+  expect(retained).toMatchObject({
+    fileLink: first.file_link,
+    fileToken: first.file_token,
+    state: "received",
+  });
   expect(deleted.length).toBe(deletes);
+  expect(JSON.stringify(refused.result)).not.toContain(first.file_token);
+  expect(JSON.stringify(refused.result)).not.toContain(first.file_link);
 });
 /* oxlint-enable no-await-expression-member no-use-before-define */
 test("Correction authenticates independent bearer and cookie credentials while preserving native capability-only requests", async () => {
@@ -1429,8 +1422,75 @@ const resume = async (f: Fixture) => {
     await readObject(fixtureValue(saved.draftObjectKey))
   );
 };
+
+// Seed pre-policy shared resources explicitly; new uploads must never create these aliases.
+const seedHistoricalReceiptAlias = async (
+  f: Fixture,
+  firstOperationId: string,
+  secondOperationId: string
+) => {
+  const first = await prisma.ecmAttachmentVersion.findFirstOrThrow({
+    where: { operationId: firstOperationId, state: "committed" },
+  });
+  const second = await prisma.ecmAttachmentVersion.findFirstOrThrow({
+    where: { operationId: secondOperationId, state: "committed" },
+  });
+  const fromLink = fixtureValue(second.fileLink);
+  const toLink = fixtureValue(first.fileLink);
+  const fromToken = fixtureValue(second.fileToken);
+  const toToken = fixtureValue(first.fileToken);
+  const response = await prisma.response.findUniqueOrThrow({
+    where: { id: f.response.id },
+  });
+  await prisma.ecmAttachmentIdentity.update({
+    data: { state: "active" },
+    where: { id: fixtureValue(first.identityId) },
+  });
+  await prisma.ecmAttachmentVersion.update({
+    data: { state: "committed" },
+    where: { id: first.id },
+  });
+  await prisma.ecmAttachmentCleanup.deleteMany({
+    where: { versionId: first.id },
+  });
+  const rewrite = (value: string) =>
+    value.replaceAll(fromLink, toLink).replaceAll(fromToken, toToken);
+  await prisma.ecmAttachmentVersion.update({
+    data: {
+      fileLink: toLink,
+      fileToken: toToken,
+      identityId: first.identityId,
+    },
+    where: { id: second.id },
+  });
+  await prisma.response.update({
+    data: {
+      draftData: JSON.parse(rewrite(JSON.stringify(response.draftData))),
+    },
+    where: { id: f.response.id },
+  });
+  const objectKey = fixtureValue(response.draftObjectKey);
+  const entries = unzipSync(await readObject(objectKey));
+  for (const [path, bytes] of Object.entries(entries)) {
+    if (path.endsWith(".xml")) {
+      entries[path] = strToU8(rewrite(strFromU8(bytes)));
+    }
+  }
+  const workbook = zipSync(entries);
+  await putObject(
+    objectKey,
+    workbook,
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+  );
+  snapshots.set(fixtureValue(response.draftDocumentKey), workbook);
+  const stored = fixtureValue(providerFiles.get(new URL(fromLink).pathname));
+  providerFiles.set(new URL(toLink).pathname, { ...stored, token: toToken });
+  providerFiles.delete(new URL(fromLink).pathname);
+  customLink = toLink;
+  customToken = toToken;
+};
 /* oxlint-disable no-await-expression-member -- These HTTP regressions assert the awaited public response at the call site. */
-test("template protected destination stops a foreign owner before POST", async () => {
+test("template same-name foreign Responses keep independent original receipts", async () => {
   const number = `FOREIGN.${crypto.randomUUID()}`;
   const owner = await fixture({ number, templateMode: true });
   expect(
@@ -1440,12 +1500,15 @@ test("template protected destination stops a foreign owner before POST", async (
   const uploads = received.length;
   expect(
     (await poll(other, await send(other, { folio_proof: file() }))).status
-  ).toBe("failed");
-  expect(received.length).toBe(uploads);
-  expect(await draft(other)).toEqual({});
+  ).toBe("completed");
+  expect(received.length).toBe(uploads + 1);
+  const first = attachmentSchema.parse((await draft(owner)).proof);
+  const second = attachmentSchema.parse((await draft(other)).proof);
+  expect(second.file_token).not.toBe(first.file_token);
+  expect(second.file_link).not.toBe(first.file_link);
 });
 
-test("template immutable history prevents in-place overwrite before POST", async () => {
+test("template same-name Correction retains protected history with distinct receipts", async () => {
   const owner = await fixture({ templateMode: true });
   expect(
     (await poll(owner, await send(owner, { folio_proof: file() }, "submit")))
@@ -1461,8 +1524,8 @@ test("template immutable history prevents in-place overwrite before POST", async
         await postCorrection(owner, admin, bridge, { folio_proof: file() })
       )
     ).status
-  ).toBe("failed");
-  expect(received.length).toBe(uploads);
+  ).toBe("completed");
+  expect(received.length).toBe(uploads + 1);
 });
 
 test("template unknown overwrite retains canonical answer but reports mutable URL and never resends or deletes", async () => {
@@ -1766,15 +1829,12 @@ test.each([
   }
 );
 
-test("template same receipt/name/size replacement reuses current B bytes on number change", async () => {
+test("template same-name/size replacement with a new receipt reuses current B bytes on number change", async () => {
   const owner = await fixture({ templateMode: true });
   expect(
     (await poll(owner, await send(owner, { folio_proof: file() }))).status
   ).toBe("completed");
-  const first = attachmentSchema.parse((await draft(owner)).proof);
   await resume(owner);
-  customToken = first.file_token;
-  customLink = first.file_link;
   expect(
     (
       await poll(
@@ -2158,7 +2218,7 @@ test("initial Correction rejects a changed captured workspace base before origin
   }
 });
 
-test("template Correction freezes catalog routing, rejects protected overwrite and reuses scalar/table originals at distinct destinations", async () => {
+test("template Correction freezes catalog routing and preserves history while reusing scalar/table originals at distinct destinations", async () => {
   const templateNameSuffix = `-${crypto.randomUUID()}`;
   const owner = await fixture({
     tableAttachments: true,
@@ -2200,7 +2260,7 @@ test("template Correction freezes catalog routing, rejects protected overwrite a
       },
     });
   }
-  const bridge = await openCorrection(owner, admin);
+  await openCorrection(owner, admin);
   const uploads = received.length;
   const deletes = deleted.length;
   const reads = originalReads.length;
@@ -2232,20 +2292,6 @@ test("template Correction freezes catalog routing, rejects protected overwrite a
     );
     expect(removed.status).toBe(200);
   }
-  const conflict = await poll(
-    admin,
-    await postCorrection(owner, admin, bridge, {
-      folio_proof: file(new Uint8Array([9]), "replacement.BIN"),
-    })
-  );
-  expect(conflict.status).toBe("failed");
-  expect(conflict.result?.errorMessage).toContain("ห้ามเขียนทับ");
-  expect(received.length).toBe(uploads);
-  expect(deleted.length).toBe(deletes);
-  expect(originalReads.length).toBe(reads);
-  expect(
-    await prisma.correction.count({ where: { submissionId: submission.id } })
-  ).toBe(0);
   const next = await openCorrection(owner, admin);
   snapshots.set(
     next.documentKey,
@@ -2347,16 +2393,15 @@ test("template Correction freezes catalog routing, rejects protected overwrite a
   const protectedCorrection = await poll(
     admin,
     await postCorrection(owner, admin, latest, {
-      folio_proof: file(new Uint8Array([99]), "newer.BIN"),
+      folio_proof: file(scalar, "newer.BIN"),
     })
   );
-  expect(protectedCorrection.status).toBe("failed");
-  expect(protectedCorrection.result?.errorMessage).toContain("ห้ามเขียนทับ");
-  expect(received.length).toBe(uploads + 2);
+  expect(protectedCorrection.status).toBe("completed");
+  expect(received.length).toBe(uploads + 3);
   expect(deleted.length).toBe(deletes);
   expect(
     await prisma.correction.count({ where: { submissionId: submission.id } })
-  ).toBe(1);
+  ).toBe(2);
   const protectedFile = attachmentSchema.parse(data.proof);
   const download2 = await fetch(protectedFile.file_link);
   expect([...new Uint8Array(await download2.arrayBuffer())]).toEqual([
@@ -3084,6 +3129,76 @@ for (const templateMode of [false, true]) {
     expect(received.length).toBe(uploads);
   });
 
+  test(`${templateMode ? "template " : ""}table rejects unsafe native captures before upload and preserves distinct physical files`, async () => {
+    const f = await fixture({ tableAttachments: true, templateMode });
+    snapshots.set(
+      f.documentKey,
+      replaceCell(
+        replaceCell(fixtureValue(snapshots.get(f.documentKey)), "B10", "A"),
+        "B12",
+        "B"
+      )
+    );
+    expect(
+      (await poll(f, await send(f, {
+        [JSON.stringify(["folio_row_proof", 0])]: file(new Uint8Array([1, 2]), "A.BIN"),
+        [JSON.stringify(["folio_row_other", 2])]: file(new Uint8Array([3, 4]), "B.BIN"),
+      }))).status
+    ).toBe("completed");
+    await resume(f);
+    const before = await prisma.response.findUniqueOrThrow({ where: { id: f.response.id } });
+    const workbook = await readObject(fixtureValue(before.draftObjectKey));
+    const rows = tableRowsSchema.parse(z.record(z.string(), z.unknown()).parse(before.draftData).rows);
+    const uploads = received.length;
+    const deletes = deleted.length;
+    const references = await prisma.ecmAttachmentReference.findMany({
+      orderBy: { id: "asc" },
+      where: { responseId: f.response.id },
+    });
+    for (const mutation of [
+      (bytes: Uint8Array) => replaceCell(bytes, "C10", "https://example.test/forged"),
+      (bytes: Uint8Array) => unprotectSpreadsheet(bytes),
+      (bytes: Uint8Array) => mutatePart(bytes, "xl/styles.xml", (xml) =>
+        xml.replaceAll('locked="1"', 'locked="0"')),
+      (bytes: Uint8Array) => mutatePart(
+        replaceCell(replaceCell(bytes, "B10", "B"), "B12", "A"),
+        "xl/worksheets/sheet1.xml",
+        (xml) => xml.replace("</worksheet>", '<sortState ref="B10:D13"><sortCondition ref="B10:B13"/></sortState></worksheet>')
+      ),
+    ]) {
+      snapshots.set(f.documentKey, mutation(workbook));
+      const rejected = await poll(f, await send(f, {
+        [JSON.stringify(["folio_row_proof", 0])]: file(new Uint8Array([9]), "pending.BIN"),
+      }));
+      expect(rejected.status).toBe("failed");
+      const after = await prisma.response.findUniqueOrThrow({ where: { id: f.response.id } });
+      expect(after.draftDocumentKey).toBe(before.draftDocumentKey);
+      expect(after.draftObjectKey).toBe(before.draftObjectKey);
+      expect(after.draftData).toEqual(before.draftData);
+      expect(await readObject(fixtureValue(after.draftObjectKey))).toEqual(workbook);
+      expect(received.length).toBe(uploads);
+      expect(deleted.length).toBe(deletes);
+    }
+      expect(await prisma.ecmAttachmentReference.findMany({
+        orderBy: { id: "asc" },
+        where: { responseId: f.response.id },
+      })).toEqual(references);
+    for (const [attachment, bytes] of [
+      [rows[0]?.proof, new Uint8Array([1, 2])],
+      [rows[1]?.other, new Uint8Array([3, 4])],
+    ] as const) {
+      const original = await fetch(fixtureValue(attachment).file_link);
+      expect(new Uint8Array(await original.arrayBuffer())).toEqual(bytes);
+    }
+    snapshots.set(f.documentKey, replaceCell(workbook, "B10", "ordinary edit"));
+    expect((await poll(f, await send(f, {}))).status).toBe("completed");
+    expect(received.length).toBe(uploads);
+    expect(deleted.length).toBe(deletes);
+    const savedRows = tableRowsSchema.parse((await draft(f)).rows);
+    expect(savedRows[0]).toMatchObject({ item: "ordinary edit", proof: rows[0]?.proof });
+    expect(savedRows[1]?.other).toEqual(rows[1]?.other);
+  });
+
   test(`${templateMode ? "template " : ""}table stale snapshots and forged physical slots stop before external writes`, async () => {
     const f = await fixture({ tableAttachments: true, templateMode });
     const uploads = received.length;
@@ -3168,6 +3283,19 @@ for (const templateMode of [false, true]) {
     expect(removed.status).toBe("completed");
     const after = await draft(f);
     expect(after.rows).toEqual([tableRowsSchema.parse(before.rows)[1]]);
+    const current = await prisma.response.findUniqueOrThrow({
+      where: { id: f.response.id },
+    });
+    const workbook = readSpreadsheetWorkbook(
+      await readObject(fixtureValue(current.draftObjectKey))
+    );
+    for (const address of ["C12", "D12"]) {
+      expect(workbook.cells.get(address)?.value ?? null).toBeNull();
+    }
+    expect(workbook.hyperlinks.some((link) =>
+      link.range.firstRow <= 11 && link.range.lastRow >= 11 &&
+      link.range.firstColumn <= 3 && link.range.lastColumn >= 2
+    )).toBe(false);
     expect(received.length).toBe(uploads);
   });
 }
@@ -3246,7 +3374,7 @@ test("template table rejects invalid Draft files and requires other attachment c
   expect(await draft(f)).toEqual({});
 });
 
-test("template batch filename duplicates preserve each row's bytes with numbered suffixes and original extensions", async () => {
+test("template batch same names preserve each physical row's original bytes and extensions", async () => {
   const number = `กทอ.xx-xx-xxxx.${crypto.randomUUID()}`;
   const f = await fixture({
     number,
@@ -3255,7 +3383,6 @@ test("template batch filename duplicates preserve each row's bytes with numbered
     tableTemplateNames: { proof: "ก่อหนี้-4_ขยาย(45)" },
     templateMode: true,
   });
-  reuseFilenameIdentity = true;
   const uploads = received.length;
   const result = await poll(
     f,
@@ -3285,10 +3412,10 @@ test("template batch filename duplicates preserve each row's bytes with numbered
   expect(result.status, String(result.result?.errorMessage)).toBe("completed");
   expect(received.slice(uploads).map((entry) => entry.name)).toEqual([
     `${number}-ก่อหนี้-4_ขยาย(45).PDF`,
-    `${number}-ก่อหนี้-4_ขยาย(45)-(1).PDF`,
-    `${number}-ก่อหนี้-4_ขยาย(45)-(2).PDF`,
+    `${number}-ก่อหนี้-4_ขยาย(45).PDF`,
+    `${number}-ก่อหนี้-4_ขยาย(45).PDF`,
     `${number}-ก่อหนี้-4_ขยาย(45)`,
-    `${number}-ก่อหนี้-4_ขยาย(45)-(1)`,
+    `${number}-ก่อหนี้-4_ขยาย(45)`,
   ]);
   const saved = await draft(f);
   const rows = tableRowsSchema.parse(saved.rows);
@@ -3307,7 +3434,7 @@ test("template batch filename duplicates preserve each row's bytes with numbered
   expect(await draft(f)).toEqual(saved);
 });
 
-test("template batch filename suffixes reserve literal destinations across scalar and table columns", async () => {
+test("template batch names retain literal suffixes across scalar and table columns", async () => {
   const f = await fixture({
     tableAttachments: true,
     tableTemplateNames: {
@@ -3316,7 +3443,6 @@ test("template batch filename suffixes reserve literal destinations across scala
     },
     templateMode: true,
   });
-  reuseFilenameIdentity = true;
   const uploads = received.length;
   const result = await poll(
     f,
@@ -3340,9 +3466,9 @@ test("template batch filename suffixes reserve literal destinations across scala
   const saved = await draft(f);
   expect(received.slice(uploads).map((entry) => entry.name)).toEqual([
     `${saved.docs_number}-ก่อหนี้-4_ขยาย(45).pdf`,
-    `${saved.docs_number}-ก่อหนี้-4_ขยาย(45)-(2).pdf`,
+    `${saved.docs_number}-ก่อหนี้-4_ขยาย(45).pdf`,
     `${saved.docs_number}-ก่อหนี้-4_ขยาย(45)-(1).pdf`,
-    `${saved.docs_number}-ก่อหนี้-4_ขยาย(45)-(3).pdf`,
+    `${saved.docs_number}-ก่อหนี้-4_ขยาย(45).pdf`,
   ]);
   const rows = tableRowsSchema.parse(saved.rows);
   const attachments = [
@@ -3359,7 +3485,7 @@ test("template batch filename suffixes reserve literal destinations across scala
   }
 });
 
-test("template batch filename suffixes do not bypass a provider receipt alias conflict", async () => {
+test("template batch same names do not bypass a provider receipt alias conflict", async () => {
   const number = `ALIAS.${crypto.randomUUID()}`;
   const f = await fixture({
     number,
@@ -3380,7 +3506,7 @@ test("template batch filename suffixes do not bypass a provider receipt alias co
   expect(result.status).toBe("failed");
   expect(received.slice(uploads).map((entry) => entry.name)).toEqual([
     `${number}-หลักฐาน-ตาราง.BIN`,
-    `${number}-หลักฐาน-ตาราง-(1).BIN`,
+    `${number}-หลักฐาน-ตาราง.BIN`,
   ]);
   expect(await draft(f)).toEqual({});
   expect(deleted.length).toBe(deletes);
@@ -3389,124 +3515,38 @@ test("template batch filename suffixes do not bypass a provider receipt alias co
   expect(received.length).toBe(uploads + 2);
 });
 
-test("template table shared provider receipts retain physical rows and protect current bytes without DELETE", async () => {
+test("template table paired own-Draft receipts stop new uploads without deleting or moving saved physical rows", async () => {
   const f = await fixture({ tableAttachments: true, templateMode: true });
-  const uploads = received.length;
-  const deletes = deleted.length;
-  customToken = crypto.randomUUID();
-  customLink = `${provider.url.origin}/files/${crypto.randomUUID()}`;
   const first = await poll(
     f,
     await send(f, {
-      [JSON.stringify(["folio_row_proof", 0])]: file(
-        new Uint8Array(),
-        "empty.BIN"
-      ),
+      '["folio_row_proof",0]': file(new Uint8Array(), "empty.BIN"),
     })
   );
   expect(first.status).toBe("completed");
+  const before = await draft(f);
+  const saved = fixtureValue(tableRowsSchema.parse(before.rows)[0]?.proof);
   await resume(f);
-  const result = await poll(
+  customToken = saved.file_token;
+  customLink = saved.file_link;
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const refused = await poll(
     f,
     await send(f, {
-      [JSON.stringify(["folio_row_proof", 2])]: file(
-        new Uint8Array([7, 8]),
-        "last.BIN"
-      ),
+      '["folio_row_proof",2]': file(new Uint8Array([7, 8]), "last.BIN"),
     })
   );
-  expect(result.status).toBe("completed");
-  const saved = await draft(f);
-  const rows = tableRowsSchema.parse(saved.rows);
-  expect(rows.map((row) => row.proof)).toEqual([
-    {
-      file_link: customLink,
-      file_token: customToken,
-      original_name: "empty.BIN",
-      row_index: 0,
-      size_bytes: 0,
-    },
-    {
-      file_link: customLink,
-      file_token: customToken,
-      original_name: "last.BIN",
-      row_index: 2,
-      size_bytes: 2,
-    },
-  ]);
-  expect(
-    received.slice(uploads).map((entry) => ({
-      bytes: [...entry.bytes],
-      fields: entry.fields,
-      template: entry.template,
-    }))
-  ).toEqual([
-    {
-      bytes: [],
-      fields: ["documentFile", "template"],
-      template: "1",
-    },
-    {
-      bytes: [7, 8],
-      fields: ["documentFile", "template"],
-      template: "1",
-    },
-  ]);
-  expect(providerFiles.get(new URL(customLink).pathname)?.bytes).toEqual(
-    new Uint8Array([7, 8])
-  );
-  await resume(f);
-  const replacement = await poll(
-    f,
-    await send(f, {
-      [JSON.stringify(["folio_row_proof", 2])]: file(
-        new Uint8Array([9]),
-        "replacement.BIN"
-      ),
-    })
-  );
-  expect(replacement.status).toBe("completed");
-  const savedDraft1 = await draft(f);
-  expect(
-    tableRowsSchema.parse(savedDraft1.rows).map((row) => row.proof)
-  ).toEqual([
-    fixtureValue(rows[0]?.proof),
-    {
-      file_link: customLink,
-      file_token: customToken,
-      original_name: "replacement.BIN",
-      row_index: 2,
-      size_bytes: 1,
-    },
-  ]);
-  expect(providerFiles.get(new URL(customLink).pathname)?.bytes).toEqual(
-    new Uint8Array([9])
-  );
+  expect(refused.status).toBe("failed");
+  expect(refused.result).toMatchObject({
+    attachmentErrorReason: "attachment_draft_receipt_conflict",
+    errorMessage: expect.stringContaining("แถว 3"),
+  });
+  expect(await draft(f)).toEqual(before);
+  expect(received.length).toBe(uploads + 1);
   expect(deleted.length).toBe(deletes);
-  await resume(f);
-  const operationResult5 = await poll(
-    f,
-    await send(f, {}, "draft", crypto.randomUUID(), {
-      attachmentRemovals: [{ bindingId: "folio_row_proof", rowIndex: 0 }],
-    })
-  );
-  expect(operationResult5.status).toBe("completed");
-  const savedDraft2 = await draft(f);
-  expect(tableRowsSchema.parse(savedDraft2.rows)).toEqual([
-    {
-      item: null,
-      other: null,
-      proof: {
-        file_link: customLink,
-        file_token: customToken,
-        original_name: "replacement.BIN",
-        row_index: 2,
-        size_bytes: 1,
-      },
-    },
-  ]);
-  expect(deleted.length).toBe(deletes);
-  expect(received.length).toBe(uploads + 3);
+  const refusedMutation = await send(f, {});
+  expect(refusedMutation.status).toBe(409);
 });
 
 test("template table identical shared receipts keep both physical attempt references usable for later replacement", async () => {
@@ -3523,6 +3563,8 @@ test("template table identical shared receipts keep both physical attempt refere
     })
   );
   expect(first.status).toBe("completed");
+  customToken = null;
+  customLink = null;
   await resume(f);
   const initial = await poll(
     f,
@@ -3534,6 +3576,7 @@ test("template table identical shared receipts keep both physical attempt refere
     })
   );
   expect(initial.status).toBe("completed");
+  await seedHistoricalReceiptAlias(f, first.operationId, initial.operationId);
   const before = await draft(f);
   expect(
     tableRowsSchema.parse(before.rows).map((row) => row.proof?.row_index)
@@ -3568,6 +3611,8 @@ test("template table identical shared receipts keep both physical attempt refere
   ).toBe(2);
   expect(received.length).toBe(uploads);
   await resume(f);
+  customToken = null;
+  customLink = null;
   const replacement = await poll(
     f,
     await send(f, {
@@ -3579,6 +3624,11 @@ test("template table identical shared receipts keep both physical attempt refere
   );
   expect(replacement.status, String(replacement.result?.errorMessage)).toBe(
     "completed"
+  );
+  await seedHistoricalReceiptAlias(
+    f,
+    first.operationId,
+    replacement.operationId
   );
   const savedDraft4 = await draft(f);
   expect(
@@ -3621,7 +3671,7 @@ test("template table identical shared receipts keep both physical attempt refere
   );
 });
 
-test("template table plans every destination before POST and rejects foreign or historical row ownership", async () => {
+test("template table same names allow independent receipts across foreign Responses and Correction history", async () => {
   for (const protection of ["foreign", "history"] as const) {
     const number = `TABLE.${crypto.randomUUID()}`;
     const owner = await fixture({
@@ -3649,7 +3699,7 @@ test("template table plans every destination before POST and rejects foreign or 
         tableAttachments: true,
         templateMode: true,
       });
-      // The safe earlier column must not dispatch before the later protected destination is checked.
+      // A settled matching filename does not claim either new physical slot.
       const operationResult11 = await poll(
         other,
         await send(other, {
@@ -3657,8 +3707,9 @@ test("template table plans every destination before POST and rejects foreign or 
           [JSON.stringify(["folio_row_proof", 3])]: file(),
         })
       );
-      expect(operationResult11.status).toBe("failed");
-      expect(await draft(other)).toEqual({});
+      expect(operationResult11.status).toBe("completed");
+      const foreignDraft = await draft(other);
+      expect(tableRowsSchema.parse(foreignDraft.rows)).toHaveLength(2);
     } else {
       const admin = await fixture({ admin: true });
       const bridge = await openCorrection(owner, admin);
@@ -3674,9 +3725,9 @@ test("template table plans every destination before POST and rejects foreign or 
           [JSON.stringify(["folio_row_proof", 2])]: file(),
         })
       );
-      expect(operationResult12.result?.errorMessage).toContain("ปลายทางไฟล์ซ้ำ");
+      expect(operationResult12.status).toBe("completed");
     }
-    expect(received.length).toBe(uploads);
+    expect(received.length).toBe(uploads + (protection === "foreign" ? 2 : 4));
     expect(deleted.length).toBe(deletes);
   }
 });
@@ -3790,6 +3841,8 @@ test("template table removes overwritten row A and reuses surviving B original b
     })
   );
   expect(first.status).toBe("completed");
+  customToken = null;
+  customLink = null;
   await resume(f);
   const operationResult15 = await poll(
     f,
@@ -3801,6 +3854,11 @@ test("template table removes overwritten row A and reuses surviving B original b
     })
   );
   expect(operationResult15.status).toBe("completed");
+  await seedHistoricalReceiptAlias(
+    f,
+    first.operationId,
+    operationResult15.operationId
+  );
   await resume(f);
   const uploads = received.length;
   const deletes = deleted.length;
@@ -3953,6 +4011,8 @@ test("template table ambiguous or missing current-alias digests stop metadata re
       })
     );
     expect(first.status).toBe("completed");
+    customToken = null;
+    customLink = null;
     await resume(f);
     const initial = await poll(
       f,
@@ -3964,6 +4024,7 @@ test("template table ambiguous or missing current-alias digests stop metadata re
       })
     );
     expect(initial.status).toBe("completed");
+    await seedHistoricalReceiptAlias(f, first.operationId, initial.operationId);
     if (missing) {
       await prisma.ecmAttachmentVersion.updateMany({
         data: { originalSha256: null },
@@ -3996,6 +4057,70 @@ test("template table ambiguous or missing current-alias digests stop metadata re
     expect(originalReads.length).toBe(reads);
     expect(received.length).toBe(uploads);
   }
+});
+
+test.each([
+  { correction: false, templateMode: false },
+  { correction: false, templateMode: true },
+  { correction: true, templateMode: false },
+  { correction: true, templateMode: true },
+])("old saved workbook opens protected without canonical mutation: %j", async ({ correction, templateMode }) => {
+  const owner = await fixture({ tableAttachments: true, templateMode });
+  const saved = await poll(owner, await send(owner, {
+    folio_proof: file(),
+    [JSON.stringify(["folio_row_proof", 0])]: file(new Uint8Array([2, 4]), "row.BIN"),
+  }, correction ? "submit" : "draft"));
+  expect(saved.status).toBe("completed");
+  const response = await prisma.response.findUniqueOrThrow({ where: { id: owner.response.id } });
+  const submission = correction
+    ? await prisma.submission.findUniqueOrThrow({ where: { id: String(saved.result?.submissionId) } })
+    : null;
+  const sourceKey = submission?.objectKey ?? fixtureValue(response.draftObjectKey);
+  const canonicalBytes = await readObject(sourceKey);
+  // Seed a pre-guard stored artifact, not an application history mutation.
+  const oldBytes = mutatePart(
+    mutatePart(canonicalBytes, "xl/styles.xml", (xml) =>
+      xml.replaceAll('locked="1"', 'locked="0"')),
+    "xl/worksheets/sheet1.xml",
+    (xml) => xml.replace(/\s(?:sort|autoFilter)="1"/gu, "")
+  );
+  await putObject(sourceKey, oldBytes, XLSX_CONTENT_TYPE);
+  const uploads = received.length;
+  const deletes = deleted.length;
+  let documentKey = fixtureValue(response.draftDocumentKey);
+  if (correction) {
+    const admin = await fixture({ admin: true });
+    documentKey = (await openCorrection(owner, admin)).documentKey;
+  }
+  const url = `http://test.local/onlyoffice/document/${documentKey}?token=${encodeURIComponent(createDocumentAccessToken(documentKey))}`;
+  const delivered = await app.handle(new Request(url, {
+    headers: { Authorization: createOnlyOfficeAuthorization({ url }) },
+  }));
+  expect(delivered.status).toBe(200);
+  const workbook = readSpreadsheetWorkbook(new Uint8Array(await delivered.arrayBuffer()));
+  const sheet = spreadsheetXmlTree(strFromU8(fixtureValue(workbook.archive[workbook.sheetPath])));
+  expect(spreadsheetXmlChildren(sheet, "sheetProtection")[0]?.attributes).toMatchObject({
+    autoFilter: "1",
+    deleteRows: "1",
+    sort: "1",
+  });
+  const styles = spreadsheetXmlTree(strFromU8(fixtureValue(workbook.archive["xl/styles.xml"])));
+  const formats = spreadsheetXmlChildren(fixtureValue(spreadsheetXmlChildren(styles, "cellXfs")[0]), "xf");
+  for (const address of ["B3", "C10", "C11", "C12", "C13", "D10", "D11", "D12", "D13"]) {
+    const format = fixtureValue(formats[workbook.cells.get(address)?.style ?? 0]);
+    expect(spreadsheetXmlChildren(format, "protection")[0]?.attributes.locked).toBe("1");
+  }
+  const ordinary = fixtureValue(formats[workbook.cells.get("B10")?.style ?? 0]);
+  expect(spreadsheetXmlChildren(ordinary, "protection")[0]?.attributes.locked).toBe("0");
+  expect(await readObject(sourceKey)).toEqual(oldBytes);
+  const unchanged = await prisma.response.findUniqueOrThrow({ where: { id: owner.response.id } });
+  expect(unchanged.draftData).toEqual(response.draftData);
+  expect(unchanged.draftDocumentKey).toBe(response.draftDocumentKey);
+  if (submission) {
+    expect((await prisma.submission.findUniqueOrThrow({ where: { id: submission.id } })).data).toEqual(submission.data);
+  }
+  expect(received.length).toBe(uploads);
+  expect(deleted.length).toBe(deletes);
 });
 
 test("saved Draft reopen separates native opening keys without changing canonical bytes or attachments", async () => {
@@ -4048,7 +4173,15 @@ test("saved Draft reopen separates native opening keys without changing canonica
   const reopenedBytes: Uint8Array = new Uint8Array(
     await document.arrayBuffer()
   );
-  expect(reopenedBytes).toEqual(fixtureValue(snapshots.get(f.documentKey)));
+  const projectedWorkbook = readSpreadsheetWorkbook(reopenedBytes);
+  const canonicalWorkbook = readSpreadsheetWorkbook(fixtureValue(snapshots.get(f.documentKey)));
+  expect([...projectedWorkbook.names]).toEqual([...canonicalWorkbook.names]);
+  for (const [address, cell] of canonicalWorkbook.cells) {
+    expect(projectedWorkbook.cells.get(address)).toMatchObject({
+      formula: cell.formula,
+      value: cell.value,
+    });
+  }
   const reopenedData = await draft(f);
   expect(reopenedData).toEqual(canonical);
   expect(received.length).toBe(uploads);
@@ -6340,14 +6473,17 @@ test("template whole-Response deletion protects surviving alias B and deletes th
   const savedDraft10 = await draft(owner);
   const first = attachmentSchema.parse(savedDraft10.proof);
   await resume(owner);
-  customToken = first.file_token;
-  customLink = first.file_link;
   const replacement = new Uint8Array([83, 72, 65, 82, 69, 68]);
   const operationResult20 = await poll(
     owner,
     await send(owner, { folio_proof: file(replacement) })
   );
   expect(operationResult20.status).toBe("completed");
+  await seedHistoricalReceiptAlias(
+    owner,
+    operationResult19.operationId,
+    operationResult20.operationId
+  );
   const savedDraft11 = await draft(owner);
   const current = attachmentSchema.parse(savedDraft11.proof);
   expect(current.file_link).toBe(first.file_link);
@@ -6504,16 +6640,6 @@ test.each(["failed", "unknown"] as const)(
     const admin = await fixture({ admin: true });
     const saved = await poll(owner, await send(owner, { folio_proof: file() }));
     expect(saved.status).toBe("completed");
-    await resume(owner);
-    const savedDraft12 = await draft(owner);
-    const original = attachmentSchema.parse(savedDraft12.proof);
-    customToken = original.file_token;
-    customLink = original.file_link;
-    const replacement = await poll(
-      owner,
-      await send(owner, { folio_proof: file(new Uint8Array([66])) })
-    );
-    expect(replacement.status).toBe("completed");
     const savedDraft = await draft(owner);
     const proof = attachmentSchema.parse(savedDraft.proof);
     deleteFails = mode === "failed";
@@ -7043,4 +7169,302 @@ test("whole-Response deletion permits only an Admin first cleanup after proven n
   } finally {
     loginRejects = false;
   }
+});
+
+test("template direct Submit keeps same-number scalar/table receipts and original bytes across three normal rounds", async () => {
+  const number = `ROUNDS.${crypto.randomUUID()}`;
+  const owner = await fixture({
+    number,
+    tableAttachments: true,
+    templateMode: true,
+  });
+  const history: {
+    id: string;
+    data: unknown;
+    objectKey: string;
+    bytes: Uint8Array;
+  }[] = [];
+  const receipts: {
+    file_link: string;
+    file_token: string;
+    bytes: Uint8Array;
+  }[] = [];
+  const uploads = received.length;
+  for (let round = 0; round < 3; round += 1) {
+    if (round) {
+      const started = await app.handle(
+        new Request(
+          `http://test.local/api/forms/${owner.form.publicId}/start`,
+          {
+            headers: { Authorization: `Bearer ${owner.bearer}` },
+            method: "POST",
+          }
+        )
+      );
+      expect(started.status).toBe(200);
+      await resume(owner);
+      owner.lease = await claimEditorLease(
+        owner.identity,
+        "response",
+        owner.response.id,
+        owner.form.id
+      );
+      snapshots.set(
+        owner.documentKey,
+        replaceCell(
+          fixtureValue(snapshots.get(owner.documentKey)),
+          "B2",
+          number
+        )
+      );
+    }
+    const scalar = new Uint8Array([round, 1]);
+    const row = new Uint8Array([round, 2]);
+    const result = await poll(
+      owner,
+      await send(
+        owner,
+        {
+          '["folio_row_proof",2]': file(row, "row.PDF"),
+          folio_proof: file(scalar, "original.PDF"),
+        },
+        "submit"
+      )
+    );
+    expect(result.status, String(result.result?.errorMessage)).toBe(
+      "completed"
+    );
+    const submission = await prisma.submission.findFirstOrThrow({
+      orderBy: { createdAt: "desc" },
+      where: { responseId: owner.response.id },
+    });
+    const data = z.record(z.string(), z.unknown()).parse(submission.data);
+    const scalarReceipt = attachmentSchema.parse(data.proof);
+    const rowReceipt = fixtureValue(tableRowsSchema.parse(data.rows)[0]?.proof);
+    expect(rowReceipt.row_index).toBe(2);
+    const bytes = await readObject(submission.objectKey);
+    const workbook = readSpreadsheetWorkbook(bytes);
+    expect(workbook.cells.get("B3")?.value).toBe(scalarReceipt.file_link);
+    expect(workbook.cells.get("C12")?.value).toBe(rowReceipt.file_link);
+    receipts.push(
+      { ...scalarReceipt, bytes: scalar },
+      { ...rowReceipt, bytes: row }
+    );
+    history.push({
+      bytes,
+      data: submission.data,
+      id: submission.id,
+      objectKey: submission.objectKey,
+    });
+  }
+  expect(new Set(receipts.map((receipt) => receipt.file_token)).size).toBe(6);
+  expect(received.slice(uploads).map((entry) => entry.name)).toEqual([
+    `${number}-ก่อหนี้-4_ขยาย(45).PDF`,
+    `${number}-หลักฐาน-ตาราง.PDF`,
+    `${number}-ก่อหนี้-4_ขยาย(45).PDF`,
+    `${number}-หลักฐาน-ตาราง.PDF`,
+    `${number}-ก่อหนี้-4_ขยาย(45).PDF`,
+    `${number}-หลักฐาน-ตาราง.PDF`,
+  ]);
+  for (const receipt of receipts) {
+    const original = await fetch(receipt.file_link);
+    expect(new Uint8Array(await original.arrayBuffer())).toEqual(receipt.bytes);
+  }
+  for (const snapshot of history) {
+    expect(await readObject(snapshot.objectKey)).toEqual(snapshot.bytes);
+    const savedJson = await app.handle(
+      new Request(
+        `http://test.local/api/submissions/${snapshot.id}/json?revision=original`,
+        { headers: { Authorization: `Bearer ${owner.bearer}` } }
+      )
+    );
+    expect(savedJson.status).toBe(200);
+    expect(await savedJson.json()).toEqual(snapshot.data);
+    const selected = await app.handle(
+      new Request(
+        `http://test.local/api/submissions/${snapshot.id}/xlsx?revision=original`,
+        { headers: { Authorization: `Bearer ${owner.bearer}` } }
+      )
+    );
+    expect(selected.status).toBe(200);
+    const workbook = readSpreadsheetWorkbook(
+      new Uint8Array(await selected.arrayBuffer())
+    );
+    expect(workbook.cells.get("B3")?.value).toBe(
+      attachmentSchema.parse(
+        z.record(z.string(), z.unknown()).parse(snapshot.data).proof
+      ).file_link
+    );
+  }
+});
+
+test.each(["paired", "token-only", "link-only"] as const)(
+  "template %s history receipt refuses Correction without partial snapshot or DELETE",
+  async (alias) => {
+    const owner = await fixture({ templateMode: true });
+    const submitted = await poll(
+      owner,
+      await send(owner, { folio_proof: file() }, "submit")
+    );
+    expect(submitted.status).toBe("completed");
+    const submission = await prisma.submission.findFirstOrThrow({
+      where: { responseId: owner.response.id },
+    });
+    const receipt = attachmentSchema.parse(
+      z.record(z.string(), z.unknown()).parse(submission.data).proof
+    );
+    const canonical = await readObject(submission.objectKey);
+    const admin = await fixture({ admin: true });
+    const bridge = await openCorrection(owner, admin);
+    customToken = alias === "link-only" ? null : receipt.file_token;
+    customLink = alias === "token-only" ? null : receipt.file_link;
+    const uploads = received.length;
+    const deletes = deleted.length;
+    const refused = await poll(
+      admin,
+      await postCorrection(owner, admin, bridge, {
+        folio_proof: file(new Uint8Array([9]), "replacement.BIN"),
+      })
+    );
+    expect(refused.status).toBe("failed");
+    expect(refused.result?.attachmentErrorReason).toBe(
+      alias === "paired"
+        ? "attachment_history_receipt_conflict"
+        : "attachment_receipt_conflict"
+    );
+    expect(refused.result?.errorMessage).toContain("Tag proof");
+    if (alias === "paired") {
+      expect(refused.result?.errorMessage).toContain(submission.id);
+    } else {
+      expect(refused.result?.errorMessage).not.toContain(submission.id);
+    }
+    expect(JSON.stringify(refused.result)).not.toContain(receipt.file_token);
+    expect(JSON.stringify(refused.result)).not.toContain(receipt.file_link);
+    expect(await readObject(submission.objectKey)).toEqual(canonical);
+    const unchangedSubmission = await prisma.submission.findUniqueOrThrow({
+      where: { id: submission.id },
+    });
+    expect(unchangedSubmission.data).toEqual(submission.data);
+    expect(
+      await prisma.correction.count({ where: { submissionId: submission.id } })
+    ).toBe(0);
+    expect(received.length).toBe(uploads + 1);
+    expect(deleted.length).toBe(deletes);
+    const attempt = await prisma.ecmAttachmentVersion.findFirstOrThrow({
+      where: { operationId: refused.operationId },
+    });
+    expect(attempt.state).toBe("received");
+    expect(attempt.fileLink).not.toBeNull();
+    expect(attempt.fileToken).not.toBeNull();
+  }
+);
+
+test.each([false, true])(
+  "one physical row with saved zero-byte attachment rejects deletion without mutation (template=%s)",
+  async (templateMode) => {
+    const owner = await fixture({
+      tableAttachments: true,
+      tableRows: 1,
+      templateMode,
+    });
+    const savedAttachmentOperation = await poll(
+      owner,
+      await send(owner, {
+        '["folio_row_proof",0]': file(new Uint8Array(), "empty.BIN"),
+      })
+    );
+    expect(savedAttachmentOperation.status).toBe("completed");
+    await resume(owner);
+    const before = await draft(owner);
+    const { documentKey } = owner;
+    const bytes = fixtureValue(snapshots.get(documentKey));
+    const uploads = received.length;
+    const deletes = deleted.length;
+    const refused = await poll(
+      owner,
+      await send(owner, {}, "draft", crypto.randomUUID(), {
+        rowChange: { action: "delete", index: 0 },
+      })
+    );
+    expect(refused.status).toBe("failed");
+    expect(await draft(owner)).toEqual(before);
+    const response = await prisma.response.findUniqueOrThrow({
+      where: { id: owner.response.id },
+    });
+    expect(response.draftDocumentKey).toBe(documentKey);
+    expect(await readObject(fixtureValue(response.draftObjectKey))).toEqual(
+      bytes
+    );
+    expect(received.length).toBe(uploads);
+    expect(deleted.length).toBe(deletes);
+  }
+);
+
+test.each([
+  ["unauthorized", 401],
+  ["store-then-reject", 422],
+] as const)(
+  "template upload %s retains safe upstream status without leaking provider content",
+  async (mode, status) => {
+    const owner = await fixture({ templateMode: true });
+    nextMode = mode;
+    const deletes = deleted.length;
+    const refused = await poll(
+      owner,
+      await send(owner, { folio_proof: file() })
+    );
+    expect(refused.status).toBe("failed");
+    expect(refused.result?.attachmentErrorReason).toBe("ecm_rejected");
+    expect(refused.result?.errorMessage).toContain(`HTTP ${status}`);
+    expect(JSON.stringify(refused.result)).not.toContain("fixture wrote bytes");
+    expect(JSON.stringify(refused.result)).not.toContain(
+      "scalar-test-service-token"
+    );
+    expect(await draft(owner)).toEqual({});
+    expect(deleted.length).toBe(deletes);
+  }
+);
+
+test("template split token/link aliases retain both Draft resources and original receipt evidence without DELETE", async () => {
+  const owner = await fixture({ templateMode: true });
+  const initial = await poll(
+    owner,
+    await send(owner, {
+      folio_other: file(new Uint8Array([2])),
+      folio_proof: file(new Uint8Array([1])),
+    })
+  );
+  expect(initial.status).toBe("completed");
+  const before = await draft(owner);
+  const proof = attachmentSchema.parse(before.proof);
+  const other = attachmentSchema.parse(before.other);
+  await resume(owner);
+  customToken = proof.file_token;
+  customLink = other.file_link;
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const refused = await poll(
+    owner,
+    await send(owner, {
+      folio_proof: file(new Uint8Array([3])),
+    })
+  );
+  expect(refused.status).toBe("failed");
+  expect(refused.result?.attachmentErrorReason).toBe(
+    "attachment_receipt_conflict"
+  );
+  expect(await draft(owner)).toEqual(before);
+  expect(received.length).toBe(uploads + 1);
+  expect(deleted.length).toBe(deletes);
+  const attempt = await prisma.ecmAttachmentVersion.findFirstOrThrow({
+    where: { operationId: refused.operationId },
+  });
+  expect(attempt).toMatchObject({
+    fileLink: other.file_link,
+    fileToken: proof.file_token,
+    identityId: null,
+    state: "received",
+  });
+  const refusedMutation = await send(owner, {});
+  expect(refusedMutation.status).toBe(409);
 });
