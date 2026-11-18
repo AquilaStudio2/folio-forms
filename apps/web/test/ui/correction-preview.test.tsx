@@ -261,7 +261,7 @@ it.each(["none", "replacement", "removal", "candidate", "ordinary"] as const)(
     expect(router.state.location.pathname).toBe(path);
     expect(
       screen.getByRole("button", { name: "บันทึก Correction" })
-    ).toBeEnabled();
+    ).toBeDisabled();
     await waitFor(() => {
       expect(screen.getByTitle("Correction native fixture")).not.toBe(office);
     });
@@ -290,6 +290,7 @@ it.each(["none", "replacement", "removal", "candidate", "ordinary"] as const)(
         )
       );
     sendCurrent({ type: "bridge-ready" });
+    expect(screen.getByRole("button", { name: "บันทึก Correction" })).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "บันทึก Correction" }));
     await waitFor(() =>
       expect(commands).toHaveBeenCalledWith(
