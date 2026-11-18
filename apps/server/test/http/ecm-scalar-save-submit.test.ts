@@ -18,6 +18,7 @@ import {
 import {
   readSpreadsheetWorkbook,
   resolveSpreadsheetContract,
+  XLSX_CONTENT_TYPE,
 } from "../../src/documents/spreadsheets/workbook";
 import {
   spreadsheetXmlTree,
@@ -30,6 +31,7 @@ import type { EditorLeaseGrant } from "../../src/editor/leases";
 import { claimEditorLease } from "../../src/editor/leases";
 import { spreadsheetManifestFieldData } from "../../src/forms/spreadsheet-fields";
 import {
+  createDocumentAccessToken,
   xlsxEditorOpening,
   createOnlyOfficeAuthorization,
   createCallbackUserdata,
@@ -3063,6 +3065,76 @@ for (const templateMode of [false, true]) {
     expect(received.length).toBe(uploads);
   });
 
+  test(`${templateMode ? "template " : ""}table rejects unsafe native captures before upload and preserves distinct physical files`, async () => {
+    const f = await fixture({ tableAttachments: true, templateMode });
+    snapshots.set(
+      f.documentKey,
+      replaceCell(
+        replaceCell(fixtureValue(snapshots.get(f.documentKey)), "B10", "A"),
+        "B12",
+        "B"
+      )
+    );
+    expect(
+      (await poll(f, await send(f, {
+        [JSON.stringify(["folio_row_proof", 0])]: file(new Uint8Array([1, 2]), "A.BIN"),
+        [JSON.stringify(["folio_row_other", 2])]: file(new Uint8Array([3, 4]), "B.BIN"),
+      }))).status
+    ).toBe("completed");
+    await resume(f);
+    const before = await prisma.response.findUniqueOrThrow({ where: { id: f.response.id } });
+    const workbook = await readObject(fixtureValue(before.draftObjectKey));
+    const rows = tableRowsSchema.parse(z.record(z.string(), z.unknown()).parse(before.draftData).rows);
+    const uploads = received.length;
+    const deletes = deleted.length;
+    const references = await prisma.ecmAttachmentReference.findMany({
+      orderBy: { id: "asc" },
+      where: { responseId: f.response.id },
+    });
+    for (const mutation of [
+      (bytes: Uint8Array) => replaceCell(bytes, "C10", "https://example.test/forged"),
+      (bytes: Uint8Array) => unprotectSpreadsheet(bytes),
+      (bytes: Uint8Array) => mutatePart(bytes, "xl/styles.xml", (xml) =>
+        xml.replaceAll('locked="1"', 'locked="0"')),
+      (bytes: Uint8Array) => mutatePart(
+        replaceCell(replaceCell(bytes, "B10", "B"), "B12", "A"),
+        "xl/worksheets/sheet1.xml",
+        (xml) => xml.replace("</worksheet>", '<sortState ref="B10:D13"><sortCondition ref="B10:B13"/></sortState></worksheet>')
+      ),
+    ]) {
+      snapshots.set(f.documentKey, mutation(workbook));
+      const rejected = await poll(f, await send(f, {
+        [JSON.stringify(["folio_row_proof", 0])]: file(new Uint8Array([9]), "pending.BIN"),
+      }));
+      expect(rejected.status).toBe("failed");
+      const after = await prisma.response.findUniqueOrThrow({ where: { id: f.response.id } });
+      expect(after.draftDocumentKey).toBe(before.draftDocumentKey);
+      expect(after.draftObjectKey).toBe(before.draftObjectKey);
+      expect(after.draftData).toEqual(before.draftData);
+      expect(await readObject(fixtureValue(after.draftObjectKey))).toEqual(workbook);
+      expect(received.length).toBe(uploads);
+      expect(deleted.length).toBe(deletes);
+    }
+      expect(await prisma.ecmAttachmentReference.findMany({
+        orderBy: { id: "asc" },
+        where: { responseId: f.response.id },
+      })).toEqual(references);
+    for (const [attachment, bytes] of [
+      [rows[0]?.proof, new Uint8Array([1, 2])],
+      [rows[1]?.other, new Uint8Array([3, 4])],
+    ] as const) {
+      const original = await fetch(fixtureValue(attachment).file_link);
+      expect(new Uint8Array(await original.arrayBuffer())).toEqual(bytes);
+    }
+    snapshots.set(f.documentKey, replaceCell(workbook, "B10", "ordinary edit"));
+    expect((await poll(f, await send(f, {}))).status).toBe("completed");
+    expect(received.length).toBe(uploads);
+    expect(deleted.length).toBe(deletes);
+    const savedRows = tableRowsSchema.parse((await draft(f)).rows);
+    expect(savedRows[0]).toMatchObject({ item: "ordinary edit", proof: rows[0]?.proof });
+    expect(savedRows[1]?.other).toEqual(rows[1]?.other);
+  });
+
   test(`${templateMode ? "template " : ""}table stale snapshots and forged physical slots stop before external writes`, async () => {
     const f = await fixture({ tableAttachments: true, templateMode });
     const uploads = received.length;
@@ -3147,6 +3219,19 @@ for (const templateMode of [false, true]) {
     expect(removed.status).toBe("completed");
     const after = await draft(f);
     expect(after.rows).toEqual([tableRowsSchema.parse(before.rows)[1]]);
+    const current = await prisma.response.findUniqueOrThrow({
+      where: { id: f.response.id },
+    });
+    const workbook = readSpreadsheetWorkbook(
+      await readObject(fixtureValue(current.draftObjectKey))
+    );
+    for (const address of ["C12", "D12"]) {
+      expect(workbook.cells.get(address)?.value ?? null).toBeNull();
+    }
+    expect(workbook.hyperlinks.some((link) =>
+      link.range.firstRow <= 11 && link.range.lastRow >= 11 &&
+      link.range.firstColumn <= 3 && link.range.lastColumn >= 2
+    )).toBe(false);
     expect(received.length).toBe(uploads);
   });
 }
@@ -3910,6 +3995,70 @@ test("template table ambiguous or missing current-alias digests stop metadata re
   }
 });
 
+test.each([
+  { correction: false, templateMode: false },
+  { correction: false, templateMode: true },
+  { correction: true, templateMode: false },
+  { correction: true, templateMode: true },
+])("old saved workbook opens protected without canonical mutation: %j", async ({ correction, templateMode }) => {
+  const owner = await fixture({ tableAttachments: true, templateMode });
+  const saved = await poll(owner, await send(owner, {
+    folio_proof: file(),
+    [JSON.stringify(["folio_row_proof", 0])]: file(new Uint8Array([2, 4]), "row.BIN"),
+  }, correction ? "submit" : "draft"));
+  expect(saved.status).toBe("completed");
+  const response = await prisma.response.findUniqueOrThrow({ where: { id: owner.response.id } });
+  const submission = correction
+    ? await prisma.submission.findUniqueOrThrow({ where: { id: String(saved.result?.submissionId) } })
+    : null;
+  const sourceKey = submission?.objectKey ?? fixtureValue(response.draftObjectKey);
+  const canonicalBytes = await readObject(sourceKey);
+  // Seed a pre-guard stored artifact, not an application history mutation.
+  const oldBytes = mutatePart(
+    mutatePart(canonicalBytes, "xl/styles.xml", (xml) =>
+      xml.replaceAll('locked="1"', 'locked="0"')),
+    "xl/worksheets/sheet1.xml",
+    (xml) => xml.replace(/\s(?:sort|autoFilter)="1"/gu, "")
+  );
+  await putObject(sourceKey, oldBytes, XLSX_CONTENT_TYPE);
+  const uploads = received.length;
+  const deletes = deleted.length;
+  let documentKey = fixtureValue(response.draftDocumentKey);
+  if (correction) {
+    const admin = await fixture({ admin: true });
+    documentKey = (await openCorrection(owner, admin)).documentKey;
+  }
+  const url = `http://test.local/onlyoffice/document/${documentKey}?token=${encodeURIComponent(createDocumentAccessToken(documentKey))}`;
+  const delivered = await app.handle(new Request(url, {
+    headers: { Authorization: createOnlyOfficeAuthorization({ url }) },
+  }));
+  expect(delivered.status).toBe(200);
+  const workbook = readSpreadsheetWorkbook(new Uint8Array(await delivered.arrayBuffer()));
+  const sheet = spreadsheetXmlTree(strFromU8(fixtureValue(workbook.archive[workbook.sheetPath])));
+  expect(spreadsheetXmlChildren(sheet, "sheetProtection")[0]?.attributes).toMatchObject({
+    autoFilter: "1",
+    deleteRows: "1",
+    sort: "1",
+  });
+  const styles = spreadsheetXmlTree(strFromU8(fixtureValue(workbook.archive["xl/styles.xml"])));
+  const formats = spreadsheetXmlChildren(fixtureValue(spreadsheetXmlChildren(styles, "cellXfs")[0]), "xf");
+  for (const address of ["B3", "C10", "C11", "C12", "C13", "D10", "D11", "D12", "D13"]) {
+    const format = fixtureValue(formats[workbook.cells.get(address)?.style ?? 0]);
+    expect(spreadsheetXmlChildren(format, "protection")[0]?.attributes.locked).toBe("1");
+  }
+  const ordinary = fixtureValue(formats[workbook.cells.get("B10")?.style ?? 0]);
+  expect(spreadsheetXmlChildren(ordinary, "protection")[0]?.attributes.locked).toBe("0");
+  expect(await readObject(sourceKey)).toEqual(oldBytes);
+  const unchanged = await prisma.response.findUniqueOrThrow({ where: { id: owner.response.id } });
+  expect(unchanged.draftData).toEqual(response.draftData);
+  expect(unchanged.draftDocumentKey).toBe(response.draftDocumentKey);
+  if (submission) {
+    expect((await prisma.submission.findUniqueOrThrow({ where: { id: submission.id } })).data).toEqual(submission.data);
+  }
+  expect(received.length).toBe(uploads);
+  expect(deleted.length).toBe(deletes);
+});
+
 test("saved Draft reopen separates native opening keys without changing canonical bytes or attachments", async () => {
   const f = await fixture();
   const saved = await poll(f, await send(f, { folio_proof: file() }));
@@ -3960,7 +4109,15 @@ test("saved Draft reopen separates native opening keys without changing canonica
   const reopenedBytes: Uint8Array = new Uint8Array(
     await document.arrayBuffer()
   );
-  expect(reopenedBytes).toEqual(fixtureValue(snapshots.get(f.documentKey)));
+  const projectedWorkbook = readSpreadsheetWorkbook(reopenedBytes);
+  const canonicalWorkbook = readSpreadsheetWorkbook(fixtureValue(snapshots.get(f.documentKey)));
+  expect([...projectedWorkbook.names]).toEqual([...canonicalWorkbook.names]);
+  for (const [address, cell] of canonicalWorkbook.cells) {
+    expect(projectedWorkbook.cells.get(address)).toMatchObject({
+      formula: cell.formula,
+      value: cell.value,
+    });
+  }
   const reopenedData = await draft(f);
   expect(reopenedData).toEqual(canonical);
   expect(received.length).toBe(uploads);
