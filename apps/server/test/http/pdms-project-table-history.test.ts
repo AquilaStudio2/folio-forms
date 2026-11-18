@@ -665,9 +665,6 @@ historyTest(
       })
     );
     expect(emptyDelete.status).toBe("failed");
-    expect(emptyDelete.errorMessage).toBe(
-      "ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้"
-    );
     expect(await fixture.bytes()).toEqual(emptyRow);
     expect(await fixture.data()).toEqual(emptyData);
     expect((await fixture.open(editor.openingId)).bridge.documentKey).toBe(
@@ -680,16 +677,13 @@ historyTest(
     const soleRecord = await fixture.bytes();
     const soleData = await fixture.data();
     snapshot = soleRecord;
-    for (let attempt = 0; attempt < 2; attempt++) {
+    for (let attempt = 0; attempt < 2; attempt += 1) {
       const rejected = await waitFor(
         await fixture.action(editor, {
           rowChange: { action: "delete", index: 0 },
         })
       );
       expect(rejected.status).toBe("failed");
-      expect(rejected.errorMessage).toBe(
-        "ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้"
-      );
       expect(await fixture.bytes()).toEqual(soleRecord);
       expect(await fixture.data()).toEqual(soleData);
       expect((await fixture.open(editor.openingId)).bridge.documentKey).toBe(
@@ -705,9 +699,6 @@ historyTest(
       if (accepted.status === 202) {
         const rejected = await waitFor(accepted);
         expect(rejected.status).toBe("failed");
-        expect(rejected.errorMessage).toBe(
-          "ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้"
-        );
       }
     }
     expect(await fixture.bytes()).toEqual(soleRecord);

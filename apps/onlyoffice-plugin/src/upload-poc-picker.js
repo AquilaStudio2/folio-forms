@@ -110,12 +110,12 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
       {
         ...target,
         bridgeId: options.bridgeId,
+        dirty,
         documentKey: options.documentKey,
-        scopeIdentity: options.scopeIdentity,
         requestId: "picker-candidate",
+        scopeIdentity: options.scopeIdentity,
         source: "folio-upload-poc",
         type: "pending-file-candidate",
-        dirty,
       },
       options.parentOrigin
     );
@@ -135,6 +135,12 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
     selectionHint.hidden = Boolean(warnings);
   };
   const renderRemoveAction = () => {
+    selectionHint.textContent = "ยืนยันที่นี่ แล้วบันทึกแบบฟอร์มที่หน้าหลักเพื่ออัปโหลด";
+    if (operation) {
+      selectionHint.textContent = "เลือกในกล่อง — ยังไม่บันทึก";
+    } else if (baseline?.filename || baseline?.removal) {
+      selectionHint.textContent = "ยืนยันไฟล์แล้ว — รอบันทึกแบบฟอร์ม";
+    }
     const canCancel =
       baseline?.filename || baseline?.removal || baseline?.validationError;
     remove.hidden = !operation && !canCancel && !hasSaved;
@@ -161,11 +167,6 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
     filename.textContent = name || "ยังไม่ได้เลือกไฟล์";
     filesize.textContent =
       name && Number.isSafeInteger(size) && size >= 0 ? `${size} ไบต์` : "";
-    selectionHint.textContent = operation
-      ? "เลือกในกล่อง — ยังไม่บันทึก"
-      : baseline?.filename || baseline?.removal
-        ? "ยืนยันไฟล์แล้ว — รอบันทึกแบบฟอร์ม"
-        : "ยืนยันที่นี่ แล้วบันทึกแบบฟอร์มที่หน้าหลักเพื่ออัปโหลด";
     selectedFile.hidden = hasSaved && !name;
     removal.hidden = !(removing || (!operation && baseline?.removal === true));
     const locked = Boolean(pending || uncertain || unavailable || !baseline);

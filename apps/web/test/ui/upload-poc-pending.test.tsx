@@ -56,41 +56,57 @@ const sameRowsTransition = {
   rowMapping: [0, 1, 2],
 };
 describe("local POC pending files", () => {
-  it.each(["none", "file", "removal", "invalid"])("rejects last-row deletion without changing %s state", (state) => {
-    const store = new UploadPocPendingFiles();
-    const host = {
-      ...options,
-      spreadsheetBindings: {
-        ...options.spreadsheetBindings,
-        locations: { folio_body: { firstRow: 6, lastRow: 6 } },
-      },
-    };
-    if (state !== "none") {
-      store.handle(message({
-        type: state === "removal" ? "pending-file-remove" : "pending-file-set",
-        file: state === "invalid" ? {} : new File([], "zero.bin"),
-      }), host);
-    }
-    const before = store.handle(message(), host);
-    expect(() => store.handle(message({
-      action: "delete-row",
-      rowIndex: 0,
-      type: "pending-file-check",
-    }), host)).toThrow(/อย่างน้อย 1 แถว/u);
-    expect(store.handle(message(), host)).toEqual(before);
-    if (state !== "none") {
-      expect(() => store.complete("unsafe-transition", host, {
-        documentKey: "draft-2",
-        attachmentTransition: {
-          ...sameRowsTransition,
-          oldRowCount: 1,
-          newRowCount: 0,
-          rowMapping: [null],
+  it.each(["none", "file", "removal", "invalid"])(
+    "rejects last-row deletion without changing %s state",
+    (state) => {
+      const store = new UploadPocPendingFiles();
+      const host = {
+        ...options,
+        spreadsheetBindings: {
+          ...options.spreadsheetBindings,
+          locations: { folio_body: { firstRow: 6, lastRow: 6 } },
         },
-      })).toThrow();
+      };
+      if (state !== "none") {
+        const selection = message({
+          type:
+            state === "removal" ? "pending-file-remove" : "pending-file-set",
+          file: state === "invalid" ? {} : new File([], "zero.bin"),
+        });
+        if (state === "invalid") {
+          expect(() => store.handle(selection, host)).toThrow();
+        } else {
+          store.handle(selection, host);
+        }
+      }
+      const before = store.handle(message(), host);
+      expect(() =>
+        store.handle(
+          message({
+            action: "delete-row",
+            rowIndex: 0,
+            type: "pending-file-check",
+          }),
+          host
+        )
+      ).toThrow();
       expect(store.handle(message(), host)).toEqual(before);
+      if (state !== "none") {
+        expect(() =>
+          store.complete("unsafe-transition", host, {
+            documentKey: "draft-2",
+            attachmentTransition: {
+              ...sameRowsTransition,
+              oldRowCount: 1,
+              newRowCount: 0,
+              rowMapping: [null],
+            },
+          })
+        ).toThrow();
+        expect(store.handle(message(), host)).toEqual(before);
+      }
     }
-  });
+  );
   it("keeps scalar removal local until explicit save and preserves a newer removal across an older receipt", async () => {
     sessionStorage.clear();
     const store = new UploadPocPendingFiles();

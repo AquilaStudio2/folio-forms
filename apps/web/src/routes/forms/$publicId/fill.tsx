@@ -197,8 +197,10 @@ const FillRoute = () => {
     reset: () => void;
   } | null>(null);
   const hasUnsavedChanges =
-    dirty || nativeSaving ||
-    operation?.status === "pending" || operation?.status === "processing";
+    dirty ||
+    nativeSaving ||
+    operation?.status === "pending" ||
+    operation?.status === "processing";
   const navigationBlocker = useBlocker({
     disabled: !hasUnsavedChanges,
     enableBeforeUnload: hasUnsavedChanges,
@@ -859,11 +861,7 @@ const FillRoute = () => {
     setSaveRequest((value) => value + 1);
   };
   const saveAndExport = (format: ExportFormat) => {
-    if (
-      !activeResponseId ||
-      saveFlowBusy ||
-      exportSaveResolverRef.current
-    ) {
+    if (!activeResponseId || saveFlowBusy || exportSaveResolverRef.current) {
       return;
     }
     if (nativeConfig) {
@@ -1008,6 +1006,14 @@ const FillRoute = () => {
     setExitIntent(null);
   };
 
+  let exitDescription =
+    "ทิ้งเฉพาะไฟล์ การนำออก และการแก้ไขที่ยังไม่บันทึก โดยไม่ลบคำตอบที่บันทึกแล้ว การออกไม่ยกเลิกคำขอที่ส่งไปแล้ว และไม่กู้ไฟล์ที่ยังไม่บันทึกหลังเปิดใหม่";
+  if (exitIntent === "reauth") {
+    exitDescription = "บันทึกฉบับร่างก่อนเข้าสู่ระบบเดิม หรืออยู่ต่อเพื่อยกเลิก";
+  } else if (saveFlowBusy) {
+    exitDescription = "กำลังบันทึก กรุณารอผลก่อนออกจากหน้านี้";
+  }
+
   const exitPrompt = (
     <dialog
       ref={exitDialogRef}
@@ -1021,13 +1027,7 @@ const FillRoute = () => {
       <h2 id="unsaved-title" className="text-lg font-semibold">
         มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก
       </h2>
-      <p className="mt-2 text-sm text-[var(--ink-soft)]">
-        {exitIntent === "reauth"
-          ? "บันทึกฉบับร่างก่อนเข้าสู่ระบบเดิม หรืออยู่ต่อเพื่อยกเลิก"
-          : saveFlowBusy
-            ? "กำลังบันทึก กรุณารอผลก่อนออกจากหน้านี้"
-            : "ทิ้งเฉพาะไฟล์ การนำออก และการแก้ไขที่ยังไม่บันทึก โดยไม่ลบคำตอบที่บันทึกแล้ว การออกไม่ยกเลิกคำขอที่ส่งไปแล้ว และไม่กู้ไฟล์ที่ยังไม่บันทึกหลังเปิดใหม่"}
-      </p>
+      <p className="mt-2 text-sm text-[var(--ink-soft)]">{exitDescription}</p>
       {operationError ? (
         <div className="mt-4">
           <Notice tone="danger">{operationError}</Notice>

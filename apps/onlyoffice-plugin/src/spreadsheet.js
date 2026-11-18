@@ -311,8 +311,7 @@ export function initializeSpreadsheet(options, setStatus) {
   let refreshPdmsPicker = () => {};
   let renderList = () => {};
   let refreshAfterAction = () => {};
-  const minimumRowReason =
-    "ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้";
+  const minimumRowReason = "ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้";
   const readTableRowCount = async () => {
     window.Asc.scope = window.Asc.scope || {};
     window.Asc.scope.folioTableAnchor = bindings.table.anchor;
@@ -360,10 +359,7 @@ export function initializeSpreadsheet(options, setStatus) {
       }
       await ensureAuthoringReady();
       validatePanelDrafts();
-      if (
-        rowChange?.action === "delete" &&
-        (await readTableRowCount()) <= 1
-      ) {
+      if (rowChange?.action === "delete" && (await readTableRowCount()) <= 1) {
         throw new Error(minimumRowReason);
       }
       return checkUploadPocPending(
@@ -2920,7 +2916,7 @@ export function initializeSpreadsheet(options, setStatus) {
           changeRows("insert", await readTableRowCount())
         );
         const removeRow = button("ลบแถวที่เลือก", async () => {
-          if (await readTableRowCount() <= 1) {
+          if ((await readTableRowCount()) <= 1) {
             throw new Error(minimumRowReason);
           }
           window.Asc.scope = window.Asc.scope || {};
@@ -2939,16 +2935,16 @@ export function initializeSpreadsheet(options, setStatus) {
         panel.append(rowReason);
         let refreshId = 0;
         refreshAfterAction = async () => {
-          const requestId = ++refreshId;
+          refreshId += 1;
+          const requestId = refreshId;
           removeRow.disabled = true;
           let reason = "";
           try {
-            if (await readTableRowCount() <= 1) {
+            if ((await readTableRowCount()) <= 1) {
               reason = minimumRowReason;
             }
           } catch (error) {
-            reason =
-              error.message || "ไม่พบช่วงตาราง กรุณาบันทึกและเปิดแบบฟอร์มใหม่";
+            reason = error.message || "ไม่พบช่วงตาราง กรุณาบันทึกและเปิดแบบฟอร์มใหม่";
           }
           if (requestId !== refreshId) {
             return;
