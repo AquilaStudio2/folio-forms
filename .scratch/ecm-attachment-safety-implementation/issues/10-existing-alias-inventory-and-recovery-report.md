@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** needs-info
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US89–90; approved inventory/recovery/data-use policy และ old-data HOLD register
 
@@ -36,3 +36,79 @@
 ## Comments
 
 2026-11-18: ผู้ใช้อนุมัติ breakdown โดยแยก external authorization ออกจาก internal dependencies แล้ว เผยแพร่เพื่อให้ตรวจตั๋วก่อน execution ไม่มี inventory/DB/original-retrieval/recovery result ใหม่จากการสร้างตั๋ว
+
+### 2026-11-18 — Local evidence report; actual inventory/recovery pending
+
+**Disposition:** งานที่เข้าถึงได้ใน scope นี้เสร็จเฉพาะการตรวจ canonical policy, sanitized historical reports และ source/schema แบบ local read-only ไม่ใช่ผล inventory ของ records จริง ไม่ใช่ integrity comparison ใหม่ และไม่ใช่ recovery outcome ปัจจุบัน **needs-info** เพราะยังไม่มี authorization ของ environment/records/original retrieval ตามรายการด้านล่าง Acceptance ภายนอกข้างบนยังไม่ติ๊ก และ **pyw1tt human review pending**
+
+#### Environment, revision และ discovery provenance
+
+- Report date: 2026-11-18; environment ที่ตรวจคือ local worktree `/tmp/folio-ecm-safety-838056b-10` บน `feat/ecm-safety-10` Source baseline และ integration tip ตอนเริ่มคือ `838056b1d682fd40623d5db029ad5a1e7c89ad96` ตรวจ ancestry สำเร็จ ไม่ทราบ deployed Folio/DCM revision หรือ live schema migration state
+- Scope ของ records ที่ตรวจจริง: **ไม่มีการอ่าน live records** ไม่มี DB connection/query, original-byte retrieval, DCM request, DELETE หรือ remediation ในงานนี้ จำนวน records/identities/aliases/surviving references/integrity classes ใน environment จริงจึง **not inspected** ไม่ใช่ศูนย์รายการ
+- CodeGraph ถูกเรียกก่อนเปิด code ด้วย explicit worktree `projectPath`; tool รายงาน worktree ไม่ได้ index และให้ใช้ Read/Grep แทน จึงใช้ source ranges ของ worktree โดยตรง ไม่สร้าง index/infrastructure หรือถือผลจาก checkout อื่นแทน
+- Hindsight session recall: **retrieved**, tool ระบุเวลา `2026-11-18 15:10 UTC` ใช้นำทางเท่านั้น ไม่ยืนยัน bank `pdms-knowledge` Dedicated bank discovery ด้วย `types:["world"]`, `budget:"low"` เป็น **skipped** เพราะ mounted recall schema ไม่มี bank/types/budget selector ไม่ใช่ failed recall หรือ successful bank retrieval ไม่มี canonical Hindsight `document_id`, `chunk_id`, `source_path`, `stable_document_id`, `source_revision`/`source_revisions` ให้บันทึก จึงใช้ owner Markdown/source พร้อม revision แยกด้านล่าง ไม่มีการเขียน memory bank
+- [Canonical recovery owner: Resolution Q1–Q3](../../ecm-attachment-safety/issues/03-existing-aliases-recovery.md#resolution--2026-11-18--pyw1tt--เห็นด้วยกับ-q1-ถึง-q3) คือ approved policy; [implementation spec](../spec.md) US89–90 และ authorization/HOLD register คือขอบเขตงานนี้ Historical counter wording ของ D03 ไม่ใช่ latest naming policy; [latest naming Resolution](../../ecm-attachment-safety/issues/02-external-filename-collisions.md#resolution--2026-11-18--pyw1tt--ใช้ชื่อฐานซ้ำและแยกไฟล์ด้วย-receipt) แทน counter โดยไม่ยกเลิก Q1–Q3
+
+Snapshot SHA-256 ที่อ่านในงานนี้ ระบุคู่กับ baseline commit ข้างบน ไม่ใช้ tool snapshot tag เป็น revision และไม่ยก snapshot hash เก่าของสเปกมารับรองไฟล์ปัจจุบัน:
+
+| Local owner/source | SHA-256 |
+| --- | --- |
+| [D03 inventory/recovery resolution](../../ecm-attachment-safety/issues/03-existing-aliases-recovery.md) | `e58ee1c8666040b4ea5eb56ba7a80612441e6afda316dc1debfb1d5c8bf5a9d3` |
+| [D06 historical scoped provider evidence](../../ecm-attachment-safety/issues/06-unknown-settlement-contract.md) | `50fc2a740f19b56f5cf4b54b8c45f1139daf1b25e3603e3341a37eafdc4a6ce4` |
+| [Prisma schema](../../../packages/db/prisma/schema.prisma) | `2b01dd42f019c956ba7f2300de4b30746db6450de5e28fda33812e918464f01f` |
+| [Identity/reference/delete guards](../../../apps/server/src/ecm/identity.ts) | `992ee3d395dc44b3c188cae361472d8bcc9a5bb393d158fcc4b8c28800dd3e3c` |
+| [Attachment snapshot/retirement/original selection](../../../apps/server/src/ecm/attachments.ts) | `5ad1f6cb0f0c50ab2702fe2f3b7d237dd4f1ee91aa6200c373933a511cc11c19` |
+| [Provider client/original-byte checks](../../../apps/server/src/ecm/client.ts) | `6174ccafabc3df7de7bfbc699c629113da9ffeee7e58543b694105ea9698adcb` |
+| [Response deletion retention](../../../apps/server/src/responses/deletion.ts) | `5c064a5011e44fadac9323f94dd00071862dd3bb5a8c78d56313ff516d832b1b` |
+
+#### Approved grouping/classification — policy supported; record results unverified
+
+1. จำกัด resource scope ตาม provider service-account scope (`accountKey`) ก่อนจัดกลุ่ม Provider File Identity (`identityId`) และ original paired receipt (`fileToken` + `fileLink`) แต่ละ Upload Attempt (`version.id`, `operationId`) ต้องยังเป็นคนละ evidence record ไม่รวม attempts จนสูญ original-request provenance Source: `identityVersionIds` และ `receiveAttachmentIdentity`, `identity.ts:12–24,145–199`; schema `701–783`
+2. **Duplicate filename** เป็นเพียง destination coincidence ไม่พิสูจน์ shared identity, ownership หรือ corruption ใช้ filename เป็น descriptive evidence ได้แต่ไม่ใช้เลือก original หรือ latest ผล names ซ้ำต้องแยกจากคู่ receipt ที่ตรงจริงภายใน account scope
+3. **Shared identity/paired aliases** คือ references/attempts ที่มีหลักฐาน resource ร่วม การ reuse unchanged file ข้าม revisions อาจถูกต้องตาม contract ไม่ใช่ corruption โดยตัวมันเอง คู่ receipt ต่างกันก็ไม่พิสูจน์ independent physical bytes โดยลำพัง Partial/one-sided/multiple matches, identity `held`, missing identity และ unknown legacy row mapping ต้องรายงาน ambiguous/unknown แยก ไม่บังคับรวมกลุ่มจากชื่อ/size/time และไม่แก้ held state เพื่อให้รายงานครบ
+4. แต่ละกลุ่มต้องแจก surviving references ตาม snapshot/Response/slot/physical row พร้อม evidence ที่ retained หลัง deletion แยกจาก live survivors ห้ามอ้าง tombstone ว่า deleted Response ยังอยู่ หรือมองไม่มี live Response ว่าไม่มี ledger/aliases เหลือ Cross-record aliases ที่อยู่นอก approved access scope ให้ระบุ coverage gap และขอ scope เพิ่ม ไม่อ่านหรือเปิดเผยเอง
+5. **Integrity** แยกเป็น “ตรงกับ trusted original”, “ยังยืนยันไม่ได้” หรือ “แตกต่างจาก trusted original” เฉพาะเมื่อมี provenance และ authorized comparison รองรับจริง เก็บสถานะ grouping, integrity และ recovery แยกกัน ไม่มี historical digest/trusted original ให้ integrity unknown ไม่ backfill `original_sha256` จาก current bytes แล้วย้อนอ้างเป็น original เก่า URL GET สำเร็จหรือ same size/time ไม่รับรอง historical content
+
+#### Coverage map สำหรับ inventory ที่ยังไม่ได้รับสิทธิ์
+
+ตารางนี้ยืนยันว่าพบแหล่งข้อมูล/กลไกใน source ไม่ใช่ยืนยัน coverage ของ live records ไม่มี query/export script ใหม่:
+
+| Coverage | Local source/schema ที่เปิด | สิ่งที่ต้องเก็บเมื่อมี scoped report จริง |
+| --- | --- | --- |
+| Draft | `Response.draftData`/`draftDocumentKey`, schema `383–411`; `EcmAttachmentReference.snapshotId` | Current saved Draft attachment objects กับ references ของ canonical document; ไม่สร้างประวัติทุก Draft save เพิ่ม |
+| Submission | `Submission.data`/`documentKey`, schema `431–450`; protected snapshots ใน `attachments.ts:1079–1134` | ทุก Submission ใน approved scope ไม่ใช่ latest อย่างเดียว; paired receipt ของแต่ละ slot |
+| Correction | `Correction.data`/`documentKey`/`revision`/`submissionId`, schema `453–470` | ทุก selected/older revision ที่อยู่ใน scope; ไม่แทน receipt ด้วย latest Correction |
+| Workspace | `EditorLease.workspaceDocumentKey` และ `workspaceBaseDocumentKey`, schema `570–592`; `attachments.ts:1100–1108,1126–1132` | ทั้ง workspace และ base references/target evidence; ไม่ตัด base หรือ expired lease ทิ้งโดยเดา และไม่อ้าง browser pending File เป็น saved original |
+| Eligible Operations | `Operation.documentKey`/`status`/`metadata`/`result`, schema `519–545`; `attachments.ts:1109–1115` | Snapshot protection ใช้ `pending`/`processing` และ exclude committing operation ใน flow นั้น; report ต้องแยก original batch/checkpoint/attempt states และ unknown cleanup ไม่ตีความ Operation completed/failed ว่า remote request settled เสมอ |
+| Retained deletion records/aliases | Non-cascading batches/versions/references/cleanups, schema `701–807`; `retireResponseAttachments`, `attachments.ts:1231–1377`; tombstone schema `641–653`; `deletion.ts:389–450` | อ่าน retained identities/versions/batches/cleanups และ `deletion_tombstones.attachment_context` ตามสิทธิ์ ไม่ inner-join live Responses จนรายการหาย Retirement ลบ live references ของ Response แล้วเก็บ original reference evidence ใน tombstone รวม operation/workspace context; แจก survivors ที่ resource เดียวกันนอก Response ที่ลบโดยไม่ฟื้น answer rows |
+| Slot/row provenance | Version `bindingId`/`tag`/`rowIndex`; Reference `rowIndex`, schema `735–783`; `savedOriginalVersions`, `attachments.ts:376–415` | แยก original upload row กับ current physical row ของแต่ละ snapshot (`row_index`, zero-based); null legacy position คง unknown ไม่เดาจาก compact answer index หรือ visible-row order |
+
+Ledger states (`state`, `generation`, `sentAt`, `receivedAt`, `requestSettledAt`), cleanup `attemptedAt`/evidence และ original checkpoint เป็น evidence ที่ต้องพิจารณาคู่ references ไม่ใช่ permission ให้ settle/retry/delete จาก report Source guards ที่เปิดยังมี protected-reference/shared-alias/unknown fences (`identity.ts:201–305`, `attachments.ts:1273–1287`) งานนี้ไม่ได้เปลี่ยนหรือทดสอบ guards และไม่ใช่ acceptance ของ naming changes ที่กำลัง integrate
+
+#### Reachable sanitized historical evidence — ไม่ใช่ inventory ใหม่
+
+- [D03 หลักฐานตั้งต้น](../../ecm-attachment-safety/issues/03-existing-aliases-recovery.md#หลักฐานตั้งต้น) บันทึก local filename-keyed provider reproduction: A=`[11]`, B=`[22]`, replace B ด้วย C=`[33]` แล้วสองแถวอ่านเป็น `[33]`,`[33]`; full-row control เป็น `[11]`,`[33]` เป็น historical controlled-provider finding ไม่ใช่ Production corruption ไม่รันซ้ำเพื่อยืนยัน และไม่ใช้เป็นรายชื่อ affected real records
+- [D06 scoped same-name sample](../../ecm-attachment-safety/issues/06-unknown-settlement-contract.md#2026-11-18--pyw1tt--ชื่อซ้ำสร้างรายการใหม่และ-bytes-เดิมยังอยู่ในการทดสอบที่อนุญาต) บันทึก POST เวลา `2026-11-18T10:11:31.192Z`: old originals สามรายการคงรายการละ 26,275 bytes/digest เดิมหลัง POST; new receipt อ่าน 667 bytes ตรง synthetic fixture เป็น **supported เฉพาะ historical sample** ไม่ใช่ Folio-wide inventory, proof of independent storage ทุกชนิด, DELETE isolation หรือ settlement ของ HTTP 500 ก่อนหน้า
+- Digests ของ old originals ใน D06 เป็นหลักฐาน bytes ณ observation นั้น ไม่พิสูจน์ original ก่อน observation หรือ uploader/source request จากชื่อ/เวลา Raw receipts ถูก redact แล้ว จึงใช้ local report นี้ทำ record-level join กับ Folio ไม่ได้ ชื่อเหมือนกันหรือ bytes เท่ากันไม่พิสูจน์ shared identity รายการเหล่านั้นไม่ใช่ disposable fixtures หรือ authorization ให้ download/delete ใหม่
+- Current source มี nullable `originalSha256` และ runtime original-reuse size/hash checks (`attachments.ts:418–489`, `client.ts:160–199,548–597`) เป็น **supported source mechanism** ไม่พิสูจน์ deployed migration, digest population/provenance ของ records จริง หรือผล retrieval Legacy flow ตรวจ size แต่ไม่ได้บังคับ digest แบบ template flow จึงห้ามยก source check มารับรอง historical integrity ทุก record
+
+#### Trusted-original provenance และ recovery proposal
+
+- ก่อน claim ว่า “ตรง/ต่างจาก trusted original” ต้องมีหลักฐานที่ผูก original กับ exact account/resource, Response/snapshot/revision, Field/Tag/physical row และ original upload request/receipt ได้ รวมที่มาของ digest/bytes, ผู้ให้หลักฐาน, เวลา/วิธีได้มา และ chain ที่ตรวจสอบได้ Historical digest ต้องเป็นหลักฐานจากเวลาที่เชื่อถือได้ ไม่ใช่คำนวณจาก current download แล้วย้อนอ้าง
+- Trusted original ที่เจ้าของให้ต้องตรวจ provenance ของกลุ่มนั้นจริง ไม่ใช้ filename, size, timestamp, latest/search result หรือไฟล์จากแถวอื่นแทน หากมีแต่ digest ใช้จำแนก integrity ได้เมื่อ retrieval ได้รับอนุญาตและ evidence เพียงพอ แต่ digest ไม่ใช่ bytes สำหรับ recovery
+- หาก owner-provided original/provenance ยังไม่พอ ให้คงข้อมูลและรายงาน “ยังยืนยันหรือกู้คืนจากหลักฐานที่มีไม่ได้” ไม่กล่าวหา corruption หรือสรุปกู้ไม่ได้ถาวร Runtime retrieval failure ไม่พิสูจน์ recovery outcome
+- เมื่อหลักฐานครบ ให้เสนอ remediation **รายกลุ่ม** ระบุ source/provenance, affected live/retained aliases, ทุก surviving reference/immutable history ที่อาจเปลี่ยนความหมาย, resource/public-link effects, unknowns และสิ่งที่ต้องเขียนจริงให้ pyw1tt อนุมัติแยก ตั๋วนี้ไม่ execute proposal ไม่ rewrite JSON, rename/reupload/delete, hash backfill หรือเก็บ original binary/base64 ใน repo/DB/RustFS/private archive รายงาน retained เฉพาะ sanitized evidence ไม่ใช่สำเนา originals นอก DCM
+
+#### Exact external prerequisites และ pending acceptance
+
+1. **Environment/DB:** pyw1tt ระบุและอนุญาต target environment, Folio deployed revision และ schema/migration snapshot, named executor และ read-only access/export channel; ไม่เปิด `.env` หรือใช้ credential ที่พบในเครื่องเป็นสิทธิ์อ่านจริง Local source ไม่บอก target DB ที่ได้รับอนุญาต
+2. **Records/access scope:** ระบุ Forms/Responses/Submissions/Corrections, owner/account scope และ cutoff/snapshot time ที่อนุญาต ครอบคลุม workspaces/eligible Operations/retained deletion cases และขอบเขตอ่าน cross-Response aliases/survivors ข้อมูลนอก scope ต้องไม่ถูก export ทั้งนี้ project test base `กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45)` ไม่ให้สิทธิ์ audit records/projects อื่น
+3. **Sanitized input/report scope:** ต้องมี approved read-only export/report ของ records ข้างต้น หรือสิทธิ์ให้ executor จัดทำอย่างจำกัด พร้อม source/extraction date, schema revision, record counts by surface, excluded/unreadable sets และ field-level provenance ใช้ opaque stable report labels สำหรับ account/resource/receipt/actor/slot โดยเก็บตัวเชื่อมที่อ่อนไหวในช่องทางที่อนุญาตเท่านั้น ไม่ลง credentials/raw tokens/private evidence URLs หรือ originals ใน repo ขณะนี้ไม่มี scoped record export ที่ใช้จัดกลุ่มจริง
+4. **Original-byte retrieval/comparison:** อนุญาตแยกเฉพาะ exact resources และ claim ที่จำเป็น ระบุ authenticated retrieval channel, ผู้เข้าถึง, ช่วงเวลา/stop conditions, trusted-original/digest provider และวิธีตรวจ provenance ไม่สแกน arbitrary DCM inventory ไม่ใช้ historical test permission ซ้ำ และไม่ retain originals นอก DCM หากยังไม่มีสิทธิ์หรือ trusted original ให้ integrity unknown ต่อไป
+5. **Review/remediation:** pyw1tt ตรวจรับ inventory coverage, integrity evidence และ recovery feasibility แยกกัน; group proposals/actual remediation ยังต้องอนุมัติใหม่ ไม่มี approval สำหรับ write/DELETE/live remediation/push/deploy จากรายงานนี้
+
+Report จริงเมื่อมี input ต้องระบุ environment/date/source+deployed revision/schema, approved record scope และ examined/excluded counts, sanitized group/attempt/receipt/reference labels, slot/row/revision provenance, identity ambiguity, trusted-original provenance, integrity result, recovery outcome, unknowns/limitations, reviewer และ human decision รายกลุ่ม ช่องที่ยังไม่รู้ระบุ missing/unknown ไม่เติมจาก inference
+
+**Data-use ระหว่าง pending:** คง existing ownership/history/shared-reference/unknown-operation guards ไม่ลบ aliases หรือปลด HOLD ด้วยโน้ต ไม่บล็อกทั้งระบบเพราะ inventory ยังไม่ครบ อ่าน/export saved revisions ตามสิทธิ์เดิม และสื่อข้อจำกัดแก่ผู้ดูแล/ผู้เปิด revision ที่เกี่ยวข้องผ่าน existing surfaces ตาม D03 ไม่เพิ่ม dashboard/manual unlock หรือถือ frozen JSON ว่า external bytes immutable
+
+**Checks/evidence:** อ่าน spec/ticket/canonical resolution และ source ranges ตาม register; ancestry check และ snapshot hashing เท่านั้น ไม่รัน tests/build/lint/formatter, DB audit หรือ provider checks เพราะแก้เฉพาะ ticket หลักฐานจริงและ human acceptance ทุกข้อที่ต้อง environment/records/retrieval ยัง unchecked Parent ต้องเชื่อม report นี้ใน integration evidence โดยคง external HOLD ไม่ถือ documentation completion ว่าปิดตั๋ว
