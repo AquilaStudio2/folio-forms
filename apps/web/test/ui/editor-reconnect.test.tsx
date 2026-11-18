@@ -650,6 +650,7 @@ it.each([
         uploadPoc: {
           ...initial.bridge.uploadPoc,
           documentKey: "document-2",
+          // The captured save has no attachment; the later File is not saved data.
           savedData: {},
         },
       },
@@ -668,6 +669,27 @@ it.each([
       fresh.bridge.uploadPoc.scopeIdentity = "foreign-actor/response";
     }
     transport.get.mockImplementation((path: string) => {
+      if (path === "/api/operations/saved-1") {
+        return Promise.resolve({
+          operation: {
+            id: "saved-1",
+            responseId: "response",
+            result: {
+              attachmentTransition: {
+                fromDocumentKey: "document-1",
+                newRowCount: 0,
+                oldRowCount: 0,
+                rowMapping: [],
+                tableBindingId: null,
+                toDocumentKey: "document-2",
+              },
+              documentKey: "document-2",
+            },
+            status: "completed",
+            type: "save_draft",
+          },
+        });
+      }
       if (path.includes("continuedOperationId=saved-1")) {
         if (outcome === "config-rejection") {
           return Promise.reject(new Error("Configuration unavailable"));
