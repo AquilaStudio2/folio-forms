@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** in-progress — source/regressions prepared; integration checks and native control evidence pending
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US41–55; H07–H08 และ U01
 
@@ -35,3 +35,38 @@
 ## Comments
 
 2026-11-18: ผู้ใช้อนุมัติ breakdown และ dependency ที่ไม่มี blocker แล้ว เผยแพร่เพื่อให้ตรวจเนื้อหาก่อน implementation ไม่เปลี่ยนหรือแทน Wayfinder minimum-row decision เดิม และยังไม่มี runtime result ใหม่
+
+### 2026-11-18 — implementation branch `feat/ecm-safety-02`
+
+- **Authorization:** Implemented only isolated source/test changes after the explicit implementation instruction. No real DCM/PDMS calls, live database access, DELETE, push or deployment. Historical F01 is accepted as reported; no reproduction was rerun.
+- **Canonical policy:** Read the complete final-row decision, especially [latest Resolution](../../ecm-attachment-safety/issues/05-final-row-mapping.md#resolution--2026-11-18--pyw1tt--ทุกฟอร์ม-excel-ต้องเหลืออย่างน้อยหนึ่ง-row), the implementation ticket/spec, and ADR 0003 for the affected ordinary-table history regression. Minimum is physical body count, not populated answers.
+- **Source changes:** `prepareSpreadsheetOperation` rejects sole-row deletion using the trusted saved artifact/contract before edit validation, attachment preparation or builder execution. Error: `spreadsheet_minimum_rows`, message `ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้`. Both this guard and the resulting row-count transition checks cover ordinary/no-attachment tables, not just the attachment branch.
+- **Builder defense:** Resolve and check the table body before clearing ranges or writing values; reject last-row deletion instead of clearing its inputs/hyperlinks. Two-to-one deletion and append retain the existing formula/validation/button rebuild path.
+- **Plugin controls:** Disable delete-selected until native body size is known, and at one row show the reason through visible text, title and `aria-describedby`. Refresh after actions/content-ready/selection/sheet changes; recheck on delete and direct `runAction` before pending/save barriers. Correction still gets no row controls. No clear-row action, confirmation, stable row IDs, schema or new dependencies.
+- **Consumer regressions prepared, not executed:** Ordinary XLSX HTTP journey covers an empty sole row, filled sole row, repeated and racing direct requests, unchanged XLSX/JSON/document key, append/two-to-one transitions and existing stale-history/callback fences. Its former clear-last-row expectation now explicitly appends a blank survivor before deleting the populated row. Native builder regression rejects the forbidden operation even when clear/write inputs were supplied. Native attachment regression covers legacy and template columns together, complete body-button counts, missing-control rejection, survivor values, empty appended slots and repeated two-to-one/append/minimum transitions. Plugin regression covers disabled/reason, no request on click/direct action, and row-count refresh.
+- **Cross-owner coverage:** Ticket 01 owns saved/zero-byte attachment HTTP rejection in `ecm-scalar-save-submit.test.ts`; ticket 04 owns pending File/removal/invalid-selection and full-mapping minimum guards. Their changes must be integrated with this branch before asserting end-to-end coverage.
+- **Checks deliberately not run in this worker:** No tests, build, typecheck, lint, formatter, behavioral smoke or actual browser/ONLYOFFICE interaction. CodeGraph reported this worktree unindexed, so source was read directly. Branch ancestry check succeeded before edits.
+
+#### Exact checks for the integration owner
+
+Run only against the isolated PostgreSQL/object-store/provider environment already approved for this effort. Do not load real provider credentials or point these commands at live services.
+
+```sh
+# From the integration repository root:
+bun test apps/onlyoffice-plugin/test/spreadsheet.test.js
+bun run --cwd apps/server test:spreadsheet
+
+# Requires the isolated app/database/object-store and existing builder service:
+cd apps/server
+RUN_PDMS_TABLE_HISTORY_HTTP=1 bun test --timeout 120000 test/http/pdms-project-table-history.test.ts
+RUN_SPREADSHEET_RUNTIME=1 bun test --timeout 120000 test/spreadsheet-runtime/builder.test.ts test/spreadsheet-runtime/upload-poc.test.ts
+```
+
+Native browser smoke remains pending: on an ordinary table and each editable attachment surface, verify delete disabled/reason at one row, keyboard/repeated action cannot clear it, two-to-one then append works, every configured body attachment cell has its control, saved/pending/removal/invalid state survives rejection without remount/provider writes, and Save Draft/Submit/reopen retain values/buttons. Builder-only results cannot close this evidence.
+
+#### Intended shared-document deltas for the integration owner
+
+- `CONTEXT.md` / table contract: Every XLSX repeating-table row-action surface retains at least one physical body row; rejected deletion leaves values, saved files, pending state, buttons and canonical revision unchanged. Correction permissions remain unchanged.
+- `system-map.md` / spreadsheet save path: Trusted saved-body minimum guard precedes attachment preparation and builder mutation; post-builder row-count validation is shared by attachment and ordinary tables.
+- System map / plugin controls: Describe disabled delete with its minimum-row reason and native count refresh; distinguish prepared plugin/native regressions from actual browser evidence.
+- Acceptance evidence: Keep H07/H08/U01 and this implementation ticket open until integration checks and native controls are exercised. Retain existing saved-button validation and blank-row/requiredness semantics; do not claim Production/provider acceptance.

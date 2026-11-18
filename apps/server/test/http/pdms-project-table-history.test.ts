@@ -634,7 +634,7 @@ historyTest(
 );
 
 historyTest(
-  "deleting the sole record clears its history and fences delayed choices, callback replays and native undo from the reused cell",
+  "ordinary tables reject sole-row deletion without clearing data, then append and delete preserve history fences",
   async () => {
     const oldName = "ชื่อประวัติที่ต้องไม่กลับมา";
     const currentName = "ชื่อสำหรับระเบียนใหม่";
@@ -655,10 +655,66 @@ historyTest(
       ).toBe("completed");
       editor = await fixture.open(editor.openingId);
     }
+    // Minimum counts physical body rows, not active answer objects or buttons.
+    const emptyRow = await fixture.bytes();
+    const emptyData = await fixture.data();
+    snapshot = emptyRow;
+    const emptyDelete = await waitFor(
+      await fixture.action(editor, {
+        rowChange: { action: "delete", index: 0 },
+      })
+    );
+    expect(emptyDelete.status).toBe("failed");
+    expect(emptyDelete.errorMessage).toBe(
+      "ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้"
+    );
+    expect(await fixture.bytes()).toEqual(emptyRow);
+    expect(await fixture.data()).toEqual(emptyData);
+    expect((await fixture.open(editor.openingId)).bridge.documentKey).toBe(
+      editor.bridge.documentKey
+    );
     editor = await fixture.pick(editor, oldName, 0, {
       C4: "deleted record note",
       D1: "unrelated scalar note",
     });
+    const soleRecord = await fixture.bytes();
+    const soleData = await fixture.data();
+    snapshot = soleRecord;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      const rejected = await waitFor(
+        await fixture.action(editor, {
+          rowChange: { action: "delete", index: 0 },
+        })
+      );
+      expect(rejected.status).toBe("failed");
+      expect(rejected.errorMessage).toBe(
+        "ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้"
+      );
+      expect(await fixture.bytes()).toEqual(soleRecord);
+      expect(await fixture.data()).toEqual(soleData);
+      expect((await fixture.open(editor.openingId)).bridge.documentKey).toBe(
+        editor.bridge.documentKey
+      );
+    }
+    const racingDeletes = await Promise.all([
+      fixture.action(editor, { rowChange: { action: "delete", index: 0 } }),
+      fixture.action(editor, { rowChange: { action: "delete", index: 0 } }),
+    ]);
+    for (const accepted of racingDeletes) {
+      expect([202, 409]).toContain(accepted.status);
+      if (accepted.status === 202) {
+        const rejected = await waitFor(accepted);
+        expect(rejected.status).toBe("failed");
+        expect(rejected.errorMessage).toBe(
+          "ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้"
+        );
+      }
+    }
+    expect(await fixture.bytes()).toEqual(soleRecord);
+    expect(await fixture.data()).toEqual(soleData);
+    expect((await fixture.open(editor.openingId)).bridge.documentKey).toBe(
+      editor.bridge.documentKey
+    );
     // Appending copies a nonempty prototype's formatting, never its source or
     // ordinary values; its new historical baseline must still be blank.
     snapshot = await fixture.bytes();
@@ -689,6 +745,19 @@ historyTest(
         await waitFor(
           await fixture.action(editor, {
             rowChange: { action: "delete", index: 1 },
+          })
+        )
+      ).status
+    ).toBe("completed");
+    editor = await fixture.open(editor.openingId);
+    // Delete a real record only after appending a blank survivor. A rejected
+    // last-row command must never stand in for this explicit two-to-one action.
+    snapshot = await fixture.bytes();
+    expect(
+      (
+        await waitFor(
+          await fixture.action(editor, {
+            rowChange: { action: "insert", index: 1 },
           })
         )
       ).status

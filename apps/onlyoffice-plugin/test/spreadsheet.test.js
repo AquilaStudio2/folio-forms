@@ -1008,6 +1008,48 @@ test("response append-row button inserts after all current rows with native save
   });
 });
 
+test("last-row delete is disabled with a reason and follows trusted native body size after every action", async () => {
+  const harness = createHarness({
+    documentKind: "xlsx",
+    spreadsheetBindings: {
+      fields: [],
+      table: { anchor: "rows", columns: [] },
+      version: 1,
+    },
+    spreadsheetSelection: {
+      address: "B4",
+      names: { rows: "'Sheet1'!B4:C4" },
+    },
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  const remove = descendants(harness.body).find(
+    (node) => node.tagName === "BUTTON" && node.textContent === "ลบแถวที่เลือก"
+  );
+  expect(remove.disabled).toBe(true);
+  expect(remove.title).toBe(
+    "ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้"
+  );
+  remove.dispatchEvent({ type: "click" });
+  await flushPlugin();
+  expect(harness.requests).toHaveLength(0);
+  expect(
+    await harness.window.FormBridge.runAction("save-draft", "", {
+      action: "delete",
+      index: 0,
+    })
+  ).toMatchObject({ ok: false });
+  expect(harness.requests).toHaveLength(0);
+  harness.spreadsheetNames.set("rows", "'Sheet1'!B4:C5");
+  harness.emitEditorEvent("onTargetPositionChanged");
+  await flushPlugin();
+  expect(remove.disabled).toBe(false);
+  harness.spreadsheetNames.set("rows", "'Sheet1'!B4:C4");
+  harness.emitEditorEvent("onDocumentContentReady");
+  await flushPlugin();
+  expect(remove.disabled).toBe(true);
+});
+
 test("Excel response accepts authenticated shared submit actions from the parent", async () => {
   const harness = createHarness({
     capabilityResponses: ["submit"],

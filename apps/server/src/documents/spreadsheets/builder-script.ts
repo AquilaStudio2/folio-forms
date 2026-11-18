@@ -110,6 +110,20 @@ export const spreadsheetBuilderScript = (
   // Assigning an empty value preserves borders, formats, and the blank value.
   return `builder.OpenFile(${JSON.stringify(job.inputUrl)});
 var sheet = Api.GetActiveSheet();
+var change = ${JSON.stringify(change ?? null)};
+if (change) {
+  var name = Api.GetDefName(change.bodyName);
+  if (!name) throw new Error("Missing table body binding");
+  var body = name.GetRefersToRange();
+  if (!body) throw new Error("Invalid table body binding");
+  var count = body.GetRowsCount();
+  if (change.action === "delete" && count <= 1) {
+    throw new Error("ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้");
+  }
+  if (change.index > count || (change.action === "delete" && change.index >= count)) {
+    throw new Error("The selected row no longer exists");
+  }
+}
 var clearRanges = ${JSON.stringify(job.clearRanges ?? [])};
 for (var c = 0; c < clearRanges.length; c++) {
   sheet.GetRange(clearRanges[c]).SetValue("");
@@ -131,20 +145,11 @@ for (var v = 0; v < inputValues.length; v++) {
     sheet.GetRange(input.address).SetValue(literal);
   }
 }
-var change = ${JSON.stringify(change ?? null)};
 if (change) {
-  var name = Api.GetDefName(change.bodyName);
-  if (!name) throw new Error("Missing table body binding");
-  var body = name.GetRefersToRange();
-  if (!body) throw new Error("Invalid table body binding");
   var sheet = body.GetWorksheet();
   var firstRow = body.GetRow() - 1;
-  var count = body.GetRowsCount();
   var firstColumn = body.GetCol() - 1;
   var width = body.GetColumnsCount();
-  if (change.index > count || (change.action === "delete" && change.index >= count)) {
-    throw new Error("The selected row no longer exists");
-  }
   var row = firstRow + change.index;
   var address = function(column, rowNumber) {
     var result = "";
@@ -172,17 +177,11 @@ if (change) {
       sheet.GetRange(address(firstColumn + change.inputColumns[i], row)).ClearHyperlinks();
     }
     name.SetRefersTo("'" + sheet.GetName().replace(/'/g, "''") + "'!$" + address(firstColumn, firstRow).replace(/(\\d+)$/, "$$$1") + ":$" + address(firstColumn + width - 1, firstRow + count).replace(/(\\d+)$/, "$$$1"));
-  } else if (count === 1) {
-    for (var j = 0; j < change.inputColumns.length; j++) {
-      if (change.inputColumns[j] >= width) throw new Error("Invalid input column");
-      sheet.GetRange(address(firstColumn + change.inputColumns[j], row)).SetValue("");
-      sheet.GetRange(address(firstColumn + change.inputColumns[j], row)).ClearHyperlinks();
-    }
   } else {
     sheet.GetRange((row + 1) + ":" + (row + 1)).Delete("up");
     name.SetRefersTo("'" + sheet.GetName().replace(/'/g, "''") + "'!$" + address(firstColumn, firstRow).replace(/(\\d+)$/, "$$$1") + ":$" + address(firstColumn + width - 1, firstRow + count - 2).replace(/(\\d+)$/, "$$$1"));
   }
-  var nextCount = count + (change.action === "insert" ? 1 : count > 1 ? -1 : 0);
+  var nextCount = count + (change.action === "insert" ? 1 : -1);
   for (var validationIndex = 0; validationIndex < prototypeValidations.length; validationIndex++) {
     var rule = prototypeValidations[validationIndex];
     var targetValidation = sheet.GetRange(address(firstColumn + rule.column, firstRow) + ":" + address(firstColumn + rule.column, firstRow + nextCount - 1)).GetValidation();
