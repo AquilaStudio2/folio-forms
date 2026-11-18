@@ -158,10 +158,12 @@ export const OnlyOfficeEditor = ({
   const documentDirtyRef = useRef(false);
   const documentEditVersionRef = useRef(0);
   const capturedEditVersionRef = useRef<number | null>(null);
+  const pendingEditVersionRef = useRef(0);
+  const capturedPendingVersionRef = useRef<number | null>(null);
   const retiredCorrectionRef = useRef(false);
   const requestSequenceRef = useRef(0);
   const liveConfigPathRef = useRef<(() => string) | null>(null);
-  const [mutationState, setMutationState] = useState<"idle" | "saving" | "unresolved">("idle");
+  const [mutationState, setMutationState] = useState<"idle" | "saving" | "unresolved" | "blocked">("idle");
   const mutationFeedbackRef = useRef<HTMLParagraphElement>(null);
   const candidateSourcesRef = useRef(new Set<MessageEventSource>());
   const lastSaveRequestRef = useRef(0);
@@ -402,6 +404,7 @@ export const OnlyOfficeEditor = ({
       return;
     }
     capturedEditVersionRef.current = documentEditVersionRef.current;
+    capturedPendingVersionRef.current = pendingEditVersionRef.current;
     requestSequenceRef.current += 1;
     setMutationState("saving");
     const timer = setTimeout(() => {
@@ -659,6 +662,7 @@ export const OnlyOfficeEditor = ({
     let mountedHost: HTMLDivElement | null = null;
     const nativeSessionDocumentKey = config.bridge?.documentKey;
     let continuedOperationId: string | null = null;
+    let continuationBlocked = false;
     const liveConfigPath = () => {
       const path = editorConfigPath(configUrl ?? "", pdmsOpeningId);
       if (!continuedOperationId || !nativeSessionDocumentKey) {
@@ -931,6 +935,9 @@ export const OnlyOfficeEditor = ({
       const requestedLeaseId = leaseRef.current?.id;
       let result: Record<string, unknown>;
       try {
+        if (continuationBlocked) {
+          throw new Error("รอบก่อนบันทึกแล้ว แต่ยังเปลี่ยนตัวแก้ไขโดยรักษางานใหม่ไม่ได้ กรุณารักษาหน้านี้ไว้");
+        }
         if (
           data.type === "pending-file-check" &&
           candidateSourcesRef.current.size > 0 && !holder.hasUnresolvedCommit()
@@ -956,6 +963,10 @@ export const OnlyOfficeEditor = ({
           result = await holder.save({ ...data, documentKey: currentOptions.documentKey }, currentOptions);
         } else {
           result = holder.handle({ ...data, documentKey: currentOptions.documentKey }, currentOptions);
+          if (["pending-file-set", "pending-file-remove", "pending-file-cancel"].includes(String(data.type)) &&
+            !result.error) {
+            pendingEditVersionRef.current += 1;
+          }
           if (typeof result.hasPending === "boolean") {
             onDirtyChangeRef.current?.(
               documentDirtyRef.current ||
@@ -1118,7 +1129,7 @@ export const OnlyOfficeEditor = ({
           );
         }
         pinnedSourceRef.current = event.source;
-        onCommandReadyChangeRef.current?.(true);
+        onCommandReadyChangeRef.current?.(!continuationBlocked);
         acknowledgeBridge(
           event.source,
           pluginOrigin,
@@ -1128,7 +1139,7 @@ export const OnlyOfficeEditor = ({
         pdmsPopupRelay.primaryReady();
         attachmentCategoryPopupRelay.primaryReady();
         setBridgeReadyVersion((value) => value + 1);
-        if (retiredCorrectionRef.current || config.attachmentNotice ||
+        if (continuationBlocked || retiredCorrectionRef.current || config.attachmentNotice ||
           config.bridge?.uploadPoc?.mutationNotice) {
           (event.source as Window).postMessage({
             bridgeId, source: "folio-parent", type: "hold-editor",
@@ -1232,6 +1243,7 @@ export const OnlyOfficeEditor = ({
       if (message.status === "pending") {
         if (!message.operationId) {
           capturedEditVersionRef.current = documentEditVersionRef.current;
+          capturedPendingVersionRef.current = pendingEditVersionRef.current;
         } else {
           capturedEditVersionRef.current ??= documentEditVersionRef.current;
         }
@@ -1343,8 +1355,20 @@ export const OnlyOfficeEditor = ({
           );
           editorRemountSafe = !capturedSnapshot &&
             candidateSourcesRef.current.size === 0 &&
+            (capturedPendingVersionRef.current === null ||
+              pendingEditVersionRef.current === capturedPendingVersionRef.current) &&
             (capturedEditVersionRef.current === null ||
               documentEditVersionRef.current === capturedEditVersionRef.current);
+          if (!capturedSnapshot && !editorRemountSafe &&
+            message.operation?.result?.documentKey &&
+            message.operation.result.documentKey !== config.bridge?.documentKey) {
+            continuationBlocked = true;
+            onCommandReadyChangeRef.current?.(false);
+            (event.source as Window).postMessage({
+              bridgeId, source: "folio-parent", type: "hold-editor",
+            }, pluginOrigin);
+            setAttachmentNotice("รอบก่อนบันทึกแล้ว แต่มีงานที่เลือกภายหลัง ตัวแก้ไขยังอ่านอย่างเดียวเพื่อไม่ทิ้งหรือย้ายงานใหม่ กรุณารักษาหน้านี้ไว้");
+          }
           if (capturedSnapshot && message.action === "save-draft" &&
             (uploadPocFilesRef.current?.hasPending() ||
               candidateSourcesRef.current.size > 0 ||
@@ -1372,7 +1396,7 @@ export const OnlyOfficeEditor = ({
           });
           return;
         }
-        setAttachmentNotice(
+        if (!continuationBlocked) setAttachmentNotice(
           uploadPocFilesRef.current?.hasPending() ||
             candidateSourcesRef.current.size > 0
             ? "มีไฟล์ที่เลือกใหม่ยังไม่อยู่ในรอบบันทึกที่สำเร็จ กรุณารักษาหน้านี้ไว้"
@@ -1389,7 +1413,7 @@ export const OnlyOfficeEditor = ({
         if (message.action === "save-correction") {
           retiredCorrectionRef.current = true;
         }
-        setMutationState("idle");
+        setMutationState(continuationBlocked ? "blocked" : "idle");
         const options = config.bridge?.uploadPoc;
         if (options) {
           void uploadPocFilesRef.current?.refreshStatus(options).then((status) => {
@@ -1645,7 +1669,9 @@ export const OnlyOfficeEditor = ({
           className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm outline-none">
           {mutationState === "saving"
             ? "กำลังบันทึก กรุณารอผลก่อนแก้ไขหรือออกจากหน้านี้"
-            : "ยังยืนยันผลรอบเดิมไม่ได้ ห้ามส่งซ้ำ ตัวแก้ไขยังอ่านอย่างเดียว ตรวจผลรอบเดิมหรือเปิดสำเนาที่บันทึกไว้ได้"}
+            : mutationState === "blocked"
+              ? "รอบก่อนบันทึกแล้ว แต่งานที่เลือกภายหลังยังไม่บันทึก ตัวแก้ไขยังอ่านอย่างเดียวเพื่อรักษางานใหม่"
+              : "ยังยืนยันผลรอบเดิมไม่ได้ ห้ามส่งซ้ำ ตัวแก้ไขยังอ่านอย่างเดียว ตรวจผลรอบเดิมหรือเปิดสำเนาที่บันทึกไว้ได้"}
         </p>
       ) : null}
       <div inert={mutationState !== "idle" || retiredCorrectionRef.current} aria-busy={mutationState === "saving"}>

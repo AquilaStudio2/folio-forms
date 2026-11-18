@@ -2145,6 +2145,48 @@ const rowTransitionHostConfig = (documentKey: string, lastRow: number) => ({
     },
   },
 });
+it("holds an internal row completion instead of remounting over a later confirmed File", async () => {
+  const initial = rowTransitionHostConfig("document-1", 8);
+  transport.get.mockImplementation((path: string) => Promise.resolve(
+    path === "/api/operations/late-row" ? { operation: {
+      id: "late-row", responseId: "response", status: "completed", type: "save_draft",
+      result: { documentKey: "document-2", attachmentTransition: {
+        fromDocumentKey: "document-1", toDocumentKey: "document-2",
+        oldRowCount: 3, newRowCount: 2, rowMapping: [null, 0, 1], tableBindingId: "folio_rows",
+      } },
+    } } : initial
+  ));
+  const ready = vi.fn();
+  const onBridge = vi.fn();
+  render(<OnlyOfficeEditor configUrl="/editor-config" title="Late row File"
+    onCommandReadyChange={ready} onBridgeMessage={onBridge} />);
+  const office = await screen.findByTitle<HTMLIFrameElement>("Office sandbox");
+  const plugin = pluginFrame(office);
+  const picker = pluginFrame(office);
+  send(plugin.source, { type: "bridge-ready" });
+  send(plugin.source, { type: "operation", action: "save-draft", status: "pending" });
+  send(picker.source, {
+    source: "folio-upload-poc", type: "pending-file-set", requestId: "late-file",
+    documentKey: "document-1", scopeIdentity: "actor/response",
+    bindingId: "folio_file", tag: "items.file", rowIndex: 2, file: new File([], "later.BIN"),
+  });
+  await waitFor(() => expect(picker.send).toHaveBeenCalledWith(
+    expect.objectContaining({ filename: "later.BIN" }), window.location.origin
+  ));
+  send(plugin.source, {
+    type: "operation", action: "save-draft", status: "completed",
+    operationId: "late-row", operation: { result: { documentKey: "document-2" } },
+  });
+  await waitFor(() => expect(onBridge).toHaveBeenCalledWith(expect.objectContaining({
+    status: "completed", hasPendingAttachments: true, editorRemountSafe: false,
+  })));
+  expect(ready).toHaveBeenLastCalledWith(false);
+  expect(screen.getByTitle("Office sandbox")).toBe(office);
+  expect(office.closest("[inert]")).not.toBeNull();
+  expect(plugin.send).toHaveBeenCalledWith(expect.objectContaining({ type: "hold-editor" }), window.location.origin);
+  expect(transport.postForm).not.toHaveBeenCalled();
+});
+
 it("keeps pending table bytes through a real host remount only after reading the authoritative row Operation", async () => {
   let current = rowTransitionHostConfig("document-1", 8);
   const proof = createDeferred<unknown>();

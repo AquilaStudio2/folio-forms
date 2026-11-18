@@ -25,6 +25,7 @@ const AdminCorrectionRoute = () => {
   const [revision, setRevision] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [editorCommandReady, setEditorCommandReady] = useState(false);
   const [unresolved, setUnresolved] = useState(false);
   const retiredWorkspaceRef = useRef(false);
   const [dirty, setDirty] = useState(false);
@@ -134,7 +135,7 @@ const AdminCorrectionRoute = () => {
     if (completedWithPendingAttachments || unresolved) {
       return;
     }
-    if (!trimmedReason || saving) {
+    if (!trimmedReason || saving || !editorCommandReady) {
       setMessage("กรุณาระบุเหตุผลการแก้ไข");
       return;
     }
@@ -232,6 +233,7 @@ const AdminCorrectionRoute = () => {
           <Button
             disabled={
               saving ||
+              !editorCommandReady ||
               unresolved ||
               completedWithPendingAttachments ||
               reason.trim().length === 0
@@ -254,6 +256,7 @@ const AdminCorrectionRoute = () => {
         <OnlyOfficeEditor
           configUrl={`/api/admin/results/${responseId}/correction/editor-config`}
           onBridgeMessage={handleBridgeMessage}
+          onCommandReadyChange={setEditorCommandReady}
           onDirtyChange={(value) => {
             if (!retiredWorkspaceRef.current || value) {
               setDirty(value);
