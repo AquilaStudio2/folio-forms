@@ -71,6 +71,7 @@ export async function updateOperationFailed(
   updatedBefore?: Date,
   details?: {
     errorMessage: string;
+    attachmentErrorReason?: string;
     validationErrors?: { address: string; message: string }[];
   }
 ): Promise<boolean> {

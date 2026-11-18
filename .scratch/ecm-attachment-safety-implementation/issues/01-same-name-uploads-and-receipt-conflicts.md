@@ -37,3 +37,33 @@ Reuse existing planner, attempt/identity/reference ledger, Operation/error surfa
 ## Comments
 
 2026-11-18: ผู้ใช้อนุมัติ breakdown ชุด 10 ตั๋วและ blocking edges ผ่าน /to-tickets แล้ว อนุมัติเฉพาะการเผยแพร่ตั๋วและหยุดให้ตรวจเนื้อหาก่อนเริ่ม implementation ไม่มีผลทดสอบหรือ provider approval ใหม่จากการสร้างตั๋ว
+
+### Implementation — 2026-11-18 — integration verification pending
+
+- Work branch: `feat/ecm-safety-01`, based on integration planning baseline `838056b`. Canonical policy: naming specification `../ecm-attachment-safety/spec.md` and resolved guard decision D09 (2026-11-18; SHA-256 recorded by the parent implementation specification).
+- Removed the template batch filename counter, preserving original extensions and frozen literal template text. Shared destination admission now permits settled, active template resources with the same filename, including other Responses and history. Unresolved attempts, held/deleting resources, scope/lease/revision guards, and receipt/reference/delete fences remain.
+- Actual template uploads classify exact original paired receipts before canonical commit: `attachment_history_receipt_conflict`, `attachment_draft_receipt_conflict`, or `attachment_receipt_conflict` for incomplete/ambiguous/protected aliases. History takes precedence over Draft. Conflict receipt evidence commits to the existing attempt ledger before the error is raised; the shared identity is held before cancellation can schedule cleanup.
+- Existing `Operation.result` gains optional `attachmentErrorReason`; the top-level Operation failure remains `document_save_failed`. Existing `errorMessage` carries the semantic notice, Field/Tag/physical row, and proven same-Response Submission/Correction IDs. No raw token/link or foreign reference IDs enter the notice. Existing host/plugin message rendering remains the consumer contract; ticket 04 owns pending/loading lifecycle changes.
+- Upstream upload rejection preserves its numeric HTTP status in the existing safe error message and retains `ecm_rejected` rather than swallowing it into `ecm_unavailable`. Response bodies, credentials, and raw tokens are not included; no retry or logging subsystem was added.
+- Consumer regressions now cover same-name create-new receipts across physical rows/columns, Responses, Correction, and three direct-Submit rounds. Added separate paired history/Draft and partial-alias checks, retained receipt evidence/no canonical commit/no DELETE assertions, safe upstream status checks, and one-row zero-byte deletion rejection for ticket 02.
+- Historical shared-receipt regression fixtures are seeded explicitly after distinct HTTP uploads. They are pre-policy data fixtures, not evidence that new uploads may create shared receipts. Existing survivor/delete/original-hash coverage remains on the public HTTP consumer paths.
+- Verification performed here: integration ancestry check only. No tests, build, lint, formatter, browser, native editor, real provider, live DB, or real DELETE was run. This ticket remains unresolved pending integrated execution and native warning/pending-preservation proof.
+
+#### Exact verification commands for integration owner
+
+Run with the existing isolated PostgreSQL/object-store/native Builder environment and a non-default isolated callback port; do not load production credentials:
+
+```sh
+cd apps/server
+bun test --timeout 120000 test/http/ecm-scalar-save-submit.test.ts
+bun test --timeout 120000 test/http/ecm-auth.test.ts
+bun test --timeout 120000 test/http/submission-history.test.ts
+```
+
+Then run the repository's existing integrated type/lint/build checks and actual supported browser/plugin warning smoke. Verify both semantic warnings preserve pending File/removal, display Tag/physical row, and do not instruct refresh/resend/discard. Isolated HTTP results are not DCM/provider acceptance.
+
+#### Intended shared documentation deltas for parent
+
+- `CONTEXT.md` / domain behavior: replace template per-batch suffix and filename-ownership claims with base-name reuse plus original receipt identity. Legacy UUID naming and old canonical receipts remain unchanged.
+- System map / generated guide: upload planning uses the unchanged base name; admission fences uncertain requests rather than settled filename coincidences; exact receipt conflicts persist evidence, hold shared resources, and stop canonical commit. Document `Operation.result.attachmentErrorReason` and safe numeric upstream status diagnostics.
+- Preserve historical BATCH/provider records with their original revision/scope. Do not relabel them as acceptance of this implementation. Record the final integration revision and actual HTTP/native outcomes after execution.

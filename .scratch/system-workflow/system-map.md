@@ -1,5 +1,7 @@
 # Folio Forms: แผนผังการทำงานทั้งระบบ
 
+ทบทวน safety implementation วันที่ 18 พฤศจิกายน 2026 บน integration `feat/ecm-attachment-safety-implementation` ฐาน `4fd024a` พร้อม Working Tree: ทุก XLSX table มี trusted pre-mutation minimum-one-row guard และ native builder ไม่ล้างแถวสุดท้าย ปุ่มลบแสดงเหตุผลและ disabled ตาม physical count; candidate ใน dialog รวมกับ dirty/navigation โดยไม่แทน confirmed pending และ explicit exit ทิ้งเฉพาะงาน local ไม่ Save/DELETE Response ผล observed บน integration: native Builder/button 14 tests, plugin 64, UI ที่เกี่ยวข้อง 79, spreadsheet-unit 116 และ ordinary table HTTP 3 cases ผ่าน; root lint/format และ types 5/5 ผ่าน Actual ONLYOFFICE 9.4 ตรวจ ordinary table เพิ่มแถว ลบจากสองเหลือหนึ่ง คง KEEP ROW ใน XLSX/JSON, Escape อยู่ต่อ และ explicit discard กลับ Dashboard โดย canonical key/data เดิมคงอยู่ controlled provider ไม่มี POST/DELETE Full candidate/native/loading matrix และ safety naming ยังรอ slice ถัดไป ไม่ใช้ผลนี้รับรอง provider หรือ Production
+
 ปรับคำอธิบายนโยบายชื่อปลายทางวันที่ 18 พฤศจิกายน 2026 บน working tree `feat/ecm-storage-templates` ฐาน `0a12d91a5b72d4470ae9ceed1c3d4845d2103ced`: mode `template` จัดสรร suffix สำหรับชื่อซ้ำเฉพาะ explicit save/upload batch ปัจจุบันก่อน ledger admission และ POST ตามรายละเอียดหัวข้อ 08 แหล่ง implementation คือ [shared attachment planner](../../apps/server/src/ecm/attachments.ts) ผล smoke ใหม่ผ่าน Bun HTTP listener จริงตั้งแต่ login, multipart Save Draft, Operation poll ถึง saved JSON และ canonical XLSX โดย local provider ใช้ filename เป็น resource key: ได้ชื่อเดิม, `-(1)`, `-(2)`, อ่าน bytes 11/12/13 ตรง physical rows และ URL ที่ C10/C11/C12 ไม่มี DELETE ใช้ ONLYOFFICE Builder จริง แต่ capture seam ใช้ XLSX สังเคราะห์ที่บันทึกไว้ ไม่ใช่ browser editor Root scoped format/lint สอง source files และ server typecheck ผ่าน ผล native/provider เก่าไม่รับรองนโยบายใหม่นี้ ยังไม่ยืนยัน DCM routing ของ suffix หรือความไม่ซ้ำข้าม batch และไม่มี live DCM calls ในงานนี้
 
 ทบทวนกล่องแนบไฟล์วันที่ 17 พฤศจิกายน 2026 จาก working tree ใน delivery checkout เดิม: ปุ่มเลือกไฟล์มี label ภาษาไทยและซ่อน native file input เลือกใหม่แทนที่เฉพาะไฟล์ในหน้าต่าง **บันทึก** ยืนยันเข้าหน่วยความจำของ host หลัง trusted acknowledgement ส่วน **ยกเลิก/กากบาทก่อนยืนยัน** ทิ้งเฉพาะการเลือกในหน้าต่างและคงสถานะก่อนเปิดไว้ ปุ่มคืนไฟล์เดิม/นำไฟล์ออกแสดงตามสถานะ ไม่มีการ upload หรือแก้ canonical จาก dialog; การเก็บถาวรยังใช้ explicit Save Draft, Submit หรือ final Save Correction เดิม ไม่เปลี่ยน schema, mutation API หรือ provider contract และไม่เรียก DCM จริงในการตรวจ UI รอบนี้
@@ -621,7 +623,9 @@ flowchart TD
         scalarWarning -->|"reopen / ordinary Save ไม่ retry หรือ clear"| scalarResume
         scalarInternal["implicit Add row / project / workspace save"]
         scalarRefs["reconcile canonical references ใน transaction; ไม่ upload/delete"]
-        scalarInternal --> rowProof["ตรวจ trusted before/after workbook: document keys และ physical row mapping"]
+        scalarInternal --> rowMinimum{"delete จะทำให้ body เหลือศูนย์แถวหรือไม่"}
+        rowMinimum -->|"ใช่: หยุดก่อน mutation"| rowStop
+        rowMinimum -->|"ไม่"| rowProof["ตรวจ trusted before/after workbook: document keys และ physical row mapping"]
         rowProof -->|"พิสูจน์ได้"| rowKeep["ปรับ canonical row_index; คง immutable version และ original pending File/removal"]
         rowProof -->|"stale / ambiguous / สูญเสีย pending"| rowStop["หยุดก่อนเปลี่ยนหน้า ไม่ discard หรือ force reload"]
         rowKeep --> scalarRefs
@@ -674,6 +678,8 @@ Production จะเปิดความสามารถนี้เมื่
 Published PoC เก่าคง manifest/type/required และคำตอบ text/URL ตามเดิม รวม Save Draft, Submit และประวัติ ไม่สร้าง attachment object, receipt หรือสิทธิ์ลบจาก string ปุ่มเดิมคืนข้อความถาวรให้ประสาน Admin ทำสำเนา/ตั้งค่า Form ใหม่ โดย popup ปิด choose/retry และไม่รับ File เข้า memory เป็น fallback พร้อมซ่อนคำอธิบาย memory-only และส่วนเลือกไฟล์ที่ใช้ไม่ได้ เพื่อให้ข้อความแนะนำอ่านได้ชัดเจนภายใน dialog โดยไม่ถูก footer บัง หน้า Template Draft ใช้ตั้งค่าเท่านั้น ไม่รับไฟล์ตัวอย่าง ปุ่ม Duplicate เดิมคัด template/การตั้งค่า ไม่คัด Responses, answers หรือไฟล์ User และไม่ archive/delete/redirect/หา successor ให้ต้นฉบับ
 
 pending Files ของช่องที่ตั้งค่าจริงรวมกับ native/editor dirty ผ่าน `onDirtyChange` เดิม เพื่อให้ navigation, session-change และ before-unload guards ที่มีอยู่เตือนก่อนเสีย selection การส่ง dirty=false จาก native bridge ไม่ล้าง pending Files และไม่ถือชื่อไฟล์เป็น bytes ที่กู้คืนได้ ไม่มีการ persist pending bytes/filename เพื่อหลบ guard
+
+Candidate ที่ยังไม่ยืนยันใน dialog ส่งเพียง scoped dirty signal ผ่าน trusted editor frame/origin/bridge/document ไม่ส่ง bytes เข้า host จน dialog Save สำเร็จ Host แยก candidate, confirmed pending และ canonical saved; completion มี `hasAttachmentCandidates` และรวมใน pending fence เพื่อไม่ remount Draft/Correction workspace ทับกล่องที่ยังมีงาน ปิด Cancel/X ก่อน dispatch คืน baseline เดิม การออกจาก fill เป็น local discard เท่านั้น ไม่ Save-and-exit หรือ DELETE Response; reauthentication ยังมี explicit save flow แยก
 
 กล่องแนบไฟล์ซ่อนข้อความ native เช่น No file chosen และแสดงชื่อ/ขนาดไฟล์เฉพาะที่จำเป็น ปุ่มเลือกไฟล์รองรับ keyboard และใช้ file input ที่มี label เลือกใหม่แทนที่ File ที่ยังไม่ยืนยันโดยไม่แก้ host การปิด file chooser โดยไม่เลือกไม่ทิ้งตัวเลือกก่อนหน้า บันทึกใน dialog จึงส่ง set/cancel/remove ที่ผูก binding, physical row, document, bridge และ scope เดิม แล้วปิดเมื่อได้รับคำตอบสำเร็จที่ตรงกัน หาก acknowledgement ยังไม่มา/หมดเวลา จะคง File และไม่ให้ Cancel/X แสร้งว่าย้อนการยืนยันได้; คำตอบผิดรูปไม่ปิด timeout และ trusted late success ปิดได้โดยไม่ส่งซ้ำ การนำออก/คืนไฟล์เดิมยังต้องยืนยัน ส่วนการ Cancel dialog ก่อนยืนยันคง canonical และ pending choice ที่มีอยู่ก่อนเปิด ไม่เท่ากับยกเลิก pending change ที่เคยยืนยันแล้ว
 
@@ -738,6 +744,8 @@ Existing append และ delete-selected ยังคงพฤติกรร�
 คอลัมน์ metadata ใหม่นี้ nullable และไม่เดา backfill แถวเก่า การรักษา aliases แบบหยาบเพียงอย่างเดียวไม่พอ: rows0/2 อาจมี receipt/name/size เดียวกันแต่ bytes ต่างกัน เมื่อลบ A ผ่าน verified row command แล้ว B เลื่อนเหลือ1 การเปลี่ยนเลขต้องใช้ digest ของ current B เพื่ออ่าน original B ได้ ไม่เอา A มาทำให้เกิด false HOLD และไม่เลือก attempt ด้วย timestamp สำหรับ refs เก่าที่พิสูจน์ current position ไม่ได้ยังรักษาหลักฐานร่วมแบบ conservative; original reuse ที่มี digest ขาด/ขัดกันหยุดก่อนเขียน ไม่สร้าง independent-byte guarantee จาก provider URL เดียว Native และ HTTP proof ของตั๋ว05แยกจาก live-provider/release acceptance ตาม [บันทึกตั๋ว05](../ecm-storage-templates/issues/05-table-template-attachment-lifecycle.md)
 
 Completed Operation ส่ง `attachmentTransition` ที่มี from/to canonical document keys, table binding, old/new row counts และ row mapping Host ตรวจ proof ก่อน remount แล้วย้าย keys ของ pending Files/removals/validation errors โดยคง File object เดิม รวมกรณี append และการลบแถวอื่น การลบแถวที่มี pending slot ถูกหยุดก่อนเริ่มคำสั่ง Scope/document/contract ที่เปลี่ยนโดยไม่มี proof หยุดและรักษา selections ไม่ล้าง pending หรือเสนอ force reload Internal transitions ไม่เริ่ม ECM writes แม้ retire saved reference; cleanup-only record รอติดตามโดย authorized operator ไม่อาศัย upload batch เป็นเงื่อนไขว่ามีงานค้าง
+
+Minimum-one-row ใช้กับทุก XLSX repeating table ทั้ง ordinary/no-attachment, old PoC และ durable legacy/template ไม่ใช่แค่ branch ที่มีไฟล์แนบ Server อ่าน body ของ trusted saved document ก่อนเรียก worker; builder มี guard ก่อน clear/write และ full transition ตรวจจำนวนแถวทั้งมี/ไม่มี attachment เมื่อเหลือหนึ่งแถว delete-selected disabled พร้อมเหตุผล การเรียกข้าม UI/stale/race ต้องไม่ล้าง values, formulas/validation, buttons, JSON/references, pending state หรือ revision ไม่มี clear-last-row/confirmation ใหม่ และไม่เพิ่ม row controls ใน Correction
 
 `EcmAttachmentCleanup` บันทึก initiating operation/version/Response และสถานะก่อน dispatch ใน transaction ของ snapshot ใหม่ ไม่มี cascading relation กับ Response Initial cleanup อ่านเฉพาะ pending intents ของ explicit operation นั้น ไม่ sweep งานค้างทั้ง Response และไม่ resend failed/unknown DELETE รุ่นเก่าหลัง Save รอบถัดไป `bridge.uploadPoc.cleanupWarning` เป็น safe string หรือ null จาก durable pending/started/unknown records จึงเห็นหลัง reopen และคงอยู่แม้ Save ถัดไปสำเร็จ ข้อมูลใหม่ยังอ่าน/ส่งออกได้ ส่วน canceled-batch cleanup ไม่ครบคง independent mutation hold เดิม ไม่มี queue, daemon หรือสมมติฐานว่า HTTP error/not-found พิสูจน์ผลลบแล้ว
 
@@ -1333,37 +1341,29 @@ DOCX แสดงผลบันทึกและดาวน์โหลดแ
 ```mermaid
 flowchart TD
     exit(["จะออกจากหน้า fill"])
-    busy{"กำลังบันทึก ส่ง ทิ้งร่าง หรือดาวน์โหลด DOCX"}
-    wait["ปุ่มออกให้รอจนงานจบ"]
-    dirty{"มีการแก้หลังฉบับที่บันทึก"}
+    busy{"กำลัง Save หรือ mutation ที่ต้องรอ"}
+    wait["รอผลก่อนออก ไม่อ้างว่ายกเลิกคำขอเดิม"]
+    dirty{"มี ordinary edits / candidate / pending ที่ยังไม่บันทึก"}
     leave["ไป Dashboard หรือหน้าปลายทาง"]
-    prompt["แสดง dialog งานยังไม่บันทึก"]
-    choice{"เลือกทำอะไร"}
-    captureWait["รอจับสำเนา Excel ก่อนบันทึกหรือทิ้งร่าง"]
-    save["บันทึกแล้วออก"]
-    operation["รอ Save Draft Operation"]
-    result{"บันทึกสำเร็จ"}
-    stay["อยู่ต่อและเก็บค่าที่กำลังพิมพ์"]
-    discard["ทิ้งฉบับร่าง"]
-    erased["ลบ Response และประวัติที่ผูกอยู่"]
+    prompt["native dialog งานยังไม่บันทึก"]
+    choice{"อยู่ต่อหรือทิ้งงาน local"}
+    stay["อยู่หน้านี้ต่อ; Cancel/Escape คงงาน"]
+    discard["ทิ้งเฉพาะ unsaved local changes"]
+    canonical["คง saved Response / history / checkpoint; ไม่ Save หรือ DELETE"]
     reauth["ขอ login ใหม่หรือสลับ PDMS"]
-    saved["บันทึกก่อนหรือยกเลิกการสลับ"]
+    saved["explicit Save ก่อนเปลี่ยน session หรือยกเลิก"]
     expired["หมด session แล้ว"]
     login["เข้าสู่ระบบอีกครั้ง"]
-    reopen["กลับไปฉบับที่บันทึกสำเร็จล่าสุด"]
+    reopen["เปิด saved canonical; ตรวจ original Operation ก่อน mutation ใหม่"]
     exit --> busy
     busy -->|"ใช่"| wait
     busy -->|"ไม่"| dirty
-    dirty -->|"ไม่"| leave
+    dirty -->|"ไม่มี"| leave
     dirty -->|"มี"| prompt --> choice
-    prompt -.->|"กำลังจับสำเนา"| captureWait --> choice
-    choice -->|"บันทึกแล้วออก"| save --> operation --> result
-    result -->|"สำเร็จ"| leave
-    result -->|"ล้มเหลว"| stay
-    choice -->|"อยู่ต่อ"| stay
-    choice -->|"ทิ้งฉบับร่าง"| discard --> erased --> leave
+    choice -->|"อยู่ต่อ / Escape"| stay
+    choice -->|"explicit discard"| discard --> canonical --> leave
     reauth -->|"มีงานค้าง"| saved
-    saved -->|"บันทึกสำเร็จ"| login
+    saved -->|"Save สำเร็จ"| login
     saved -->|"ยกเลิก"| stay
     expired --> login --> reopen
 ```
@@ -1371,16 +1371,16 @@ flowchart TD
 | เหตุการณ์ | พฤติกรรมปัจจุบัน |
 | --- | --- |
 | กดกลับจาก fill โดยไม่ได้แก้เพิ่ม | ไป Dashboard ได้ |
-| มีการแก้แล้วกดออกหรือเปลี่ยนหน้าภายในแอป | มี dialog ให้บันทึกแล้วออก ทิ้งร่าง หรืออยู่ต่อ |
-| ดาวน์โหลดจากหน้ากรอก XLSX ขณะที่มีงานค้าง | Folio ยังเตือนเมื่อกดออก ปุ่มบันทึกและทิ้งร่างพร้อมใช้หลังจับสำเนาเสร็จ เมื่อยืนยันบันทึกแล้วออกหรือทิ้งร่าง ระบบยกเลิกการรอไฟล์ในเบราว์เซอร์แล้วทำคำสั่งที่เลือก |
+| มีการแก้แล้วกดออกหรือเปลี่ยนหน้าภายในแอป | native dialog ให้ explicit ทิ้งการเปลี่ยนแปลงและออก หรืออยู่หน้านี้ต่อ ไม่มี automatic Save-and-exit |
+| ดาวน์โหลดจากหน้ากรอก XLSX ขณะที่มีงานค้าง | ยังเตือนก่อนออก การยืนยัน local discard ยุติการรอดาวน์โหลดฝั่ง browser แต่ไม่ Save/DELETE คำตอบหรืออ้างว่ายกเลิก request ภายนอกแล้ว |
 | กดอยู่ต่อ | ปิด dialog และยกเลิก navigation ค่าที่กำลังพิมพ์ยังอยู่ในหน้าปัจจุบัน |
-| กดบันทึกแล้วออก | รอ Save Draft สำเร็จจึงออก ถ้าบันทึกล้มเหลวยังไม่ออกตาม flow นี้ |
-| กดทิ้งฉบับร่าง | เรียกการลบ Response จริง ไม่ใช่แค่ทิ้งการพิมพ์หลัง Save ครั้งล่าสุด และตามโค้ดจะลบประวัติที่ผูกอยู่ด้วย |
+| ขอ Save ก่อนเข้าสู่ระบบใหม่ | เป็น reauthentication flow แยก รอ explicit Save สำเร็จจึงเปลี่ยน session ไม่ใช่ตัวเลือก navigation discard ปกติ |
+| กดทิ้งการเปลี่ยนแปลงและออก | ทิ้งเฉพาะ unsaved local changes คง saved Response/history/checkpoint และไม่มี Save/DELETE อัตโนมัติ |
 | กด Reload หรือปิดแท็บขณะมี dirty data | ตั้ง beforeunload warning ไว้ แต่ไม่ใช่ flow บันทึกอัตโนมัติที่รับประกันข้อมูลครบ |
 | เน็ตหลุดก่อน action ถึง API | ยังไม่มีหลักฐานว่า Folio รับบันทึกไว้ ฉบับที่ไว้ใจได้คือฉบับสำเร็จก่อนหน้า |
 | เน็ตหลุดหลัง action ถึง API | งานอาจยังทำต่อฝั่ง server ต้องตรวจผลจริงเมื่อเชื่อมต่อได้ ไม่สรุปจากการที่หน้าต่างเดิมหายไป |
 | เหลืออายุ session 5 นาที | แสดงเตือนให้บันทึกและเข้าสู่ระบบใหม่ ไม่ต่อ session อัตโนมัติ |
-| ขอเปลี่ยน session ขณะ User มีงานค้าง | dialog ให้บันทึกก่อนหรืออยู่ต่อ ปุ่มทิ้งร่างถูกซ่อนใน dialog กรณี reauth |
+| ขอเปลี่ยน session ขณะ User มีงานค้าง | reauthentication dialog ให้ explicit Save ก่อนหรืออยู่ต่อ ไม่ใช้ local discard เป็นการลบ Response |
 | Admin ขอเปลี่ยน session ขณะมีงานค้าง | guard ให้บันทึกการแก้ต้นแบบ metadata หรือรอ Operation ให้จบก่อน |
 | session หมดอายุหรือถูก revoke ไปแล้ว | ไม่รับประกันว่าจะ Save ค่าค้างสำเร็จ ต้อง login ใหม่และเปิดจากฉบับที่บันทึกแล้ว |
 | editor ขึ้น blocked | อาจมี lease ของ session อื่นหรือสิทธิ์ editor ไม่พร้อม ยังไม่ใช่สถานะว่า Form ถูก Archive |

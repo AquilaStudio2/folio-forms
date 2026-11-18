@@ -84,11 +84,15 @@ beforeEach(() => {
   // JSDOM omits dialog methods; these tests do not prove native modality.
   Object.defineProperty(HTMLDialogElement.prototype, "showModal", {
     configurable: true,
-    value(this: HTMLDialogElement) { this.open = true; },
+    value(this: HTMLDialogElement) {
+      this.open = true;
+    },
   });
   Object.defineProperty(HTMLDialogElement.prototype, "close", {
     configurable: true,
-    value(this: HTMLDialogElement) { this.open = false; },
+    value(this: HTMLDialogElement) {
+      this.open = false;
+    },
   });
 });
 const Fill = Route.options.component as ComponentType;
@@ -242,26 +246,32 @@ describe("Excel response actions", () => {
       pendingConversion.resolve(new Response(null, { status: 502 }))
     );
   });
-  it.each(["cancel", "escape"])("keeps local work when exit is canceled with %s", async (action) => {
-    mount();
-    await screen.findByTestId("editor");
-    act(() => bridge.onDirtyChange?.(true));
-    await userEvent.click(
-      screen.getByRole("button", { name: "ออกจากแบบฟอร์ม" })
-    );
-    const callsBeforeCancel = vi.mocked(fetch).mock.calls.length;
-    if (action === "escape") {
-      fireEvent(screen.getByRole("dialog"), new Event("cancel", { cancelable: true }));
-    } else {
-      await userEvent.click(screen.getByRole("button", { name: "อยู่หน้านี้ต่อ" }));
+  it.each(["cancel", "escape"])(
+    "keeps local work when exit is canceled with %s",
+    async (action) => {
+      mount();
+      await screen.findByTestId("editor");
+      act(() => bridge.onDirtyChange?.(true));
+      await userEvent.click(
+        screen.getByRole("button", { name: "ออกจากแบบฟอร์ม" })
+      );
+      const callsBeforeCancel = vi.mocked(fetch).mock.calls.length;
+      if (action === "escape") {
+        fireEvent(
+          screen.getByRole("dialog"),
+          new Event("cancel", { cancelable: true })
+        );
+      } else {
+        await userEvent.click(screen.getByRole("button", { name: "อยู่หน้านี้ต่อ" }));
+      }
+      expect(navigation.navigate).not.toHaveBeenCalled();
+      expect(vi.mocked(fetch).mock.calls).toHaveLength(callsBeforeCancel);
+      await userEvent.click(
+        screen.getByRole("button", { name: "ออกจากแบบฟอร์ม" })
+      );
+      expect(screen.getByRole("dialog")).toBeVisible();
     }
-    expect(navigation.navigate).not.toHaveBeenCalled();
-    expect(vi.mocked(fetch).mock.calls).toHaveLength(callsBeforeCancel);
-    await userEvent.click(
-      screen.getByRole("button", { name: "ออกจากแบบฟอร์ม" })
-    );
-    expect(screen.getByRole("dialog")).toBeVisible();
-  });
+  );
   it("retries PDF conversion with a fresh capture and keeps unsaved edits", async () => {
     bridge.captureWorkbook
       .mockResolvedValueOnce({

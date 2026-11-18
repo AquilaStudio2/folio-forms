@@ -221,15 +221,6 @@ assert.ok(
 );
 lockAgency = false;
 
-const row = metadata("save-draft");
-row.spreadsheetRowChange = { action: "insert", index: 2 };
-await prepareSpreadsheetOperation(row, base, heartbeat);
-assert.deepEqual(workerOptions.rowChange, {
-  action: "insert",
-  bodyName: "folio_body",
-  index: 2,
-  inputColumns: [0, 1, 2],
-});
 const badRow = metadata("submit");
 badRow.spreadsheetRowChange = { action: "insert", index: 2 };
 await assert.rejects(

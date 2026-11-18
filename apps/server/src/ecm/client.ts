@@ -8,7 +8,7 @@ import {
 import { Prisma, prisma } from "@onlyoffice/db";
 import { z } from "zod";
 
-import { fail } from "../http/errors";
+import { fail, HttpError } from "../http/errors";
 
 export interface EcmConfiguration {
   apiUrl: string;
@@ -40,11 +40,11 @@ const unavailable = (): never =>
     "ecm_unavailable",
     "ระบบเอกสารแนบยังไม่พร้อม กรุณาติดต่อผู้ดูแล โดยไม่ต้องเข้าสู่ระบบ Folio ใหม่"
   );
-const rejected = (): never =>
+const rejected = (status: number): never =>
   fail(
     502,
     "ecm_rejected",
-    "ระบบเอกสารแนบปฏิเสธคำขอ กรุณาติดต่อผู้ดูแล โดยไม่ต้องเข้าสู่ระบบ Folio ใหม่"
+    `ระบบเอกสารแนบปฏิเสธคำขอ (HTTP ${status}) กรุณาติดต่อผู้ดูแล โดยไม่ต้องเข้าสู่ระบบ Folio ใหม่`
   );
 
 export const ecmConfigurationFromEnv = (): EcmConfiguration | null => {
@@ -532,11 +532,16 @@ export class EcmClient {
         );
       }
       if (!response.ok) {
-        await response.body?.cancel();
-        return rejected();
+        await response.body?.cancel().catch(() => {
+          // A body failure must not hide the original upstream HTTP status.
+        });
+        return rejected(response.status);
       }
       return response;
-    } catch {
+    } catch (error) {
+      if (error instanceof HttpError) {
+        throw error;
+      }
       return unavailable();
     }
   }

@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** in-progress — source/regressions prepared; integration checks and native control evidence pending
+**Status:** in-progress — integrated; isolated HTTP/native builder and ordinary-browser checks pass; full native surface matrix remains in ticket 06
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US41–55; H07–H08 และ U01
 
@@ -70,3 +70,10 @@ Native browser smoke remains pending: on an ordinary table and each editable att
 - `system-map.md` / spreadsheet save path: Trusted saved-body minimum guard precedes attachment preparation and builder mutation; post-builder row-count validation is shared by attachment and ordinary tables.
 - System map / plugin controls: Describe disabled delete with its minimum-row reason and native count refresh; distinguish prepared plugin/native regressions from actual browser evidence.
 - Acceptance evidence: Keep H07/H08/U01 and this implementation ticket open until integration checks and native controls are exercised. Retain existing saved-button validation and blank-row/requiredness semantics; do not claim Production/provider acceptance.
+
+### Integration evidence — 2026-11-18
+
+- Integrated on `feat/ecm-attachment-safety-implementation` at `4fd024a` plus integration-owner regression corrections. Root formatter/lint and all five typecheck tasks passed. Supporting checks passed: plugin spreadsheet/picker 64 tests, affected web UI 79 tests, spreadsheet-unit 116 tests, native builder/button 14 tests, ordinary-table HTTP 3 cases. Removed an obsolete forwarding-only mock assertion rather than weakening trusted row admission.
+- Actual browser: HeadlessChrome/150.0.0.0, ONLYOFFICE 9.4.0-129, isolated app/database/bucket and controlled local provider. Ordinary table showed disabled delete and a visible reason at one body row. Actual Add row enabled deletion; typing `KEEP ROW` in B10 and deleting B11 left one row and disabled deletion again. Saved native XLSX and canonical JSON both retained `KEEP ROW`. Subsequent explicit navigation discard retained the same canonical document key and data. Observed provider events were empty: zero POST/DELETE.
+- Shared domain context, system-map flow/table descriptions and generated guide were updated. Workflow build/check passed for 22 diagrams and 312 runtime/deployment files; the generated HTML loaded all 22 images.
+- This is not full ticket closure: attachment browser surfaces, remaining state/transition matrix and integrated HTTP attachment cases still need ticket 06 evidence. Controlled-provider results do not establish DCM or Production acceptance.

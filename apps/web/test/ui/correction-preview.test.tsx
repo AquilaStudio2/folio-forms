@@ -146,7 +146,9 @@ it.each(["none", "replacement", "removal", "candidate"] as const)(
     };
     fireEvent.click(screen.getByRole("button", { exact: true, name: "ยกเลิก" }));
     expect(await screen.findByRole("dialog")).toBeVisible();
-    fireEvent.click(screen.getByRole("button", { exact: true, name: "อยู่หน้านี้ต่อ" }));
+    fireEvent.click(
+      screen.getByRole("button", { exact: true, name: "อยู่หน้านี้ต่อ" })
+    );
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     );
@@ -211,8 +213,12 @@ it.each(["none", "replacement", "removal", "candidate"] as const)(
     });
     fireEvent.click(screen.getByRole("button", { exact: true, name: "ยกเลิก" }));
     expect(await screen.findByRole("dialog")).toBeVisible();
-    expect(screen.getByRole("button", { name: "ทิ้งการเปลี่ยนแปลงและออก" })).toBeDisabled();
-    fireEvent.click(screen.getByRole("button", { exact: true, name: "อยู่หน้านี้ต่อ" }));
+    expect(
+      screen.getByRole("button", { name: "ทิ้งการเปลี่ยนแปลงและออก" })
+    ).toBeDisabled();
+    fireEvent.click(
+      screen.getByRole("button", { exact: true, name: "อยู่หน้านี้ต่อ" })
+    );
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     );
@@ -301,14 +307,16 @@ it.each(["none", "replacement", "removal", "candidate"] as const)(
         )
       );
     if (lateChange !== "none") {
+      let type = "pending-file-remove";
+      if (lateChange === "candidate") {
+        type = "pending-file-candidate";
+      } else if (lateChange === "replacement") {
+        type = "pending-file-set";
+      }
       sendLate({
         dirty: true,
         file: lateFile,
-        type: lateChange === "candidate"
-          ? "pending-file-candidate"
-          : lateChange === "replacement"
-            ? "pending-file-set"
-            : "pending-file-remove",
+        type,
       });
     }
     sendCurrent({

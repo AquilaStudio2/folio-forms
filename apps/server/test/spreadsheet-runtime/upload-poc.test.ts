@@ -464,18 +464,22 @@ if(!result.ok)throw new Error(result.error);
 builder.SaveFile("xlsx","/work/two-column-buttons.xlsx");builder.CloseFile();`);
       let bytes = await runtime.read("two-column-buttons.xlsx");
       validateSpreadsheetAttachmentButtons(bytes, tableBindings);
-      expect(savedSpreadsheetUploadPocButtons(bytes, tableBindings)).toHaveLength(4);
+      expect(
+        savedSpreadsheetUploadPocButtons(bytes, tableBindings)
+      ).toHaveLength(4);
       const initialBook = readSpreadsheetWorkbook(bytes);
       const archive = { ...initialBook.archive };
+      const sheetBytes = archive[initialBook.sheetPath];
+      if (!sheetBytes) {
+        throw new Error("The native fixture worksheet is missing");
+      }
       archive[initialBook.sheetPath] = strToU8(
-        strFromU8(archive[initialBook.sheetPath]!).replace(
-          /<oleObject\b[\s\S]*?<\/oleObject>/u,
-          ""
-        )
+        strFromU8(sheetBytes).replace(/<oleObject\b[\s\S]*?<\/oleObject>/u, "")
       );
       expect(() =>
         validateSpreadsheetAttachmentButtons(zipSync(archive), tableBindings)
       ).toThrow();
+      // oxlint-disable no-await-in-loop -- Each transition consumes the preceding saved native workbook.
       for (const [step, action, index, count] of [
         ["one", "delete", 1, 1],
         ["append", "insert", 1, 2],
@@ -514,17 +518,20 @@ builder.SaveFile("xlsx","/work/two-column-buttons.xlsx");builder.CloseFile();`);
           expect(book.cells.get("C5")?.value ?? null).toBeNull();
         }
       }
+      // oxlint-enable no-await-in-loop
       await runtime.write("sole-buttons.xlsx", bytes);
       await expect(
-        runtime.runJob("sole-buttons.xlsx", {
-          outputName: "forbidden-buttons.xlsx",
-          rowChange: {
-            action: "delete",
-            bodyName: "folio_body",
-            index: 0,
-            inputColumns: [0, 1, 2],
-          },
-        }).then(() => runtime.read("forbidden-buttons.xlsx"))
+        runtime
+          .runJob("sole-buttons.xlsx", {
+            outputName: "forbidden-buttons.xlsx",
+            rowChange: {
+              action: "delete",
+              bodyName: "folio_body",
+              index: 0,
+              inputColumns: [0, 1, 2],
+            },
+          })
+          .then(() => runtime.read("forbidden-buttons.xlsx"))
       ).rejects.toThrow();
       expect(await runtime.read("sole-buttons.xlsx")).toEqual(bytes);
       validateSpreadsheetAttachmentButtons(bytes, tableBindings);

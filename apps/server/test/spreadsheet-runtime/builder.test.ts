@@ -134,17 +134,19 @@ describe.skipIf(process.env.RUN_SPREADSHEET_RUNTIME !== "1")(
       expect(one.cell("C5").value).toBe("21");
       const before = await runtime.read("one-row.xlsx");
       await expect(
-        runtime.runJob("one-row.xlsx", {
-          outputName: "forbidden-empty-row.xlsx",
-          clearRanges: ["A4:B4"],
-          values: [{ address: "A4", value: "must not be written" }],
-          rowChange: {
-            action: "delete",
-            bodyName: "folio_body",
-            index: 0,
-            inputColumns: [0, 1],
-          },
-        }).then(() => runtime.read("forbidden-empty-row.xlsx"))
+        runtime
+          .runJob("one-row.xlsx", {
+            clearRanges: ["A4:B4"],
+            outputName: "forbidden-empty-row.xlsx",
+            rowChange: {
+              action: "delete",
+              bodyName: "folio_body",
+              index: 0,
+              inputColumns: [0, 1],
+            },
+            values: [{ address: "A4", value: "must not be written" }],
+          })
+          .then(() => runtime.read("forbidden-empty-row.xlsx"))
       ).rejects.toThrow();
       expect(await runtime.read("one-row.xlsx")).toEqual(before);
     }, 120_000);
