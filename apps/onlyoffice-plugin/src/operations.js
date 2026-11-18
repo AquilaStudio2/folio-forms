@@ -407,10 +407,15 @@ export function createOperations(
       ) {
         throw new Error("ประเภทการบันทึกต้นแบบในตัวแก้ไขเดิมไม่ถูกต้อง");
       }
-      if (options.documentKind === "xlsx" && [
-        ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT, ACTIONS.SAVE_CORRECTION,
-        ACTIONS.SAVE_CORRECTION_WORKSPACE,
-      ].includes(action)) {
+      if (
+        options.documentKind === "xlsx" &&
+        [
+          ACTIONS.SAVE_DRAFT,
+          ACTIONS.SUBMIT,
+          ACTIONS.SAVE_CORRECTION,
+          ACTIONS.SAVE_CORRECTION_WORKSPACE,
+        ].includes(action)
+      ) {
         await office.freezeEditor();
         editorFrozen = true;
         bridge.notifyParent(action, "pending");
@@ -561,10 +566,10 @@ export function createOperations(
       waitForReload =
         resultAction === ACTIONS.SAVE_CORRECTION ||
         (options.documentKind === "xlsx" &&
-        (Boolean(options.pdmsProjectCatalog) || attachmentSave) &&
-        (resultAction === ACTIONS.SUBMIT ||
-          (typeof result?.documentKey === "string" &&
-            result.documentKey !== options.documentKey)));
+          (Boolean(options.pdmsProjectCatalog) || attachmentSave) &&
+          (resultAction === ACTIONS.SUBMIT ||
+            (typeof result?.documentKey === "string" &&
+              result.documentKey !== options.documentKey)));
       // Completion can remount the editor or leave the page, so restore editing first.
       if (editorFrozen && !waitForReload) {
         await office.executeMethodResult("SetEditingRestrictions", [
@@ -582,29 +587,38 @@ export function createOperations(
         "success"
       );
       if (waitForReload && resultAction === ACTIONS.SAVE_DRAFT && operationId) {
-        bridge.retainCompletedEditor(operationId, result?.documentKey, async (message) => {
-          if (message.documentKey !== result?.documentKey ||
-            typeof message.documentKey !== "string" ||
-            attachmentCommitUnresolved || !actionInFlight) {
-            return;
+        bridge.retainCompletedEditor(
+          operationId,
+          result?.documentKey,
+          async (message) => {
+            if (
+              message.documentKey !== result?.documentKey ||
+              typeof message.documentKey !== "string" ||
+              attachmentCommitUnresolved ||
+              !actionInFlight
+            ) {
+              return;
+            }
+            options.documentKey = message.documentKey;
+            if (isRecord(message.pdmsProjectCatalog)) {
+              options.pdmsProjectCatalog = message.pdmsProjectCatalog;
+            }
+            if (isRecord(message.spreadsheetBindings)) {
+              options.spreadsheetBindings = message.spreadsheetBindings;
+            }
+            try {
+              await office.executeMethodResult("SetEditingRestrictions", [
+                "none",
+              ]);
+              editorFrozen = false;
+              waitForReload = false;
+              actionInFlight = false;
+              callbacks.setActionBusy?.(false);
+            } catch {
+              setStatus("ไม่สามารถคืนค่าการแก้ไขได้ กรุณารักษาหน้านี้ไว้", "error");
+            }
           }
-          options.documentKey = message.documentKey;
-          if (isRecord(message.pdmsProjectCatalog)) {
-            options.pdmsProjectCatalog = message.pdmsProjectCatalog;
-          }
-          if (isRecord(message.spreadsheetBindings)) {
-            options.spreadsheetBindings = message.spreadsheetBindings;
-          }
-          try {
-            await office.executeMethodResult("SetEditingRestrictions", ["none"]);
-            editorFrozen = false;
-            waitForReload = false;
-            actionInFlight = false;
-            callbacks.setActionBusy?.(false);
-          } catch {
-            setStatus("ไม่สามารถคืนค่าการแก้ไขได้ กรุณารักษาหน้านี้ไว้", "error");
-          }
-        });
+        );
       }
       bridge.notifyParent(
         resultAction,

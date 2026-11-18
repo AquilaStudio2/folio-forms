@@ -211,7 +211,9 @@ it.each(["none", "replacement", "removal", "candidate", "ordinary"] as const)(
       status: "pending",
       type: "operation",
     });
-    expect(screen.getByRole("textbox", { name: "เหตุผลการแก้ไข" })).toBeDisabled();
+    expect(
+      screen.getByRole("textbox", { name: "เหตุผลการแก้ไข" })
+    ).toBeDisabled();
     expect(office.closest("[inert]")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { exact: true, name: "ยกเลิก" }));
     expect(await screen.findByRole("dialog")).toBeVisible();
@@ -226,14 +228,18 @@ it.each(["none", "replacement", "removal", "candidate", "ordinary"] as const)(
     );
     send({
       action: "save-correction-workspace",
-      operationId: "preview-1",
-      status: "failed",
       attachmentCommitUnresolved: true,
       error: "Original request outcome unavailable",
+      operationId: "preview-1",
+      status: "failed",
       type: "operation",
     });
-    expect(screen.getByRole("button", { name: "บันทึก Correction" })).toBeDisabled();
-    expect(await screen.findByRole("button", { name: "ตรวจผลคำขอเดิม" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "บันทึก Correction" })
+    ).toBeDisabled();
+    expect(
+      await screen.findByRole("button", { name: "ตรวจผลคำขอเดิม" })
+    ).toBeEnabled();
     expect(office.closest("[inert]")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "ตรวจผลคำขอเดิม" }));
     send({
@@ -290,7 +296,9 @@ it.each(["none", "replacement", "removal", "candidate", "ordinary"] as const)(
         )
       );
     sendCurrent({ type: "bridge-ready" });
-    expect(screen.getByRole("button", { name: "บันทึก Correction" })).toBeEnabled();
+    expect(
+      screen.getByRole("button", { name: "บันทึก Correction" })
+    ).toBeEnabled();
     fireEvent.click(screen.getByRole("button", { name: "บันทึก Correction" }));
     await waitFor(() =>
       expect(commands).toHaveBeenCalledWith(
@@ -302,7 +310,9 @@ it.each(["none", "replacement", "removal", "candidate", "ordinary"] as const)(
         window.location.origin
       )
     );
-    expect(screen.getByRole("textbox", { name: "เหตุผลการแก้ไข" })).toBeDisabled();
+    expect(
+      screen.getByRole("textbox", { name: "เหตุผลการแก้ไข" })
+    ).toBeDisabled();
     const lateFile = new File(
       ["newer selection outside accepted snapshot"],
       "newer.BIN"
@@ -329,7 +339,7 @@ it.each(["none", "replacement", "removal", "candidate", "ordinary"] as const)(
         )
       );
     if (lateChange === "ordinary") {
-      sendCurrent({ type: "dirty-state", dirty: true });
+      sendCurrent({ dirty: true, type: "dirty-state" });
     } else if (lateChange !== "none") {
       let type = "pending-file-remove";
       if (lateChange === "candidate") {
@@ -365,10 +375,12 @@ it.each(["none", "replacement", "removal", "candidate", "ordinary"] as const)(
         status: "completed",
         type: "operation",
       });
-      sendCurrent({ type: "dirty-state", dirty: false });
+      sendCurrent({ dirty: false, type: "dirty-state" });
       expect(screen.getByTitle("Correction native fixture")).toBe(reloaded);
       expect(openings).toHaveLength(2);
-      expect(screen.getByRole("button", { name: "บันทึก Correction" })).toBeDisabled();
+      expect(
+        screen.getByRole("button", { name: "บันทึก Correction" })
+      ).toBeDisabled();
       sendLate({ requestId: "read-late-selection", type: "pending-file-get" });
       await waitFor(() =>
         expect(commands).toHaveBeenCalledWith(

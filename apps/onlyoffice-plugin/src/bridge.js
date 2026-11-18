@@ -40,7 +40,9 @@ export function createBridge(options, office, callbacks) {
   let retainedCompletion;
 
   function retainCompletedEditor(operationId, documentKey, resume) {
-    retainedCompletion = operationId ? { operationId, documentKey, resume } : undefined;
+    retainedCompletion = operationId
+      ? { operationId, documentKey, resume }
+      : undefined;
   }
 
   function parentWindow() {
@@ -402,9 +404,11 @@ export function createBridge(options, office, callbacks) {
       return;
     }
     if (message.type === "retain-completed-editor") {
-      if (typeof message.operationId === "string" &&
+      if (
+        typeof message.operationId === "string" &&
         retainedCompletion?.operationId === message.operationId &&
-        retainedCompletion.documentKey === message.documentKey) {
+        retainedCompletion.documentKey === message.documentKey
+      ) {
         const completion = retainedCompletion;
         retainedCompletion = undefined;
         void completion.resume(message);

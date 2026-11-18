@@ -511,7 +511,8 @@ const FillRoute = () => {
       return;
     }
 
-    const hasLaterChanges = message.hasPendingAttachments === true ||
+    const hasLaterChanges =
+      message.hasPendingAttachments === true ||
       message.hasUnsavedDocumentChanges === true;
     setDirty(hasLaterChanges);
     if (message.action === "save-draft" && message.editorRemountSafe) {
@@ -834,7 +835,10 @@ const FillRoute = () => {
   const downloadingWorkbook = workbookDownloadPhase !== null;
   const capturingWorkbook = workbookDownloadPhase === "capturing";
   const editorActionDisabled =
-    !editorCommandReady || saveFlowBusy || editorUnresolved || capturingWorkbook;
+    !editorCommandReady ||
+    saveFlowBusy ||
+    editorUnresolved ||
+    capturingWorkbook;
   const handleExit = async () => {
     if (saveFlowBusy) {
       return;
@@ -1330,17 +1334,23 @@ const FillRoute = () => {
                     ส่งคำตอบ
                   </Button>
                   {editorUnresolved ? (
-                    <Button type="button" variant="secondary"
+                    <Button
+                      type="button"
+                      variant="secondary"
                       disabled={!editorCommandReady || saveFlowBusy}
                       onClick={() => {
                         if (editorActionInFlightRef.current) {
                           return;
                         }
                         editorActionInFlightRef.current = true;
-                        setOperation({ id: "editor-action", status: "pending" });
+                        setOperation({
+                          id: "editor-action",
+                          status: "pending",
+                        });
                         setEditorAction("save-draft");
                         setSaveRequest((value) => value + 1);
-                      }}>
+                      }}
+                    >
                       ตรวจผลคำขอเดิม
                     </Button>
                   ) : null}

@@ -95,8 +95,8 @@ export function registerPublicFormRoutes(
           query.pdmsOpeningId,
           dependencies.pdmsProjects,
           {
-            operationId: query.continuedOperationId,
             nativeSessionDocumentKey: query.nativeSessionDocumentKey,
+            operationId: query.continuedOperationId,
           }
         );
       }

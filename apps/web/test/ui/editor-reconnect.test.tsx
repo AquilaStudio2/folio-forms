@@ -471,7 +471,11 @@ describe("ONLYOFFICE plugin reconnect", () => {
       await vi.advanceTimersByTimeAsync(30_000);
     });
     expect(onBridge).toHaveBeenCalledWith(
-      expect.objectContaining({ action: "submit", status: "failed", attachmentCommitUnresolved: false })
+      expect.objectContaining({
+        action: "submit",
+        attachmentCommitUnresolved: false,
+        status: "failed",
+      })
     );
     send(plugin.source, { type: "bridge-ready" });
     expect(ready).toHaveBeenLastCalledWith(true);
@@ -613,101 +617,188 @@ it("keeps a completed Draft's later native edits and candidate in the live frame
     bridge: {
       ...exportConfig("document-1", "lease").bridge,
       pdmsProjectPopup: { channelId: "live-popup", documentKey: "document-1" },
-      uploadPoc: { ...uploadOptions("document-1", "editor-bridge"), publicId: "form", responseId: "response" },
+      uploadPoc: {
+        ...uploadOptions("document-1", "editor-bridge"),
+        publicId: "form",
+        responseId: "response",
+      },
     },
   };
   const fresh = {
     ...initial,
     bridge: {
       ...initial.bridge,
-      documentKey: "document-2",
       capabilities: { "save-draft": "next-save-capability" },
+      documentKey: "document-2",
       uploadPoc: { ...initial.bridge.uploadPoc, documentKey: "document-2" },
     },
   };
-  transport.get.mockImplementation((path: string) => Promise.resolve(
-    path.includes("continuedOperationId=saved-1") ? fresh :
-      path.endsWith("/attachment-status") ? { cleanupWarning: null, mutationNotice: null } : initial
-  ));
-  transport.postForm.mockResolvedValueOnce({
-    action: "save-draft", operationId: "saved-1", operationCapability: "poll", status: "pending",
-  }).mockResolvedValue({
-    action: "save-draft", operationId: "saved-2", operationCapability: "poll", status: "pending",
+  transport.get.mockImplementation((path: string) => {
+    if (path.includes("continuedOperationId=saved-1")) {
+      return Promise.resolve(fresh);
+    }
+    if (path.endsWith("/attachment-status")) {
+      return Promise.resolve({ cleanupWarning: null, mutationNotice: null });
+    }
+    return Promise.resolve(initial);
   });
+  transport.postForm
+    .mockResolvedValueOnce({
+      action: "save-draft",
+      operationCapability: "poll",
+      operationId: "saved-1",
+      status: "pending",
+    })
+    .mockResolvedValue({
+      action: "save-draft",
+      operationCapability: "poll",
+      operationId: "saved-2",
+      status: "pending",
+    });
   const onBridge = vi.fn();
   const dirty = vi.fn();
-  const view = render(<OnlyOfficeEditor configUrl="/editor-config" title="Live Draft" onBridgeMessage={onBridge} onDirtyChange={dirty} />);
+  const view = render(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Live Draft"
+      onBridgeMessage={onBridge}
+      onDirtyChange={dirty}
+    />
+  );
   const office = await screen.findByTitle<HTMLIFrameElement>("Office sandbox");
   const plugin = pluginFrame(office);
   const picker = pluginFrame(office);
   send(plugin.source, { type: "bridge-ready" });
   const popup = pluginFrame(office);
   const popupMessage = {
-    channelId: "live-popup", documentKey: "document-1", instanceId: "popup-instance",
-    sequence: 1, source: "folio-pdms-popup",
+    channelId: "live-popup",
+    documentKey: "document-1",
+    instanceId: "popup-instance",
+    sequence: 1,
+    source: "folio-pdms-popup",
   };
   send(popup.source, { ...popupMessage, type: "ready" });
   act(() => documentStateChanged?.({ data: true }));
-  view.rerender(<OnlyOfficeEditor configUrl="/editor-config" title="Live Draft" onBridgeMessage={onBridge} onDirtyChange={dirty} saveRequest={1} />);
+  view.rerender(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Live Draft"
+      onBridgeMessage={onBridge}
+      onDirtyChange={dirty}
+      saveRequest={1}
+    />
+  );
   expect(office.closest("[inert]")).not.toBeNull();
-  send(plugin.source, { type: "editor-save-request", requestId: "capture" });
+  send(plugin.source, { requestId: "capture", type: "editor-save-request" });
   send(plugin.source, {
-    source: "folio-upload-poc", type: "pending-file-save", requestId: "first-save",
-    documentKey: "document-1", scopeIdentity: "actor/response", action: "save-draft",
-    body: { documentKey: "document-1" }, capability: "first-save-capability",
+    action: "save-draft",
+    body: { documentKey: "document-1" },
+    capability: "first-save-capability",
+    documentKey: "document-1",
+    requestId: "first-save",
+    scopeIdentity: "actor/response",
     snapshotUrl: "http://office.test/first.xlsx",
+    source: "folio-upload-poc",
+    type: "pending-file-save",
   });
   await waitFor(() => expect(transport.postForm).toHaveBeenCalledTimes(1));
   act(() => documentStateChanged?.({ data: true }));
   const candidate = {
-    documentKey: "document-1", scopeIdentity: "actor/response",
-    source: "folio-upload-poc", requestId: "candidate",
-    type: "pending-file-candidate", dirty: true,
+    dirty: true,
+    documentKey: "document-1",
+    requestId: "candidate",
+    scopeIdentity: "actor/response",
+    source: "folio-upload-poc",
+    type: "pending-file-candidate",
   };
   send(picker.source, candidate);
   send(plugin.source, {
-    type: "operation", action: "save-draft", status: "completed",
-    operationId: "saved-1", operation: { result: { documentKey: "document-2" } },
+    action: "save-draft",
+    operation: { result: { documentKey: "document-2" } },
+    operationId: "saved-1",
+    status: "completed",
+    type: "operation",
   });
-  await waitFor(() => expect(onBridge).toHaveBeenCalledWith(expect.objectContaining({
-    status: "completed", hasUnsavedDocumentChanges: true, hasAttachmentCandidates: true,
-  })));
+  await waitFor(() =>
+    expect(onBridge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        hasAttachmentCandidates: true,
+        hasUnsavedDocumentChanges: true,
+        status: "completed",
+      })
+    )
+  );
   expect(screen.getByTitle("Office sandbox")).toBe(office);
   expect(office.closest("[inert]")).toBeNull();
-  expect(plugin.send).toHaveBeenCalledWith(expect.objectContaining({
-    type: "retain-completed-editor", operationId: "saved-1", documentKey: "document-2",
-  }), window.location.origin);
+  expect(plugin.send).toHaveBeenCalledWith(
+    expect.objectContaining({
+      documentKey: "document-2",
+      operationId: "saved-1",
+      type: "retain-completed-editor",
+    }),
+    window.location.origin
+  );
   send(popup.source, { ...popupMessage, type: "locate" });
-  expect(plugin.send).toHaveBeenCalledWith(expect.objectContaining({
-    type: "locate", documentKey: "document-2", channelId: "live-popup",
-  }), window.location.origin);
+  expect(plugin.send).toHaveBeenCalledWith(
+    expect.objectContaining({
+      channelId: "live-popup",
+      documentKey: "document-2",
+      type: "locate",
+    }),
+    window.location.origin
+  );
   send(plugin.source, {
-    ...popupMessage, documentKey: "document-2", source: "form-bridge",
-    type: "pdms-popup-state", state: { status: "ready" },
+    ...popupMessage,
+    documentKey: "document-2",
+    source: "form-bridge",
+    state: { status: "ready" },
+    type: "pdms-popup-state",
   });
-  expect(popup.send).toHaveBeenCalledWith(expect.objectContaining({
-    type: "state", documentKey: "document-1", channelId: "live-popup",
-  }), window.location.origin);
-  send(plugin.source, { type: "dirty-state", dirty: false });
+  expect(popup.send).toHaveBeenCalledWith(
+    expect.objectContaining({
+      channelId: "live-popup",
+      documentKey: "document-1",
+      type: "state",
+    }),
+    window.location.origin
+  );
+  send(plugin.source, { dirty: false, type: "dirty-state" });
   expect(dirty).toHaveBeenLastCalledWith(true);
   send(picker.source, { ...candidate, dirty: false });
   send(picker.source, {
-    ...candidate, type: "pending-file-set", bindingId: "folio_file",
-    tag: "file", rowIndex: null, file: new File(["late"], "late.bin"),
+    ...candidate,
+    bindingId: "folio_file",
+    file: new File(["late"], "late.bin"),
+    rowIndex: null,
+    tag: "file",
+    type: "pending-file-set",
   });
-  await waitFor(() => expect(picker.send).toHaveBeenCalledWith(expect.objectContaining({
-    filename: "late.bin", documentKey: "document-1",
-  }), window.location.origin));
+  await waitFor(() =>
+    expect(picker.send).toHaveBeenCalledWith(
+      expect.objectContaining({
+        documentKey: "document-1",
+        filename: "late.bin",
+      }),
+      window.location.origin
+    )
+  );
   send(plugin.source, {
-    source: "folio-upload-poc", type: "pending-file-save", requestId: "next-save",
-    documentKey: "document-2", scopeIdentity: "actor/response", action: "save-draft",
-    body: { documentKey: "document-2" }, capability: "next-save-capability",
+    action: "save-draft",
+    body: { documentKey: "document-2" },
+    capability: "next-save-capability",
+    documentKey: "document-2",
+    requestId: "next-save",
+    scopeIdentity: "actor/response",
     snapshotUrl: "http://office.test/newer.xlsx",
+    source: "folio-upload-poc",
+    type: "pending-file-save",
   });
   await waitFor(() => expect(transport.postForm).toHaveBeenCalledTimes(2));
   const multipart = transport.postForm.mock.calls[1]?.[1];
   expect(multipart).toBeInstanceOf(FormData);
-  expect(JSON.parse(String(multipart.get("payload")))).toMatchObject({ documentKey: "document-2" });
+  expect(JSON.parse(String(multipart.get("payload")))).toMatchObject({
+    documentKey: "document-2",
+  });
   expect(multipart.get("attachment:folio_file")).toBeInstanceOf(File);
 });
 
@@ -2147,43 +2238,90 @@ const rowTransitionHostConfig = (documentKey: string, lastRow: number) => ({
 });
 it("holds an internal row completion instead of remounting over a later confirmed File", async () => {
   const initial = rowTransitionHostConfig("document-1", 8);
-  transport.get.mockImplementation((path: string) => Promise.resolve(
-    path === "/api/operations/late-row" ? { operation: {
-      id: "late-row", responseId: "response", status: "completed", type: "save_draft",
-      result: { documentKey: "document-2", attachmentTransition: {
-        fromDocumentKey: "document-1", toDocumentKey: "document-2",
-        oldRowCount: 3, newRowCount: 2, rowMapping: [null, 0, 1], tableBindingId: "folio_rows",
-      } },
-    } } : initial
-  ));
+  transport.get.mockImplementation((path: string) =>
+    Promise.resolve(
+      path === "/api/operations/late-row"
+        ? {
+            operation: {
+              id: "late-row",
+              responseId: "response",
+              result: {
+                attachmentTransition: {
+                  fromDocumentKey: "document-1",
+                  newRowCount: 2,
+                  oldRowCount: 3,
+                  rowMapping: [null, 0, 1],
+                  tableBindingId: "folio_rows",
+                  toDocumentKey: "document-2",
+                },
+                documentKey: "document-2",
+              },
+              status: "completed",
+              type: "save_draft",
+            },
+          }
+        : initial
+    )
+  );
   const ready = vi.fn();
   const onBridge = vi.fn();
-  render(<OnlyOfficeEditor configUrl="/editor-config" title="Late row File"
-    onCommandReadyChange={ready} onBridgeMessage={onBridge} />);
+  render(
+    <OnlyOfficeEditor
+      configUrl="/editor-config"
+      title="Late row File"
+      onCommandReadyChange={ready}
+      onBridgeMessage={onBridge}
+    />
+  );
   const office = await screen.findByTitle<HTMLIFrameElement>("Office sandbox");
   const plugin = pluginFrame(office);
   const picker = pluginFrame(office);
   send(plugin.source, { type: "bridge-ready" });
-  send(plugin.source, { type: "operation", action: "save-draft", status: "pending" });
-  send(picker.source, {
-    source: "folio-upload-poc", type: "pending-file-set", requestId: "late-file",
-    documentKey: "document-1", scopeIdentity: "actor/response",
-    bindingId: "folio_file", tag: "items.file", rowIndex: 2, file: new File([], "later.BIN"),
-  });
-  await waitFor(() => expect(picker.send).toHaveBeenCalledWith(
-    expect.objectContaining({ filename: "later.BIN" }), window.location.origin
-  ));
   send(plugin.source, {
-    type: "operation", action: "save-draft", status: "completed",
-    operationId: "late-row", operation: { result: { documentKey: "document-2" } },
+    action: "save-draft",
+    status: "pending",
+    type: "operation",
   });
-  await waitFor(() => expect(onBridge).toHaveBeenCalledWith(expect.objectContaining({
-    status: "completed", hasPendingAttachments: true, editorRemountSafe: false,
-  })));
+  send(picker.source, {
+    bindingId: "folio_file",
+    documentKey: "document-1",
+    file: new File([], "later.BIN"),
+    requestId: "late-file",
+    rowIndex: 2,
+    scopeIdentity: "actor/response",
+    source: "folio-upload-poc",
+    tag: "items.file",
+    type: "pending-file-set",
+  });
+  await waitFor(() =>
+    expect(picker.send).toHaveBeenCalledWith(
+      expect.objectContaining({ filename: "later.BIN" }),
+      window.location.origin
+    )
+  );
+  send(plugin.source, {
+    action: "save-draft",
+    operation: { result: { documentKey: "document-2" } },
+    operationId: "late-row",
+    status: "completed",
+    type: "operation",
+  });
+  await waitFor(() =>
+    expect(onBridge).toHaveBeenCalledWith(
+      expect.objectContaining({
+        editorRemountSafe: false,
+        hasPendingAttachments: true,
+        status: "completed",
+      })
+    )
+  );
   expect(ready).toHaveBeenLastCalledWith(false);
   expect(screen.getByTitle("Office sandbox")).toBe(office);
   expect(office.closest("[inert]")).not.toBeNull();
-  expect(plugin.send).toHaveBeenCalledWith(expect.objectContaining({ type: "hold-editor" }), window.location.origin);
+  expect(plugin.send).toHaveBeenCalledWith(
+    expect.objectContaining({ type: "hold-editor" }),
+    window.location.origin
+  );
   expect(transport.postForm).not.toHaveBeenCalled();
 });
 

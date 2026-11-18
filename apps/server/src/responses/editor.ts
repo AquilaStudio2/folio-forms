@@ -458,12 +458,21 @@ export async function userEditorConfig(
           pdmsOpeningId
         )
       : null;
-  if (continuation?.operationId !== undefined ||
-    continuation?.nativeSessionDocumentKey !== undefined) {
-    if (!opening || typeof continuation.operationId !== "string" ||
+  if (
+    continuation?.operationId !== undefined ||
+    continuation?.nativeSessionDocumentKey !== undefined
+  ) {
+    if (
+      !opening ||
+      typeof continuation.operationId !== "string" ||
       typeof continuation.nativeSessionDocumentKey !== "string" ||
-      typeof pdmsOpeningId !== "string") {
-      fail(409, "stale_editor_continuation", "The original native editor cannot be continued");
+      typeof pdmsOpeningId !== "string"
+    ) {
+      fail(
+        409,
+        "stale_editor_continuation",
+        "The original native editor cannot be continued"
+      );
     }
     validateId(continuation.operationId, "Operation");
     const operation = await prisma.operation.findUnique({
@@ -478,16 +487,31 @@ export async function userEditorConfig(
       pdmsOpeningId
     );
     // Only persisted completion evidence can bind a live native cache to the new canonical revision.
-    if (!operation || operation.type !== "save_draft" ||
-      operation.status !== "completed" || operation.actorId !== identity.id ||
-      operation.formId !== form.id || operation.responseId !== response.id ||
-      operation.targetType !== "response" || operation.targetId !== response.id ||
+    if (
+      !operation ||
+      operation.type !== "save_draft" ||
+      operation.status !== "completed" ||
+      operation.actorId !== identity.id ||
+      operation.formId !== form.id ||
+      operation.responseId !== response.id ||
+      operation.targetType !== "response" ||
+      operation.targetId !== response.id ||
       jsonRecord(operation.result).documentKey !== response.draftDocumentKey ||
-      jsonRecord(operation.metadata).documentServerKey !== originalOpening.documentServerKey ||
-      !batch || batch.state !== "committed" || batch.leaseId !== lease.id ||
-      batch.authSessionId !== identity.sessionId || batch.actorId !== identity.id ||
-      batch.responseId !== response.id || batch.formId !== form.id) {
-      fail(409, "stale_editor_continuation", "The original native editor cannot be continued");
+      jsonRecord(operation.metadata).documentServerKey !==
+        originalOpening.documentServerKey ||
+      !batch ||
+      batch.state !== "committed" ||
+      batch.leaseId !== lease.id ||
+      batch.authSessionId !== identity.sessionId ||
+      batch.actorId !== identity.id ||
+      batch.responseId !== response.id ||
+      batch.formId !== form.id
+    ) {
+      fail(
+        409,
+        "stale_editor_continuation",
+        "The original native editor cannot be continued"
+      );
     }
     opening = originalOpening;
   }
