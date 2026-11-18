@@ -1,16 +1,37 @@
 // oxlint-disable unicorn/filename-case -- TanStack Router requires this dynamic route filename.
 import { createFileRoute, Link, useParams } from "@tanstack/react-router";
-import { ArrowLeft, ArrowUpRight, FileCheck2, Pencil } from "lucide-react";
-import { useEffect, useState } from "react";
+import {
+  ArrowLeft,
+  ArrowUpRight,
+  FileCheck2,
+  Pencil,
+  Trash2,
+} from "lucide-react";
+import { useEffect, useRef, useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
 import { DocumentKindBadge } from "@/components/document-kind-badge";
 import { ListPagination } from "@/components/list-pagination";
-import { Badge, Card, Notice, Spinner } from "@/components/ui";
-import { apiGet, formatDate } from "@/lib/api";
+import { Badge, Button, Card, Notice, Spinner } from "@/components/ui";
+import { apiDelete, apiGet, ApiError, formatDate } from "@/lib/api";
 import type { Submission } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { paginateItems } from "@/lib/pagination";
+
+const deleteErrorMessage = (error: unknown): string => {
+  if (error instanceof ApiError) {
+    if (error.code === "only_submission") {
+      return "ลบไม่ได้: นี่เป็น Submission เดียวของคำตอบนี้ กรุณาใช้การลบคำตอบถาวรที่หน้า Inspect แทน";
+    }
+    if (error.code === "editor_in_use") {
+      return "ลบไม่ได้: มีคนกำลังเปิดแก้ไขคำตอบนี้อยู่ กรุณาลองใหม่ภายหลัง";
+    }
+    if (error.code === "operation_in_progress") {
+      return "ลบไม่ได้: กำลังมีการประมวลผลคำตอบนี้อยู่ กรุณาลองใหม่ภายหลัง";
+    }
+  }
+  return "ลบ Submission ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
+};
 
 const SubmissionsRoute = () => {
   const { formId } = useParams({
@@ -26,6 +47,51 @@ const SubmissionsRoute = () => {
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<Submission | null>(null);
+  const [deleting, setDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
+  const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const deleteFeedbackRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (deleteError) {
+      deleteFeedbackRef.current?.focus();
+    }
+  }, [deleteError]);
+
+  const requestDelete = (row: Submission, trigger: HTMLButtonElement) => {
+    deleteTriggerRef.current = trigger;
+    setDeleteError(null);
+    setDeleteTarget(row);
+  };
+
+  const cancelDelete = () => {
+    if (deleting) {
+      return;
+    }
+    setDeleteTarget(null);
+    setDeleteError(null);
+    deleteTriggerRef.current?.focus();
+    deleteTriggerRef.current = null;
+  };
+
+  const confirmDelete = async () => {
+    if (!deleteTarget || deleting) {
+      return;
+    }
+    setDeleting(true);
+    setDeleteError(null);
+    try {
+      await apiDelete(`/api/admin/submissions/${deleteTarget.id}`);
+      setRows((current) => current.filter((row) => row.id !== deleteTarget.id));
+      setDeleteTarget(null);
+      deleteTriggerRef.current = null;
+    } catch (caughtError) {
+      setDeleteError(deleteErrorMessage(caughtError));
+    } finally {
+      setDeleting(false);
+    }
+  };
 
   useEffect(() => {
     setPage(1);
@@ -119,6 +185,15 @@ const SubmissionsRoute = () => {
                   แก้ไข <Pencil size={15} />
                 </Link>
               ) : null}
+              {canEdit ? (
+                <button
+                  className="inline-flex items-center gap-1 text-sm font-semibold text-[var(--danger)]"
+                  onClick={(event) => requestDelete(row, event.currentTarget)}
+                  type="button"
+                >
+                  ลบ <Trash2 size={15} />
+                </button>
+              ) : null}
             </div>
           </div>
         ))}
@@ -128,6 +203,57 @@ const SubmissionsRoute = () => {
 
   return (
     <>
+      {deleteTarget ? (
+        <div
+          className="fixed inset-0 z-50 grid place-items-center bg-black/35 px-5"
+          role="presentation"
+        >
+          <div
+            aria-labelledby="delete-submission-title"
+            aria-modal="true"
+            className="w-full max-w-lg rounded-[var(--radius)] border border-[var(--line)] bg-[var(--paper)] p-6 shadow-xl"
+            role="dialog"
+          >
+            <h2 className="text-lg font-semibold" id="delete-submission-title">
+              ยืนยันการลบ Submission
+            </h2>
+            <p className="mt-2 text-sm text-[var(--ink-soft)]">
+              ข้อมูลที่ส่งโดย {deleteTarget.userEmail ?? "ผู้ตอบแบบฟอร์มนี้"}{" "}
+              รวมถึงเอกสารและ Correction ทั้งหมดของ Submission
+              นี้จะหายไปทันทีและกู้คืนไม่ได้
+            </p>
+            {deleteError ? (
+              <div
+                className="mt-4 focus:outline-none"
+                ref={deleteFeedbackRef}
+                role="alert"
+                tabIndex={-1}
+              >
+                <Notice tone="danger">{deleteError}</Notice>
+              </div>
+            ) : null}
+            <div className="mt-6 flex justify-end gap-2">
+              <Button
+                disabled={deleting}
+                onClick={cancelDelete}
+                type="button"
+                variant="ghost"
+              >
+                ยกเลิก
+              </Button>
+              <Button
+                disabled={deleting}
+                onClick={confirmDelete}
+                type="button"
+                variant="danger"
+              >
+                {deleting ? <Spinner /> : <Trash2 size={16} />}
+                {deleting ? "กำลังลบ…" : "ยืนยันการลบ"}
+              </Button>
+            </div>
+          </div>
+        </div>
+      ) : null}
       <Link
         to="/admin/forms/$formId"
         params={{ formId }}

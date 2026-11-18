@@ -9,7 +9,10 @@ import {
 } from "@onlyoffice/db";
 
 import type { AiAuthoringSessions } from "../ai-authoring";
-import { createResponseDeletionAudit } from "../audit/events";
+import {
+  createResponseAudit,
+  createResponseDeletionAudit,
+} from "../audit/events";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Identity } from "../auth/identity";
 import { endAiAuthoringSessions } from "../auth/password-session";
@@ -17,6 +20,7 @@ import { tokenDigest } from "../digests";
 import { fail } from "../http/errors";
 import { operationMetadata } from "../operations/model";
 import {
+  deleteObjectUnlessCanonical,
   drainObjectCleanupIntents,
   nativeCaptureCandidateKey,
   uniqueObjectKeys,
@@ -408,4 +412,112 @@ export async function deleteResponseData({
     targetId: responseId,
   });
   return result;
+}
+
+export async function deleteSubmissionData({
+  actor,
+  submissionId,
+  removeObject,
+}: {
+  actor: Identity;
+  submissionId: string;
+  removeObject: (key: string) => Promise<void>;
+}): Promise<{ deleted: boolean }> {
+  const { objectKeys } = await prisma.$transaction(
+    async (tx) => {
+      const [locked] = await tx.$queryRaw<{ id: string }[]>(
+        Prisma.sql`
+          SELECT "id"
+          FROM "submissions"
+          WHERE "id" = ${submissionId}::uuid
+          FOR UPDATE
+        `
+      );
+      if (!locked) {
+        fail(404, "not_found", "Submission was not found");
+      }
+      const submission = await tx.submission.findUnique({
+        include: { corrections: true },
+        where: { id: submissionId },
+      });
+      if (!submission) {
+        fail(404, "not_found", "Submission was not found");
+      }
+      const siblingCount = await tx.submission.count({
+        where: { responseId: submission.responseId },
+      });
+      if (siblingCount <= 1) {
+        fail(
+          409,
+          "only_submission",
+          "This is the only Submission for its Response; delete the Response instead"
+        );
+      }
+      const correctionIds = submission.corrections.map(
+        (correction) => correction.id
+      );
+      const activeOperations = await tx.operation.findMany({
+        select: { id: true },
+        where: {
+          OR: [
+            { submissionId: submission.id },
+            ...(correctionIds.length > 0
+              ? [{ correctionId: { in: correctionIds } }]
+              : []),
+          ],
+          status: { in: [OperationStatus.pending, OperationStatus.processing] },
+        },
+      });
+      if (activeOperations.length > 0) {
+        fail(
+          409,
+          "operation_in_progress",
+          "The Submission operation is active"
+        );
+      }
+      const activeLease = await tx.editorLease.findFirst({
+        select: { id: true },
+        where: {
+          targetId: submission.responseId,
+          targetType: OperationTargetType.correction,
+        },
+      });
+      if (activeLease) {
+        fail(409, "editor_in_use", "The Response is open in an editor");
+      }
+      await tx.operation.deleteMany({
+        where: {
+          OR: [
+            { submissionId: submission.id },
+            ...(correctionIds.length > 0
+              ? [{ correctionId: { in: correctionIds } }]
+              : []),
+          ],
+        },
+      });
+      await tx.correction.deleteMany({
+        where: { submissionId: submission.id },
+      });
+      await tx.submission.delete({ where: { id: submission.id } });
+      return {
+        objectKeys: uniqueObjectKeys([
+          submission.objectKey,
+          ...submission.corrections.map((correction) => correction.objectKey),
+        ]),
+      };
+    },
+    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+  );
+  await Promise.all(
+    objectKeys.map((key) => deleteObjectUnlessCanonical(key, removeObject))
+  );
+  await createResponseAudit({
+    action: "delete_submission",
+    actorId: actor.id,
+    outcome: AuditOutcome.success,
+    safeMetadata: { state: "submitted" },
+    targetId: submissionId,
+    targetType: "submission",
+  });
+  return { deleted: true };
 }

@@ -3,7 +3,7 @@ import { AuditOutcome, FieldType, prisma } from "@onlyoffice/db";
 import type { Elysia } from "elysia";
 
 import { createResponseAudit } from "../audit/events";
-import { requireIdentity } from "../auth/identity";
+import { requireAdmin, requireIdentity } from "../auth/identity";
 import { responsePicturePresence } from "../documents/pictures";
 import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
 import { receiptField } from "../forms/query";
@@ -13,6 +13,7 @@ import {
 } from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 import { jsonRecord, validateId } from "../http/input";
+import { deleteSubmissionData } from "../responses/deletion";
 import {
   submissionSummary,
   revisionSelector,
@@ -25,6 +26,7 @@ import {
 import type { CorrectionRevisionSummary } from "../responses/query";
 import {
   DOCX_CONTENT_TYPE,
+  deleteObject,
   objectExists,
   readObject,
   streamObject,
@@ -338,5 +340,15 @@ export function registerSubmissionRoutes(
           `attachment; filename="submission-${submission.id}${suffix}.pdf"`;
         return pdf;
       }
-    );
+    )
+    .delete("/api/admin/submissions/:id", async ({ request, params }) => {
+      const identity = await requireIdentity(request);
+      requireAdmin(identity);
+      validateId(params.id, "Submission");
+      return deleteSubmissionData({
+        actor: identity,
+        removeObject: deleteObject,
+        submissionId: params.id,
+      });
+    });
 }

@@ -284,6 +284,7 @@ export async function createFormFailureAudit({
 }
 type ResponseAuditAction =
   | "create_correction"
+  | "delete_submission"
   | "export_correction"
   | "export_response"
   | "view_correction"
