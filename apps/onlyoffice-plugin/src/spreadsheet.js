@@ -311,6 +311,19 @@ export function initializeSpreadsheet(options, setStatus) {
   let refreshPdmsPicker = () => {};
   let renderList = () => {};
   let refreshAfterAction = () => {};
+  const minimumRowReason =
+    "ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้";
+  const readTableRowCount = async () => {
+    window.Asc.scope = window.Asc.scope || {};
+    window.Asc.scope.folioTableAnchor = bindings.table.anchor;
+    const count = await office.callCommandResult(
+      spreadsheetTableRowCountCommand
+    );
+    if (!Number.isSafeInteger(count) || count < 1) {
+      throw new Error("ไม่พบช่วงตาราง กรุณาบันทึกและเปิดแบบฟอร์มใหม่");
+    }
+    return count;
+  };
   const bridge = createBridge(options, office, {
     getFieldSelection: () => null,
     loadFieldRules: () => Promise.resolve(),
@@ -347,6 +360,12 @@ export function initializeSpreadsheet(options, setStatus) {
       }
       await ensureAuthoringReady();
       validatePanelDrafts();
+      if (
+        rowChange?.action === "delete" &&
+        (await readTableRowCount()) <= 1
+      ) {
+        throw new Error(minimumRowReason);
+      }
       return checkUploadPocPending(
         window,
         options,
@@ -446,7 +465,7 @@ export function initializeSpreadsheet(options, setStatus) {
     buttons.push(node);
     panel.append(node);
     node.addEventListener("click", () => {
-      if (busy) {
+      if (busy || node.disabled) {
         return;
       }
       if (uploadPocDeleteNeedsSave && !recoveryAction) {
@@ -2880,6 +2899,7 @@ export function initializeSpreadsheet(options, setStatus) {
             for (const control of [...buttons, ...pictureInputs]) {
               control.disabled = false;
             }
+            void refreshAfterAction();
           });
       });
     }
@@ -2896,18 +2916,13 @@ export function initializeSpreadsheet(options, setStatus) {
         });
       };
       if (options.action !== ACTIONS.CORRECTION) {
-        button("เพิ่มแถว", async () => {
-          window.Asc.scope = window.Asc.scope || {};
-          window.Asc.scope.folioTableAnchor = bindings.table.anchor;
-          const count = await office.callCommandResult(
-            spreadsheetTableRowCountCommand
-          );
-          if (!Number.isSafeInteger(count) || count < 1) {
-            throw new Error("ไม่พบช่วงตาราง กรุณาบันทึกและเปิดแบบฟอร์มใหม่");
+        button("เพิ่มแถว", async () =>
+          changeRows("insert", await readTableRowCount())
+        );
+        const removeRow = button("ลบแถวที่เลือก", async () => {
+          if (await readTableRowCount() <= 1) {
+            throw new Error(minimumRowReason);
           }
-          return changeRows("insert", count);
-        });
-        button("ลบแถวที่เลือก", async () => {
           window.Asc.scope = window.Asc.scope || {};
           window.Asc.scope.folioTableAnchor = bindings.table.anchor;
           const index = await office.callCommandResult(
@@ -2918,6 +2933,40 @@ export function initializeSpreadsheet(options, setStatus) {
           }
           return changeRows("delete", index);
         });
+        const rowReason = document.createElement("p");
+        rowReason.id = "spreadsheet-minimum-row-reason";
+        removeRow.setAttribute("aria-describedby", rowReason.id);
+        panel.append(rowReason);
+        let refreshId = 0;
+        refreshAfterAction = async () => {
+          const requestId = ++refreshId;
+          removeRow.disabled = true;
+          let reason = "";
+          try {
+            if (await readTableRowCount() <= 1) {
+              reason = minimumRowReason;
+            }
+          } catch (error) {
+            reason =
+              error.message || "ไม่พบช่วงตาราง กรุณาบันทึกและเปิดแบบฟอร์มใหม่";
+          }
+          if (requestId !== refreshId) {
+            return;
+          }
+          removeRow.disabled = busy || Boolean(reason);
+          removeRow.title = reason;
+          rowReason.textContent = reason;
+        };
+        for (const event of [
+          "onTargetPositionChanged",
+          "onChangeCurrentSheet",
+          "onDocumentContentReady",
+        ]) {
+          window.Asc.plugin.attachEditorEvent?.(event, () => {
+            void refreshAfterAction();
+          });
+        }
+        void refreshAfterAction();
       }
     }
     window.FormBridge = {

@@ -229,6 +229,33 @@ export const prepareSpreadsheetOperation = async (
     response.publishedTemplateId,
     previous
   );
+  const rowChange = metadata.spreadsheetRowChange as
+    | { action: "insert" | "delete"; index: number }
+    | undefined;
+  if (
+    rowChange &&
+    (!contract.table ||
+      metadata.action !== "save-draft" ||
+      !["insert", "delete"].includes(rowChange.action) ||
+      !Number.isSafeInteger(rowChange.index) ||
+      rowChange.index < 0)
+  ) {
+    throw new Error("Invalid spreadsheet row operation");
+  }
+  const tableBody = contract.table
+    ? contract.locations[contract.table.anchor]
+    : undefined;
+  if (
+    rowChange?.action === "delete" &&
+    tableBody &&
+    tableBody.lastRow - tableBody.firstRow + 1 <= 1
+  ) {
+    fail(
+      409,
+      "spreadsheet_minimum_rows",
+      "ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้"
+    );
+  }
   const lockedRecord = (response.prefillSnapshot?.lockedFields ?? {}) as Record<
     string,
     unknown
@@ -338,19 +365,6 @@ export const prepareSpreadsheetOperation = async (
   if (selectedProject) {
     values.push(selectedProject);
   }
-  const rowChange = metadata.spreadsheetRowChange as
-    | { action: "insert" | "delete"; index: number }
-    | undefined;
-  if (
-    rowChange &&
-    (!contract.table ||
-      metadata.action !== "save-draft" ||
-      !["insert", "delete"].includes(rowChange.action) ||
-      !Number.isSafeInteger(rowChange.index) ||
-      rowChange.index < 0)
-  ) {
-    throw new Error("Invalid spreadsheet row operation");
-  }
   if (
     rowChange?.action === "insert" &&
     contract.table &&
@@ -364,9 +378,6 @@ export const prepareSpreadsheetOperation = async (
       throw new Error("Upload POC supports appending table rows only");
     }
   }
-  const tableBody = contract.table
-    ? contract.locations[contract.table.anchor]
-    : undefined;
   const attachedRows =
     contract.table && tableBody
       ? canonicalTableAttachments(
@@ -412,39 +423,39 @@ export const prepareSpreadsheetOperation = async (
     storedSpreadsheetBindings(contract),
     workbook
   );
+  const nextBody = nextContract.table
+    ? nextContract.locations[nextContract.table.anchor]
+    : undefined;
+  const oldRowCount = tableBody
+    ? tableBody.lastRow - tableBody.firstRow + 1
+    : 0;
+  const newRowCount = nextBody ? nextBody.lastRow - nextBody.firstRow + 1 : 0;
+  if (
+    rowChange &&
+    (!tableBody ||
+      !nextBody ||
+      rowChange.index > oldRowCount ||
+      (rowChange.action === "delete" && rowChange.index >= oldRowCount) ||
+      newRowCount !== oldRowCount + (rowChange.action === "insert" ? 1 : -1))
+  ) {
+    fail(
+      409,
+      "attachment_row_mapping_unproven",
+      "ยืนยันตำแหน่งแถวหลังเปลี่ยนตารางไม่ได้ ข้อมูลและไฟล์เดิมยังอยู่"
+    );
+  }
+  if (!rowChange && newRowCount !== oldRowCount) {
+    fail(
+      409,
+      "attachment_row_mapping_unproven",
+      "จำนวนแถวเปลี่ยนโดยไม่มีคำสั่งที่รองรับ"
+    );
+  }
   if (hasSpreadsheetAttachments(contract)) {
-    const nextBody = nextContract.table
-      ? nextContract.locations[nextContract.table.anchor]
-      : undefined;
     validateSpreadsheetAttachmentButtons(
       result.workbook,
       storedSpreadsheetBindings(nextContract)
     );
-    const oldRowCount = tableBody
-      ? tableBody.lastRow - tableBody.firstRow + 1
-      : 0;
-    const newRowCount = nextBody ? nextBody.lastRow - nextBody.firstRow + 1 : 0;
-    if (
-      rowChange &&
-      (!tableBody ||
-        !nextBody ||
-        rowChange.index > oldRowCount ||
-        (rowChange.action === "delete" && rowChange.index >= oldRowCount) ||
-        newRowCount !== oldRowCount + (rowChange.action === "insert" ? 1 : -1))
-    ) {
-      fail(
-        409,
-        "attachment_row_mapping_unproven",
-        "ยืนยันตำแหน่งแถวหลังเปลี่ยนตารางไม่ได้ ข้อมูลและไฟล์เดิมยังอยู่"
-      );
-    }
-    if (!rowChange && newRowCount !== oldRowCount) {
-      fail(
-        409,
-        "attachment_row_mapping_unproven",
-        "จำนวนแถวเปลี่ยนโดยไม่มีคำสั่งที่รองรับ"
-      );
-    }
     const rowMapping = Array.from({ length: oldRowCount }, (_, index) => {
       if (!rowChange) {
         return index;

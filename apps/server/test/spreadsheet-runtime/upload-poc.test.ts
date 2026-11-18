@@ -12,6 +12,7 @@ import {
   spreadsheetUploadPocCommand,
   spreadsheetUploadPocTargets,
   stripSpreadsheetUploadPoc,
+  validateSpreadsheetAttachmentButtons,
   uploadPocGuid,
   uploadPocPreview,
 } from "../../src/documents/spreadsheets/upload-poc";
@@ -387,6 +388,147 @@ describe.skipIf(process.env.RUN_SPREADSHEET_RUNTIME !== "1")(
   () => {
     beforeAll(() => runtime.start(), 120_000);
     afterAll(() => runtime.stop(), 120_000);
+    test("legacy and template attachment columns keep every body button across delete, append and rejected last-row delete", async () => {
+      const tableBindings = spreadsheetBindingSchema.parse({
+        version: 1,
+        fields: [],
+        table: {
+          id: "folio_table",
+          anchor: "folio_body",
+          key: "items",
+          label: "Items",
+          columns: [
+            {
+              id: "folio_value",
+              key: "value",
+              label: "Value",
+              type: "text",
+              offset: 0,
+            },
+            {
+              id: "folio_legacy",
+              key: "legacy",
+              label: "Legacy",
+              type: "text",
+              offset: 1,
+              attachment: { category: "Proof", mode: "legacy" },
+            },
+            {
+              id: "folio_template",
+              key: "template",
+              label: "Template",
+              type: "text",
+              offset: 2,
+              attachment: {
+                mode: "template",
+                document_category_id: 42,
+                storage_template_id: "00000000-0000-4000-8000-000000000042",
+                template_name: "Proof",
+              },
+            },
+          ],
+        },
+      });
+      const columnTargets = [
+        {
+          anchor: "folio_column_folio_legacy",
+          bindingId: "folio_legacy",
+          bodyAnchor: "folio_body",
+          columnOffset: 1,
+          kind: "column",
+          sheet: "Form",
+          tag: "items.legacy",
+        },
+        {
+          anchor: "folio_column_folio_template",
+          bindingId: "folio_template",
+          bodyAnchor: "folio_body",
+          columnOffset: 2,
+          kind: "column",
+          sheet: "Form",
+          tag: "items.template",
+        },
+      ] as const;
+      await runtime.run(`builder.CreateFile("xlsx");
+var sheet=Api.GetActiveSheet();sheet.SetName("Form");
+sheet.GetRange("A4").SetValue("survivor");
+sheet.GetRange("B4").SetValue("https://fixture.invalid/saved-original");
+Api.AddDefName("folio_body","'Form'!$A$4:$C$5",false);
+Api.AddDefName("folio_columns_folio_table","'Form'!$A$4:$C$5",false);
+Api.AddDefName("folio_column_folio_value","'Form'!$A$4:$A$5",false);
+Api.AddDefName("folio_column_folio_legacy","'Form'!$B$4:$B$5",false);
+Api.AddDefName("folio_column_folio_template","'Form'!$C$4:$C$5",false);
+var command=${spreadsheetUploadPocCommand.toString()};
+var result=JSON.parse(command(${JSON.stringify({ guid: uploadPocGuid, mark: true, preview: uploadPocPreview, targets: columnTargets })}));
+if(!result.ok)throw new Error(result.error);
+builder.SaveFile("xlsx","/work/two-column-buttons.xlsx");builder.CloseFile();`);
+      let bytes = await runtime.read("two-column-buttons.xlsx");
+      validateSpreadsheetAttachmentButtons(bytes, tableBindings);
+      expect(savedSpreadsheetUploadPocButtons(bytes, tableBindings)).toHaveLength(4);
+      const initialBook = readSpreadsheetWorkbook(bytes);
+      const archive = { ...initialBook.archive };
+      archive[initialBook.sheetPath] = strToU8(
+        strFromU8(archive[initialBook.sheetPath]!).replace(
+          /<oleObject\b[\s\S]*?<\/oleObject>/u,
+          ""
+        )
+      );
+      expect(() =>
+        validateSpreadsheetAttachmentButtons(zipSync(archive), tableBindings)
+      ).toThrow();
+      for (const [step, action, index, count] of [
+        ["one", "delete", 1, 1],
+        ["append", "insert", 1, 2],
+        ["one-again", "delete", 1, 1],
+      ] as const) {
+        const inputName = `${step}-buttons-input.xlsx`;
+        const outputName = `${step}-buttons.xlsx`;
+        const planned = spreadsheetUploadPocTargets(bytes, tableBindings);
+        await runtime.write(inputName, stripSpreadsheetUploadPoc(bytes));
+        await runtime.runJob(inputName, {
+          outputName,
+          rowChange: {
+            action,
+            bodyName: "folio_body",
+            index,
+            inputColumns: [0, 1, 2],
+          },
+          uploadPocTargets: planned,
+        });
+        bytes = normalizeSpreadsheetUploadPocAnchors(
+          await runtime.read(outputName)
+        );
+        validateSpreadsheetAttachmentButtons(bytes, tableBindings);
+        expect(
+          savedSpreadsheetUploadPocButtons(bytes, tableBindings)
+        ).toHaveLength(count * 2);
+        const book = readSpreadsheetWorkbook(bytes);
+        expect(book.names.get("folio_body")?.lastRow).toBe(2 + count);
+        expect(book.cells.get("A4")?.value).toBe("survivor");
+        expect(book.cells.get("B4")?.value).toBe(
+          "https://fixture.invalid/saved-original"
+        );
+        if (count === 2) {
+          expect(book.cells.get("A5")?.value ?? null).toBeNull();
+          expect(book.cells.get("B5")?.value ?? null).toBeNull();
+          expect(book.cells.get("C5")?.value ?? null).toBeNull();
+        }
+      }
+      await runtime.write("sole-buttons.xlsx", bytes);
+      await expect(
+        runtime.runJob("sole-buttons.xlsx", {
+          outputName: "forbidden-buttons.xlsx",
+          rowChange: {
+            action: "delete",
+            bodyName: "folio_body",
+            index: 0,
+            inputColumns: [0, 1, 2],
+          },
+        }).then(() => runtime.read("forbidden-buttons.xlsx"))
+      ).rejects.toThrow();
+      expect(await runtime.read("sole-buttons.xlsx")).toEqual(bytes);
+      validateSpreadsheetAttachmentButtons(bytes, tableBindings);
+    }, 120_000);
     test("preserved placement proof rejects a table with one of two canonical row buttons missing", async () => {
       const metadata = {
         bindingId: "folio_attachment",
