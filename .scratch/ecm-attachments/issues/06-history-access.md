@@ -1,11 +1,6 @@
 # สิทธิ์ไฟล์และการแก้ไขหลังส่งคำตอบ
 
-Labels: wayfinder:grilling
-Type: grilling
-Parent: ../map.md
-Status: resolved
-Assignee: pyw1tt
-Blocked by:
+Labels: wayfinder:grilling Type: grilling Parent: ../map.md Status: resolved Assignee: pyw1tt Blocked by:
 
 ## Question
 

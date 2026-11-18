@@ -1,11 +1,6 @@
 # สัญญา JSON ของไฟล์แนบและ URL ใน Excel
 
-Labels: wayfinder:prototype
-Type: prototype
-Parent: ../map.md
-Status: resolved
-Assignee: pyw1tt
-Blocked by: 03, 04, 06, 07, 09
+Labels: wayfinder:prototype Type: prototype Parent: ../map.md Status: resolved Assignee: pyw1tt Blocked by: 03, 04, 06, 07, 09
 
 ## Question
 

@@ -1,11 +1,6 @@
 # การใช้บัญชี ECM ร่วมโดยไม่ตัด token ของระบบอื่น
 
-Labels: wayfinder:grilling
-Type: grilling
-Parent: ../map.md
-Status: resolved
-Assignee: pyw1tt
-Blocked by: 01, 02
+Labels: wayfinder:grilling Type: grilling Parent: ../map.md Status: resolved Assignee: pyw1tt Blocked by: 01, 02
 
 ## Question
 

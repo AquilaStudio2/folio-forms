@@ -1,11 +1,6 @@
 # ข้อกำหนดชนิดไฟล์และขนาดที่รับได้
 
-Labels: wayfinder:grilling
-Type: grilling
-Parent: ../map.md
-Status: resolved
-Assignee: pyw1tt
-Blocked by: 01, 09
+Labels: wayfinder:grilling Type: grilling Parent: ../map.md Status: resolved Assignee: pyw1tt Blocked by: 01, 09
 
 ## Question
 

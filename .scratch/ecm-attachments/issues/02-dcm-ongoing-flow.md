@@ -1,11 +1,6 @@
 # โครงสร้าง DCM และการตั้งชื่อไฟล์ที่ Ongoing ใช้จริง
 
-Labels: wayfinder:research
-Type: research
-Parent: ../map.md
-Status: resolved
-Assignee: pyw1tt (research agent: DcmFlowFacts)
-Blocked by:
+Labels: wayfinder:research Type: research Parent: ../map.md Status: resolved Assignee: pyw1tt (research agent: DcmFlowFacts) Blocked by:
 
 ## Question
 

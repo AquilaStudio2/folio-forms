@@ -1,11 +1,6 @@
 # การเปลี่ยนฟอร์ม PoC เดิมไปใช้ช่องแนบจริง
 
-Labels: wayfinder:grilling
-Type: grilling
-Parent: ../map.md
-Status: resolved
-Assignee: pyw1tt
-Blocked by: 03, 06, 11
+Labels: wayfinder:grilling Type: grilling Parent: ../map.md Status: resolved Assignee: pyw1tt Blocked by: 03, 06, 11
 
 ## Question
 

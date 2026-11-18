@@ -1,7 +1,6 @@
 # Folio Excel ECM/DCM Attachments — Implementation Specification
 
-Status: resolved
-Decision baseline: resolved planning decisions และ amendments ที่อ้างอิงใน Further Notes
+Status: resolved Decision baseline: resolved planning decisions และ amendments ที่อ้างอิงใน Further Notes
 
 ## Problem Statement
 
@@ -196,7 +195,7 @@ ECM มีข้อจำกัดสำคัญตามคำชี้แจ�
 - Pending File/binary/base64 ไม่อยู่ใน persisted answer JSON เฉพาะ attachment fields ที่ประกาศชัดเท่านั้นรับ object; plain text, ตัวเลข, dropdown และ Fields อื่นคง validation เดิม รวม unknown keys และข้อจำกัดตามบริบท
 - Canonical JSON ทั้งชุดรวม metadata ต้องไม่เกิน **262,144 UTF-8 bytes** ปฏิเสธเมื่อเกิน ไม่ตัด URL/token/แถว ไม่เพิ่มเพดานอัตโนมัติ และไม่ย้าย metadata ออกเพื่อหลบเพดาน operational records เพิ่มได้เพื่อ recovery แต่ไม่แทนข้อมูล file object ใน answer JSON
 - ผูก slot ด้วย published contract, stable binding, tag, actor/target และ trusted current document/revision ตรวจ marker/placement/ขอบเขตแถวจากข้อมูลที่ server เชื่อถือ ไม่เชื่อ binding หรือ `row_index` ของ client โดยลำพัง
-- Supported row commands ต้องปรับ workbook, pending selections และ canonical metadata ด้วยกันใน operation เดียว ไม่เปลี่ยน snapshot เก่า ไม่อัปโหลดใหม่เพียงเพราะแถวเลื่อน หาก mapping ไม่พิสูจน์หรือคำสั่งไม่รองรับให้หยุด ไม่เพิ่มความสามารถลบแถวใหม่เพื่อหลบข้อจำกัด
+- Supported row commands ต้องปรับ workbook, pending selections และ canonical metadata ด้วยกันใน operation เดียว ไม่เปลี่ยน snapshot เก่า ไม่อัปโหลดใหม่เพียงเพราะแถวเลื่อน หาก mapping ไม่พิสูจน์หรือคำสั่งไม่รองรับให้หยุด ไม่เพิ่มความสามารถลบแถวใหม่เพื่อหลบข้อจำกัด Row-command minimum ของทุกฟอร์ม XLSX รวมฟอร์มที่ไม่มี attachment ให้ยึด [Resolution ล่าสุด](../ecm-attachment-safety/issues/05-final-row-mapping.md#resolution--2026-11-18--pyw1tt--ทุกฟอร์ม-excel-ต้องเหลืออย่างน้อยหนึ่ง-row) ซึ่งห้ามลบต่อเมื่อเหลือหนึ่ง body row ไม่ล้างข้อมูลแทน และคงปุ่มครบทุก configured attachment column; เป็น intended policy ที่ยังไม่ใช่ implemented/runtime-tested behavior
 - Workbook/export เป็น projection ของ `file_link` เท่านั้น ห้าม file token ใน cell, hidden metadata, สูตร หรือส่วนใดของ workbook เพื่อกู้ภายหลัง
 - เมื่ออ่าน workbook กลับ ให้ประกอบ attachment metadata จาก canonical JSON และ verified receipts ของ workspace/revision เดียวกัน URL cell ไม่ใช่หลักฐาน ownership การแก้ URL หรือ client object/token ไม่ได้ adopt ไฟล์ใหม่ การเปลี่ยน/นำออกต้องผ่านคำสั่ง attachment ที่มีสิทธิ์
 - `file_token` คือ file identifier สำหรับ Delete ไม่ใช่ ECM Bearer และไม่ใช่อำนาจลบโดยตัวมันเอง Credentials/Bearer ห้ามอยู่ใน answers, browser, URLs หรือ exports
@@ -390,7 +389,6 @@ ECM มีข้อจำกัดสำคัญตามคำชี้แจ�
 สเปกนี้ครอบคลุม 112 user stories และ full end-to-end intended behavior ผู้ใช้ยืนยัน test seam, 8 vertical implementation slices และ dependencies ก่อนเผยแพร่แล้ว ขณะเผยแพร่ทุกตั๋วมี Status: ready-for-agent และต้องทำตาม Blocked by ไม่ถือ slice ใดหรือ provider double ว่า feature ทั้งหมดพร้อมเปิดใช้
 
 บันทึกสถานะขณะเผยแพร่สเปก: งานรอบนั้นมีเฉพาะสเปกกับตั๋ว ไม่ได้แก้ application, migrate ข้อมูล, deploy หรือเรียก ECM/DB จริง สถานะ implementation ปัจจุบันแยกไว้ด้านล่าง ความพร้อมบัญชี/provider/operator ยังคงเป็น release gates
-
 
 ### Implementation tickets
 

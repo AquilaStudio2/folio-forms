@@ -1,11 +1,6 @@
 # ระดับการตั้งค่าปลายทางไฟล์ของ Admin
 
-Labels: wayfinder:grilling
-Type: grilling
-Parent: ../map.md
-Status: resolved
-Assignee: pyw1tt
-Blocked by: 01, 02, 09
+Labels: wayfinder:grilling Type: grilling Parent: ../map.md Status: resolved Assignee: pyw1tt Blocked by: 01, 02, 09
 
 ## Question
 

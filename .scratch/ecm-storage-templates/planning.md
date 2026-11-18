@@ -1,14 +1,31 @@
 # แผนแม่แบบจัดเก็บเอกสาร DCM
 
-บันทึกการวางแผนเท่านั้น ยังไม่ใช่ spec ที่พร้อม implement และยังไม่ได้เปลี่ยน application, schema, migration หรือข้อมูล Forms/Responses รอบล่าสุดผู้ใช้อนุญาตทดสอบ DCM จริงด้วยไฟล์สังเคราะห์ตามขอบเขตท้ายเอกสาร การใช้ shared auth coordinator อาจอัปเดต operational auth cache ตามการทำงานปกติ
+บันทึกการวางแผนและประวัติหลักฐาน รอบ Wayfinder ความปลอดภัยปิด decision ครบแล้วตามสรุปด้านล่าง แต่ยังไม่ได้รับคำสั่งอนุมัติ implementation รอบแก้และไม่ใช่ release acceptance รอบนี้ไม่ได้แก้ application/schema/migration/ข้อมูล Forms/Responses หรือเรียก API ใหม่ Scoped DCM trials ท้ายเอกสารเป็นผลก่อนหน้า ไม่ใช่สิทธิ์ทดลองเพิ่ม
 
 ## สถานะคำถามปัจจุบัน
 
-- **ข้อ 2 — ปิดแล้ว:** ผู้ใช้ยืนยันพร้อมภาพทดสอบว่าชื่อ/ปลายทางเดิมเขียนทับไฟล์เดิมโดยใช้ token/URL เดิม ไม่ DELETE token เดิมซ้ำหลัง B เขียนทับสำเร็จ และไม่ถามยืนยันเรื่องนี้อีก
+- **ข้อ 2 — historical same-identity case ปิดแล้ว:** กรณีที่ B ใช้ token/URL เดิมและ overwrite A ไม่ DELETE token นั้นซ้ำ ข้อมูลนี้ไม่ใช่กฎ universal ล่าสุดมี [same-name create-new/original-byte evidence](../ecm-attachment-safety/issues/06-unknown-settlement-contract.md#2026-11-18--pyw1tt--ชื่อซ้ำสร้างรายการใหม่และ-bytes-เดิมยังอยู่ในการทดสอบที่อนุญาต) และนโยบายชื่อใหม่ด้านล่าง ส่วน guard/alias-conflict policy คุยแยก ไม่เปิด DCM-only/category grouping ใหม่
 - **ข้อ 1 — ปิดแล้ว:** เก็บไฟล์ที่ DCM แห่งเดียว ใช้ `file_link` จาก original upload response เป็นจุดเริ่มต้นดาวน์โหลดไฟล์ต้นฉบับเมื่อจำเป็นต้องนำกลับมาใช้ ไม่เก็บสำเนา attachment originals ใน RustFS หรือ DB
 - **ข้อ 3 — ปิดแล้ว:** ใช้ category `id` จาก API เป็น key ผูก `template_name`; `type` ใช้แสดงหัวข้อ/ตัวเลือกเท่านั้น ไม่ใช้ตรวจชื่อโฟลเดอร์หรือรับรองปลายทาง และไม่รอ PM ยืนยันความตรงกันของข้อความก่อนเดินแผน
 
 คำตัดสินเดิมข้อ 1–3 ปิดครบแล้ว ผู้ใช้ยืนยันเพิ่มว่าหน้า Admin ต้องจัดการรายการแม่แบบครบทั้ง list/filter เพิ่ม แก้ไข และลบ การดาวน์โหลดต้นฉบับจาก file_link ให้ได้ทุกชนิดไฟล์และการป้องกัน ownership/history/failure เป็นงานออกแบบและ verification ใน implementation ไม่ใช่คำถามให้ผู้ใช้เลือกที่เก็บไฟล์ซ้ำอีก ผลทดสอบและคำถามเก่าด้านล่างคงไว้เป็นลำดับหลักฐาน ไม่ใช่รายการ blocked ปัจจุบัน
+
+## ทบทวน HOLD หลังปิด safety map
+
+- [แผนตัดสินใจความปลอดภัยไฟล์แนบตารางและ DCM](../ecm-attachment-safety/map.md) ปิด decision ครบ 9 ตั๋ว ไม่มีคำถาม policy เดิมค้างใน map การปิดเป็นการอนุมัติขอบเขต/แผน ไม่ใช่ implementation, audit หรือผล provider ผ่าน ตารางนี้อิง owner resolutions และผลก่อนหน้าที่บันทึกไว้ ไม่ใช่ source/runtime/Production inspection ใหม่
+
+| ส่วนที่ยังต้องทำหรือยืนยัน | สถานะและขอบเขตที่ยังขาด | Canonical owner |
+| --- | --- | --- |
+| แก้บั๊กรอบสอง/naming/admission/receipt guards | รออนุมัติ implementation และ consumer-path verification ของกฎใหม่ ไม่ถือว่าคำตอบเรื่องชื่อแก้ source แล้ว | [สเปกและขอบเขตงานแก้](../ecm-attachment-safety/spec.md#ขอบเขตงานแก้หลังอนุมัติ-implementation) |
+| Native/table minimum row และ navigation/loading | Policy ปิดแล้ว ยังต้อง implementation และ actual supported editor/browser proof รวม focus/keyboard/unknown/newer-pending ไม่ใช้ HTTP แทน UI evidence | [Native support](../ecm-attachment-safety/issues/04-native-table-editing-support.md), [Minimum row](../ecm-attachment-safety/issues/05-final-row-mapping.md), [Navigation/loading](../ecm-attachment-safety/issues/07-pending-navigation-warning.md#resolution--pyw1tt--อนุมัติ-navigation-และ-loading-policy) |
+| Provider identity/history/DELETE isolation | Same-name PDF/project/template sample สนับสนุนเฉพาะกรณีนั้น ยังไม่ใช่ guarantee ของทุก reference/resource หรือ first DELETE ที่ไม่กระทบ survivor คง provider acceptance HOLD ตาม scope ที่ขาด | [Resource evidence](../ecm-attachment-safety/issues/01-provider-independent-resources.md#amendment--2026-11-18--เปลี่ยนแผนหลักฐานเป็นชื่อฐานซ้ำตามคำตอบล่าสุด) |
+| Unknown upload/uncertain dispatched DELETE | แผนสองชั้นอนุมัติแล้ว แต่ receiptless finality/settlement proof ที่ยังไม่มีไม่ถูกแทนด้วย search ว่าง/เวลา/operator note หากเกิด unresolved operation ให้คง HOLD เฉพาะ scope; postcommit cleanup warning ไม่บล็อก saved B ทั้งหมด ไม่อ้างว่ามี Production operation ค้างจริงจากแผนนี้ | [Settlement plan](../ecm-attachment-safety/issues/06-unknown-settlement-contract.md#resolution--pyw1tt--อนุมัติแผนหลักฐานสองชั้น) |
+| ข้อมูลเดิม/shared identities/recovery | อนุมัติแผน read-only inventory และ recovery policy แล้ว แต่ยังไม่มีผล audit/remediation ของ scope จริง ต้องอนุมัติ environment/records/retrieval แยก ไม่สรุปว่าเกิด Production corruption หรือบล็อกทั้งระบบ | [Inventory/recovery](../ecm-attachment-safety/issues/03-existing-aliases-recovery.md#resolution--2026-11-18--pyw1tt--เห็นด้วยกับ-q1-ถึง-q3) |
+| Provider type/size ต่อช่อง | อนุมัติแผนที่ลดเกณฑ์แล้ว แต่ยังไม่มีผลครบทุก representative type/path/0–10,000,000-byte boundary ตาม scope ใหม่ คง pending provider acceptance ไม่ขอให้เลือกชนิด/limit เดิมซ้ำ | [Per-slot evidence plan](../ecm-attachment-safety/issues/08-provider-type-size-capacity.md#resolution--pyw1tt--อนุมัติแผนชนิดไฟล์และขนาดต่อช่อง) |
+
+- **สิ่งที่ไม่ใช่ gate ของแผนต่อช่องล่าสุด:** exact upload/download byte comparison และ aggregate capacity workload ถูกผู้ใช้ตัดจากตั๋ว type/size แล้ว ไม่เก็บเป็นคำถามเปิดหรืองานทดสอบบังคับของตั๋วนั้น ผลจึงไม่รับรอง original-byte identity หรือ capacity รวม ไม่ขยายข้อยกเว้นไปลบ runtime security/integrity/reference checks หรือเปลี่ยนแผนของ owner อื่นโดยไม่มีคำสั่ง
+- **สิ่งที่เคลียร์แล้วไม่เปิดซ้ำ:** ใช้ชื่อฐานซ้ำแทน counter/timestamp/reservation, ไม่บังคับ external inventory ใน naming decision, receipt ทุก upload/round, Q3/Q4 warnings, ทุก repeating XLSX table เหลืออย่างน้อยหนึ่ง body row และ navigation/loading policy ให้ใช้ latest owner resolutions ไม่เอา historical suffix-routing HOLD กลับมาเป็น prerequisite ของชื่อฐานซ้ำ
+- **Next gate:** เสนอขอบเขตแก้บั๊กรอบสอง/กฎที่อนุมัติแล้วเพื่อขอคำสั่ง implementation ไม่รื้อ policy ที่ปิดแล้ว การตรวจข้อมูลจริง/real DCM/DELETE/remediation/push/deploy ยังต้องอนุมัติขอบเขตแยก และยังไม่ประกาศ release ผ่านจากการปิด map
 
 ## หลักฐานผู้ใช้เพิ่มเติมหลังการประเมินความเสี่ยงตาราง
 
@@ -16,6 +33,20 @@
 - รับข้อมูลนี้เป็นหลักฐานจากผู้ใช้ ไม่เปิดคำถามว่ามี wildcard routing หรือแยก folder ปี/หมวดหมู่ได้จริงหรือไม่ซ้ำ ไม่ถือผลจำลอง wildcard ของผู้ช่วยเป็นหลักฐานแทนผลทดสอบของผู้ใช้ และไม่แก้ whitespace ของแพทเทิร์นที่แจ้งโดยเดา semantics
 - หลักฐานนี้เพิ่มเติมและแทนสถานะไม่ทราบว่ามีการจับแพทเทิร์นหรือไม่ใน snapshot เก่า เฉพาะ scenario ที่ผู้ใช้ยืนยัน ไม่ได้ระบุผลทดสอบ byte independence ของไฟล์ชื่อเติมเลข, case normalization, namespace ที่ใช้ร่วมกับระบบอื่น หรือ unknown-request settlement จึงแยกประเด็นเหล่านั้นไว้โดยไม่ลดน้ำหนักผล routing ที่ยืนยันแล้ว
 - ผู้ใช้สั่งให้ commit งานเดิมทั้งหมดก่อน แล้วเก็บแนวทางป้องกันชื่อชนข้ามรอบเป็นสเปก และใช้ Wayfinder หรือ grill-with-docs กับความเสี่ยงคงเหลือ คำสั่งนี้เป็นงานวางแผน ไม่ใช่การอนุญาตแก้ application/DB หรือทดสอบเขียน DCM จริงเพิ่มเติม
+
+## ข้อสรุปชื่อข้าม Save — Q1 A และ Q2 A — 2026-11-18
+
+- ผู้ใช้ตอบ “เลือกA” ต่อ Q1 ล่าสุด ตาม [Resolution ใช้ชื่อฐานซ้ำและแยกไฟล์ด้วย receipt](../ecm-attachment-safety/issues/02-external-filename-collisions.md#resolution--2026-11-18--pyw1tt--ใช้ชื่อฐานซ้ำและแยกไฟล์ด้วย-receipt) ให้ actual template-mode uploads ใช้ชื่อฐานซ้ำได้ ไม่เติม generated counter/timestamp และไม่ทำ durable filename reservation ทั้งใน batch และข้าม Save
+- [สเปกชื่อไฟล์](../ecm-attachment-safety/spec.md#implementation-decisions) เป็นเจ้าของ contract เพียงแห่งเดียว แต่ละ slot/revision ใช้ original upload receipt ของตน ไฟล์ไม่เปลี่ยน reuse reference เดิม Legacy UUID, old files/receipts และ frozen template metadata ไม่เปลี่ยน Q2 ไม่บังคับ external inventory/search/หาเจ้าของคงเดิม ไม่ authorize arbitrary DELETE หรือ unknown retry
+- Counter/reservation/timestamp ด้านล่างคงเป็นประวัติ ไม่ใช่กฎล่าสุด ผล tests เก่าไม่ใช่ acceptance ของกฎนี้ [ขอบเขต guard และ Q3/Q4 warnings](../ecm-attachment-safety/issues/09-duplicate-name-guard-policy.md#resolution--2026-11-18--pyw1tt--guard-และคำเตือนที่จำแนกได้) ปิดขั้นตัดสินแล้ว ยังรอคำสั่งอนุมัติ implementation ของการแก้รอบใหม่นี้ ไม่อนุญาต application/schema/DB/live calls/push/deploy และไม่รับรอง provider ทุก scope
+
+## ข้อแก้ไขชื่อเป็น timestamp — 2026-11-18
+
+**Historical decision — superseded:** รูปแบบ timestamp ในส่วนนี้ถูกแทนด้วย Q1 A ตามข้อสรุปชื่อข้าม Save ด้านบน คงข้อความต่อไปนี้เป็นประวัติการตัดสินใจ ไม่ใช่ contract ปัจจุบัน
+
+- ผู้ใช้ตอบ “ได้เลย” ต่อรูปแบบ timestamp เวลาไทย และ “ยอมรับความเสี่ยงได้” ต่อ residual external-collision risk รายละเอียดคำตอบและคำถาม milliseconds/Q2 ที่ยังคุยอยู่เป็นของ [ป้องกันชื่อชนกับไฟล์นอก Folio ledger](../ecm-attachment-safety/issues/02-external-filename-collisions.md#2026-11-18--pyw1tt--อนุมัติ-timestamp-และยอมรับ-external-collision-risk)
+- [สเปกชื่อข้าม Save](../ecm-attachment-safety/spec.md#implementation-decisions) เป็นเจ้าของรูปแบบ timestamp และ durable reservation เพียงแห่งเดียว ใช้แทน `-(1)`, `-(2)` สำหรับ actual new uploads ใน template mode รวมรายการแรกและทุก batch ไม่แก้ชื่อไฟล์เก่า/frozen template metadata หรือ legacy UUID contract
+- ข้อแก้ไข per-batch ด้านล่างและ BATCH tests เป็นประวัติ implementation/ผลตรวจเดิม ไม่ใช่ intended policy สำหรับงานถัดไปหรือ timestamp acceptance ไม่มี application, schema, live DCM, push หรือ deploy จาก amendment นี้ Provider byte independence/name preservation และ unknown settlement ยังต้องพิสูจน์แยก การยอมรับ external collision risk ไม่ใช่อนุมัติ release
 
 ## ข้อแก้ไขนโยบายชื่อซ้ำภายใน batch — 2026-11-17
 
@@ -26,7 +57,6 @@
 ข้อแก้ไขนี้ supersede การยอมส่งชื่อซ้ำ unchanged ภายใน batch และข้อห้าม suffix เฉพาะกรณีนี้ ไม่เปลี่ยนคำตัดสินปิดแล้วข้อ 1–3 ไม่ข้าม ownership/history/unknown-operation guards และไม่เพิ่ม POST/DELETE retry ดู contract ฉบับเต็มที่ [spec ข้อ 6](spec.md#6-template-mode-upload)
 
 **Local implementation verified:** [BATCH evidence](acceptance-matrix.md#batch-filename-verification) มี final HTTP 143 ผ่าน/0 fail และ standalone real-listener smoke ที่ได้ชื่อเดิม/`-(1)`/`-(2)` พร้อม bytes แยก physical rows คง guard เดิม ผล native/HTTP/provider ก่อนหน้าเป็น historical evidence ไม่ใช่หลักฐานใหม่นี้ ไม่มี live DCM calls การจับแม่แบบ/ปลายทางของชื่อเติมเลขยัง **unverified / HOLD** ไม่รับรอง DCM acceptance, cross-batch uniqueness หรือ token/URL อิสระทุกไฟล์
-
 
 ## สิ่งที่ผู้ใช้ต้องการ
 
@@ -145,7 +175,7 @@
 ### Upload และการเปลี่ยนไฟล์
 
 7. รูปแบบใหม่ตรวจ `docs_number` จาก root Tag กับ Storage Template ที่ Admin เลือก ไม่บังคับ Tag `fiscal_year` แต่ไม่ลบ Field/คำตอบปีหรือข้าม required Field rules อื่นของฟอร์ม
-8. ส่ง original bytes เป็น multipart `documentFile` พร้อม `template="1"` เท่านั้น Base filename เป็น `<docs_number>-<template_name>.<original-extension>`; คง original extension/casing และไม่เติมนามสกุลเอง ชื่อซ้ำภายใน batch ใช้ counter ตามข้อแก้ไขนโยบายด้านบน ไม่เพิ่ม UUID/รหัสฉบับหรือ row identity
+8. ส่ง original bytes เป็น multipart `documentFile` พร้อม `template="1"` เท่านั้น Base filename เป็น `<docs_number>-<template_name>.<original-extension>`; ใช้ชื่อซ้ำได้โดยเก็บ receipt แต่ละ upload คง original extension/casing และไม่เติมนามสกุลเอง ไม่มี generated counter/timestamp/reservation ตาม [สัญญาชื่อล่าสุด](../ecm-attachment-safety/spec.md#implementation-decisions) ไม่เพิ่ม UUID/รหัสฉบับหรือ row identity ใน template mode
 9. เลือกไฟล์อย่างเดียวไม่ upload ใช้จังหวะ Save Draft/Submit เดิม เมื่อ B เขียนทับด้วย token/identity เดียวกับ A ไม่ DELETE token นั้นซ้ำ กรณีไฟล์คนละ identity ทำ cleanup A หลัง canonical B commit และผ่าน ownership/reference checks เท่านั้น ถ้าลบ A ไม่สำเร็จ B ยังส่งสำเร็จพร้อม warning ที่คงอยู่ และไม่อ้างว่า external in-place overwrite สามารถ rollback ด้วย DB transaction ได้
 10. Canonical JSON เก็บ URL/token/ชื่อเดิม/ขนาดตาม contract เดิม หลัง Submit แสดง URL ของไฟล์ที่บันทึกแทนปุ่มในโหมดดู/ส่งออก ส่ง URL ของ provider ตามจริง ไม่ export file token เป็น field แยก และไม่ส่ง service Bearer/credentials ลง workbook ทั้งนี้ URL ของ provider อาจมี file token อยู่ใน query ตามผล live ท้ายเอกสาร
 11. คงทุกชนิดไฟล์, ขอบเขต 0–10,000,000 bytes, requiredness, row ownership, validation และการป้องกัน unknown outcomes ของระบบเดิม ไม่ยืม PDF-only gate ของ Ongoing หรือเพิ่มการ retry upload/delete อัตโนมัติ
@@ -208,11 +238,11 @@ Hindsight `pdms-knowledge` recall ได้ผล retrieved แต่ส่ว�
 
 ### Supported — bytes, receipts และผล DELETE A
 
-| จุดตรวจผ่าน flow viewer ปกติ | ขนาด bytes | ผล |
-| --- | ---: | --- |
-| A หลังอัปโหลด ก่อนส่ง B | 24,478 | SHA-256 ตรงกับ fixture A |
-| B ก่อน DELETE A | 24,770 | SHA-256 ตรงกับ fixture B |
-| B หลัง DELETE A | 24,770 | SHA-256 ยังตรงกับ fixture B |
+| จุดตรวจผ่าน flow viewer ปกติ | ขนาด bytes | ผล                        |
+| ------------------------- | ---------: | ------------------------- |
+| A หลังอัปโหลด ก่อนส่ง B       |     24,478 | SHA-256 ตรงกับ fixture A   |
+| B ก่อน DELETE A            |     24,770 | SHA-256 ตรงกับ fixture B   |
+| B หลัง DELETE A            |     24,770 | SHA-256 ยังตรงกับ fixture B |
 
 - อัปโหลด B ชื่อเดียวกับ A แล้ว response ของ B มี `file_name` และ `file_path` เท่ากับ A แต่ได้ `file_token` และ `file_link` คนละค่า ก่อน DELETE พบรายการ A/B แยกกันใน search ต้องใช้ receipt ที่ API ตอบจริง ไม่ใช้ token A แทน receipt B
 - `file_datetime_edit` ของ A/B ต่างกัน นี่ไม่พิสูจน์ว่า DCM update แถวเดิม เพราะผลรอบนี้มี token/URL ใหม่และรายการ A/B แยกกัน ไม่แปลงชื่อ field เป็น `update_at` ตามคำอธิบายเดิม
@@ -263,11 +293,11 @@ Hindsight `pdms-knowledge` recall ได้ผล retrieved แต่ส่ว�
 
 ใช้ PDF สังเคราะห์ชุดใหม่ใน DCM ชื่อเดิมที่ได้รับอนุญาต ตรวจไม่พบไฟล์ชื่อเป้าหมายก่อนสร้าง A และยืนยัน A ก่อนส่ง B ไม่มีการ login เพิ่ม
 
-| จุดตรวจ | ขนาด bytes | ผล SHA-256 |
-| --- | ---: | --- |
-| A ก่อนส่ง B | 24,478 | ตรงกับ fixture A |
-| URL/token A หลังส่ง B ชื่อเดียวกัน | 24,478 | ยังตรงกับ fixture A ไม่ใช่ B |
-| URL/token B หลังส่ง B | 24,770 | ตรงกับ fixture B ไม่ใช่ A |
+| จุดตรวจ                       | ขนาด bytes | ผล SHA-256               |
+| ---------------------------- | ---------: | ------------------------ |
+| A ก่อนส่ง B                    |     24,478 | ตรงกับ fixture A          |
+| URL/token A หลังส่ง B ชื่อเดียวกัน |     24,478 | ยังตรงกับ fixture A ไม่ใช่ B |
+| URL/token B หลังส่ง B          |     24,770 | ตรงกับ fixture B ไม่ใช่ A   |
 
 รอบนี้จึง supported ว่า A/B ของตัวอย่างเก็บเนื้อหาคนละฉบับ ไม่ใช่เพียง token/URL ต่างกัน แต่ไม่รับรอง semantics ทุก environment หรือการอัปโหลดพร้อมกัน เครื่องมือ DevTools เก็บ response body บางรอบไม่ได้ (`Network.getResponseBody` ไม่มี resource) จึงไม่นับรอบเหล่านั้นเป็นผลไฟล์เสีย การตรวจสำเร็จใช้ bounded diagnostic proxy ส่ง read request เดิมจาก viewer เพียงครั้งเดียวไป origin เดิม ตรวจ bytes ก่อนส่งกลับหน้าเดิม ไม่สร้าง URL เดา ไม่ login และไม่ใช้ผลนี้อนุมัติ private viewer route เป็น production download contract
 
@@ -336,4 +366,3 @@ URL ของ DCM ที่ถูกเขียนทับจะชี้ไ�
 ### สถานะงาน
 
 ข้อ 1–3 เดิมปิดครบแล้ว ไม่มีการรอให้เลือก RustFS หรือให้ PM เทียบข้อความชื่อหมวดอีก CRUD ครบเป็น acceptance ของฟีเจอร์ ไม่ใช่งานตัดทอนเหลือ create/list เท่านั้น รอบนี้แก้เอกสารแผน/ศัพท์/งานวิจัยให้ตรงกัน ยังไม่เปลี่ยน application, DB schema/migration, Forms/Responses หรือ .env และไม่เรียก live API เพิ่ม การโหลดต้นฉบับจาก file_link และ CRUD ทุกทางยังต้องพัฒนาและพิสูจน์ก่อนส่งงาน
-

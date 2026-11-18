@@ -1,11 +1,6 @@
 # ข้อเท็จจริง ECM: login และความสามารถจัดการไฟล์
 
-Labels: wayfinder:research
-Type: research
-Parent: ../map.md
-Status: resolved
-Assignee: pyw1tt (research agent: EcmApiFacts)
-Blocked by:
+Labels: wayfinder:research Type: research Parent: ../map.md Status: resolved Assignee: pyw1tt (research agent: EcmApiFacts) Blocked by:
 
 ## Question
 

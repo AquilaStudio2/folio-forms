@@ -52,7 +52,6 @@ Implemented on `feat/storage-templates-01`, worktree `/tmp/folio-storage-templat
 - `CONTEXT.md` already defines Document Category identity and Storage Template catalog semantics, so it is intentionally unchanged. Updated workflow map source, page diagram/table and catalog/API/auth/failure explanations. Integration owner must regenerate workflow artifacts and run `docs:workflow:build` / `docs:workflow:check` after merging all source changes.
 - No live DCM/PDMS contact, `.env` change, DCM template/folder mutation, upload, rename or file DELETE. Provider routing acceptance is separate and is not established by catalog CRUD.
 
-
 ### Parent integration disposition — 2026-11-17
 
 Persisted Admin CRUD/filter/category-ID behavior, authorization and keyboard/error paths are supported by E01/E08/ROOT.

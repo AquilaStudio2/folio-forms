@@ -1,11 +1,6 @@
 # ยืนยันสัญญา ECM ที่เอกสารยังไม่ตอบ
 
-Labels: wayfinder:task
-Type: task
-Parent: ../map.md
-Status: resolved
-Assignee: pyw1tt
-Blocked by: 01, 02
+Labels: wayfinder:task Type: task Parent: ../map.md Status: resolved Assignee: pyw1tt Blocked by: 01, 02
 
 ## Question
 

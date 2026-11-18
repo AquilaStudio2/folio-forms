@@ -62,7 +62,6 @@
 - Managed Chrome sessions repeatedly disappeared; actual native proof completed through separately owned external Chrome/CDP. Initial smoke fixture mistakenly shared main-template/initial-Draft object keys; only synthetic template bytes were restored, and the final position fixture uses distinct keys. Picker automation initially selected before initialization/relay settlement; final proof waits for the actual pending state before saving.
 - Provider double proves Folio behavior, not live DCM compatibility, deployed behavior, external rollback, immutable provider bytes, or independent resources for duplicate filenames. Historical unknown reference positions/digests are not fabricated. Parent still owns integrated verification, generated workflow artifacts, review, and release.
 
-
 ### Parent integration verification — 2026-11-17
 
 - Merged05 into `feat/ecm-storage-templates` at `d399a810f89cede072d621cf3a3b94202ce80b9c` with no conflicts. Parent generated the client and deployed only `20261117031000_attachment_reference_rows` to the task-owned integration DB; all36 migrations are applied there, without reset.

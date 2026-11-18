@@ -1,11 +1,6 @@
 # วงจรไฟล์ร่างและการบันทึกโดยไม่สูญหาย
 
-Labels: wayfinder:grilling
-Type: grilling
-Parent: ../map.md
-Status: resolved
-Assignee: pyw1tt
-Blocked by: 01, 04, 06, 07, 11, 12, 13
+Labels: wayfinder:grilling Type: grilling Parent: ../map.md Status: resolved Assignee: pyw1tt Blocked by: 01, 04, 06, 07, 11, 12, 13
 
 ## Question
 

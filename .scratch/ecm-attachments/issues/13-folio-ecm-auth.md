@@ -1,11 +1,6 @@
 # ECM login และ token ของ Folio ด้วยบัญชีแยก
 
-Labels: wayfinder:grilling
-Type: grilling
-Parent: ../map.md
-Status: resolved
-Assignee: pyw1tt
-Blocked by: 01
+Labels: wayfinder:grilling Type: grilling Parent: ../map.md Status: resolved Assignee: pyw1tt Blocked by: 01
 
 ## Question
 

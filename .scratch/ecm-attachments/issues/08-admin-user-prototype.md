@@ -1,11 +1,6 @@
 # หน้าตั้งค่าปลายทางและสถานะไฟล์ที่ผู้ใช้เข้าใจ
 
-Labels: wayfinder:grilling
-Type: grilling
-Parent: ../map.md
-Status: resolved
-Assignee: pyw1tt
-Blocked by: 03, 04, 05, 06, 07
+Labels: wayfinder:grilling Type: grilling Parent: ../map.md Status: resolved Assignee: pyw1tt Blocked by: 03, 04, 05, 06, 07
 
 ## Question
 

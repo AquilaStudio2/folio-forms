@@ -1,11 +1,6 @@
 # แหล่งเลขที่หนังสือยืนยันและกติกาชื่อไฟล์
 
-Labels: wayfinder:grilling
-Type: grilling
-Parent: ../map.md
-Status: resolved
-Assignee: pyw1tt
-Blocked by: 02, 03
+Labels: wayfinder:grilling Type: grilling Parent: ../map.md Status: resolved Assignee: pyw1tt Blocked by: 02, 03
 
 ## Question
 
