@@ -102,6 +102,24 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
   let uncertain = false;
   let unavailable = false;
   let sequence = 0;
+  const reportCandidate = (dirty) => {
+    if (!options || !target) {
+      return;
+    }
+    hostWindow.top.postMessage(
+      {
+        ...target,
+        bridgeId: options.bridgeId,
+        documentKey: options.documentKey,
+        scopeIdentity: options.scopeIdentity,
+        requestId: "picker-candidate",
+        source: "folio-upload-poc",
+        type: "pending-file-candidate",
+        dirty,
+      },
+      options.parentOrigin
+    );
+  };
   const notify = (text, error = false) => {
     const warnings = [baseline?.mutationNotice, baseline?.commitNotice]
       .filter(Boolean)
@@ -143,6 +161,11 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
     filename.textContent = name || "ยังไม่ได้เลือกไฟล์";
     filesize.textContent =
       name && Number.isSafeInteger(size) && size >= 0 ? `${size} ไบต์` : "";
+    selectionHint.textContent = operation
+      ? "เลือกในกล่อง — ยังไม่บันทึก"
+      : baseline?.filename || baseline?.removal
+        ? "ยืนยันไฟล์แล้ว — รอบันทึกแบบฟอร์ม"
+        : "ยืนยันที่นี่ แล้วบันทึกแบบฟอร์มที่หน้าหลักเพื่ออัปโหลด";
     selectedFile.hidden = hasSaved && !name;
     removal.hidden = !(removing || (!operation && baseline?.removal === true));
     const locked = Boolean(pending || uncertain || unavailable || !baseline);
@@ -263,6 +286,7 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
       return;
     }
     if (requestType !== "pending-file-get") {
+      reportCandidate(false);
       plugin.executeCommand("close", "");
       return;
     }
@@ -296,6 +320,7 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
     selected = file;
     operation = "pending-file-set";
     render();
+    reportCandidate(true);
   });
   retry.addEventListener("click", () => {
     if (pending && !pending.timedOut) {
@@ -322,6 +347,7 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
           : "pending-file-remove";
     }
     render();
+    reportCandidate(Boolean(operation));
   });
   plugin.init = (data) => {
     try {
@@ -380,6 +406,7 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
       hostWindow.clearTimeout(pending.timeout);
       pending = null;
     }
+    reportCandidate(false);
     plugin.executeCommand("close", "");
   };
 };

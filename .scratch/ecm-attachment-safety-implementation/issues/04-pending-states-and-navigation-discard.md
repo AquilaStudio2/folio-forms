@@ -33,3 +33,49 @@ File bytes อยู่ใน browser memory ตามเดิม ไม่ม�
 ## Comments
 
 2026-11-18: ผู้ใช้อนุมัติ breakdown ให้เริ่มตั๋วนี้โดยไม่มี ticket blocker ได้เมื่อมีคำสั่ง implementation การเผยแพร่ยังไม่ใช่คำสั่งเริ่มพัฒนา และไม่ใช่ browser prompt acceptance
+
+### Implementation — 2026-11-18 — isolated worktree `feat/ecm-safety-04`
+
+- Implemented code, not integrated/native acceptance. Status remains open until the parent checks the delivery integration branch.
+- Picker now reports scoped candidate dirty state without sending File bytes. Candidate selection/removal differs from confirmed pending; confirmation still waits for the existing acknowledgement before closing. Cancel/X clears only the candidate warning and preserves the host baseline. Saved receipt display remains separate.
+- Host combines candidate, confirmed pending, and ordinary document dirty state. Candidate messages require the existing editor-frame/origin/bridge/document/scope checks. A candidate prevents document-changing pending checks until the user confirms or cancels. No upload, persistence, or recovery layer was added.
+- Host completion exposes `hasAttachmentCandidates`; `hasPendingAttachments` includes candidates. Fill does not remount a completed Draft over an open candidate; Correction workspace also preserves the candidate frame. Final Correction retains the existing retired-workspace/newer-pending guard.
+- Fill's exit action no longer deletes the saved Response or offers Save-and-exit for navigation. Explicit discard leaves via the existing blocker/navigation only. Reauthentication retains its separate existing explicit-save flow. Fill reuses the native `<dialog>` pattern already used by Correction: safe initial focus, Escape/Cancel, native focus containment/return, and labelled controls. Both routes use the approved discard labels.
+- Existing `useBlocker` owns internal route/back and best-effort `beforeunload`; Fill now also treats active saving as protected. Navigation does not clear, fence, cancel, or resend an attachment checkpoint. Original-Operation reconciliation and saved-copy access remain unchanged.
+- Ticket02 interface request implemented here: pending last-row delete rejects before state mutation; full-mapping protocol and pending transition validation reject a table destination with zero rows. Regressions cover empty/File/removal/invalid pending state preservation. No `spreadsheet.js` or `operations.js` changes.
+
+#### Regressions and commands for integration owner
+
+No build, lint, formatter, test, browser, provider, or live-data execution was performed in this worker, per assignment. Tests were added/updated but are not reported passing. Existing component/protocol fixtures are supporting regression coverage, not browser/native or HTTP-provider acceptance.
+
+```sh
+bun test apps/onlyoffice-plugin/test/upload-poc-picker.test.js
+bun run --cwd apps/web test:ui test/ui/upload-poc-pending.test.tsx test/ui/editor-reconnect.test.tsx test/ui/excel-fill.test.tsx test/ui/correction-preview.test.tsx
+```
+
+- Picker consumer regression: candidate warning appears; Cancel clears that warning but keeps a previous confirmed File. Existing Cancel/X, invalid-file, acknowledgement timeout/retry, saved receipt, and removal cases remain.
+- Host regression: foreign-frame candidate is ignored; valid candidate raises dirty state; Cancel clears only candidate dirty state; ordinary edits and confirmed pending remain dirty; no file POST is emitted.
+- Fill regression: explicit exit during an outstanding PDF conversion aborts only that download, sends no additional request, and does not request a save. Cancel/Escape preserve local work and keep exit warning available.
+- Correction regression now includes a candidate arriving after capture, alongside replacement/removal: completion preserves editor and requires explicit discard from the retired workspace.
+- Existing HTTP evidence owners should run H06/H09 on integration source: unchanged picker/route cancellation has no ECM POST/DELETE; saved canonical receipts remain; original checkpoint recovery uses the original Operation and does not resend. Component fetch assertions are not a substitute.
+
+#### Required actual browser/editor scenarios — not exercised
+
+Use the isolated actual app, PostgreSQL/object-store, controlled provider, and supported browser/ONLYOFFICE. Record browser/version, integration revision, canonical receipt/checkpoint and provider write counts before/after each action. Do not use real DCM.
+
+1. Start from a clean saved Draft/Correction: route link and browser Back leave without a dirty prompt. Open a link in a new tab: original page and File stay unchanged, with no discard prompt or File transfer.
+2. Open picker on saved A; select candidate B without confirming. Verify candidate status beside saved A. Try host route link and Back; safe button, Escape, and Cancel keep page/B. Confirm discard leaves without POST/DELETE and saved A remains on reopen.
+3. Confirm B, reopen picker, select C, then Cancel and X separately: B remains confirmed pending, A remains canonical, C is discarded. Repeat with pending removal and restoration to the baseline.
+4. With confirmed replacement, confirmed removal, ordinary native cell edits, and ordinary NativeForm edits separately, try route link/Back and explicit form exit. Cancel/Escape preserve all work; explicit discard preserves saved canonical JSON/document/receipts, without automatic save/upload/DELETE.
+5. During confirmation acknowledgement delay, Cancel/X must not claim cancellation before settlement. During active save, retain current navigation protection; full native active-cell/keyboard locking is ticket05, not accepted here.
+6. Complete a captured Correction with a newer candidate/File/removal: editor remains, old Correction is saved, newer work is not saved, repeat Save remains disabled, and only explicit discard permits exit. Open a new Correction from current revision and select a new File manually.
+7. Refresh/close with candidate/confirmed/removal/ordinary work: record whether browser presents `beforeunload`. It is best-effort; custom prompt text and unconditional interception are not promised. After reload, unsaved File bytes are not recoverable from names/checkpoints.
+8. Leave/reload with an existing unresolved original checkpoint: its identity/HOLD survives. Returning reconciles the original Operation before mutation and never causes an automatic resend/DELETE. Saved canonical-copy access remains available under existing permissions.
+9. In the actual browser, verify safe initial focus, Tab/Shift+Tab containment, Escape cancellation, and focus return for both exit dialogs. JSDOM dialog method fixtures do not prove these boundaries.
+
+#### Parent-owned documentation deltas
+
+- `CONTEXT.md` / system map: distinguish picker candidate, confirmed pending, canonical saved; document memory-only candidate dirty reporting and `hasAttachmentCandidates` completion/remount fence.
+- Fill exit is local discard only, not Response deletion or Save-and-exit. Reauthentication's explicit save remains separate.
+- Existing router blocker owns route/back and best-effort unload. Leaving never proves original-request cancellation, clears a checkpoint, or restores browser File bytes.
+- Keep final Correction/newer-pending safeguards and ticket05 native active-save acceptance separate. Record browser/HTTP evidence as unverified until exercised on the integration branch.

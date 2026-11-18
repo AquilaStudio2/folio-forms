@@ -104,7 +104,9 @@ const AdminCorrectionRoute = () => {
     }
     if (bridgeMessage.action === "save-correction-workspace") {
       setMessage(null);
-      setRevision((value) => value + 1);
+      if (!bridgeMessage.hasAttachmentCandidates) {
+        setRevision((value) => value + 1);
+      }
       return;
     }
     allowNavigationRef.current = true;
@@ -156,9 +158,10 @@ const AdminCorrectionRoute = () => {
         <div className="mt-6 flex flex-wrap justify-end gap-2">
           <Button
             variant="secondary"
+            autoFocus
             onClick={() => navigationBlocker.reset?.()}
           >
-            อยู่ต่อ
+            อยู่หน้านี้ต่อ
           </Button>
           <Button
             disabled={saving}
@@ -168,7 +171,7 @@ const AdminCorrectionRoute = () => {
               navigationBlocker.proceed?.();
             }}
           >
-            ออกโดยไม่บันทึก
+            ทิ้งการเปลี่ยนแปลงและออก
           </Button>
         </div>
       </dialog>

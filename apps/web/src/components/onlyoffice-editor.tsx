@@ -156,6 +156,7 @@ export const OnlyOfficeEditor = ({
   } | null>(null);
   const lastClearDirtyRequestRef = useRef(0);
   const documentDirtyRef = useRef(false);
+  const candidateSourcesRef = useRef(new Set<MessageEventSource>());
   const lastSaveRequestRef = useRef(0);
   const terminalOperationIdsRef = useRef(new Set<string>());
   const mountGenerationRef = useRef(0);
@@ -188,7 +189,10 @@ export const OnlyOfficeEditor = ({
     const bridge = config?.bridge;
     const documentKey = bridge?.documentKey;
     return async () => {
-      if (uploadPocFilesRef.current?.hasPending()) {
+      if (
+        uploadPocFilesRef.current?.hasPending() ||
+        candidateSourcesRef.current.size > 0
+      ) {
         throw new Error("มีไฟล์แนบที่ยังไม่บันทึก กรุณากดบันทึกฉบับร่างหรือส่งก่อนดาวน์โหลด");
       }
       if (uploadPocFilesRef.current?.hasUnresolvedCommit()) {
@@ -827,6 +831,12 @@ export const OnlyOfficeEditor = ({
       const requestedLeaseId = leaseRef.current?.id;
       let result: Record<string, unknown>;
       try {
+        if (
+          data.type === "pending-file-check" &&
+          candidateSourcesRef.current.size > 0
+        ) {
+          throw new Error("มีการเลือกในกล่องที่ยังไม่ยืนยัน กรุณายืนยันหรือยกเลิกในกล่องก่อนดำเนินการ");
+        }
         const currentOptions =
           options.action === "template-edit"
             ? await refreshUploadPocOptions(options)
@@ -845,7 +855,9 @@ export const OnlyOfficeEditor = ({
           result = holder.handle(data, currentOptions);
           if (typeof result.hasPending === "boolean") {
             onDirtyChangeRef.current?.(
-              documentDirtyRef.current || holder.hasPending()
+              documentDirtyRef.current ||
+                holder.hasPending() ||
+                candidateSourcesRef.current.size > 0
             );
           }
           const status = await holder.refreshStatus(currentOptions);
@@ -902,9 +914,11 @@ export const OnlyOfficeEditor = ({
         pluginOrigin
       );
       const hasPending = holder.hasPending();
-      if (hasPending) {
-        onDirtyChangeRef.current?.(true);
-      }
+      onDirtyChangeRef.current?.(
+        documentDirtyRef.current ||
+          hasPending ||
+          candidateSourcesRef.current.size > 0
+      );
       if (!result.error) {
         if (
           typeof result.cleanupWarning === "string" ||
@@ -962,6 +976,22 @@ export const OnlyOfficeEditor = ({
           data.scopeIdentity !== options.scopeIdentity ||
           typeof data.requestId !== "string"
         ) {
+          return;
+        }
+        if (data.type === "pending-file-candidate") {
+          if (typeof data.dirty !== "boolean" || !event.source) {
+            return;
+          }
+          if (data.dirty) {
+            candidateSourcesRef.current.add(event.source);
+          } else {
+            candidateSourcesRef.current.delete(event.source);
+          }
+          onDirtyChangeRef.current?.(
+            documentDirtyRef.current ||
+              uploadPocFilesRef.current?.hasPending() === true ||
+              candidateSourcesRef.current.size > 0
+          );
           return;
         }
         void respondToUploadPoc(event, data);
@@ -1062,7 +1092,9 @@ export const OnlyOfficeEditor = ({
       if (dirtyMessage) {
         documentDirtyRef.current = dirtyMessage.dirty;
         onDirtyChangeRef.current?.(
-          dirtyMessage.dirty || uploadPocFilesRef.current?.hasPending() === true
+          dirtyMessage.dirty ||
+            uploadPocFilesRef.current?.hasPending() === true ||
+            candidateSourcesRef.current.size > 0
         );
         return;
       }
@@ -1186,7 +1218,8 @@ export const OnlyOfficeEditor = ({
           return;
         }
         setAttachmentNotice(
-          uploadPocFilesRef.current?.hasPending()
+          uploadPocFilesRef.current?.hasPending() ||
+            candidateSourcesRef.current.size > 0
             ? "มีไฟล์ที่เลือกใหม่ยังไม่อยู่ในรอบบันทึกที่สำเร็จ กรุณารักษาหน้านี้ไว้"
             : null
         );
@@ -1208,7 +1241,10 @@ export const OnlyOfficeEditor = ({
       }
       message = {
         ...message,
-        hasPendingAttachments: uploadPocFilesRef.current?.hasPending() ?? false,
+        hasAttachmentCandidates: candidateSourcesRef.current.size > 0,
+        hasPendingAttachments:
+          uploadPocFilesRef.current?.hasPending() === true ||
+          candidateSourcesRef.current.size > 0,
       };
       onBridgeMessageRef.current?.(message);
     };

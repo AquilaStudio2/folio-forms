@@ -64,13 +64,18 @@ const harness = ({
   host = options,
 } = {}) => {
   const messages = [];
+  const candidates = [];
   const listeners = new Set();
   const timers = new Map();
   const replies = new Map();
   let timerId = 0;
   let closes = 0;
   const top = {
-    postMessage: (message, origin) => messages.push({ message, origin }),
+    postMessage: (message, origin) =>
+      (message.type === "pending-file-candidate" ? candidates : messages).push({
+        message,
+        origin,
+      }),
   };
   const hostWindow = {
     addEventListener: (_type, callback) => listeners.add(callback),
@@ -172,6 +177,7 @@ const harness = ({
   );
   return {
     ack,
+    candidates,
     choose,
     closed: () => closes,
     elements,
@@ -192,6 +198,23 @@ const open = (configuration, target = data) => {
   return h;
 };
 const savedHost = () => ({ ...options, savedData: { document: { ...saved } } });
+
+test("candidate navigation warning clears on Cancel without clearing confirmed baseline", () => {
+  const store = new UploadPocPendingFiles();
+  store.handle({
+    ...scalar,
+    ...options,
+    file: new File(["old"], "confirmed.txt"),
+    type: "pending-file-set",
+  }, options);
+  const h = open({ store }, scalar);
+  h.choose(new File(["new"], "candidate.txt"));
+  expect(h.candidates.at(-1).message.dirty).toBe(true);
+  expect([...store.snapshot().values()][0].name).toBe("confirmed.txt");
+  h.plugin.button(1);
+  expect(h.candidates.at(-1).message.dirty).toBe(false);
+  expect([...store.snapshot().values()][0].name).toBe("confirmed.txt");
+});
 
 test("picker validates OLE metadata and refuses ambiguous legacy table row", () => {
   expect(() => uploadPocPickerTarget("{} ")).toThrow();

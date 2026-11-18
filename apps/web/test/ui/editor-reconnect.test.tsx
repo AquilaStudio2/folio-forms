@@ -779,6 +779,57 @@ it("keeps pending checkpoint recovery bounded and retryable without opening edit
   }
 });
 
+it("reports candidates independently from ordinary edits and confirmed pending without writing bytes", async () => {
+  const base = exportConfig("document", "lease");
+  transport.get.mockResolvedValue({
+    ...base,
+    bridge: {
+      ...base.bridge,
+      uploadPoc: uploadOptions("document", "editor-bridge"),
+    },
+  });
+  const dirty = vi.fn();
+  render(<OnlyOfficeEditor configUrl="/editor-config" title="Candidates" onDirtyChange={dirty} />);
+  const office = await screen.findByTitle("Office sandbox") as HTMLIFrameElement;
+  const picker = pluginFrame(office);
+  const message = {
+    documentKey: "document",
+    scopeIdentity: "actor/response",
+    requestId: "candidate",
+    source: "folio-upload-poc",
+    type: "pending-file-candidate",
+  };
+  send(window, { ...message, dirty: true });
+  expect(dirty).not.toHaveBeenCalled();
+  send(picker.source, { ...message, dirty: true });
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  send(picker.source, { ...message, dirty: false });
+  expect(dirty).toHaveBeenLastCalledWith(false);
+  send(picker.source, { type: "bridge-ready" });
+  send(picker.source, { dirty: true, type: "dirty-state" });
+  send(picker.source, { ...message, dirty: true });
+  send(picker.source, { ...message, dirty: false });
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  send(picker.source, { dirty: false, type: "dirty-state" });
+  send(picker.source, {
+    ...message,
+    bindingId: "folio_file",
+    tag: "file",
+    rowIndex: null,
+    file: new File([], "confirmed.bin"),
+    type: "pending-file-set",
+  });
+  await waitFor(() => expect(picker.send).toHaveBeenCalledWith(
+    expect.objectContaining({ filename: "confirmed.bin" }),
+    window.location.origin
+  ));
+  send(picker.source, { ...message, dirty: true });
+  send(picker.source, { ...message, dirty: false });
+  expect(dirty).toHaveBeenLastCalledWith(true);
+  expect(transport.postForm).not.toHaveBeenCalled();
+  expect(transport.post).not.toHaveBeenCalled();
+});
+
 it("recovers an already committed Submit before its closed editor config and uses the original submission transition without another write", async () => {
   const originalScope = JSON.stringify(["actor", "form", "old-response"]);
   const key = `folio-attachment-checkpoint:${originalScope}`;

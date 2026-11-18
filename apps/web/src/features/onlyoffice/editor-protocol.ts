@@ -205,7 +205,7 @@ const isValidAttachmentTransition = (value: unknown): boolean =>
   Number.isSafeInteger(value.oldRowCount) &&
   Number(value.oldRowCount) >= 0 &&
   Number.isSafeInteger(value.newRowCount) &&
-  Number(value.newRowCount) >= 0 &&
+  Number(value.newRowCount) >= (value.tableBindingId === null ? 0 : 1) &&
   Array.isArray(value.rowMapping) &&
   value.rowMapping.length === value.oldRowCount &&
   value.rowMapping.every(
@@ -269,6 +269,7 @@ interface EditorOperationBridgeMessage {
   error?: string;
   requestedAction?: EditorOperationAction;
   hasPendingAttachments?: boolean;
+  hasAttachmentCandidates?: boolean;
   operation?: {
     result?: {
       documentKey?: string;
