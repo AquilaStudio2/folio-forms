@@ -830,13 +830,16 @@ it.each([
       "completed"
     );
     expect(screen.getByTitle("Office sandbox")).toBe(office);
-    expect(office.closest("[aria-busy]")?.getAttribute("aria-busy")).toBe("false");
+    expect(office.closest("[aria-busy]")?.getAttribute("aria-busy")).toBe(
+      "false"
+    );
     if (!accepted) {
       expect(office.closest("[inert]")).not.toBeNull();
       expect(dirty).toHaveBeenLastCalledWith(true);
       expect(
-        screen.getByRole<HTMLButtonElement>("button", { name: "Save next Draft" })
-          .disabled
+        screen.getByRole<HTMLButtonElement>("button", {
+          name: "Save next Draft",
+        }).disabled
       ).toBe(true);
       send(plugin.source, { type: "bridge-ready" });
       send(plugin.source, { ...receipt, ok: true });
@@ -854,21 +857,22 @@ it.each([
       await waitFor(() =>
         expect(plugin.send).toHaveBeenCalledWith(
           expect.objectContaining({
-            requestId: "blocked-next-save",
             error: expect.any(String),
+            requestId: "blocked-next-save",
           }),
           window.location.origin
         )
       );
       expect(transport.postForm).toHaveBeenCalledTimes(1);
       expect(
-        screen.getByRole<HTMLButtonElement>("button", { name: "Save next Draft" })
-          .disabled
+        screen.getByRole<HTMLButtonElement>("button", {
+          name: "Save next Draft",
+        }).disabled
       ).toBe(true);
       expect(office.closest("[inert]")).not.toBeNull();
-      expect(screen.getByLabelText("Draft continuation status").textContent).toBe(
-        "completed"
-      );
+      expect(
+        screen.getByLabelText("Draft continuation status").textContent
+      ).toBe("completed");
       return;
     }
     expect(office.closest("[inert]")).toBeNull();

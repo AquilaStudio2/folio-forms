@@ -951,7 +951,9 @@ export const OnlyOfficeEditor = ({
         onCommandReadyChangeRef.current?.(false);
         const { promise, resolve, reject } = createDeferred<boolean>();
         const timer = window.setTimeout(() => {
-          settleContinuation(new Error("รอบก่อนบันทึกแล้ว แต่ตัวแก้ไขยังไม่ยืนยันค่าช่องแนบ"));
+          settleContinuation(
+            new Error("รอบก่อนบันทึกแล้ว แต่ตัวแก้ไขยังไม่ยืนยันค่าช่องแนบ")
+          );
         }, editorCommandDeadlineMs);
         pendingContinuation = {
           documentKey: nextDocumentKey,
