@@ -237,7 +237,9 @@ export const parseOperationMessage = (
     !isEditorOperationAction(value.action) ||
     !isOperationStatus(value.status) ||
     (value.operationId !== undefined && !isNonEmptyString(value.operationId)) ||
-    (value.status !== "failed" && !isNonEmptyString(value.operationId)) ||
+    (value.status === "completed" && !isNonEmptyString(value.operationId)) ||
+    (value.attachmentCommitUnresolved !== undefined &&
+      typeof value.attachmentCommitUnresolved !== "boolean") ||
     (value.error !== undefined && typeof value.error !== "string") ||
     (value.requestedAction !== undefined &&
       (typeof value.requestedAction !== "string" ||
@@ -270,6 +272,9 @@ interface EditorOperationBridgeMessage {
   requestedAction?: EditorOperationAction;
   hasPendingAttachments?: boolean;
   hasAttachmentCandidates?: boolean;
+  attachmentCommitUnresolved?: boolean;
+  hasUnsavedDocumentChanges?: boolean;
+  editorRemountSafe?: boolean;
   operation?: {
     result?: {
       documentKey?: string;

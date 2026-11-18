@@ -156,6 +156,15 @@ export const OnlyOfficeEditor = ({
   } | null>(null);
   const lastClearDirtyRequestRef = useRef(0);
   const documentDirtyRef = useRef(false);
+  const documentEditVersionRef = useRef(0);
+  const capturedEditVersionRef = useRef<number | null>(null);
+  const pendingEditVersionRef = useRef(0);
+  const capturedPendingVersionRef = useRef<number | null>(null);
+  const retiredCorrectionRef = useRef(false);
+  const requestSequenceRef = useRef(0);
+  const liveConfigPathRef = useRef<(() => string) | null>(null);
+  const [mutationState, setMutationState] = useState<"idle" | "saving" | "unresolved" | "blocked">("idle");
+  const mutationFeedbackRef = useRef<HTMLParagraphElement>(null);
   const candidateSourcesRef = useRef(new Set<MessageEventSource>());
   const lastSaveRequestRef = useRef(0);
   const terminalOperationIdsRef = useRef(new Set<string>());
@@ -261,7 +270,7 @@ export const OnlyOfficeEditor = ({
           throw new Error("The workbook editor session has changed");
         }
         const fresh = await apiGet<EditorConfig>(
-          editorConfigPath(configUrl, pdmsOpeningId),
+          liveConfigPathRef.current?.() ?? editorConfigPath(configUrl, pdmsOpeningId),
           { signal, timeoutMs: 10_000 }
         );
         signal.throwIfAborted();
@@ -386,21 +395,35 @@ export const OnlyOfficeEditor = ({
     onStateChangeRef.current = onStateChange;
   }, [onBridgeMessage, onDirtyChange, onCommandReadyChange, onStateChange]);
   useEffect(() => {
+    if (mutationState !== "idle") {
+      mutationFeedbackRef.current?.focus();
+    }
+  }, [mutationState]);
+  useEffect(() => {
     if (saveRequest === 0) {
       return;
     }
+    capturedEditVersionRef.current = documentEditVersionRef.current;
+    capturedPendingVersionRef.current = pendingEditVersionRef.current;
+    requestSequenceRef.current += 1;
+    setMutationState("saving");
     const timer = setTimeout(() => {
+      const dispatched = lastSaveRequestRef.current >= saveRequest;
       pendingCommandRef.current = null;
       // A late handshake must not deliver a command the page has reported failed.
       lastSaveRequestRef.current = Math.max(
         lastSaveRequestRef.current,
         saveRequest
       );
+      setMutationState(dispatched ? "unresolved" : "idle");
       onBridgeMessageRef.current?.({
         action: saveAction,
         bridgeId: "editor-command",
         error:
-          "ตัวแก้ไขยังไม่ตอบรับคำสั่ง กรุณารอให้เชื่อมต่อพร้อมแล้วลองใหม่ เก็บหน้านี้ไว้เพื่อรักษาการเปลี่ยนแปลง",
+          dispatched
+            ? "ยังยืนยันการตอบรับคำสั่งไม่ได้ กรุณาตรวจผลรอบเดิมก่อนดำเนินการต่อ ห้ามส่งซ้ำ"
+            : "ตัวแก้ไขยังไม่พร้อม คำสั่งยังไม่ถูกส่ง กรุณารอการเชื่อมต่อแล้วลองใหม่",
+        attachmentCommitUnresolved: dispatched,
         source: "form-bridge",
         status: "failed",
         type: "operation",
@@ -556,6 +579,21 @@ export const OnlyOfficeEditor = ({
           };
         }
         setConfig(nextConfig);
+        const mutationHold = nextConfig.attachmentNotice ||
+          nextConfig.bridge?.uploadPoc?.mutationNotice;
+        setMutationState(mutationHold ? "unresolved" : "idle");
+        if (mutationHold) {
+          onBridgeMessageRef.current?.({
+            action: nextConfig.bridge?.uploadPoc?.action === "correction"
+              ? "save-correction" : "save-draft",
+            bridgeId: nextConfig.bridge?.id ?? "editor-checkpoint",
+            source: "form-bridge",
+            type: "operation",
+            status: "failed",
+            attachmentCommitUnresolved: true,
+            error: mutationHold,
+          });
+        }
         setCheckpointPending(false);
         if (nextConfig.editorUrl) {
           reportState("ready");
@@ -622,6 +660,20 @@ export const OnlyOfficeEditor = ({
     }
     let cancelled = false;
     let mountedHost: HTMLDivElement | null = null;
+    const nativeSessionDocumentKey = config.bridge?.documentKey;
+    let continuedOperationId: string | null = null;
+    let continuationBlocked = false;
+    const liveConfigPath = () => {
+      const path = editorConfigPath(configUrl ?? "", pdmsOpeningId);
+      if (!continuedOperationId || !nativeSessionDocumentKey) {
+        return path;
+      }
+      const url = new URL(path, window.location.origin);
+      url.searchParams.set("continuedOperationId", continuedOperationId);
+      url.searchParams.set("nativeSessionDocumentKey", nativeSessionDocumentKey);
+      return `${url.pathname}${url.search}`;
+    };
+    liveConfigPathRef.current = liveConfigPath;
 
     const scriptUrl =
       config.apiScriptUrl ??
@@ -727,7 +779,7 @@ export const OnlyOfficeEditor = ({
 
       const requestedLeaseId = leaseRef.current?.id;
       try {
-        const path = editorConfigPath(configUrl, pdmsOpeningId);
+        const path = liveConfigPath();
         const fresh = await apiGet<EditorConfig>(path);
         if (cancelled || pinnedSourceRef.current !== requestedSource) {
           return;
@@ -788,6 +840,58 @@ export const OnlyOfficeEditor = ({
         }
       }
     };
+    const continueDraftEditor = async (
+      message: Extract<EditorBridgeMessage, { type: "operation" }>,
+      source: MessageEventSource
+    ) => {
+      const operationId = message.operationId;
+      const nextDocumentKey = message.operation?.result?.documentKey;
+      const previousLease = leaseRef.current?.id;
+      if (!operationId || !nextDocumentKey || !config.bridge?.uploadPoc ||
+        !configUrl || !nativeSessionDocumentKey || !previousLease) {
+        throw new Error("ยังยืนยันตัวแก้ไขรอบถัดไปไม่ได้ กรุณารักษาหน้านี้ไว้");
+      }
+      continuedOperationId = operationId;
+      const expectedRequest = requestSequenceRef.current;
+      const fresh = await apiGet<EditorConfig>(liveConfigPath());
+      if (cancelled || pinnedSourceRef.current !== source ||
+        requestSequenceRef.current !== expectedRequest) {
+        throw new Error("ตัวแก้ไขเปลี่ยนระหว่างตรวจผล กรุณารักษาหน้านี้ไว้");
+      }
+      const uploadPoc = fresh.bridge?.uploadPoc;
+      if (!uploadPoc || fresh.bridge?.documentKey !== nextDocumentKey ||
+        uploadPoc.documentKey !== nextDocumentKey ||
+        uploadPoc.scopeIdentity !== config.bridge.uploadPoc.scopeIdentity ||
+        fresh.bridge?.lease?.id !== previousLease ||
+        leaseRef.current?.id !== previousLease ||
+        recordOrEmpty(fresh.config?.document).key !== recordOrEmpty(config.config?.document).key) {
+        throw new Error("สิทธิ์หรือเอกสารเปลี่ยนแล้ว กรุณารักษาหน้านี้ไว้");
+      }
+      leaseRef.current = fresh.bridge.lease;
+      // Replacing config would destroy the live native frame and newer browser work.
+      config.bridge.documentKey = nextDocumentKey;
+      config.bridge.capabilities = fresh.bridge.capabilities;
+      config.bridge.uploadPoc = { ...uploadPoc, bridgeId };
+      config.bridge.lease = fresh.bridge.lease;
+      pdmsPopupRelay.continueDocument(nextDocumentKey);
+      config.pdmsProjectCatalog = fresh.pdmsProjectCatalog;
+      if (exportScopeRef.current?.config === config) {
+        const capability = fresh.bridge.capabilities?.["export-workbook"];
+        if (capability) {
+          exportScopeRef.current.capability = capability;
+        }
+      }
+      (source as Window).postMessage({
+        bridgeId,
+        documentKey: nextDocumentKey,
+        operationId,
+        pdmsProjectCatalog: fresh.pdmsProjectCatalog,
+        source: "folio-parent",
+        spreadsheetBindings: uploadPoc.spreadsheetBindings,
+        type: "retain-completed-editor",
+      }, pluginOrigin);
+    };
+
 
     const refreshUploadPocOptions = async (
       options: UploadPocHostOptions
@@ -797,7 +901,7 @@ export const OnlyOfficeEditor = ({
         throw new Error("ยืนยันการตั้งค่าปุ่มล่าสุดไม่ได้ กรุณาเปิดตัวแก้ไขใหม่");
       }
       const fresh = await apiGet<EditorConfig>(
-        editorConfigPath(configUrl, pdmsOpeningId)
+        liveConfigPath()
       );
       const refreshed = fresh.bridge?.uploadPoc;
       if (
@@ -831,9 +935,12 @@ export const OnlyOfficeEditor = ({
       const requestedLeaseId = leaseRef.current?.id;
       let result: Record<string, unknown>;
       try {
+        if (continuationBlocked) {
+          throw new Error("รอบก่อนบันทึกแล้ว แต่ยังเปลี่ยนตัวแก้ไขโดยรักษางานใหม่ไม่ได้ กรุณารักษาหน้านี้ไว้");
+        }
         if (
           data.type === "pending-file-check" &&
-          candidateSourcesRef.current.size > 0
+          candidateSourcesRef.current.size > 0 && !holder.hasUnresolvedCommit()
         ) {
           throw new Error(
             "มีการเลือกในกล่องที่ยังไม่ยืนยัน กรุณายืนยันหรือยกเลิกในกล่องก่อนดำเนินการ"
@@ -851,10 +958,15 @@ export const OnlyOfficeEditor = ({
         }
         holder.setScope(currentOptions.scopeIdentity);
         if (data.type === "pending-file-save") {
+          capturedEditVersionRef.current = documentEditVersionRef.current;
           await holder.refreshStatus(currentOptions);
-          result = await holder.save(data, currentOptions);
+          result = await holder.save({ ...data, documentKey: currentOptions.documentKey }, currentOptions);
         } else {
-          result = holder.handle(data, currentOptions);
+          result = holder.handle({ ...data, documentKey: currentOptions.documentKey }, currentOptions);
+          if (["pending-file-set", "pending-file-remove", "pending-file-cancel"].includes(String(data.type)) &&
+            !result.error) {
+            pendingEditVersionRef.current += 1;
+          }
           if (typeof result.hasPending === "boolean") {
             onDirtyChangeRef.current?.(
               documentDirtyRef.current ||
@@ -908,7 +1020,7 @@ export const OnlyOfficeEditor = ({
         {
           ...result,
           bridgeId,
-          documentKey: options.documentKey,
+          documentKey: data.documentKey,
           requestId: data.requestId,
           source: "folio-upload-poc-host",
           type: "pending-file-result",
@@ -974,7 +1086,9 @@ export const OnlyOfficeEditor = ({
           readOnly ||
           !isEditorWindowSource(event.source, surfaceRef.current) ||
           data.bridgeId !== bridgeId ||
-          data.documentKey !== options.documentKey ||
+          (data.documentKey !== options.documentKey &&
+            (data.documentKey !== nativeSessionDocumentKey ||
+              data.type === "pending-file-save" || data.type === "pending-file-check")) ||
           data.scopeIdentity !== options.scopeIdentity ||
           typeof data.requestId !== "string"
         ) {
@@ -1015,7 +1129,7 @@ export const OnlyOfficeEditor = ({
           );
         }
         pinnedSourceRef.current = event.source;
-        onCommandReadyChangeRef.current?.(true);
+        onCommandReadyChangeRef.current?.(!continuationBlocked);
         acknowledgeBridge(
           event.source,
           pluginOrigin,
@@ -1025,6 +1139,12 @@ export const OnlyOfficeEditor = ({
         pdmsPopupRelay.primaryReady();
         attachmentCategoryPopupRelay.primaryReady();
         setBridgeReadyVersion((value) => value + 1);
+        if (continuationBlocked || retiredCorrectionRef.current || config.attachmentNotice ||
+          config.bridge?.uploadPoc?.mutationNotice) {
+          (event.source as Window).postMessage({
+            bridgeId, source: "folio-parent", type: "hold-editor",
+          }, pluginOrigin);
+        }
         return;
       }
 
@@ -1067,6 +1187,8 @@ export const OnlyOfficeEditor = ({
           clearTimeout(pendingCommandRef.current.timer);
           pendingCommandRef.current = null;
         }
+        capturedEditVersionRef.current = documentEditVersionRef.current;
+        setMutationState("saving");
         pendingEditorSaveId = data.requestId;
         if (config.editorUrl || readOnly || nativeDocumentDirty === null) {
           respondToEditorSave(
@@ -1092,9 +1214,15 @@ export const OnlyOfficeEditor = ({
       }
       const dirtyMessage = parseDirtyStateMessage(data, bridgeId);
       if (dirtyMessage) {
-        documentDirtyRef.current = dirtyMessage.dirty;
-        onDirtyChangeRef.current?.(
+        if (dirtyMessage.dirty) {
+          documentEditVersionRef.current += 1;
+        }
+        documentDirtyRef.current =
           dirtyMessage.dirty ||
+          (capturedEditVersionRef.current !== null &&
+            documentEditVersionRef.current > capturedEditVersionRef.current);
+        onDirtyChangeRef.current?.(
+          documentDirtyRef.current ||
             uploadPocFilesRef.current?.hasPending() === true ||
             candidateSourcesRef.current.size > 0
         );
@@ -1103,6 +1231,23 @@ export const OnlyOfficeEditor = ({
       let message = parseOperationMessage(data, bridgeId);
       if (!message) {
         return;
+      }
+      if (retiredCorrectionRef.current &&
+        message.action === "save-correction-workspace") {
+        return;
+      }
+      if (message.status === "pending" && !message.operationId) {
+        requestSequenceRef.current += 1;
+      }
+      const requestSequence = requestSequenceRef.current;
+      if (message.status === "pending") {
+        if (!message.operationId) {
+          capturedEditVersionRef.current = documentEditVersionRef.current;
+          capturedPendingVersionRef.current = pendingEditVersionRef.current;
+        } else {
+          capturedEditVersionRef.current ??= documentEditVersionRef.current;
+        }
+        setMutationState("saving");
       }
       const result = message.operation?.result;
       if (result?.editorSessionPreserved === true) {
@@ -1151,6 +1296,7 @@ export const OnlyOfficeEditor = ({
       if (isTerminal && message.operationId) {
         terminalOperationIdsRef.current.add(message.operationId);
       }
+      let editorRemountSafe = false;
       if (message.status === "completed" && message.operationId) {
         const completedOperationId = message.operationId;
         try {
@@ -1199,50 +1345,120 @@ export const OnlyOfficeEditor = ({
             }
             message = trusted;
           }
-          uploadPocFilesRef.current?.complete(
+          if (requestSequence !== requestSequenceRef.current) {
+            return;
+          }
+          const capturedSnapshot = uploadPocFilesRef.current?.complete(
             completedOperationId,
             config.bridge?.uploadPoc,
             message.operation?.result
           );
+          editorRemountSafe = !capturedSnapshot &&
+            candidateSourcesRef.current.size === 0 &&
+            (capturedPendingVersionRef.current === null ||
+              pendingEditVersionRef.current === capturedPendingVersionRef.current) &&
+            (capturedEditVersionRef.current === null ||
+              documentEditVersionRef.current === capturedEditVersionRef.current);
+          if (!capturedSnapshot && !editorRemountSafe &&
+            message.operation?.result?.documentKey &&
+            message.operation.result.documentKey !== config.bridge?.documentKey) {
+            continuationBlocked = true;
+            onCommandReadyChangeRef.current?.(false);
+            (event.source as Window).postMessage({
+              bridgeId, source: "folio-parent", type: "hold-editor",
+            }, pluginOrigin);
+            setAttachmentNotice("รอบก่อนบันทึกแล้ว แต่มีงานที่เลือกภายหลัง ตัวแก้ไขยังอ่านอย่างเดียวเพื่อไม่ทิ้งหรือย้ายงานใหม่ กรุณารักษาหน้านี้ไว้");
+          }
+          if (capturedSnapshot && message.action === "save-draft" &&
+            (uploadPocFilesRef.current?.hasPending() ||
+              candidateSourcesRef.current.size > 0 ||
+              (capturedEditVersionRef.current !== null &&
+                documentEditVersionRef.current > capturedEditVersionRef.current))) {
+            await continueDraftEditor(message, event.source);
+          }
         } catch (transitionError) {
+          if (cancelled || requestSequence !== requestSequenceRef.current) {
+            return;
+          }
           const detail =
             transitionError instanceof Error
               ? transitionError.message
               : "ยังยืนยันตำแหน่งไฟล์หลังบันทึกไม่ได้ กรุณารักษาหน้านี้ไว้";
           setAttachmentNotice(detail);
+          setMutationState("unresolved");
           terminalOperationIdsRef.current.delete(completedOperationId);
           onBridgeMessageRef.current?.({
             ...message,
             error: detail,
             hasPendingAttachments: true,
+            attachmentCommitUnresolved: true,
             status: "failed",
           });
           return;
         }
-        setAttachmentNotice(
+        if (!continuationBlocked) setAttachmentNotice(
           uploadPocFilesRef.current?.hasPending() ||
             candidateSourcesRef.current.size > 0
             ? "มีไฟล์ที่เลือกใหม่ยังไม่อยู่ในรอบบันทึกที่สำเร็จ กรุณารักษาหน้านี้ไว้"
             : null
         );
       }
-      if (message.status === "failed" && config.bridge?.uploadPoc) {
-        const options = config.bridge.uploadPoc;
-        const refreshFailureStatus = async () => {
-          try {
-            const status =
-              await uploadPocFilesRef.current?.refreshStatus(options);
-            if (!cancelled && status?.mutationNotice) {
-              setAttachmentNotice(status.mutationNotice);
+      if (requestSequence !== requestSequenceRef.current) {
+        return;
+      }
+      if (message.status === "completed") {
+        documentDirtyRef.current =
+          capturedEditVersionRef.current !== null &&
+          documentEditVersionRef.current > capturedEditVersionRef.current;
+        if (message.action === "save-correction") {
+          retiredCorrectionRef.current = true;
+        }
+        setMutationState(continuationBlocked ? "blocked" : "idle");
+        const options = config.bridge?.uploadPoc;
+        if (options) {
+          void uploadPocFilesRef.current?.refreshStatus(options).then((status) => {
+            if (!cancelled && requestSequence === requestSequenceRef.current &&
+              status?.cleanupWarning) {
+              setCleanupWarning(status.cleanupWarning);
             }
-          } catch {
-            // Keep the original failure and checkpoint when durable status cannot be read.
+          }).catch(() => {
+            // Keep the last durable cleanup warning when its refresh is unavailable.
+          });
+        }
+      }
+      if (message.status === "failed" && !config.bridge?.uploadPoc) {
+        setMutationState(message.attachmentCommitUnresolved ? "unresolved" : "idle");
+      }
+      if (message.status === "failed" && config.bridge?.uploadPoc) {
+        let unresolved = message.attachmentCommitUnresolved === true;
+        try {
+          const status = await uploadPocFilesRef.current?.refreshStatus(config.bridge.uploadPoc);
+          unresolved ||= Boolean(status?.mutationNotice);
+          if (status?.mutationNotice) {
+            setAttachmentNotice(status.mutationNotice);
           }
-        };
-        refreshFailureStatus();
+          if (status?.cleanupWarning) {
+            setCleanupWarning(status.cleanupWarning);
+          }
+        } catch {
+          // A lost status response is not evidence that the original checkpoint settled.
+          unresolved ||= uploadPocFilesRef.current?.hasUnresolvedCommit() === true;
+        }
+        if (cancelled || requestSequence !== requestSequenceRef.current) {
+          return;
+        }
+        if (unresolved) {
+          (event.source as Window).postMessage({
+            bridgeId, source: "folio-parent", type: "hold-editor",
+          }, pluginOrigin);
+        }
+        setMutationState(unresolved ? "unresolved" : "idle");
+        message = { ...message, attachmentCommitUnresolved: unresolved };
       }
       message = {
         ...message,
+        hasUnsavedDocumentChanges: documentDirtyRef.current,
+        editorRemountSafe,
         hasAttachmentCandidates: candidateSourcesRef.current.size > 0,
         hasPendingAttachments:
           uploadPocFilesRef.current?.hasPending() === true ||
@@ -1308,6 +1524,7 @@ export const OnlyOfficeEditor = ({
           ) {
             // Office autosave is separate from Folio's saved draft/submission.
             documentDirtyRef.current = true;
+            documentEditVersionRef.current += 1;
             onDirtyChangeRef.current?.(true);
           }
           if (!nativeDocumentDirty) {
@@ -1416,7 +1633,7 @@ export const OnlyOfficeEditor = ({
           {activeAttachmentNotice}
         </p>
       ) : null}
-      {(activeAttachmentNotice || (checkpointPending && error)) &&
+      {(activeAttachmentNotice || mutationState === "unresolved" || (checkpointPending && error)) &&
       config?.bridge?.uploadPoc?.responseId ? (
         <div className="mb-3">
           <p className="mb-2 text-sm text-[var(--ink-soft)]">
@@ -1447,6 +1664,17 @@ export const OnlyOfficeEditor = ({
           {activeCleanupWarning}
         </p>
       ) : null}
+      {mutationState !== "idle" ? (
+        <p ref={mutationFeedbackRef} role="status" aria-live="polite" tabIndex={-1}
+          className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm outline-none">
+          {mutationState === "saving"
+            ? "กำลังบันทึก กรุณารอผลก่อนแก้ไขหรือออกจากหน้านี้"
+            : mutationState === "blocked"
+              ? "รอบก่อนบันทึกแล้ว แต่งานที่เลือกภายหลังยังไม่บันทึก ตัวแก้ไขยังอ่านอย่างเดียวเพื่อรักษางานใหม่"
+              : "ยังยืนยันผลรอบเดิมไม่ได้ ห้ามส่งซ้ำ ตัวแก้ไขยังอ่านอย่างเดียว ตรวจผลรอบเดิมหรือเปิดสำเนาที่บันทึกไว้ได้"}
+        </p>
+      ) : null}
+      <div inert={mutationState !== "idle" || retiredCorrectionRef.current} aria-busy={mutationState === "saving"}>
       <EditorSurface
         config={checkpointPending ? null : config}
         editorState={editorState}
@@ -1462,6 +1690,7 @@ export const OnlyOfficeEditor = ({
         onToggleExpanded={() => setExpanded((value) => !value)}
         onRestore={restore}
       />
+      </div>
     </>
   );
 };

@@ -358,6 +358,7 @@ export function createOperations(
     }
 
     actionInFlight = true;
+    bridge.retainCompletedEditor();
     if (options.documentKind === "xlsx") {
       callbacks.setActionBusy?.(true);
     }
@@ -406,6 +407,14 @@ export function createOperations(
       ) {
         throw new Error("ประเภทการบันทึกต้นแบบในตัวแก้ไขเดิมไม่ถูกต้อง");
       }
+      if (options.documentKind === "xlsx" && [
+        ACTIONS.SAVE_DRAFT, ACTIONS.SUBMIT, ACTIONS.SAVE_CORRECTION,
+        ACTIONS.SAVE_CORRECTION_WORKSPACE,
+      ].includes(action)) {
+        await office.freezeEditor();
+        editorFrozen = true;
+        bridge.notifyParent(action, "pending");
+      }
       const pendingGuard = await callbacks.beforeAction?.(
         action,
         rowChange,
@@ -425,6 +434,7 @@ export function createOperations(
         typeof pendingGuard?.mutationNotice === "string" &&
         pendingGuard.mutationNotice
       ) {
+        attachmentCommitUnresolved ||= attachmentSave;
         throw new Error(pendingGuard.mutationNotice);
       }
       let response;
@@ -467,7 +477,7 @@ export function createOperations(
             setStatus(`กำลังอ่านข้อมูลของ ${actionLabel(action)}…`, "pending");
             data = await office.extractFormDataPromise();
           }
-          if (options.documentKind === "xlsx") {
+          if (options.documentKind === "xlsx" && !editorFrozen) {
             await office.freezeEditor();
             editorFrozen = true;
           }
@@ -549,11 +559,12 @@ export function createOperations(
         );
       }
       waitForReload =
-        options.documentKind === "xlsx" &&
+        resultAction === ACTIONS.SAVE_CORRECTION ||
+        (options.documentKind === "xlsx" &&
         (Boolean(options.pdmsProjectCatalog) || attachmentSave) &&
         (resultAction === ACTIONS.SUBMIT ||
           (typeof result?.documentKey === "string" &&
-            result.documentKey !== options.documentKey));
+            result.documentKey !== options.documentKey)));
       // Completion can remount the editor or leave the page, so restore editing first.
       if (editorFrozen && !waitForReload) {
         await office.executeMethodResult("SetEditingRestrictions", [
@@ -570,6 +581,31 @@ export function createOperations(
           : `${actionLabel(resultAction)} สำเร็จ`,
         "success"
       );
+      if (waitForReload && resultAction === ACTIONS.SAVE_DRAFT && operationId) {
+        bridge.retainCompletedEditor(operationId, result?.documentKey, async (message) => {
+          if (message.documentKey !== result?.documentKey ||
+            typeof message.documentKey !== "string" ||
+            attachmentCommitUnresolved || !actionInFlight) {
+            return;
+          }
+          options.documentKey = message.documentKey;
+          if (isRecord(message.pdmsProjectCatalog)) {
+            options.pdmsProjectCatalog = message.pdmsProjectCatalog;
+          }
+          if (isRecord(message.spreadsheetBindings)) {
+            options.spreadsheetBindings = message.spreadsheetBindings;
+          }
+          try {
+            await office.executeMethodResult("SetEditingRestrictions", ["none"]);
+            editorFrozen = false;
+            waitForReload = false;
+            actionInFlight = false;
+            callbacks.setActionBusy?.(false);
+          } catch {
+            setStatus("ไม่สามารถคืนค่าการแก้ไขได้ กรุณารักษาหน้านี้ไว้", "error");
+          }
+        });
+      }
       bridge.notifyParent(
         resultAction,
         "completed",
@@ -599,7 +635,7 @@ export function createOperations(
       let message = errorMessage(error);
       if (attachmentCommitUnresolved) {
         message +=
-          " ตัวแก้ไขยังอ่านอย่างเดียวเพื่อรักษาข้อมูล กรุณากดบันทึกเพื่อตรวจผลรอบเดิมก่อนแก้ไขต่อ";
+          " ตัวแก้ไขยังอ่านอย่างเดียว ยังยืนยันผลรอบเดิมไม่ได้ ห้ามส่งซ้ำ ใช้การตรวจผลรอบเดิมก่อนแก้ไขต่อ";
       }
       setStatus(`${actionLabel(resultAction)} ไม่สำเร็จ: ${message}`, "error");
       bridge.notifyParent(
@@ -608,7 +644,8 @@ export function createOperations(
         operationId,
         completedPayload,
         message,
-        recoveredCheckpoint ? action : undefined
+        recoveredCheckpoint ? action : undefined,
+        attachmentCommitUnresolved
       );
 
       return {

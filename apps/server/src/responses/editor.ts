@@ -362,7 +362,8 @@ export async function userEditorConfig(
   responseId: string | undefined,
   requestedAction?: string,
   pdmsOpeningId?: unknown,
-  pdmsProjects: PdmsProjectsConfiguration | null = null
+  pdmsProjects: PdmsProjectsConfiguration | null = null,
+  continuation?: { operationId?: unknown; nativeSessionDocumentKey?: unknown }
 ): Promise<Record<string, unknown>> {
   requireResponseWriter(identity);
   const publishedTemplate = form.publishedTemplate;
@@ -449,7 +450,7 @@ export async function userEditorConfig(
       responseId: response.id,
     };
   }
-  const opening =
+  let opening =
     form.documentKind === "xlsx"
       ? xlsxEditorOpening(
           response.draftDocumentKey,
@@ -457,6 +458,39 @@ export async function userEditorConfig(
           pdmsOpeningId
         )
       : null;
+  if (continuation?.operationId !== undefined ||
+    continuation?.nativeSessionDocumentKey !== undefined) {
+    if (!opening || typeof continuation.operationId !== "string" ||
+      typeof continuation.nativeSessionDocumentKey !== "string" ||
+      typeof pdmsOpeningId !== "string") {
+      fail(409, "stale_editor_continuation", "The original native editor cannot be continued");
+    }
+    validateId(continuation.operationId, "Operation");
+    const operation = await prisma.operation.findUnique({
+      where: { id: continuation.operationId },
+    });
+    const batch = await prisma.ecmAttachmentBatch.findUnique({
+      where: { operationId: continuation.operationId },
+    });
+    const originalOpening = xlsxEditorOpening(
+      continuation.nativeSessionDocumentKey,
+      JSON.stringify([identity.id, identity.sessionId]),
+      pdmsOpeningId
+    );
+    // Only persisted completion evidence can bind a live native cache to the new canonical revision.
+    if (!operation || operation.type !== "save_draft" ||
+      operation.status !== "completed" || operation.actorId !== identity.id ||
+      operation.formId !== form.id || operation.responseId !== response.id ||
+      operation.targetType !== "response" || operation.targetId !== response.id ||
+      jsonRecord(operation.result).documentKey !== response.draftDocumentKey ||
+      jsonRecord(operation.metadata).documentServerKey !== originalOpening.documentServerKey ||
+      !batch || batch.state !== "committed" || batch.leaseId !== lease.id ||
+      batch.authSessionId !== identity.sessionId || batch.actorId !== identity.id ||
+      batch.responseId !== response.id || batch.formId !== form.id) {
+      fail(409, "stale_editor_continuation", "The original native editor cannot be continued");
+    }
+    opening = originalOpening;
+  }
   const pdmsProjectCatalog =
     form.documentKind === "xlsx"
       ? await openPdmsProjectCatalog({
