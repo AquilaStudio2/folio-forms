@@ -193,6 +193,8 @@ test("only authenticated current Draft completion resumes the same native editor
     action: "draft",
     documentKind: "xlsx",
     capabilityResponses: ["first-capability", "second-capability"],
+    nativeWorkbookCaptureUrl: "http://office.test/live-native-snapshot.xlsx",
+    spreadsheetSelection: { names: { folio_file: "'Form'!$B$10" } },
     scopeIdentity: "actor/response",
     responses: [
       completedOperation({ documentKey: "committed-first" }),
