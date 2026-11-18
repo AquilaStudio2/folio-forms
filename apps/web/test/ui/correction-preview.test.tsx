@@ -17,7 +17,7 @@ import { routeTree } from "@/routeTree.gen";
 
 afterEach(() => window.history.replaceState(null, "", "/"));
 
-it.each(["none", "replacement", "removal", "candidate"] as const)(
+it.each(["none", "replacement", "removal", "candidate", "ordinary"] as const)(
   "Correction completion preserves a late %s until an explicit exit decision",
   async (lateChange) => {
     const responseId = "11111111-1111-4111-8111-111111111111";
@@ -209,6 +209,8 @@ it.each(["none", "replacement", "removal", "candidate"] as const)(
       status: "pending",
       type: "operation",
     });
+    expect(screen.getByRole("textbox", { name: "เหตุผลการแก้ไข" })).toBeDisabled();
+    expect(office.closest("[inert]")).not.toBeNull();
     fireEvent.click(screen.getByRole("button", { exact: true, name: "ยกเลิก" }));
     expect(await screen.findByRole("dialog")).toBeVisible();
     expect(screen.getByRole("button", { name: "ทิ้งการเปลี่ยนแปลงและออก" })).toBeDisabled();
@@ -216,6 +218,24 @@ it.each(["none", "replacement", "removal", "candidate"] as const)(
     await waitFor(() =>
       expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
     );
+    send({
+      action: "save-correction-workspace",
+      operationId: "preview-1",
+      status: "failed",
+      attachmentCommitUnresolved: true,
+      error: "Original request outcome unavailable",
+      type: "operation",
+    });
+    expect(screen.getByRole("button", { name: "บันทึก Correction" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "ตรวจผลคำขอเดิม" })).toBeEnabled();
+    expect(office.closest("[inert]")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "ตรวจผลคำขอเดิม" }));
+    send({
+      action: "save-correction-workspace",
+      operationId: "preview-1",
+      status: "pending",
+      type: "operation",
+    });
     documentRevision = 1;
     send({
       action: "save-correction-workspace",
@@ -275,6 +295,7 @@ it.each(["none", "replacement", "removal", "candidate"] as const)(
         window.location.origin
       )
     );
+    expect(screen.getByRole("textbox", { name: "เหตุผลการแก้ไข" })).toBeDisabled();
     const lateFile = new File(
       ["newer selection outside accepted snapshot"],
       "newer.BIN"
@@ -300,7 +321,9 @@ it.each(["none", "replacement", "removal", "candidate"] as const)(
           })
         )
       );
-    if (lateChange !== "none") {
+    if (lateChange === "ordinary") {
+      sendCurrent({ type: "dirty-state", dirty: true });
+    } else if (lateChange !== "none") {
       sendLate({
         dirty: true,
         file: lateFile,
@@ -326,6 +349,17 @@ it.each(["none", "replacement", "removal", "candidate"] as const)(
       );
       expect(router.state.location.pathname).toBe(path);
       expect(screen.getByTitle("Correction native fixture")).toBe(reloaded);
+      sendCurrent({
+        action: "save-correction-workspace",
+        operation: { result: { documentKey: "retired-workspace" } },
+        operationId: "late-retired-workspace",
+        status: "completed",
+        type: "operation",
+      });
+      sendCurrent({ type: "dirty-state", dirty: false });
+      expect(screen.getByTitle("Correction native fixture")).toBe(reloaded);
+      expect(openings).toHaveLength(2);
+      expect(screen.getByRole("button", { name: "บันทึก Correction" })).toBeDisabled();
       sendLate({ requestId: "read-late-selection", type: "pending-file-get" });
       await waitFor(() =>
         expect(commands).toHaveBeenCalledWith(

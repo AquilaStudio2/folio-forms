@@ -157,6 +157,8 @@ const FillRoute = () => {
     "save-draft"
   );
   const [saveRequest, setSaveRequest] = useState(0);
+  const [editorUnresolved, setEditorUnresolved] = useState(false);
+  const editorActionInFlightRef = useRef(false);
   const [exportAfterSave, setExportAfterSave] = useState<ExportFormat | null>(
     null
   );
@@ -197,7 +199,7 @@ const FillRoute = () => {
     reset: () => void;
   } | null>(null);
   const hasUnsavedChanges =
-    dirty || nativeSaving ||
+    dirty || nativeSaving || editorUnresolved ||
     operation?.status === "pending" || operation?.status === "processing";
   const navigationBlocker = useBlocker({
     disabled: !hasUnsavedChanges,
@@ -468,11 +470,15 @@ const FillRoute = () => {
       setSuccess(null);
     }
     const { status } = message;
+    editorActionInFlightRef.current = status === "pending";
+    if (status !== "pending") {
+      setEditorUnresolved(message.attachmentCommitUnresolved === true);
+    }
     setOperation(
-      message.operationId
+      message.operationId || status === "pending"
         ? {
             error: message.error,
-            id: message.operationId,
+            id: message.operationId ?? "editor-action",
             status,
           }
         : null
@@ -502,17 +508,22 @@ const FillRoute = () => {
       return;
     }
 
-    setDirty(message.hasPendingAttachments === true);
-    if (message.action === "save-draft" && !message.hasAttachmentCandidates) {
+    const hasLaterChanges = message.hasPendingAttachments === true ||
+      message.hasUnsavedDocumentChanges === true;
+    setDirty(hasLaterChanges);
+    if (message.action === "save-draft" && message.editorRemountSafe) {
       setEditorRevision((value) => value + 1);
     }
-    if (message.hasPendingAttachments) {
+    if (hasLaterChanges) {
       setSaveBeforeExit(false);
       setExportAfterSave(null);
       setOperationError(
         "บันทึกรอบก่อนสำเร็จแล้ว แต่มีไฟล์ที่เลือกใหม่ยังไม่อยู่ในรอบนั้น กรุณารักษาหน้านี้ไว้ก่อน"
       );
       return;
+    }
+    if (message.action === "save-draft" && !message.editorRemountSafe) {
+      setEditorRevision((value) => value + 1);
     }
     if (message.action === "submit") {
       const submissionId = message.operation?.result?.submissionId;
@@ -820,12 +831,12 @@ const FillRoute = () => {
   const downloadingWorkbook = workbookDownloadPhase !== null;
   const capturingWorkbook = workbookDownloadPhase === "capturing";
   const editorActionDisabled =
-    !editorCommandReady || saveFlowBusy || capturingWorkbook;
+    !editorCommandReady || saveFlowBusy || editorUnresolved || capturingWorkbook;
   const handleExit = async () => {
     if (saveFlowBusy) {
       return;
     }
-    if (!dirty) {
+    if (!dirty && !editorUnresolved) {
       workbookDownloadRef.current?.controller.abort();
       allowNavigationRef.current = true;
       await navigate({ to: "/dashboard" });
@@ -975,12 +986,14 @@ const FillRoute = () => {
   };
   const runSpreadsheetAction = (action: "save-draft" | "submit") => {
     if (
+      editorActionInFlightRef.current ||
       editorActionDisabled ||
       !activeResponseId ||
       workbookDownloadRef.current?.capturing
     ) {
       return;
     }
+    editorActionInFlightRef.current = true;
     setOperationError(null);
     setSuccess(null);
     setOperation({ id: "editor-action", status: "pending" });
@@ -1315,6 +1328,21 @@ const FillRoute = () => {
                   >
                     ส่งคำตอบ
                   </Button>
+                  {editorUnresolved ? (
+                    <Button type="button" variant="secondary"
+                      disabled={!editorCommandReady || saveFlowBusy}
+                      onClick={() => {
+                        if (editorActionInFlightRef.current) {
+                          return;
+                        }
+                        editorActionInFlightRef.current = true;
+                        setOperation({ id: "editor-action", status: "pending" });
+                        setEditorAction("save-draft");
+                        setSaveRequest((value) => value + 1);
+                      }}>
+                      ตรวจผลคำขอเดิม
+                    </Button>
+                  ) : null}
                 </>
               ) : null}
               <Button

@@ -1150,6 +1150,70 @@ const postCorrection = (
   );
 };
 /* oxlint-disable no-await-expression-member no-use-before-define -- Public HTTP response assertions stay inline; registered tests run after helper initialization. */
+test("a completed Draft continues only its original signed native opening and saves newer input with fresh canonical admission", async () => {
+  const owner = await fixture();
+  const foreign = await fixture();
+  const openingId = crypto.randomUUID();
+  const rootKey = owner.documentKey;
+  const configSchema = z.object({
+    bridge: z.object({
+      documentKey: z.string(),
+      capabilities: z.record(z.string(), z.string()),
+      lease: z.object({ id: z.string() }),
+    }),
+    config: z.object({ document: z.object({ key: z.string() }) }),
+  });
+  const open = (continuation?: string, root = rootKey, opening = openingId, actor = owner) =>
+    app.handle(new Request(
+      `http://test.local/api/forms/${owner.form.publicId}/editor-config?responseId=${owner.response.id}&action=draft&pdmsOpeningId=${opening}${continuation ? `&continuedOperationId=${continuation}&nativeSessionDocumentKey=${encodeURIComponent(root)}` : ""}`,
+      { headers: { Authorization: `Bearer ${actor.bearer}` } }
+    ));
+  const initial = configSchema.parse(await (await open()).json());
+  nativeSnapshotKeys.set(initial.config.document.key, rootKey);
+  const save = (config: z.infer<typeof configSchema>, checkpoint = crypto.randomUUID()) => {
+    const body = new FormData();
+    body.set("payload", JSON.stringify({
+      checkpoint,
+      documentKey: config.bridge.documentKey,
+      responseId: owner.response.id,
+      snapshotUrl: "http://office.test/cache/snapshot.xlsx",
+    }));
+    return app.handle(new Request(
+      `http://test.local/api/forms/${owner.form.publicId}/draft`,
+      { method: "POST", body, headers: {
+        Authorization: `Bearer ${owner.bearer}`,
+        "X-Editor-Capability": fixtureValue(config.bridge.capabilities["save-draft"]),
+      } }
+    ));
+  };
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const first = await poll(owner, await save(initial));
+  expect(first.status).toBe("completed");
+  expect(await save(initial)).toHaveProperty("status", 409);
+  const continuedResponse = await open(first.operationId);
+  expect(continuedResponse.status).toBe(200);
+  const continued = configSchema.parse(await continuedResponse.json());
+  expect(continued.bridge.documentKey).not.toBe(rootKey);
+  expect(continued.config.document.key).toBe(initial.config.document.key);
+  expect(continued.bridge.lease.id).toBe(initial.bridge.lease.id);
+  expect((await open(first.operationId, "forged-root")).status).toBe(409);
+  expect((await open(first.operationId, rootKey, crypto.randomUUID())).status).toBe(409);
+  expect((await open(first.operationId, rootKey, openingId, foreign)).status).not.toBe(200);
+  snapshots.set(rootKey, replaceCell(fixtureValue(snapshots.get(rootKey)), "B5", "newer ordinary input"));
+  const next = await poll(owner, await save(continued));
+  expect(next.status).toBe("completed");
+  expect(await draft(owner)).toMatchObject({ notes1: "newer ordinary input" });
+  expect((await open(first.operationId)).status).toBe(409);
+  const secondContinuation = await open(next.operationId);
+  expect(secondContinuation.status).toBe(200);
+  const second = configSchema.parse(await secondContinuation.json());
+  expect(second.config.document.key).toBe(initial.config.document.key);
+  expect(second.bridge.documentKey).not.toBe(continued.bridge.documentKey);
+  expect(received.length).toBe(uploads);
+  expect(deleted.length).toBe(deletes);
+});
+
 test("template scalar saves without year and replaces same provider identity without deleting current bytes", async () => {
   const owner = await fixture({ number: "กทอ.67-00-0001", templateMode: true });
   const start = received.length;

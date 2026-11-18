@@ -120,6 +120,11 @@ test.each(["scalar", "table-only"])(
         .filter(({ message }) => message.type === "operation")
         .at(-1).message.status
     ).toBe("failed");
+    expect(
+      harness.messages
+        .filter(({ message }) => message.type === "operation")
+        .at(-1).message.attachmentCommitUnresolved
+    ).toBe(true);
     const recovered = await harness.window.FormBridge.runAction("save-draft");
     expect(recovered).toMatchObject({
       ok: true,
@@ -145,6 +150,110 @@ test.each(["scalar", "table-only"])(
     });
   }
 );
+
+test("Save freezes native edits and announces busy before waiting for the pending-file guard", async () => {
+  const harness = createHarness({
+    action: "draft",
+    documentKind: "xlsx",
+    scopeIdentity: "actor/response",
+    spreadsheetBindings: {
+      version: 1,
+      fields: [{
+        anchor: "folio_file",
+        attachment: { category: "หลักฐาน" },
+        id: "folio_file",
+        key: "file",
+        label: "File",
+        type: "text",
+      }],
+      table: null,
+    },
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  void harness.window.FormBridge.runAction("save-draft");
+  await flushPlugin();
+  expect(harness.editorRestriction).toBe("readOnly");
+  expect(harness.messages.some(({ message }) =>
+    message.type === "pending-file-check"
+  )).toBe(true);
+  expect(harness.messages.some(({ message }) =>
+    message.type === "operation" && message.status === "pending" &&
+    message.action === "save-draft"
+  )).toBe(true);
+  expect(await harness.window.FormBridge.runAction("submit")).toMatchObject({
+    ignored: true,
+    ok: false,
+  });
+  expect(harness.requests).toHaveLength(0);
+});
+
+test("only authenticated current Draft completion resumes the same native editor with fresh canonical admission", async () => {
+  const harness = createHarness({
+    action: "draft",
+    documentKind: "xlsx",
+    capabilityResponses: ["first-capability", "second-capability"],
+    scopeIdentity: "actor/response",
+    responses: [
+      completedOperation({ documentKey: "committed-first" }),
+      completedOperation({ documentKey: "committed-second" }),
+    ],
+    spreadsheetBindings: {
+      version: 1,
+      fields: [{
+        anchor: "folio_file", attachment: { category: "หลักฐาน" },
+        id: "folio_file", key: "file", label: "File", type: "text",
+      }],
+      table: null,
+    },
+  });
+  const post = harness.parentWindow.postMessage.bind(harness.parentWindow);
+  const saves = [];
+  harness.parentWindow.postMessage = (message, origin) => {
+    post(message, origin);
+    if (!["pending-file-check", "pending-file-save"].includes(message.type)) {
+      return;
+    }
+    const result = { allowed: true, hasPending: false, attachmentCommitUnresolved: false };
+    if (message.type === "pending-file-save") {
+      saves.push(message.body.documentKey);
+      Object.assign(result, {
+        operationId: `saved-${saves.length}`,
+        operationCapability: "poll-capability",
+        status: "pending",
+      });
+    }
+    queueMicrotask(() => harness.dispatch({
+      data: { ...message, ...result, source: "folio-upload-poc-host", type: "pending-file-result" },
+      origin: harness.parentOrigin,
+      source: harness.parentWindow,
+    }));
+  };
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  expect(await harness.window.FormBridge.runAction("save-draft")).toMatchObject({ ok: true });
+  expect(harness.editorRestriction).toBe("readOnly");
+  const acknowledge = (operationId, documentKey, origin = harness.parentOrigin) => harness.dispatch({
+    data: {
+      bridgeId: harness.bridgeId, source: "folio-parent",
+      type: "retain-completed-editor", operationId, documentKey,
+    },
+    origin,
+    source: harness.parentWindow,
+  });
+  acknowledge("saved-1", "committed-first", "https://foreign.test");
+  acknowledge("not-this-operation", "committed-first");
+  await flushPlugin();
+  expect(harness.editorRestriction).toBe("readOnly");
+  acknowledge("saved-1", "committed-first");
+  await flushPlugin();
+  expect(harness.editorRestriction).toBe("none");
+  expect(await harness.window.FormBridge.runAction("save-draft")).toMatchObject({ ok: true });
+  expect(saves).toEqual(["document-key", "committed-first"]);
+  acknowledge("saved-1", "committed-first");
+  await flushPlugin();
+  expect(harness.editorRestriction).toBe("readOnly");
+});
 
 for (const action of ["save-template", "publish"]) {
   test(`DOCX ${action} ignores new parent commands and preserves the existing toolbar contract`, async () => {

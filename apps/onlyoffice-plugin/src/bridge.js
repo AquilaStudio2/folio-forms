@@ -37,6 +37,11 @@ export function createBridge(options, office, callbacks) {
   let bridgeReadySent = false;
   let capabilityRequestSequence = 0;
   const pendingCapabilityRequests = new Map();
+  let retainedCompletion;
+
+  function retainCompletedEditor(operationId, documentKey, resume) {
+    retainedCompletion = operationId ? { operationId, documentKey, resume } : undefined;
+  }
 
   function parentWindow() {
     const target = window.top;
@@ -295,7 +300,8 @@ export function createBridge(options, office, callbacks) {
     operationId,
     payload,
     error,
-    requestedAction
+    requestedAction,
+    attachmentCommitUnresolved
   ) {
     if (!bridgeAcknowledged) {
       return;
@@ -308,6 +314,9 @@ export function createBridge(options, office, callbacks) {
         operation: isRecord(payload?.operation) ? payload.operation : undefined,
         operationId: operationId || undefined,
         ...(requestedAction ? { requestedAction } : {}),
+        ...(typeof attachmentCommitUnresolved === "boolean"
+          ? { attachmentCommitUnresolved }
+          : {}),
         source: BRIDGE_MESSAGE_SOURCE,
         status,
         type: OPERATION_MESSAGE_TYPE,
@@ -356,6 +365,8 @@ export function createBridge(options, office, callbacks) {
       (message.type !== BRIDGE_ACK_TYPE &&
         message.type !== CAPABILITY_RESPONSE_TYPE &&
         message.type !== RUN_ACTION_TYPE &&
+        message.type !== "retain-completed-editor" &&
+        message.type !== "hold-editor" &&
         message.type !== "capture-workbook" &&
         message.type !== CLEAR_DIRTY_TYPE &&
         message.type !== EDITOR_SAVE_RESPONSE_TYPE)
@@ -384,6 +395,22 @@ export function createBridge(options, office, callbacks) {
       return;
     }
 
+    if (message.type === "hold-editor") {
+      void office.freezeEditor().catch(() => {
+        setStatus("ไม่สามารถยืนยันการล็อกตัวแก้ไขได้ กรุณารักษาหน้านี้ไว้", "error");
+      });
+      return;
+    }
+    if (message.type === "retain-completed-editor") {
+      if (typeof message.operationId === "string" &&
+        retainedCompletion?.operationId === message.operationId &&
+        retainedCompletion.documentKey === message.documentKey) {
+        const completion = retainedCompletion;
+        retainedCompletion = undefined;
+        void completion.resume(message);
+      }
+      return;
+    }
     if (message.type === "capture-workbook") {
       if (
         options.documentKind === "xlsx" &&
@@ -493,6 +520,7 @@ export function createBridge(options, office, callbacks) {
   return {
     flushEditorChanges,
     notifyParent,
+    retainCompletedEditor,
     postBridgeMessage,
     requestActionCapability,
     sendFieldSelection,

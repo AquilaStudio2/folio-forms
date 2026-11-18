@@ -184,7 +184,7 @@ export class UploadPocPendingFiles {
     operationId: string,
     options?: UploadPocHostOptions,
     result?: { documentKey?: string; attachmentTransition?: unknown }
-  ): void {
+  ): boolean {
     const snapshot = this.accepted.get(operationId);
     const hasRemaining =
       this.invalidFiles.size > 0 ||
@@ -230,6 +230,7 @@ export class UploadPocPendingFiles {
       this.clearCheckpoint(checkpoint);
     }
     this.operationCheckpoints.delete(operationId);
+    return snapshot !== undefined;
   }
 
   private static verifyTransitionScope(

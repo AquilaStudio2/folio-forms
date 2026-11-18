@@ -25,6 +25,8 @@ const AdminCorrectionRoute = () => {
   const [revision, setRevision] = useState(0);
   const [message, setMessage] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [unresolved, setUnresolved] = useState(false);
+  const retiredWorkspaceRef = useRef(false);
   const [dirty, setDirty] = useState(false);
   const [completedWithPendingAttachments, setCompletedWithPendingAttachments] =
     useState(false);
@@ -32,7 +34,7 @@ const AdminCorrectionRoute = () => {
   const exitDialogRef = useRef<HTMLDialogElement>(null);
   const allowNavigationRef = useRef(false);
   const hasUnsavedChanges =
-    completedWithPendingAttachments || saving || dirty || Boolean(reason);
+    completedWithPendingAttachments || saving || unresolved || dirty || Boolean(reason);
   const navigationBlocker = useBlocker({
     disabled: !hasUnsavedChanges,
     enableBeforeUnload: hasUnsavedChanges,
@@ -76,6 +78,10 @@ const AdminCorrectionRoute = () => {
     ) {
       return;
     }
+    if (retiredWorkspaceRef.current &&
+      bridgeMessage.action === "save-correction-workspace") {
+      return;
+    }
     if (bridgeMessage.status === "pending") {
       setSaving(true);
       setMessage(
@@ -87,14 +93,17 @@ const AdminCorrectionRoute = () => {
     }
     if (bridgeMessage.status === "failed") {
       setSaving(false);
+      setUnresolved(bridgeMessage.attachmentCommitUnresolved === true);
       setMessage(bridgeMessage.error ?? "บันทึก Correction ไม่สำเร็จ กรุณาลองใหม่");
       return;
     }
     setSaving(false);
+    setUnresolved(false);
     if (
       bridgeMessage.action === "save-correction" &&
-      bridgeMessage.hasPendingAttachments
+      (bridgeMessage.hasPendingAttachments || bridgeMessage.hasUnsavedDocumentChanges)
     ) {
+      retiredWorkspaceRef.current = true;
       setCompletedWithPendingAttachments(true);
       setDirty(true);
       setMessage(
@@ -104,12 +113,14 @@ const AdminCorrectionRoute = () => {
     }
     if (bridgeMessage.action === "save-correction-workspace") {
       setMessage(null);
-      if (!bridgeMessage.hasAttachmentCandidates) {
+      if (bridgeMessage.editorRemountSafe ||
+        (!bridgeMessage.hasPendingAttachments && !bridgeMessage.hasUnsavedDocumentChanges)) {
         setRevision((value) => value + 1);
       }
       return;
     }
     allowNavigationRef.current = true;
+    retiredWorkspaceRef.current = true;
     navigationBlocker.reset?.();
     void navigate({
       params: { responseId },
@@ -120,7 +131,7 @@ const AdminCorrectionRoute = () => {
 
   const submitCorrection = () => {
     const trimmedReason = reason.trim();
-    if (completedWithPendingAttachments) {
+    if (completedWithPendingAttachments || unresolved) {
       return;
     }
     if (!trimmedReason || saving) {
@@ -128,6 +139,7 @@ const AdminCorrectionRoute = () => {
       return;
     }
     setMessage(null);
+    setSaving(true);
     setSaveRequest((request) => request + 1);
   };
 
@@ -136,6 +148,9 @@ const AdminCorrectionRoute = () => {
   if (saving) {
     exitDescription = "กำลังบันทึก Correction กรุณารอผลก่อนออกจากหน้านี้";
   } else if (completedWithPendingAttachments) {
+  } else if (unresolved) {
+    exitDescription =
+      "ยังยืนยันผลคำขอเดิมไม่ได้ การออกไม่ยกเลิกคำขอนั้นและไม่ล้าง checkpoint ไฟล์และการแก้ไขที่ยังไม่บันทึกในหน้านี้จะหาย";
     exitDescription =
       "Correction รอบก่อนบันทึกแล้ว การออกจะทิ้งไฟล์ การนำออก และการแก้ไขที่เลือกภายหลังซึ่งยังไม่บันทึก ต้องเปิด Correction ฉบับปัจจุบันแล้วเลือกไฟล์ใหม่ หากต้องการรักษาไฟล์ในหน้านี้ ให้เลือกอยู่ต่อ";
   }
@@ -193,6 +208,7 @@ const AdminCorrectionRoute = () => {
           เหตุผลการแก้ไข
           <Input
             aria-describedby="correction-reason-help"
+            disabled={saving || unresolved || completedWithPendingAttachments}
             aria-label="เหตุผลการแก้ไข"
             maxLength={2000}
             onChange={(event) => setReason(event.target.value)}
@@ -207,7 +223,7 @@ const AdminCorrectionRoute = () => {
         >
           ระบบจะบันทึกผู้แก้ไข เวลา เหตุผล และข้อมูลฉบับใหม่เป็นประวัติถาวร
         </p>
-        <div ref={feedbackRef} tabIndex={-1} className="outline-none">
+        <div ref={feedbackRef} tabIndex={-1} role="status" aria-live="polite" className="outline-none">
           {message ? (
             <Notice tone={saving ? "neutral" : "danger"}>{message}</Notice>
           ) : null}
@@ -216,6 +232,7 @@ const AdminCorrectionRoute = () => {
           <Button
             disabled={
               saving ||
+              unresolved ||
               completedWithPendingAttachments ||
               reason.trim().length === 0
             }
@@ -223,13 +240,25 @@ const AdminCorrectionRoute = () => {
           >
             บันทึก Correction
           </Button>
+          {unresolved ? (
+            <Button variant="secondary" disabled={saving} onClick={() => {
+              setSaving(true);
+              setSaveRequest((request) => request + 1);
+            }}>
+              ตรวจผลคำขอเดิม
+            </Button>
+          ) : null}
         </div>
       </Card>
       <Card className="min-h-[640px] overflow-hidden p-0">
         <OnlyOfficeEditor
           configUrl={`/api/admin/results/${responseId}/correction/editor-config`}
           onBridgeMessage={handleBridgeMessage}
-          onDirtyChange={setDirty}
+          onDirtyChange={(value) => {
+            if (!retiredWorkspaceRef.current || value) {
+              setDirty(value);
+            }
+          }}
           trackNativeDirty
           revision={revision}
           saveAction="save-correction"
