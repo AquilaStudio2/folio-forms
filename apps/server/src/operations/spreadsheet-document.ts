@@ -311,9 +311,6 @@ export const prepareSpreadsheetOperation = async (
   if (prepareAttachments) {
     attachmentData = await prepareAttachments(contract, savedData, current);
   }
-  const attachmentAddresses = new Set(
-    [...spreadsheetAttachmentSlots(contract)].map((slot) => slot.address)
-  );
   const values = [...current.cells.values()]
     .filter(
       (cell) =>
@@ -324,7 +321,6 @@ export const prepareSpreadsheetOperation = async (
             cell.column >= range.firstColumn &&
             cell.column <= range.lastColumn
         ) &&
-        !attachmentAddresses.has(cell.address) &&
         // Native/canonical XLSX may include empty cells inside a merged input.
         // Writing a subordinate cell after its anchor clears the whole merge.
         !current.merges.some(
@@ -402,7 +398,10 @@ export const prepareSpreadsheetOperation = async (
   }
   const result = await processSpreadsheet(unprotectSpreadsheet(baseBytes), {
     bindings: storedSpreadsheetBindings(contract),
-    clearRanges: inputs.map(rangeAddress),
+    clearRanges: [
+      ...inputs.map(rangeAddress),
+      ...[...spreadsheetAttachmentSlots(contract)].map((slot) => slot.address),
+    ],
     heartbeat,
     values,
     ...(rowChange && contract.table
