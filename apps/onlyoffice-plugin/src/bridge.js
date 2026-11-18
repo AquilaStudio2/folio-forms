@@ -411,7 +411,25 @@ export function createBridge(options, office, callbacks) {
       ) {
         const completion = retainedCompletion;
         retainedCompletion = undefined;
-        void completion.resume(message);
+        void (async () => {
+          let ok = false;
+          try {
+            ok = (await completion.resume(message)) === true;
+          } catch {
+            // Keep native editing frozen when the saved projection cannot be restored.
+          }
+          try {
+            postBridgeMessage({
+              documentKey: message.documentKey,
+              ok,
+              operationId: message.operationId,
+              source: BRIDGE_MESSAGE_SOURCE,
+              type: "retained-editor-result",
+            });
+          } catch {
+            // The host may close while the native projection is being restored.
+          }
+        })();
       }
       return;
     }

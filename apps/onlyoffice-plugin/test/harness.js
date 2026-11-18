@@ -412,9 +412,11 @@ export const createHarness = ({
   };
   if (nativeWorkbookCaptureUrl) {
     nativeValidationModel.worksheet.workbook = {
+      handlers: { trigger() {} },
       oApi: {
         asc_closeCellEditor: () => true,
         asc_getCellEditMode: () => false,
+        onWorksheetChange() {},
       },
     };
   }
@@ -556,6 +558,10 @@ export const createHarness = ({
     SetActive() {},
     worksheet: nativeValidationModel.worksheet,
   });
+  nativeValidationModel.worksheet.getId = () =>
+    spreadsheetSelection.sheet || "Sheet1";
+  nativeValidationModel.worksheet.getRange3 = (row, column) =>
+    spreadsheetSheet().GetRangeByNumber(row, column).range;
   // oxlint-enable no-use-before-define
   const spreadsheetRange = (address) => ({
     GetAddress: () => address,
@@ -593,7 +599,19 @@ export const createHarness = ({
       return true;
     },
     Width: 48,
-    range: nativeValidationModel.range(normalizedAddress(address)),
+    range: {
+      ...nativeValidationModel.range(normalizedAddress(address)),
+      cleanHyperlinks() {
+        delete spreadsheetSelection.hyperlinks?.[normalizedAddress(address)];
+      },
+      getValue: () =>
+        spreadsheetSelection.values?.[normalizedAddress(address)] ?? "",
+      setValue(value) {
+        spreadsheetSelection.values ??= {};
+        spreadsheetSelection.values[normalizedAddress(address)] = value;
+      },
+      worksheet: nativeValidationModel.worksheet,
+    },
   });
   const Api = {
     AddDefName(name, reference) {

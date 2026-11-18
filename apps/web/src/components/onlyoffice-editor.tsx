@@ -38,6 +38,7 @@ import { createPdmsPopupRelay } from "@/features/onlyoffice/pdms-popup-relay";
 import type { UploadPocHostOptions } from "@/features/onlyoffice/upload-poc-pending";
 import { UploadPocPendingFiles } from "@/features/onlyoffice/upload-poc-pending";
 import { ApiError, apiDelete, apiGet, apiPost, getToken } from "@/lib/api";
+import { createDeferred } from "@/lib/form-lifecycle";
 
 interface DocsApi {
   DocEditor: new (
@@ -65,6 +66,8 @@ const changedEditorDocument = (
     recordOrEmpty(fresh.config?.document).key !== nativeKey
   );
 };
+
+const editorCommandDeadlineMs = 30_000;
 
 const mutationStateMessages = {
   blocked:
@@ -439,7 +442,7 @@ export const OnlyOfficeEditor = ({
         status: "failed",
         type: "operation",
       });
-    }, 30_000);
+    }, editorCommandDeadlineMs);
     pendingCommandRef.current = { action: saveAction, timer };
     return () => {
       clearTimeout(timer);
@@ -677,6 +680,26 @@ export const OnlyOfficeEditor = ({
     const nativeSessionDocumentKey = config.bridge?.documentKey;
     let continuedOperationId: string | null = null;
     let continuationBlocked = false;
+    let pendingContinuation: {
+      operationId: string;
+      documentKey: string;
+      timer: number;
+      resolve: (accepted: boolean) => void;
+      reject: (error: Error) => void;
+    } | null = null;
+    const settleContinuation = (failure?: Error) => {
+      const pending = pendingContinuation;
+      if (!pending) {
+        return;
+      }
+      pendingContinuation = null;
+      clearTimeout(pending.timer);
+      if (failure) {
+        pending.reject(failure);
+      } else {
+        pending.resolve(true);
+      }
+    };
     const liveConfigPath = () => {
       const path = editorConfigPath(configUrl ?? "", pdmsOpeningId);
       if (!continuedOperationId || !nativeSessionDocumentKey) {
@@ -877,7 +900,9 @@ export const OnlyOfficeEditor = ({
       }
       continuedOperationId = operationId;
       const expectedRequest = requestSequenceRef.current;
-      const fresh = await apiGet<EditorConfig>(liveConfigPath());
+      const fresh = await apiGet<EditorConfig>(liveConfigPath(), {
+        timeoutMs: editorCommandDeadlineMs,
+      });
       if (
         cancelled ||
         pinnedSourceRef.current !== source ||
@@ -912,18 +937,67 @@ export const OnlyOfficeEditor = ({
           exportScopeRef.current.capability = capability;
         }
       }
-      (source as Window).postMessage(
-        {
-          bridgeId,
-          documentKey: nextDocumentKey,
-          operationId,
-          pdmsProjectCatalog: fresh.pdmsProjectCatalog,
-          source: "folio-parent",
-          spreadsheetBindings: uploadPoc.spreadsheetBindings,
-          type: "retain-completed-editor",
-        },
-        pluginOrigin
-      );
+      onCommandReadyChangeRef.current?.(false);
+      const { promise, resolve, reject } = createDeferred<boolean>();
+      const timer = window.setTimeout(() => {
+        settleContinuation(new Error("รอบก่อนบันทึกแล้ว แต่ตัวแก้ไขยังไม่ยืนยันค่าช่องแนบ"));
+      }, editorCommandDeadlineMs);
+      pendingContinuation = {
+        documentKey: nextDocumentKey,
+        operationId,
+        reject,
+        resolve,
+        timer,
+      };
+      try {
+        try {
+          (source as Window).postMessage(
+            {
+              bridgeId,
+              documentKey: nextDocumentKey,
+              operationId,
+              pdmsProjectCatalog: fresh.pdmsProjectCatalog,
+              savedData: uploadPoc.savedData,
+              source: "folio-parent",
+              spreadsheetBindings: uploadPoc.spreadsheetBindings,
+              type: "retain-completed-editor",
+            },
+            pluginOrigin
+          );
+        } catch {
+          settleContinuation(new Error("ตัวแก้ไขปิดระหว่างคืนค่าช่องแนบ"));
+        }
+        await promise;
+        if (
+          cancelled ||
+          pinnedSourceRef.current !== source ||
+          requestSequenceRef.current !== expectedRequest
+        ) {
+          throw new Error("ตัวแก้ไขเปลี่ยนระหว่างคืนค่าช่องแนบ");
+        }
+        onCommandReadyChangeRef.current?.(true);
+      } catch {
+        if (cancelled) {
+          return;
+        }
+        continuationBlocked = true;
+        onCommandReadyChangeRef.current?.(false);
+        setAttachmentNotice(
+          "รอบก่อนบันทึกแล้ว แต่ยังคืนค่าช่องแนบในตัวแก้ไขไม่ได้ กรุณารักษางานที่เลือกภายหลังไว้ก่อน"
+        );
+        try {
+          (pinnedSourceRef.current as Window | null)?.postMessage(
+            {
+              bridgeId,
+              source: "folio-parent",
+              type: "hold-editor",
+            },
+            pluginOrigin
+          );
+        } catch {
+          // The inert host still preserves later work if the native frame closed.
+        }
+      }
     };
 
     const refreshUploadPocOptions = async (
@@ -1168,6 +1242,7 @@ export const OnlyOfficeEditor = ({
           pinnedSourceRef.current &&
           pinnedSourceRef.current !== event.source
         ) {
+          settleContinuation(new Error("ตัวแก้ไขเชื่อมต่อใหม่ระหว่างคืนค่าช่องแนบ"));
           pendingCaptureRef.current?.reject(
             new Error("The workbook editor reconnected during capture")
           );
@@ -1213,6 +1288,42 @@ export const OnlyOfficeEditor = ({
         return;
       }
 
+      if (
+        isRecord(data) &&
+        data.source === "form-bridge" &&
+        data.bridgeId === bridgeId &&
+        data.type === "retained-editor-result" &&
+        data.operationId === continuedOperationId &&
+        data.documentKey === config.bridge?.documentKey
+      ) {
+        if (continuationBlocked) {
+          try {
+            (pinnedSource as Window).postMessage(
+              {
+                bridgeId,
+                source: "folio-parent",
+                type: "hold-editor",
+              },
+              pluginOrigin
+            );
+          } catch {
+            // A late native acknowledgement cannot make a blocked host editable.
+          }
+          return;
+        }
+        if (
+          !pendingContinuation ||
+          pendingContinuation.operationId !== data.operationId ||
+          pendingContinuation.documentKey !== data.documentKey ||
+          typeof data.ok !== "boolean"
+        ) {
+          return;
+        }
+        settleContinuation(
+          data.ok ? undefined : new Error("คืนค่าช่องแนบที่บันทึกแล้วไม่ได้")
+        );
+        return;
+      }
       if (
         isRecord(data) &&
         data.bridgeId === bridgeId &&
@@ -1571,6 +1682,7 @@ export const OnlyOfficeEditor = ({
       respondToEditorSave("The native editor closed before changes were saved");
       attachmentCategoryPopupRelay.close();
       cancelled = true;
+      settleContinuation(new Error("ตัวแก้ไขปิดระหว่างคืนค่าช่องแนบ"));
       pdmsPopupRelay.close();
       window.removeEventListener("message", handleBridgeMessage);
       pinnedSourceRef.current = null;

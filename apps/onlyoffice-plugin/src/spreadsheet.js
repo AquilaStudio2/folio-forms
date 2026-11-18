@@ -323,6 +323,37 @@ export function initializeSpreadsheet(options, setStatus) {
     }
     return count;
   };
+  const configuredAttachments =
+    ["fill", "draft", "submit", ACTIONS.CORRECTION].includes(options.action) &&
+    (bindings?.fields?.some((field) => field.attachment) ||
+      bindings?.table?.columns?.some((column) => column.attachment));
+  const activateUploadPoc = (savedData) => {
+    window.Asc.scope = window.Asc.scope || {};
+    window.Asc.scope.folioUploadPocActivation = {
+      bindings,
+      guid: uploadPocGuid,
+      savedData,
+    };
+    return office
+      .callCommandResult(spreadsheetUploadPocActivationCommand)
+      .then((raw) => {
+        const result = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (!result?.ok) {
+          throw new Error(result?.error || "ONLYOFFICE รุ่นนี้ยังเปิดปุ่มแนบไฟล์ไม่ได้");
+        }
+        if (result.count > 0) {
+          setStatus(
+            configuredAttachments
+              ? "พร้อมเปิดช่องแนบไฟล์ ดูไฟล์ที่บันทึกแล้วหรือเลือกไฟล์ใหม่ การเลือกจะมีผลเมื่อบันทึกฟอร์มสำเร็จ"
+              : "ปุ่มแนบไฟล์เดิมแสดงคำแนะนำติดต่อ Admin เพื่อตั้งค่าฟอร์มใหม่ ไม่รับการเลือกไฟล์",
+            "success"
+          );
+        }
+      })
+      .finally(() => {
+        delete window.Asc.scope.folioUploadPocActivation;
+      });
+  };
   const bridge = createBridge(options, office, {
     getFieldSelection: () => null,
     loadFieldRules: () => Promise.resolve(),
@@ -333,6 +364,7 @@ export function initializeSpreadsheet(options, setStatus) {
   });
   const prefill = { shouldApplyRuntimePrefill: () => false };
   const operations = createOperations(options, office, prefill, bridge, api, {
+    onDraftContinuation: activateUploadPoc,
     isInitializationPending: () =>
       busy && !uploadPocSaveInFlight && !pdmsSourceSaveInFlight,
     getTemplateSaveContext: () =>
@@ -2638,12 +2670,6 @@ export function initializeSpreadsheet(options, setStatus) {
     message.hidden = true;
     busy = true;
     let initializationError = null;
-    const configuredAttachments =
-      ["fill", "draft", "submit", ACTIONS.CORRECTION].includes(
-        options.action
-      ) &&
-      (bindings?.fields?.some((field) => field.attachment) ||
-        bindings?.table?.columns?.some((column) => column.attachment));
     const responseReady = (
       configuredAttachments
         ? office.freezeEditor().then(async () => {
@@ -2686,33 +2712,6 @@ export function initializeSpreadsheet(options, setStatus) {
       }
     };
     if (options.scopeIdentity) {
-      const activateUploadPoc = () => {
-        window.Asc.scope.folioUploadPocActivation = {
-          bindings,
-          guid: uploadPocGuid,
-        };
-        return office
-          .callCommandResult(spreadsheetUploadPocActivationCommand)
-          .then((raw) => {
-            const result = typeof raw === "string" ? JSON.parse(raw) : raw;
-            if (!result?.ok) {
-              throw new Error(
-                result?.error || "ONLYOFFICE รุ่นนี้ยังเปิดปุ่มแนบไฟล์ไม่ได้"
-              );
-            }
-            if (result.count > 0) {
-              setStatus(
-                configuredAttachments
-                  ? "พร้อมเปิดช่องแนบไฟล์ ดูไฟล์ที่บันทึกแล้วหรือเลือกไฟล์ใหม่ การเลือกจะมีผลเมื่อบันทึกฟอร์มสำเร็จ"
-                  : "ปุ่มแนบไฟล์เดิมแสดงคำแนะนำติดต่อ Admin เพื่อตั้งค่าฟอร์มใหม่ ไม่รับการเลือกไฟล์",
-                "success"
-              );
-            }
-          })
-          .finally(() => {
-            delete window.Asc.scope.folioUploadPocActivation;
-          });
-      };
       const activation = createUploadPocActivationLifecycle(
         activateUploadPoc,
         (error) => setStatus(error.message, "error")

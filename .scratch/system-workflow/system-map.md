@@ -1463,6 +1463,8 @@ Correction ไม่มี `status` ของตนเองใน Prisma schema
 
 หาก captured Draft attachment Save สำเร็จพร้อมงาน local ที่เกิดภายหลัง การคง native frame เดิมต้องใช้ signed continuation ของ Operation ที่ตรง canonical key ปัจจุบันและ native opening/actor/session/lease เดิม ไม่ใช้ key ที่ client ส่งมาโดยลำพัง Native frame ปกติอาจ remount ได้เมื่อไม่มีงานใหม่ แต่ internal geometry-changing transition ไม่ใช้ continuation นี้ข้าม row mapping
 
+ก่อนคืนการแก้ไขให้ retained Draft ต้องคืน canonical attachment projections ล่าสุดจาก authenticated editor-config ลงเฉพาะ scalar/physical `row_index` ที่ตรวจตำแหน่งแล้ว โดยไม่เปลี่ยน ordinary answers/history หรือปลด worksheet/cell protection Host รอ acknowledgement จาก pinned native frame ที่ตรง Operation/key ภายใน command deadline เดิม หากคืนค่าไม่สำเร็จหรือ reply มาช้า ให้คงงานที่เลือกภายหลังและ known-commit blocked state ไม่เปลี่ยนผลที่บันทึกแล้วเป็น provider unknown และไม่เปิด Save รอบใหม่
+
 XLSX Correction เปิดปุ่ม PoC ที่ตรวจ binding/mapping แล้วด้วย activation เดิม รวมช่องแนบไฟล์รายแถว การตรวจผลค้างตอนเริ่ม editor ใช้ `save-correction` ของ workspace นี้ ไม่ใช้ `save-draft` ของ User
 
 ในโค้ดปัจจุบันหน้า fill เปิดร่างรอบถัดไปหลัง Submit สำเร็จทันที หากการเปิดนั้นสำเร็จ Response จะเป็น draft และ Admin จะสร้าง Correction บน Submission ก่อนหน้าไม่ได้ แม้ประวัติการส่งยังอยู่ นี่เป็นผลของสอง flow ที่เชื่อมกันจริง ไม่ใช่เพียงการซ่อนปุ่มใน UI

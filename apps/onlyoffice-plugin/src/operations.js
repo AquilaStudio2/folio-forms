@@ -597,16 +597,23 @@ export function createOperations(
               attachmentCommitUnresolved ||
               !actionInFlight
             ) {
-              return;
-            }
-            options.documentKey = message.documentKey;
-            if (isRecord(message.pdmsProjectCatalog)) {
-              options.pdmsProjectCatalog = message.pdmsProjectCatalog;
-            }
-            if (isRecord(message.spreadsheetBindings)) {
-              options.spreadsheetBindings = message.spreadsheetBindings;
+              return false;
             }
             try {
+              if (
+                !isRecord(message.savedData) ||
+                typeof callbacks.onDraftContinuation !== "function"
+              ) {
+                throw new Error("ยืนยันค่าช่องแนบฉบับที่บันทึกแล้วไม่ได้");
+              }
+              await callbacks.onDraftContinuation(message.savedData);
+              options.documentKey = message.documentKey;
+              if (isRecord(message.pdmsProjectCatalog)) {
+                options.pdmsProjectCatalog = message.pdmsProjectCatalog;
+              }
+              if (isRecord(message.spreadsheetBindings)) {
+                options.spreadsheetBindings = message.spreadsheetBindings;
+              }
               await office.executeMethodResult("SetEditingRestrictions", [
                 "none",
               ]);
@@ -614,8 +621,10 @@ export function createOperations(
               waitForReload = false;
               actionInFlight = false;
               callbacks.setActionBusy?.(false);
+              return true;
             } catch {
               setStatus("ไม่สามารถคืนค่าการแก้ไขได้ กรุณารักษาหน้านี้ไว้", "error");
+              return false;
             }
           }
         );

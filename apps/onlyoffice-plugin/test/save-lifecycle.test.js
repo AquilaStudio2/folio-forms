@@ -215,6 +215,41 @@ test("Save freezes native edits and announces busy before waiting for the pendin
 });
 
 test("only authenticated current Draft completion resumes the same native editor with fresh canonical admission", async () => {
+  const locks = new Map();
+  let locked = true;
+  const selection = {
+    names: {
+      _folio_upload_poc_folio_file: "'Form'!$B$10",
+      folio_file: "'Form'!$B$10",
+    },
+    oleObjects: [
+      {
+        Drawing: {
+          drawingBase: { from: { col: 1, row: 9 } },
+          getProtectionLocked: () => locked,
+          setProtectionLocked: (value) => {
+            locked = value;
+          },
+        },
+        GetApplicationId: () => "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}",
+        GetData: () =>
+          JSON.stringify({
+            bindingId: "folio_file",
+            kind: "folio-upload-poc",
+            rowIndex: null,
+            tag: "file",
+            version: 1,
+          }),
+        GetLockValue: (key) => locks.get(key),
+        SetLockValue: (key, value) => {
+          locks.set(key, value);
+          return true;
+        },
+      },
+    ],
+    sheet: "Form",
+    values: { B10: "https://example.test/original" },
+  };
   const harness = createHarness({
     action: "draft",
     capabilityResponses: ["first-capability", "second-capability"],
@@ -239,7 +274,7 @@ test("only authenticated current Draft completion resumes the same native editor
       table: null,
       version: 1,
     },
-    spreadsheetSelection: { names: { folio_file: "'Form'!$B$10" } },
+    spreadsheetSelection: selection,
   });
   const post = harness.parentWindow.postMessage.bind(harness.parentWindow);
   const saves = [];
@@ -290,6 +325,7 @@ test("only authenticated current Draft completion resumes the same native editor
         bridgeId: harness.bridgeId,
         documentKey,
         operationId,
+        savedData: { file: { file_link: "https://example.test/saved" } },
         source: "folio-parent",
         type: "retain-completed-editor",
       },
@@ -300,9 +336,11 @@ test("only authenticated current Draft completion resumes the same native editor
   acknowledge("not-this-operation", "committed-first");
   await flushPlugin();
   expect(harness.editorRestriction).toBe("readOnly");
+  expect(selection.values.B10).toBe("https://example.test/original");
   acknowledge("saved-1", "committed-first");
   await flushPlugin();
   expect(harness.editorRestriction).toBe("none");
+  expect(selection.values.B10).toBe("https://example.test/saved");
   expect(await harness.window.FormBridge.runAction("save-draft")).toMatchObject(
     { ok: true }
   );

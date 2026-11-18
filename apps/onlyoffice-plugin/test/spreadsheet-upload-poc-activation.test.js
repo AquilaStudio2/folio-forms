@@ -52,12 +52,53 @@ const harness = () => {
     },
   };
   const objects = [object, { GetApplicationId: () => "ordinary-author-image" }];
+  const cells = new Map([
+    ["2:1", "https://example.test/a"],
+    ["2:2", "LATER"],
+  ]);
+  const visible = new Map(cells);
+  const hyperlinks = new Map([["2:1", "https://example.test/a"]]);
+  const worksheet = {
+    getId: () => "sheet",
+    getRange3: (row, column) => {
+      const key = `${row}:${column}`;
+      return {
+        bbox: { c1: column, c2: column, r1: row, r2: row },
+        cleanHyperlinks: () => {
+          hyperlinks.delete(key);
+          recordMutation();
+        },
+        getValue: () => cells.get(key) ?? "",
+        setValue: (value) => {
+          cells.set(key, value);
+          recordMutation();
+        },
+        worksheet,
+      };
+    },
+    workbook: {
+      handlers: {
+        trigger: (_event, _sheet, ranges) => {
+          for (const box of ranges) {
+            visible.delete(`${box.r1}:${box.c1}`);
+          }
+        },
+      },
+      oApi: {
+        onWorksheetChange: (box) => {
+          const key = `${box.r1}:${box.c1}`;
+          visible.set(key, cells.get(key));
+        },
+      },
+    },
+  };
   const sheet = { GetAllOleObjects: () => objects, GetName: () => "Sheet1" };
   const range = {
     GetCol: () => 2,
     GetRow: () => 3,
     GetRowsCount: () => 1,
     GetWorksheet: () => sheet,
+    range: { worksheet },
   };
   const bindings = {
     fields: [
@@ -71,7 +112,7 @@ const harness = () => {
     ],
     table: null,
   };
-  const run = () =>
+  const run = (savedData) =>
     JSON.parse(
       runInNewContext(
         `(${spreadsheetUploadPocActivationCommand.toString()})()`,
@@ -80,21 +121,26 @@ const harness = () => {
             GetActiveSheet: () => sheet,
             GetDefName: () => ({ GetRefersToRange: () => range }),
           },
-          Asc: { scope: { folioUploadPocActivation: { bindings, guid } } },
+          Asc: {
+            scope: { folioUploadPocActivation: { bindings, guid, savedData } },
+          },
           AscCommon: { History: history },
         }
       )
     );
   return {
     bindings,
+    cell: (row, column) => cells.get(`${row}:${column}`),
     history,
     historyDepth: () => historyDepth,
     metadata,
     mutations: () => mutations,
     object,
     objects,
+    range,
     run,
     unsavedHistory: () => unsavedHistory,
+    visible: (row, column) => visible.get(`${row}:${column}`),
   };
 };
 
@@ -109,6 +155,79 @@ test("9.4 activation unlocks only validated POC object and retains move/resize l
   expect(h.historyDepth()).toBe(0);
   h.object.SetLockValue("noSelect", true);
   expect(h.unsavedHistory()).toBe(1);
+});
+
+test("retained canonical projection updates only verified attachment cells without discarding later answers or history", () => {
+  const h = harness();
+  h.bindings.fields[0].attachment = { category: "Proof" };
+  expect(
+    h.run({ attachment: { file_link: "https://example.test/b" } }).ok
+  ).toBe(true);
+  expect(h.cell(2, 1)).toBe("https://example.test/b");
+  expect(h.visible(2, 1)).toBe("https://example.test/b");
+  expect(h.cell(2, 2)).toBe("LATER");
+  expect(h.unsavedHistory()).toBe(0);
+  expect(h.historyDepth()).toBe(0);
+});
+
+test("canonical table projections follow physical row_index across compact empty gaps", () => {
+  const h = harness();
+  h.bindings.fields = [];
+  h.bindings.table = {
+    anchor: "folio_table",
+    columns: [
+      {
+        attachment: { category: "Proof" },
+        id: "folio_attachment",
+        key: "file",
+        offset: 0,
+        type: "text",
+      },
+    ],
+    id: "folio_table",
+    key: "items",
+  };
+  h.metadata.rowIndex = 1;
+  h.metadata.tag = "items.file";
+  h.object.Drawing.drawingBase.from.row = 3;
+  h.range.GetRowsCount = () => 2;
+  h.objects.push({
+    ...h.object,
+    Drawing: { ...h.object.Drawing, drawingBase: { from: { col: 1, row: 2 } } },
+    GetData: () => JSON.stringify({ ...h.metadata, rowIndex: 0 }),
+  });
+  expect(
+    h.run({
+      items: [{ file: { file_link: "https://example.test/b", row_index: 1 } }],
+    }).ok
+  ).toBe(true);
+  expect(h.cell(2, 1)).toBe("");
+  expect(h.cell(3, 1)).toBe("https://example.test/b");
+  expect(h.cell(2, 2)).toBe("LATER");
+});
+
+test("ordinary old PoC text is never rewritten by attachment projection", () => {
+  const h = harness();
+  expect(
+    h.run({ attachment: { file_link: "https://example.test/b" } }).ok
+  ).toBe(true);
+  expect(h.cell(2, 1)).toBe("https://example.test/a");
+});
+
+test("canonical projection rejects unsafe links or missing controls before any native change", () => {
+  const unsafe = harness();
+  unsafe.bindings.fields[0].attachment = { category: "Proof" };
+  expect(
+    // oxlint-disable-next-line no-script-url -- Reject executable links before changing a protected projection.
+    unsafe.run({ attachment: { file_link: "javascript:alert(1)" } }).ok
+  ).toBe(false);
+  expect(unsafe.mutations()).toBe(0);
+  expect(unsafe.cell(2, 1)).toBe("https://example.test/a");
+  const missing = harness();
+  missing.bindings.fields[0].attachment = { category: "Proof" };
+  missing.objects.shift();
+  expect(missing.run({}).ok).toBe(false);
+  expect(missing.mutations()).toBe(0);
 });
 
 test("9.4 activation validates all recognized objects before any mutation", () => {
