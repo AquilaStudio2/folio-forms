@@ -231,7 +231,7 @@ export const templateReceiptConflict = async (
     return ambiguous;
   }
   const aliases = await tx.ecmAttachmentVersion.findMany({
-    where: { identityId, id: { not: version.id } },
+    where: { id: { not: version.id }, identityId },
   });
   if (!aliases.length) {
     return null;

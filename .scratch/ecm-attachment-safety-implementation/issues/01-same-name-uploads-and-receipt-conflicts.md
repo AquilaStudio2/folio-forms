@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-agent
+**Status:** in-progress — integrated; isolated HTTP naming/receipt paths pass; final full-suite and actual warning/pending smoke remain
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US01–40, US88; H01–H06, H09–H10 และส่วน receipt warnings ของ U05
 
@@ -67,3 +67,11 @@ Then run the repository's existing integrated type/lint/build checks and actual 
 - `CONTEXT.md` / domain behavior: replace template per-batch suffix and filename-ownership claims with base-name reuse plus original receipt identity. Legacy UUID naming and old canonical receipts remain unchanged.
 - System map / generated guide: upload planning uses the unchanged base name; admission fences uncertain requests rather than settled filename coincidences; exact receipt conflicts persist evidence, hold shared resources, and stop canonical commit. Document `Operation.result.attachmentErrorReason` and safe numeric upstream status diagnostics.
 - Preserve historical BATCH/provider records with their original revision/scope. Do not relabel them as acceptance of this implementation. Record the final integration revision and actual HTTP/native outcomes after execution.
+
+### Integration evidence — 2026-11-18
+
+- Integrated as `108fb942dc434b8d7f4e3079852039f3ebdfc36a`. First complete scalar/table HTTP run observed 151 pass and one fixture failure across 152 cases. Same-number three-round Submit, distinct scalar/table/foreign-Response/Correction receipts, semantic history/Draft/partial-alias conflicts, safe upstream status and surviving-original checks passed in that run.
+- The failed generic whole-Response cleanup case still seeded the old same-receipt replacement policy after normal cleanup had retired its original resource. Its scenario now starts from one real saved upload and tests failed/unknown deletion tracking directly; dedicated pre-policy shared-identity cases remain. Both repaired cleanup cases passed, 74 assertions. This is a targeted repair result, not a claim of one uninterrupted green full run. Final integration must rerun the complete suite.
+- During an intermediate fixture variant, immediate Response deletion after an unrelated replacement encountered serialization conflicts while earlier postcommit cleanup could still run. No runtime cleanup change or retry was made. The final acceptance/review must assess that interleaving separately; the generic fixture repair does not prove it cannot return HTTP 500.
+- Root format/lint passed after correcting seven new awaited-member style violations without changing assertions. Updated domain terminology/current naming/admission/semantic-error descriptions and the system map, retaining superseded batch evidence as historical. Workflow generation/check and generated HTML inspection passed before the final paragraph clarification.
+- Actual host/plugin warning and pending-preservation smoke remains pending until the latest native/active-save slices are integrated. No real DCM calls or provider acceptance occurred.

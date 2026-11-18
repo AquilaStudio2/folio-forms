@@ -93,14 +93,16 @@ flowchart TD
         scalarPick --> scalarRemove["คืนไฟล์เดิม / นำออก เป็นการเลือกเฉพาะในหน้าต่าง"]
         scalarRemove --> scalarConfirm
         scalarReuse -->|"File/removal ใหม่"| scalarIntent["transaction สั้น: Operation + scoped batch"]
-        scalarIntent --> scalarNames["วางแผนทุก scalar/table slot: template ชื่อแรกเดิม ชื่อซ้ำเติม -(n); จองทุกชื่อฐานใน batch"]
-        scalarNames --> scalarLedger["shared ledger fence + version intent: account / destination / owner / history / active attempt"]
+        scalarIntent --> scalarNames["ทุก scalar/table slot ใช้ base name เดิม; ไม่เติม counter/time/row suffix หรือจองชื่อ"]
+        scalarNames --> scalarLedger["shared admission: account / scope / lease / revision / uncertain attempt; ชื่อซ้ำอย่างเดียวไม่ใช่ resource conflict"]
         scalarLedger --> scalarPlanned{"มีแผนส่งไฟล์ใหม่ที่ปลอดภัย"}
         scalarPlanned -->|"มี"| scalarUpload["original bytes: template=1 สอง field; legacy=0 policy เดิม; ไม่ resend"]
         scalarPlanned -->|"ไม่มี: removal"| scalarCommit
         scalarUpload --> scalarReceipt{"receipt URL/token ถูกต้อง"}
         scalarReceipt -->|"ใช่: object หรือหนึ่งรายการ array"| scalarDurable["persist original receipt/settlement; reconcile canonical provider identity แยกจาก attempt"]
-        scalarDurable --> scalarCommit["recheck + atomic document / canonical JSON / references / Operation result"]
+        scalarDurable --> scalarReceiptIdentity{"actual new template receipt ชน identity เดิมหรือไม่"}
+        scalarReceiptIdentity -->|"distinct valid receipt"| scalarCommit["recheck + atomic document / canonical JSON / references / Operation result"]
+        scalarReceiptIdentity -->|"paired history / own unprotected Draft / ambiguous alias"| scalarConflict["เหตุผลจำแนก; persist evidence + hold identity; ไม่ commit/DELETE shared resource; คง pending"]
         scalarReceipt -->|"ไม่ทราบผล"| scalarHold["durable hold; canonical คำตอบเดิมอ่านได้ แต่ URL อาจถูกเขียนทับแล้ว"]
         scalarHold --> scalarAdmin["ห้าม Save / Submit / Response delete; ติดต่อ Admin"]
         scalarDurable -->|"known failure / stale / JSON เกิน limit"| scalarCancel["cancel ทั้ง batch; cleanup เฉพาะ new unreferenced Folio files"]

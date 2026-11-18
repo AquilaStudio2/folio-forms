@@ -114,6 +114,10 @@ An ECM-provided document classification, shown in authoring as **หมวดห
 
 An Admin-managed named document-storage choice belonging to one Document Category, unique within Folio's catalog and selected for an Attachment Field or table column rather than a Form's Template Draft or User answer. Its catalog entry may be added, edited or removed, while choices already fixed in Published Templates remain part of those immutable contracts.
 
+In storage mode `template`, every actual upload uses `<docs_number>-<template_name>.<original-extension>` without a generated counter, timestamp, row suffix or filename reservation. Preserve the original extension's case and literal template text; omit the dot when there is no extension. Same-name scalar/table/Response/revision uploads may proceed, but each snapshot uses the paired receipt from its own original request. A matching filename is not resource identity.
+
+An actual new template upload returning a surviving Submission/Correction's paired receipt fails as a history conflict; an own unprotected current Draft receipt fails as a distinct Draft conflict. History takes precedence. Partial or ambiguous aliases remain fail-closed without claiming an exact match. Persist original receipt evidence, hold shared identities and stop canonical commit without deleting the shared resource or clearing pending choices. Existing Operation error/result surfaces report a safe semantic reason and permitted Field/Tag/physical-row/reference details. Neither failure nor database rollback restores provider bytes. Unchanged reuse without POST, legacy UUID naming, old receipts and all ownership/lease/revision/unknown safeguards remain unchanged.
+
 ## ECM Service Account
 
 The dedicated Folio-only server identity used to read categories and perform authorized document integration. It is independent of every person's Folio session and of Ongoing credentials. Shared PostgreSQL coordination governs its bounded login jobs and encrypted token generations; integration failure never signs a person out of Folio. Credentials and the token-encryption key remain server-managed secrets, never answer data or browser state.

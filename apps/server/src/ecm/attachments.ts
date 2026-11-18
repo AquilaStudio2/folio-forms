@@ -547,7 +547,6 @@ const attachmentSnapshot = (
   return extracted;
 };
 
-
 const originalFileSha256 = async (file: File): Promise<string> => {
   const hash = createHash("sha256");
   for await (const chunk of file.stream()) {
