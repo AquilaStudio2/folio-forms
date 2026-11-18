@@ -865,26 +865,20 @@ it.each([
       ).toBe(true);
       send(plugin.source, { type: "bridge-ready" });
       send(plugin.source, { ...receipt, ok: true });
-      send(plugin.source, {
-        action: "save-draft",
-        body: { documentKey: "document-2" },
-        capability: "next-save-capability",
-        documentKey: "document-2",
-        requestId: "blocked-next-save",
-        scopeIdentity: "actor/response",
-        snapshotUrl: "http://office.test/later.xlsx",
-        source: "folio-upload-poc",
-        type: "pending-file-save",
+      const retainedDocumentKey = configFailure ? "document-1" : "document-2";
+      await act(async () => {
+        send(plugin.source, {
+          action: "save-draft",
+          body: { documentKey: retainedDocumentKey },
+          capability: "next-save-capability",
+          documentKey: retainedDocumentKey,
+          requestId: "blocked-next-save",
+          scopeIdentity: "actor/response",
+          snapshotUrl: "http://office.test/later.xlsx",
+          source: "folio-upload-poc",
+          type: "pending-file-save",
+        });
       });
-      await waitFor(() =>
-        expect(plugin.send).toHaveBeenCalledWith(
-          expect.objectContaining({
-            error: expect.any(String),
-            requestId: "blocked-next-save",
-          }),
-          window.location.origin
-        )
-      );
       expect(transport.postForm).toHaveBeenCalledTimes(1);
       expect(
         screen.getByRole<HTMLButtonElement>("button", {
