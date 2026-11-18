@@ -880,76 +880,86 @@ export const OnlyOfficeEditor = ({
         }
       }
     };
+    const holdEditor = (source: MessageEventSource | null) => {
+      try {
+        (source as Window | null)?.postMessage(
+          { bridgeId, source: "folio-parent", type: "hold-editor" },
+          pluginOrigin
+        );
+      } catch {
+        // The inert host preserves later work if the native frame closed.
+      }
+    };
     // oxlint-disable-next-line complexity -- Verify canonical, native-session, lease and request ownership together before retaining the live editor.
     const continueDraftEditor = async (
       message: Extract<EditorBridgeMessage, { type: "operation" }>,
       source: MessageEventSource
     ) => {
       const { operationId } = message;
-      const nextDocumentKey = message.operation?.result?.documentKey;
-      const previousLease = leaseRef.current?.id;
-      if (
-        !operationId ||
-        !nextDocumentKey ||
-        !config.bridge?.uploadPoc ||
-        !configUrl ||
-        !nativeSessionDocumentKey ||
-        !previousLease
-      ) {
-        throw new Error("ยังยืนยันตัวแก้ไขรอบถัดไปไม่ได้ กรุณารักษาหน้านี้ไว้");
-      }
-      continuedOperationId = operationId;
-      const expectedRequest = requestSequenceRef.current;
-      const fresh = await apiGet<EditorConfig>(liveConfigPath(), {
-        timeoutMs: editorCommandDeadlineMs,
-      });
-      if (
-        cancelled ||
-        pinnedSourceRef.current !== source ||
-        requestSequenceRef.current !== expectedRequest
-      ) {
-        throw new Error("ตัวแก้ไขเปลี่ยนระหว่างตรวจผล กรุณารักษาหน้านี้ไว้");
-      }
-      const uploadPoc = fresh.bridge?.uploadPoc;
-      if (
-        !uploadPoc ||
-        fresh.bridge?.documentKey !== nextDocumentKey ||
-        uploadPoc.documentKey !== nextDocumentKey ||
-        uploadPoc.scopeIdentity !== config.bridge.uploadPoc.scopeIdentity ||
-        fresh.bridge?.lease?.id !== previousLease ||
-        leaseRef.current?.id !== previousLease ||
-        recordOrEmpty(fresh.config?.document).key !==
-          recordOrEmpty(config.config?.document).key
-      ) {
-        throw new Error("สิทธิ์หรือเอกสารเปลี่ยนแล้ว กรุณารักษาหน้านี้ไว้");
-      }
-      leaseRef.current = fresh.bridge.lease;
-      // Replacing config would destroy the live native frame and newer browser work.
-      config.bridge.documentKey = nextDocumentKey;
-      config.bridge.capabilities = fresh.bridge.capabilities;
-      config.bridge.uploadPoc = { ...uploadPoc, bridgeId };
-      config.bridge.lease = fresh.bridge.lease;
-      pdmsPopupRelay.continueDocument(nextDocumentKey);
-      config.pdmsProjectCatalog = fresh.pdmsProjectCatalog;
-      if (exportScopeRef.current?.config === config) {
-        const capability = fresh.bridge.capabilities?.["export-workbook"];
-        if (capability) {
-          exportScopeRef.current.capability = capability;
-        }
-      }
-      onCommandReadyChangeRef.current?.(false);
-      const { promise, resolve, reject } = createDeferred<boolean>();
-      const timer = window.setTimeout(() => {
-        settleContinuation(new Error("รอบก่อนบันทึกแล้ว แต่ตัวแก้ไขยังไม่ยืนยันค่าช่องแนบ"));
-      }, editorCommandDeadlineMs);
-      pendingContinuation = {
-        documentKey: nextDocumentKey,
-        operationId,
-        reject,
-        resolve,
-        timer,
-      };
       try {
+        const nextDocumentKey = message.operation?.result?.documentKey;
+        const previousLease = leaseRef.current?.id;
+        if (
+          !operationId ||
+          !nextDocumentKey ||
+          !config.bridge?.uploadPoc ||
+          !configUrl ||
+          !nativeSessionDocumentKey ||
+          !previousLease
+        ) {
+          throw new Error("ยังยืนยันตัวแก้ไขรอบถัดไปไม่ได้ กรุณารักษาหน้านี้ไว้");
+        }
+        continuedOperationId = operationId;
+        const expectedRequest = requestSequenceRef.current;
+        const fresh = await apiGet<EditorConfig>(liveConfigPath(), {
+          timeoutMs: editorCommandDeadlineMs,
+        });
+        if (
+          cancelled ||
+          pinnedSourceRef.current !== source ||
+          requestSequenceRef.current !== expectedRequest
+        ) {
+          throw new Error("ตัวแก้ไขเปลี่ยนระหว่างตรวจผล กรุณารักษาหน้านี้ไว้");
+        }
+        const uploadPoc = fresh.bridge?.uploadPoc;
+        if (
+          !uploadPoc ||
+          fresh.bridge?.documentKey !== nextDocumentKey ||
+          uploadPoc.documentKey !== nextDocumentKey ||
+          uploadPoc.scopeIdentity !== config.bridge.uploadPoc.scopeIdentity ||
+          fresh.bridge?.lease?.id !== previousLease ||
+          leaseRef.current?.id !== previousLease ||
+          recordOrEmpty(fresh.config?.document).key !==
+            recordOrEmpty(config.config?.document).key
+        ) {
+          throw new Error("สิทธิ์หรือเอกสารเปลี่ยนแล้ว กรุณารักษาหน้านี้ไว้");
+        }
+        leaseRef.current = fresh.bridge.lease;
+        // Replacing config would destroy the live native frame and newer browser work.
+        config.bridge.documentKey = nextDocumentKey;
+        config.bridge.capabilities = fresh.bridge.capabilities;
+        config.bridge.uploadPoc = { ...uploadPoc, bridgeId };
+        config.bridge.lease = fresh.bridge.lease;
+        pdmsPopupRelay.continueDocument(nextDocumentKey);
+        config.pdmsProjectCatalog = fresh.pdmsProjectCatalog;
+        if (exportScopeRef.current?.config === config) {
+          const capability = fresh.bridge.capabilities?.["export-workbook"];
+          if (capability) {
+            exportScopeRef.current.capability = capability;
+          }
+        }
+        onCommandReadyChangeRef.current?.(false);
+        const { promise, resolve, reject } = createDeferred<boolean>();
+        const timer = window.setTimeout(() => {
+          settleContinuation(new Error("รอบก่อนบันทึกแล้ว แต่ตัวแก้ไขยังไม่ยืนยันค่าช่องแนบ"));
+        }, editorCommandDeadlineMs);
+        pendingContinuation = {
+          documentKey: nextDocumentKey,
+          operationId,
+          reject,
+          resolve,
+          timer,
+        };
         try {
           (source as Window).postMessage(
             {
@@ -985,18 +995,7 @@ export const OnlyOfficeEditor = ({
         setAttachmentNotice(
           "รอบก่อนบันทึกแล้ว แต่ยังคืนค่าช่องแนบในตัวแก้ไขไม่ได้ กรุณารักษางานที่เลือกภายหลังไว้ก่อน"
         );
-        try {
-          (pinnedSourceRef.current as Window | null)?.postMessage(
-            {
-              bridgeId,
-              source: "folio-parent",
-              type: "hold-editor",
-            },
-            pluginOrigin
-          );
-        } catch {
-          // The inert host still preserves later work if the native frame closed.
-        }
+        holdEditor(pinnedSourceRef.current);
       }
     };
 
@@ -1267,14 +1266,7 @@ export const OnlyOfficeEditor = ({
           config.attachmentNotice ||
           config.bridge?.uploadPoc?.mutationNotice
         ) {
-          (event.source as Window).postMessage(
-            {
-              bridgeId,
-              source: "folio-parent",
-              type: "hold-editor",
-            },
-            pluginOrigin
-          );
+          holdEditor(event.source);
         }
         return;
       }
@@ -1297,18 +1289,7 @@ export const OnlyOfficeEditor = ({
         data.documentKey === config.bridge?.documentKey
       ) {
         if (continuationBlocked) {
-          try {
-            (pinnedSource as Window).postMessage(
-              {
-                bridgeId,
-                source: "folio-parent",
-                type: "hold-editor",
-              },
-              pluginOrigin
-            );
-          } catch {
-            // A late native acknowledgement cannot make a blocked host editable.
-          }
+          holdEditor(pinnedSource);
           return;
         }
         if (
@@ -1539,14 +1520,7 @@ export const OnlyOfficeEditor = ({
           ) {
             continuationBlocked = true;
             onCommandReadyChangeRef.current?.(false);
-            (event.source as Window).postMessage(
-              {
-                bridgeId,
-                source: "folio-parent",
-                type: "hold-editor",
-              },
-              pluginOrigin
-            );
+            holdEditor(event.source);
             setAttachmentNotice(
               "รอบก่อนบันทึกแล้ว แต่มีงานที่เลือกภายหลัง ตัวแก้ไขยังอ่านอย่างเดียวเพื่อไม่ทิ้งหรือย้ายงานใหม่ กรุณารักษาหน้านี้ไว้"
             );
@@ -1648,14 +1622,7 @@ export const OnlyOfficeEditor = ({
           return;
         }
         if (unresolved) {
-          (event.source as Window).postMessage(
-            {
-              bridgeId,
-              source: "folio-parent",
-              type: "hold-editor",
-            },
-            pluginOrigin
-          );
+          holdEditor(event.source);
         }
         setMutationState(unresolved ? "unresolved" : "idle");
         message = { ...message, attachmentCommitUnresolved: unresolved };
