@@ -9,6 +9,22 @@ const guid = "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}";
 const harness = () => {
   let locked = true;
   let mutations = 0;
+  let historyDepth = 0;
+  let unsavedHistory = 0;
+  const recordMutation = () => {
+    mutations += 1;
+    if (historyDepth === 0) {
+      unsavedHistory += 1;
+    }
+  };
+  const history = {
+    TurnOff: () => {
+      historyDepth += 1;
+    },
+    TurnOn: () => {
+      historyDepth -= 1;
+    },
+  };
   const locks = new Map();
   const metadata = {
     bindingId: "folio_attachment",
@@ -23,7 +39,7 @@ const harness = () => {
       getProtectionLocked: () => locked,
       setProtectionLocked: (value) => {
         locked = value;
-        mutations += 1;
+        recordMutation();
       },
     },
     GetApplicationId: () => guid,
@@ -31,7 +47,7 @@ const harness = () => {
     GetLockValue: (type) => locks.get(type),
     SetLockValue: (type, value) => {
       locks.set(type, value);
-      mutations += 1;
+      recordMutation();
       return true;
     },
   };
@@ -65,16 +81,20 @@ const harness = () => {
             GetDefName: () => ({ GetRefersToRange: () => range }),
           },
           Asc: { scope: { folioUploadPocActivation: { bindings, guid } } },
+          AscCommon: { History: history },
         }
       )
     );
   return {
     bindings,
+    history,
+    historyDepth: () => historyDepth,
     metadata,
     mutations: () => mutations,
     object,
     objects,
     run,
+    unsavedHistory: () => unsavedHistory,
   };
 };
 
@@ -85,6 +105,10 @@ test("9.4 activation unlocks only validated POC object and retains move/resize l
   expect(h.object.GetLockValue("noMove")).toBe(true);
   expect(h.object.GetLockValue("noResize")).toBe(true);
   expect(h.object.GetLockValue("noSelect")).toBe(false);
+  expect(h.unsavedHistory()).toBe(0);
+  expect(h.historyDepth()).toBe(0);
+  h.object.SetLockValue("noSelect", true);
+  expect(h.unsavedHistory()).toBe(1);
 });
 
 test("9.4 activation validates all recognized objects before any mutation", () => {
@@ -111,6 +135,10 @@ test("9.4 activation fails closed for wrong coordinates, binding or unsupported 
   unsupported.object.Drawing.setProtectionLocked = undefined;
   expect(unsupported.run().ok).toBe(false);
   expect(unsupported.mutations()).toBe(0);
+  const unsupportedHistory = harness();
+  unsupportedHistory.history.TurnOff = undefined;
+  expect(unsupportedHistory.run().ok).toBe(false);
+  expect(unsupportedHistory.mutations()).toBe(0);
 });
 
 test("public lock getter proof precedes private unlock and failed unlock rolls protection back", () => {
@@ -125,12 +153,16 @@ test("public lock getter proof precedes private unlock and failed unlock rolls p
   expect(publicFailure.run().ok).toBe(false);
   expect(calls).not.toContain(false);
   expect(publicFailure.object.Drawing.getProtectionLocked()).toBe(true);
+  expect(publicFailure.historyDepth()).toBe(0);
+  expect(publicFailure.unsavedHistory()).toBe(0);
 
   const privateFailure = harness();
   const originalGetter = privateFailure.object.Drawing.getProtectionLocked;
   privateFailure.object.Drawing.getProtectionLocked = () => true;
   expect(privateFailure.run().ok).toBe(false);
   expect(originalGetter()).toBe(true);
+  expect(privateFailure.historyDepth()).toBe(0);
+  expect(privateFailure.unsavedHistory()).toBe(0);
 });
 
 test("early fallback failure cannot consume the later content-ready activation", async () => {

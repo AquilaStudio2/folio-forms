@@ -401,6 +401,15 @@ export const createHarness = ({
   const nativeValidationModel = createNativeValidationModel(
     spreadsheetValidations
   );
+  const nativeHistory = {
+    TurnOff() {
+      this.TurnOffHistory += 1;
+    },
+    TurnOffHistory: 0,
+    TurnOn() {
+      this.TurnOffHistory -= 1;
+    },
+  };
   if (nativeWorkbookCaptureUrl) {
     nativeValidationModel.worksheet.workbook = {
       oApi: {
@@ -662,6 +671,7 @@ export const createHarness = ({
         runInNewContext(`(${command.toString()})()`, {
           Api,
           Asc: window.Asc,
+          AscCommon: { History: nativeHistory },
           AscCommonExcel: nativeValidationModel.AscCommonExcel,
         })
       );
@@ -708,6 +718,7 @@ export const createHarness = ({
     AbortController,
     Api,
     Asc: window.Asc,
+    AscCommon: { History: nativeHistory },
     AscCommonExcel: nativeValidationModel.AscCommonExcel,
     Headers,
     Response,

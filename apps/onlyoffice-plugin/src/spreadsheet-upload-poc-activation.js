@@ -106,7 +106,19 @@ export function spreadsheetUploadPocActivationCommand(supplied) {
       slots.add(slot);
       targets.push(object);
     }
+    if (targets.length === 0) {
+      return JSON.stringify({ count: 0, ok: true });
+    }
+    const history = typeof AscCommon === "undefined" ? null : AscCommon.History;
+    if (
+      typeof history?.TurnOff !== "function" ||
+      typeof history?.TurnOn !== "function"
+    ) {
+      throw new TypeError("ONLYOFFICE รุ่นนี้ยังเปิดปุ่มแนบโดยไม่เปลี่ยนประวัติเอกสารไม่ได้");
+    }
     // Validate every recognized object before changing any native state.
+    // Restoring imported OLE interaction locks is initialization, not an answer edit.
+    history.TurnOff();
     try {
       // Prove all public locks before any private protection unlock.
       for (const object of targets) {
@@ -145,6 +157,8 @@ export function spreadsheetUploadPocActivationCommand(supplied) {
         });
       }
       throw error;
+    } finally {
+      history.TurnOn();
     }
     return JSON.stringify({ count: targets.length, ok: true });
   } catch (error) {

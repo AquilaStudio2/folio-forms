@@ -2692,7 +2692,7 @@ export function initializeSpreadsheet(options, setStatus) {
           guid: uploadPocGuid,
         };
         return office
-          .callCommandResult(spreadsheetUploadPocActivationCommand, true)
+          .callCommandResult(spreadsheetUploadPocActivationCommand)
           .then((raw) => {
             const result = typeof raw === "string" ? JSON.parse(raw) : raw;
             if (!result?.ok) {
