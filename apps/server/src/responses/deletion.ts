@@ -11,6 +11,7 @@ import {
 import { createResponseDeletionAudit } from "../audit/events";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Identity } from "../auth/identity";
+import { isSerializationConflict } from "../db-errors";
 import { tokenDigest } from "../digests";
 import {
   deleteAttachmentCleanup,
@@ -147,7 +148,7 @@ export async function deleteResponseData({
       deleted: true,
     };
   }
-  const result = await prisma.$transaction(
+  const deletion = prisma.$transaction(
     async (tx) => {
       await lockAttachmentLedger(tx);
       // Admission locks Form before editor lease; deletion uses the same outer fence.
@@ -360,7 +361,11 @@ export async function deleteResponseData({
           OR: [
             { responseId: response.id },
             ...(response.externalReferenceDigest
-              ? [{ externalReferenceDigest: response.externalReferenceDigest }]
+              ? [
+                  {
+                    externalReferenceDigest: response.externalReferenceDigest,
+                  },
+                ]
               : []),
           ],
         },
@@ -466,6 +471,18 @@ export async function deleteResponseData({
     },
     { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
   );
+  const result = await deletion.catch((error: unknown) => {
+    // Only the aborted database phase is translated: no provider or object DELETE
+    // has been dispatched. Post-commit cleanup failures retain their own outcome.
+    if (isSerializationConflict(error)) {
+      fail(
+        409,
+        "operation_in_progress",
+        "Another response operation changed the data. Review the Response before explicitly requesting deletion again."
+      );
+    }
+    throw error;
+  });
   if (!result.deleted || !result.deletionCaseId) {
     return result;
   }

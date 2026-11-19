@@ -572,6 +572,7 @@ export const createHarness = ({
     },
     GetFormula: () =>
       spreadsheetSelection?.formulas?.[normalizedAddress(address)] || "",
+    GetHidden: () => false,
     GetNumberFormat: () =>
       spreadsheetNumberFormats.get(normalizedAddress(address)) ?? "General",
     GetRow: () => position(normalizedAddress(address)).row,

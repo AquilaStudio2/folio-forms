@@ -83,30 +83,48 @@ export function spreadsheetUploadPocCommand(supplied) {
           target.kind === "column"
             ? sheet.GetRangeByNumber(firstRow + index, firstColumn)
             : range;
-        // ONLYOFFICE 9.4 reports Height=0 for rows with the default height.
-        // Height/GetRowHeight are points; GetRowHeight is nullable for default rows.
-        var heightPoints = cell.Height;
-        if (!Number.isFinite(heightPoints) || heightPoints <= 0) {
-          heightPoints = 0;
-          for (
-            var heightRow = 0;
-            heightRow < cell.GetRowsCount();
-            heightRow += 1
+        // Height=0 also represents a default-height row in ONLYOFFICE 9.4.
+        // GetRowHeight=null distinguishes that default from an explicit zero;
+        // GetHidden is meaningful only on a whole-row range, not on the cell.
+        var heightPoints = 0;
+        for (
+          var heightRow = 0;
+          heightRow < cell.GetRowsCount();
+          heightRow += 1
+        ) {
+          var physicalRow = firstRow + index + heightRow;
+          var rowHeight = sheet
+            .GetRangeByNumber(physicalRow, firstColumn)
+            .GetRowHeight();
+          if (rowHeight === null) {
+            rowHeight = 14.25;
+          }
+          if (!Number.isFinite(rowHeight) || rowHeight < 0) {
+            throw new Error("Attachment button cell has invalid row height");
+          }
+          if (
+            !sheet.GetRange(`${physicalRow + 1}:${physicalRow + 1}`).GetHidden()
           ) {
-            var rowHeight = sheet
-              .GetRangeByNumber(firstRow + index + heightRow, firstColumn)
-              .GetRowHeight();
-            heightPoints +=
-              Number.isFinite(rowHeight) && rowHeight > 0 ? rowHeight : 14.25;
+            heightPoints += rowHeight;
           }
         }
-        // Natural preview is 110 x 24 pixels. Fit inside the mapped cell without stretching.
-        var scale = Math.min(1, cell.Width / 110, (heightPoints * 4) / 3 / 24);
-        if (!Number.isFinite(scale) || scale <= 0) {
+        // Natural preview is 110 x 24 pixels. A collapsed physical dimension
+        // keeps its binding without spilling into an adjacent visible target.
+        var cellWidth = cell.Width;
+        if (!Number.isFinite(cellWidth) || cellWidth < 0) {
+          throw new Error("Attachment button cell has invalid column width");
+        }
+        var collapsed = cellWidth === 0 || heightPoints === 0;
+        var scale = Math.min(1, cellWidth / 110, (heightPoints * 4) / 3 / 24);
+        if (
+          !Number.isFinite(scale) ||
+          scale < 0 ||
+          (scale === 0 && !collapsed)
+        ) {
           throw new Error("Attachment button cell has no visible space");
         }
-        var width = Math.max(1, Math.round(110 * scale * 9525));
-        var height = Math.max(1, Math.round(24 * scale * 9525));
+        var width = collapsed ? 0 : Math.max(1, Math.round(110 * scale * 9525));
+        var height = collapsed ? 0 : Math.max(1, Math.round(24 * scale * 9525));
         var data = JSON.stringify({
           bindingId: target.bindingId,
           kind: "folio-upload-poc",

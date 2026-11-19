@@ -4,11 +4,11 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** needs-info — reachable read-only assessment complete; original-request finality evidence and human acceptance pending
+**Status:** resolved — closed by pyw1tt for the scoped DCM `HTTP 422` requests; other historical evidence retains its recorded limits
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US38–40, US75–79, US84, US90; Testing Decisions C.2 และ remaining settlement HOLD
 
-**Execution prerequisites:** ต้องมีคำสั่งเริ่มงานหลังตรวจตั๋ว พร้อมสิทธิ์เข้าถึง original evidence/records และ provider calls เท่าที่อนุญาตจริง การไม่มี ticket blocker ไม่เท่ากับมีสิทธิ์เรียก API, inspect live data, DELETE หรือปลด HOLD
+**Execution prerequisites:** [สิทธิ์ทดสอบ DCM จริงแบบจำกัดโครงการ](../spec.md#ขอบเขตทดสอบ-dcm-จริง) ไม่ให้สิทธิ์เข้าถึง original evidence/records หรือ provider logs เพิ่ม ไม่อนุญาต DELETE, resend หรือปลด HOLD โดยไม่มีหลักฐานของคำขอเดิม
 
 ## Acceptance criteria
 
@@ -95,3 +95,19 @@ Until then, preserve mutation guards only for an actually unresolved original op
 **Parent-owned documentation delta:** preserve this per-event evidence/finality distinction and scoped HOLD in the integrated acceptance matrix/system map. Do not relabel historical local evidence as current H09/provider PASS; do not add a settlement API or Production incident claim.
 
 **Not performed:** live DB inspection, DCM/PDMS login/search/GET/upload/DELETE, application/browser execution, tests/build/lint/formatters, data cleanup, push or deploy. Only public documentation GETs and local evidence reads were exercised. Remaining risk: original receiptless/uncertain mutations cannot be declared settled from the available contract or historical samples.
+
+### 2026-11-19 — ขอบเขตของสิทธิ์ทดสอบใหม่
+
+การอนุญาตทดสอบเฉพาะ `กทอ.67-00-0001` ไม่เปลี่ยนสถานะของคำขอเดิม ไม่ทดสอบ unknown/DELETE กับ DCM เพื่อสร้างเหตุการณ์ใหม่ และไม่ใช้ผลสำเร็จของ 07/08 เป็นหลักฐาน settlement ของ 09
+
+### 2026-11-19 — Focused isolated proof and remaining original-request input
+
+Fresh isolated HTTP run (29 passing cases; one attempt per case) covered the selected store-then-error unknown, original-checkpoint reconciliation, late fenced receipt, uncertain dispatched DELETE and committed B/old cleanup warning paths. Controlled malformed/error responses are not all literal transport drops and do not prove DCM finality. [N13/N14](../acceptance/06-native-final/report.md) separately document actual browser recovery when the Folio **202 admission** response was lost; they do not claim a lost postcommit response.
+
+The new [read-only DCM preflight](../acceptance/07-08-scoped-dcm-preflight.json) is not tied to either original mutation. The earlier standalone HTTP 500 lacks an original error body, trusted receipt or Folio Operation; the later successful POST is a different request. Required: authorized custodian/record access, request-to-resource correlation and provenance-verifiable terminal outcome/finality evidence for that exact request (and separately for each uncertain DELETE). No resend, provider log read, manual unlock or claim of a stuck Production Operation. External HOLD remains.
+
+The [user-provided public API collection](https://documenter.getpostman.com/api/collections/40888244/2sBYHbrFpB) returned HTTP 200 on attempt 1 at `2026-11-19T07:14:56Z`, with the identical SHA-256 `6264d1100015250ca75a3b23083395c58f569a3d4eec4456b8c057551335daf4` and the same five methods/paths as the historical snapshot. No new method or request-finality contract in that document; no claim about unpublished capabilities or deployed revision. No collection body, credentials, or example receipts retained.
+
+### Owner disposition — scoped DCM 422 requests
+
+pyw1tt ยืนยันว่า DCM ตรวจแล้ว: คำขอทดสอบที่ตอบ `HTTP 422` (ศูนย์ไบต์, HTML, BIN, ZIP และไฟล์ไม่มีนามสกุล) ถูกปฏิเสธก่อนเขียน/แก้ไฟล์ และไม่มีงานค้าง ผู้ใช้สั่งปิดตั๋วตามขอบเขตนี้ บันทึกเป็นคำยืนยันที่ผู้ใช้ส่งต่อจาก DCM ไม่ใช่ log ที่ Folio อ่านเอง. ไม่ใช้คำยืนยันนี้กับ HTTP 500 แบบ standalone เดิมหรือ uncertain DELETE; ไม่มีหลักฐานใหม่สำหรับกรณีเหล่านั้น และไม่กล่าวหาว่ามี Production Operation ค้าง. ไม่ replay, ไม่เปลี่ยน ledger/runtime guard และไม่อนุญาต DELETE หรือ deploy.

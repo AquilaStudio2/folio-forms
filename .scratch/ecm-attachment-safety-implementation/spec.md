@@ -1,6 +1,6 @@
 # ECM Attachment Safety — สเปก implementation ส่วนที่ยังขาด
 
-Status: needs-info Created: 2026-11-18 Decision baseline: latest resolved decisions ของ ECM Attachment Safety ทั้ง 9 ตั๋ว Original planning source baseline: Working Tree ที่ตรวจวันที่ 2026-11-18; HEAD `ba64bbb969a85589b96dd453783b7dcdbfeccc86` Execution gate: ผู้ใช้อนุมัติให้เริ่ม implementation ในบทสนทนานี้แล้ว โดยให้ commit งานเดิมก่อน ขอบเขต real DCM/ข้อมูลจริง/DELETE/push/deploy ยังต้องใช้สิทธิ์และหลักฐานเฉพาะ ไม่ได้อนุมัติจากตั๋วหรือผลจำลอง
+Status: needs-info Created: 2026-11-18 Decision baseline: latest resolved decisions ของ ECM Attachment Safety ทั้ง 9 ตั๋ว Original planning source baseline: Working Tree ที่ตรวจวันที่ 2026-11-18; HEAD `ba64bbb969a85589b96dd453783b7dcdbfeccc86` Execution gate: ผู้ใช้อนุมัติ implementation แล้ว ส่วนสิทธิ์ทดสอบ DCM จริงและข้อจำกัดที่ยังมีให้อ้าง [Authorization และ HOLD register](#authorization-และ-hold-register) ไม่ใช้ผลจำลองเป็นหลักฐาน DCM
 
 ## Problem Statement
 
@@ -37,7 +37,7 @@ Stories ที่กล่าวถึง behavior เดิมเป็น regr
 7. As a User, I want Response ต่างกันที่ใช้ชื่อฐานเดียวกันผ่านได้เมื่อไม่มี resource/scope conflict จริง, so that filename ไม่ถูกถือเป็น ownership proof
 8. As an Admin, I want final Save Correction ใช้กฎชื่อและ receipt เดียวกับ template uploads อื่น, so that การแก้ประวัติไม่ติด filename-only guard
 9. As a User, I want original extension และ casing คงเดิม, so that Folio ไม่เปลี่ยนชนิดไฟล์โดยตั้งชื่อใหม่
-10. As a User, I want ไฟล์ไม่มี extension ยังคงไม่มี extension, so that ระบบไม่เดานามสกุลแทนฉัน
+10. As a User, I want ไฟล์เดิมที่บันทึกไว้โดยไม่มีนามสกุลยังเปิดและใช้ต่อได้หากไม่ต้องอัปโหลดใหม่, so that ระบบไม่เปลี่ยนชื่อหรือประวัติเดิม ส่วนการอัปโหลดใหม่หรือเปลี่ยนปลายทางที่ต้องอัปโหลดซ้ำให้ปฏิเสธตามข้อ 34
 11. As an Admin, I want literal ตัวเลข จุด whitespace และ `-(1)` ใน frozen template name คงเดิมเมื่อผ่าน validation, so that ระบบไม่ตัดข้อความจริงเป็น generated suffix
 12. As a User, I want unsafe filename input ถูกปฏิเสธแทนการ rewrite, so that routing input ไม่เปลี่ยนโดยไม่รู้ตัว
 13. As a User, I want แต่ละ actual upload เก็บ original receipt ของคำขอนั้น, so that ไม่ใช้ผลค้นชื่อแรกหรือล่าสุดแทนไฟล์ที่ส่ง
@@ -86,7 +86,7 @@ Stories ที่กล่าวถึง behavior เดิมเป็น regr
 50. As an Admin, I want การนำ File ออกจากคำตอบไม่ลบ control/configuration ของคอลัมน์, so that โครงสร้างช่องแนบคงอยู่
 51. As a User, I want แถวที่เพิ่มมีปุ่มครบทุก configured attachment column โดยไม่ copy File เดิม, so that ไม่เกิด receipt ที่ติดมาจากแถวต้นแบบ
 52. As a User, I want add/delete ที่รองรับรักษา receipt และ pending ของ surviving physical rows, so that ไฟล์ไม่ย้ายไปตาม compact answer index
-53. As a User, I want empty gaps และ attachment-only zero-byte rows รักษาความหมายเดิม, so that requiredness ไม่ตกหล่นหรือผูก File ผิดแถว
+53. As a User, I want empty gaps และ attachment-only rows (รวมไฟล์ 0–1 byte ที่บันทึกไว้เดิม) รักษาความหมายเดิม, so that requiredness ไม่ตกหล่นหรือผูก File ผิดแถว
 54. As a User, I want internal row/project/workspace save ไม่ทำ ECM POST/DELETE, so that row movement ไม่กลายเป็น file replacement
 55. As an Admin, I want Correction ใช้สิทธิ์และ row controls เดิม, so that งานนี้ไม่เพิ่มคำสั่งแก้โครงสร้างที่ไม่ได้อนุมัติ
 56. As a User, I want ordinary cell edits/paste/Undo/Redo ใช้ได้เมื่อ mapping ถูกต้อง, so that ตารางยังกรอกข้อมูลได้ตาม Field rules
@@ -125,7 +125,7 @@ Stories ที่กล่าวถึง behavior เดิมเป็น regr
 83. As a User, I want native commands/loading/navigation ถูกตรวจใน actual browser/editor, so that simulated messages ไม่ถูกอ้างเป็นผล UI ผ่าน
 84. As an Admin, I want implementation acceptance แยกจาก real DCM evidence, so that isolated provider double ไม่ถูกใช้ปลด provider HOLD
 85. As an Admin, I want type/size matrix ตรวจต่อปุ่มในเส้นทาง initial upload, reopen/access และ number-change reuse, so that ผลไม่ถูกสรุปจากขนาดรวมหรือ PDF ตัวเดียว
-86. As an Admin, I want ขนาดต่อ File ที่ 0 และ 10,000,000 bytes ได้ตาม contract และ 10,000,001 ถูก Folio reject ก่อน dispatch, so that ไม่ทดลอง oversize กับ DCM จริงโดยไม่จำเป็น
+86. As an Admin, I want ขนาดต่อ File ที่ 2 และ 10,000,000 bytes ได้ตาม contract และ 0, 1, 10,000,001 bytes ถูก Folio reject ก่อน dispatch, so that ไม่ส่งไฟล์นอกขอบเขตไป DCM
 87. As an Admin, I want แผน type/size ไม่เพิ่ม upload/download byte comparison หรือ aggregate-capacity workload ที่ตัดแล้ว, so that acceptance ไม่ขยายขอบเขตโดยพลการ
 88. As an Admin, I want runtime size/hash/security/reference checks เดิมไม่ถูกถอดตามข้อยกเว้นแผน evidence, so that ลดงานตรวจรับไม่กลายเป็นลดความปลอดภัย
 89. As an Admin, I want old-data inventory/recovery มีสิทธิ์และ trusted provenance แยก, so that duplicate names/shared identity ไม่ถูกเหมาว่า corruption หรือแก้ history อัตโนมัติ
@@ -142,7 +142,7 @@ Stories ที่กล่าวถึง behavior เดิมเป็น regr
 
 ### 2. Shared naming และ receipt admission
 
-5. เปลี่ยน upload planner ของ storage mode `template` ให้ใช้ `<docs_number>-<template_name>.<original-extension>` ซ้ำได้ ทั้งใน batch และข้าม Save/Submit/final Save Correction ไม่มี extension ให้จบที่ template name ไม่เติม generated counter/timestamp/UUID/row/binding suffix หรือ durable filename reservation คง literal text และ validation เดิมตาม [N]
+5. เปลี่ยน upload planner ของ storage mode `template` ให้ใช้ `<docs_number>-<template_name>.<original-extension>` ซ้ำได้สำหรับนามสกุลที่ข้อ 34 อนุญาต ทั้งใน batch และข้าม Save/Submit/final Save Correction ไม่เติม generated counter/timestamp/UUID/row/binding suffix หรือ durable filename reservation คง literal text และ unsafe-input validation ตาม [N] ไฟล์ไม่มีนามสกุลที่บันทึกไว้ก่อนกฎนี้คงชื่อและ receipt เดิม ใช้ต่อได้โดยไม่อัปโหลดซ้ำ
 6. แก้ shared destination, receipt, reference และ delete admission ให้แยก filename-only coincidence ออกจาก actual resource/scope conflict ไม่แก้เฉพาะ second-Submit UI หรือชื่อ test case คง actor/owner, current role, trusted slot, lease/revision/opening, original unresolved Operation, resource/reference และ deletion fences
 7. Same-name valid new receipt ไม่เป็น conflict เพียงเพราะประวัติหรือ Response อื่นใช้ filename นั้น ไม่ lookup/adopt จาก search หรือเลือก latest by name/time/size คงข้อจำกัดต่อ known protected/shared resources และ unknown/in-flight work ตามหลักฐานจริง
 8. แต่ละ actual upload เก็บ original request/paired receipt และ destination evidence ใน ledger เมื่อ snapshot commit แต่ละ scalar/table slot เก็บ `file_token`, `file_link`, `original_name`, `size_bytes` และ table `row_index` ตาม schema เดิม Current Draft อัปเดต current snapshot; ไม่สร้าง immutable history ของทุก Draft save เป็น feature เพิ่ม
@@ -180,7 +180,7 @@ Stories ที่กล่าวถึง behavior เดิมเป็น regr
 
 ### 5. ขอบเขตที่ต้องคงเดิม
 
-34. คงหนึ่ง File ต่อ slot, ทุกชนิดไฟล์, 0–10,000,000 bytes inclusive, zero-byte requiredness หลัง upload+save, requiredness ของ active table rows และ completely empty-row exclusion ไม่เพิ่ม allowlist/aggregate cap/config
+34. คงหนึ่ง File ต่อ slot การอัปโหลดใหม่รับ 2–10,000,000 bytes inclusive และเฉพาะนามสกุลท้ายชื่อ `.pdf`, `.docx`, `.xlsx`, `.png`, `.txt` ไม่แยกตัวพิมพ์และคงตัวพิมพ์เดิมในชื่อที่ส่ง ไม่ใช้ MIME หรืออ้างว่าตรวจเนื้อหา ใช้กฎเดียวกันเมื่อเปลี่ยนปลายทางแล้วต้องอัปโหลดต้นฉบับซ้ำ กล่องแนบไฟล์ใช้ข้อความ “รองรับการอัปโหลดไฟล์ที่มีขนาดมากกว่า 1 bytes และไม่เกิน 10 MB” และ “รองรับเฉพาะไฟล์ PDF, DOCX, XLSX, PNG และ TXT” ไฟล์ที่บันทึกไว้แล้วด้วยชนิดเดิมหรือขนาด 0–1 byte ยังนับว่าแนบอยู่ อ่านประวัติได้ และ reuse ได้โดยไม่อัปโหลดใหม่ คง requiredness ของ active table rows และ completely empty-row exclusion ไม่เพิ่ม aggregate cap/config
 35. คง streamed actual-byte/slot-budget validation, canonical JSON 262,144 UTF-8 bytes, trusted receipt/origin/no-redirect/original-reuse size+SHA-256 checks, role/session/lease/revision/callback authorization และ reference/delete concurrency fences การลด provider evidence ไม่อนุญาตถอด checks เหล่านี้
 36. คง DCM-only originals ไม่มี binary/base64/new answer columns, RustFS attachment copy, temporary archive, IndexedDB/sessionStorage File bytes หรือ auto-upload Public-link limitations และการแก้/ลบไฟล์นอก Folio ยังเป็น accepted constraints Frozen JSON ไม่ทำให้ external bytes immutable
 37. คง Storage Template catalog/category-ID grouping, Published metadata freeze, duplication policy, PDMS Project Name Source และ scalar `fiscal_year` result-filter semantics ตาม ADR ที่รับไว้ ไม่ทำ CRUD/publication/filter redesign จากสเปกนี้
@@ -199,13 +199,13 @@ Good test ตรวจผลที่ consumer เห็น: persisted document/
 | ID | กลุ่ม stories | Scenario / observable acceptance |
 | --- | --- | --- |
 | H01 | 1–8, 13–16, 82 | First Submit แล้ว default new round ใช้เลข/แม่แบบ/extension เดิม Submit รอบสองและรอบถัดไปจริง ตรวจ canonical JSON, saved XLSX, receipts ของแต่ละรอบและ selected history ไม่เปลี่ยนเลขหรือบังคับ Save Draft ก่อนเพื่อให้ผ่าน |
-| H02 | 4–12, 17, 21 | Same-base scalar + หลาย rows/columns + ต่าง Responses ใช้ชื่อฐานเดิมโดยไม่ generated suffix Literal suffix, dots/whitespace ที่ valid, extension/casing, extensionless และ legacy policy คงถูกต้อง |
+| H02 | 4–12, 17, 21, 34 | Same-base scalar + หลาย rows/columns + ต่าง Responses ใช้ชื่อฐานเดิมโดยไม่ generated suffix คง literal suffix, dots/whitespace ที่ valid, casing ของนามสกุลที่รองรับ และ legacy policy; ปฏิเสธนามสกุลอื่นหรือไม่มีนามสกุลก่อน dispatch โดยไม่เปลี่ยน saved references |
 | H03 | 13–20, 33–36 | Save/reopen/partial replacement/metadata-number change/final Correction ตรวจ original receipts และ before/after exact bytes ของ surviving references ใน controlled provider รวม selected Submission/older Correction downloads ไม่ใช่ token ต่างหรือ HTTP 200 อย่างเดียว |
 | H04 | 23–32 | Provider model แบบ create-new รองรับ same-name happy path; explicit paired-history, own-Draft, both-reference precedence และ partial/ambiguous alias models ต้องแยก semantic reason/slot/row และ permission-safe reference details ไม่ใช้ filename-keyed overwrite เป็น universal DCM truth |
 | H05 | 28, 33–40 | Conflict/failure/unknown ไม่ partial commit, เปลี่ยน history, ล้าง pending, DELETE resource ร่วม หรือเพิ่ม resend เพื่อให้ผ่าน ตรวจ original attempt/receipt คงอยู่และ actual new-upload conflicts ไม่บล็อก unchanged reuse |
 | H06 | 17–22, 34–39, 54 | Unchanged Save, picker Cancel, read/export, internal row/project/workspace transitions ไม่เพิ่ม ECM POST/DELETE ไม่ทำ login/upload เพียงเพื่อ reuse unchanged references |
-| H07 | 41–48 | Minimum-row บน ordinary XLSX/old PoC/durable legacy/template: หนึ่ง row ว่าง/ordinary/saved/zero-byte/pending/removal/invalid state, direct/stale/race requests, สองเหลือหนึ่งแล้วสั่งซ้ำและ append กลับ ตรวจ rejected snapshot/revision ไม่เปลี่ยน ไม่ clear row และไม่มี provider writes |
-| H08 | 49–63 | Trusted add/delete transitions หลาย attachment columns, empty gaps, attachment-only/zero-byte rows และ saved/pending/removal/invalid states ตรวจ JSON/XLSX/button count/current row references กับ originals ของ survivors ไม่ผูกตาม compact index |
+| H07 | 41–48 | Minimum-row บน ordinary XLSX/old PoC/durable legacy/template: หนึ่ง row ว่าง/ordinary/saved (รวม 0–1 byte เดิม)/pending/removal/invalid state, direct/stale/race requests, สองเหลือหนึ่งแล้วสั่งซ้ำและ append กลับ ตรวจ rejected snapshot/revision ไม่เปลี่ยน ไม่ clear row และไม่มี provider writes |
+| H08 | 49–63 | Trusted add/delete transitions หลาย attachment columns, empty gaps, attachment-only rows (รวม 0–1 byte เดิม) และ saved/pending/removal/invalid states ตรวจ JSON/XLSX/button count/current row references กับ originals ของ survivors ไม่ผูกตาม compact index |
 | H09 | 38–40, 75–79 | Provider เก็บแล้ว response หาย, Folio acknowledgement หายหลัง commit, late canceled receipt, restart และ uncertain DELETE ใช้ original checkpoint/evidence คง no-resend/no-DELETE-retry/fences; B commit แล้วแต่ cleanup A ค้างยังอ่าน/export ได้และ warning ไม่หาย |
 | H10 | 21, 34, 36, 88 | คง permission/Viewer restrictions, independent bearer/cookie/capability authorization, lease/revision/opening/callback proof, requiredness, actual per-file/JSON limits, trusted original size/hash/no-redirect checks และ reference-versus-delete races |
 
@@ -234,7 +234,7 @@ Exact-byte assertions ใน H03/H08 เป็น **local receipt/history/mappin
 
 1. **Identity/history/DELETE isolation:** ใช้ approved plan ของ [D01] ฉบับ amendment ชื่อฐานซ้ำ ตรวจว่าการ upload ชื่อเดิมได้ receipt ของแต่ละคำขอและ surviving originals ยังตรงหลักฐานเดิมตาม claim ที่ต้องรับรอง เก็บ sanitized manifest ไม่เพิ่ม generated-suffix-routing gate ที่ถูกแทนแล้ว ผล PDF sample เดิมเป็น scoped evidence เท่านั้น DELETE isolation ต้องมี authorization แยกและไม่มี survivor ใช้ resource นั้น
 2. **Unknown settlement:** [D06] ต้องมี proof ผูกกับ original request/resource ว่าเกิดผลอะไรและจบแล้วตาม contract ใด ไม่มี delayed effect ไม่สมมติ request-status API/log access ที่ยังไม่มี Empty search, elapsed time, restart, sender fence, manual token/URL/note หรือ POST ใหม่สำเร็จไม่ยุติ unknown ของคำขอเดิม ไม่มี manual unlock feature
-3. **Type/size ต่อปุ่ม:** ใช้ representative PDF, DOCX, XLSX, image, text, HTML, benign binary/ZIP, password-protected และ extensionless/case-preserved extensions ตาม [D08] ตรวจ **แต่ละปุ่ม/slot ของตน** ทั้ง scalar/table ที่อยู่ใน scope แยก initial upload, reopen/access และ `docs_number` change ผ่าน saved reference ตรวจขนาดจริงของแต่ละ File ที่ 0 และ 10,000,000 bytes; 10,000,001 ต้อง Folio reject ก่อน dispatch ไม่ส่ง oversize ไป live DCM จากแผนนี้
+3. **Type/size ต่อปุ่ม:** สำหรับการอัปโหลดใหม่ ตรวจ PDF, DOCX, XLSX, PNG (`.png` / `.PNG`) และ TXT ต่อ scalar/table slot ที่อยู่ใน scope แยก initial upload, reopen/access และ `docs_number` change ผ่าน saved reference หลักฐานก่อนเพิ่ม allowlist ของ HTML, BIN, ZIP และไฟล์ไม่มีนามสกุลอยู่ในตั๋ว 08; ตอนนี้ชนิดนอก allowlist ต้องถูก Folio reject ก่อน dispatch ไม่ส่งเพื่อเติม matrix ตรวจขนาดจริงต่อ File ที่ 2 และ 10,000,000 bytes; 0, 1 และ 10,000,001 bytes ต้อง Folio reject ก่อน dispatch ผลที่ผู้ใช้รายงานจาก DCM โดยตรงไม่ใช่หลักฐาน acceptance ต่อปุ่มหรือสัญญาว่ารองรับทุกกรณี
 4. **เกณฑ์ของ type/size เท่านั้น:** เก็บ API outcome, validated original paired receipt และ URL access result ผูก round/slot รายงาน encrypted/password-protected โดยไม่ขอรหัส/ถอดรหัส/รับรองเนื้อหา **ไม่บังคับ upload/download exact-byte หรือ SHA-256 comparison** ไม่รัน 1/10/20 full-size files, aggregate-capacity/two-Response concurrency workload และไม่ใช้ workload ที่ไม่รันเป็น planning/release gate เพิ่ม ไม่รับรอง byte identity/content safety/unlimited capacity จาก matrix นี้
 5. **Runtime checks ไม่ถูกยกเว้น:** ถ้า ordinary original-reuse flow ปฏิเสธ size/hash/origin/integrity ให้รายงาน outcome ตามจริง ไม่ถอด check/เปลี่ยนไป picker เพื่อให้ matrix ผ่าน ข้อยกเว้น type/size evidence ไม่ยกเลิก identity/history/recovery evidence ของเจ้าของกฎอื่น
 6. **Evidence record:** ระบุ scenario/slot/round, source/environment/date/provider revision เท่าที่ทราบ, original correlation และ sanitized receipt/reference identity, ผล observed กับ expected, supported/partial/conflicting/insufficient/unverified และ pyw1tt human review แยกกัน ไม่เก็บ service credentials/raw tokens/private receipt URLs หรือ originals นอก DCM ลง repo
@@ -249,7 +249,7 @@ Exact-byte assertions ใน H03/H08 เป็น **local receipt/history/mappin
 - Native gesture support เพิ่มจาก approved matrix, stable row IDs/per-row Tags, หลาย repeating tables/หลาย editable worksheets หรือ row controls ใหม่ใน Correction
 - Auto-upload/save-and-exit/retry, manual settlement unlock, refresh/discard เพื่อหลบ conflict, temporary File persistence/archive หรือสำเนา attachment originals ใน RustFS/DB
 - Automatic old-data rename/reupload/delete/history rewrite/hash backfill หรือใช้ latest/ไฟล์แถวอื่นแทน trusted original
-- Upload/download byte-comparison และ aggregate-capacity workload ที่ตัดจาก provider type/size plan ไม่เพิ่ม allowlist, batch cap/config หรือการรับรอง capacity โดยไม่มีผลตรวจ
+- Upload/download byte-comparison และ aggregate-capacity workload ที่ตัดจาก provider type/size plan ไม่เพิ่ม batch cap/config หรือการรับรอง capacity โดยไม่มีผลตรวจ
 - การเปลี่ยน main-document viewer/download policy, selected-revision semantics, PDMS project-name identity/result filters หรือการลด security/runtime integrity checks เพื่อให้ acceptance ผ่าน
 - การอ้าง Production corruption, deployed behavior, provider-wide guarantee หรือ release PASS จาก source/local test/sample PDF/HTTP 200/จำนวน tests
 
@@ -295,19 +295,29 @@ Exact-byte assertions ใน H03/H08 เป็น **local receipt/history/mappin
 | งาน | สิ่งที่ทำได้หลังอนุมัติตั๋ว | สิ่งที่ยังต้องสิทธิ์/หลักฐานแยก | สถานะ ณ สเปกนี้ |
 | --- | --- | --- | --- |
 | Implementation + isolated acceptance | เปลี่ยน shared source/docs/tests และรัน HTTP/browser/editor ในระบบแยกตาม scope | ต้องมี approval ของตั๋วก่อน ไม่แตะ Forms/Responses/ไฟล์ใช้งานจริง | ยังไม่ implement/ไม่รันทดสอบรอบนี้ |
-| Same-name provider/history | ทีม Folio เก็บหลักฐานเองตาม [D01]; pyw1tt ตรวจรับ | Account/environment, synthetic destination/write scope, collision/ownership boundary, stop conditions และ cleanup owner ต้องชัด; DELETE แยก | มี PDF sample เดิมที่ supported เฉพาะกรณีนั้น; ส่วน guarantee ที่เหลือ HOLD |
+| Same-name provider/history | ผู้ใช้อนุญาตให้ทดสอบ DCM จริงตาม [ขอบเขตด้านล่าง](#ขอบเขตทดสอบ-dcm-จริง) | ยืนยัน account/environment, ปลายทางทดสอบ, collision/ownership boundary, stop conditions และผู้ดูแลไฟล์ทดสอบก่อน POST; DELETE ต้องอนุญาตแยก | สิทธิ์เริ่มทดสอบได้รับแล้ว; หลักฐาน PDF เดิมรองรับเฉพาะกรณีนั้น ส่วน acceptance ยัง HOLD |
 | Unknown upload / uncertain dispatched DELETE | พิสูจน์ Folio handling ในระบบแยกตาม [D06] | หลักฐาน original-request correlation/finality/settlement ที่ยืนยันได้จริง | Provider contract/evidence ยังไม่พอ; คง HOLD เฉพาะ unresolved scope ไม่กล่าวว่ามี Production operation ค้างจริง |
 | Postcommit old-file cleanup | B ที่ commit แล้วอ่าน/export ได้ พร้อม persistent warning | Proof การลบ A; ห้าม ordinary save/reload retry uncertain DELETE | ไม่ตีความเป็น full-page mutation HOLD ของ saved B |
-| Per-button type/size | ใช้ matrix/limits ที่ปิด decision แล้ว ไม่ต้องเลือกใหม่ | ผลจริงแต่ละ type/path/button/size และ scoped provider execution | Pending/insufficient; ไม่ใช้ omitted byte comparison/aggregate workload เป็น gate เพิ่ม |
+| Per-button type/size | ทดสอบ DCM จริงเฉพาะโครงการที่อนุญาตตาม matrix/limits เดิม | ผลจริงแต่ละ type/path/button/size ภายใน scope ที่ยืนยันได้ | Pending/insufficient; ไม่ใช้ omitted byte comparison/aggregate workload เป็น gate เพิ่ม |
 | Old-data read-only inventory | แผนของ [D03] พร้อมผู้ตรวจรับแล้ว | Environment/DB, record/access scope, sanitized report และ original retrieval permission แยก | ยังไม่มี audit/result; ไม่บล็อกทั้งระบบหรือประกาศ corruption จาก alias |
 | Recovery/remediation | เสนอแผนเมื่อมี trusted original/provenance | pyw1tt อนุมัติรายกลุ่มพร้อมผลต่อ immutable history/references | ไม่มี automatic remediation หรือรับรอง recovery |
 | Release/deploy | ไม่มีจาก spec/ticket approval เพียงอย่างเดียว | Integrated acceptance + applicable provider evidence + human disposition และ push/deploy authorization | ไม่รับรอง release/Production |
 
-**ขอบเขต DCM ที่ผู้ใช้ระบุล่าสุด:** หากพิจารณา real API หลังอนุมัติตั๋ว ต้องใช้ฐาน `กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45)` เท่านั้น ตรง root `docs_number` = `กทอ.67-00-0001` และ frozen `template_name` = `ก่อหนี้-4_ขยาย(45)` โดย extension เป็นของ File ตาม contract ห้ามสลับ project/template หรือเติมชื่อทดสอบเพื่อหนี collision/unknown ข้อความนี้ไม่ใช่คำสั่งเรียก API ในขั้นสเปก ไม่ขยายเป็น DELETE, arbitrary real-data access, remediation, push หรือ deploy
+#### ขอบเขตทดสอบ DCM จริง
 
-Known same-name files จากหลักฐานเดิมไม่ถูกถือว่าหายไปหรือเป็น disposable fixtures ต้องตรวจ write/ownership boundary ภายใน scope ที่อนุมัติก่อนและไม่ถือ search ว่างอย่างเดียวเป็น safe-write proof หยุดเมื่อ unexpected error/unknown/unsafe alias หรือผลไม่ตรง claim เก็บหลักฐาน ไม่ auto POST/DELETE retry ไม่เปลี่ยนชื่อเพื่อส่งใหม่ หาก execution prerequisites ยังไม่พอให้รายงาน exact blocker ไม่ invent provider API หรือไปใช้เลขโครงการอื่น
+**2026-11-19 — ผู้ใช้อนุญาตให้ทดสอบ DCM จริงแล้ว เฉพาะโครงการ `กทอ.67-00-0001` เท่านั้น** ต้องตรงทั้งค่า ไม่ใช่ prefix match และห้ามค้นหรือทดลองกับโครงการอื่น สำหรับแผน 07/08 ให้คง frozen `template_name` = `ก่อหนี้-4_ขยาย(45)` ฐานชื่อ `กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45)` และ extension ตาม File ไม่สลับ template หรือเติมชื่อเพื่อหลบ collision/unknown
 
-กรณี acceptance ที่ต้องเปลี่ยน `docs_number`, frozen template หรือต้นทางจนออกนอกฐานที่ผู้ใช้ระบุ ให้ตรวจในระบบแยกได้หลังอนุมัติตั๋ว แต่ช่อง real-provider evidence ของกรณีนั้นยัง pending จนมี execution scope ที่อนุญาตจริง ไม่เปลี่ยนเลขโครงการ/ชื่อปลายทางเพื่อเติม matrix ให้ครบเอง
+สิทธิ์นี้ครอบคลุมการตรวจปลายทาง/รายการทดสอบใน scope และอัปโหลด **ไฟล์สังเคราะห์** ตามแผน 07/08 เมื่อยืนยันเงื่อนไขก่อนส่งครบ ไม่ต้องขออนุญาตเริ่มทดสอบซ้ำ แต่ไม่ใช่สิทธิ์ DELETE (รวม cleanup อัตโนมัติ), audit หรือแก้ข้อมูลใช้งานจริง, อ่านไฟล์ต้นฉบับเดิมนอกสิทธิ์, เข้าถึง provider logs, remediation, push หรือ deploy
+
+ก่อน POST ให้ยืนยันบัญชี/environment, ปลายทางโครงการจริง, ขอบเขตไฟล์ชื่อซ้ำที่มีอยู่ และผู้ดูแลไฟล์ทดสอบ ต้องเลือกทางที่ไม่ส่ง DELETE อัตโนมัติ; ถ้ายืนยันไม่ได้ให้หยุดก่อนส่ง ไม่ถือ search ว่างเป็น safe-write proof หรือถือไฟล์เดิมเป็น disposable คง security/integrity checks เดิม เมื่อพบ unexpected error, unknown, unsafe alias หรือ bytes ไม่ตรง ให้หยุดและเก็บหลักฐาน ไม่ auto POST/DELETE retry ไม่เปลี่ยนชื่อเพื่อส่งใหม่
+
+กรณีที่ต้องเปลี่ยน `docs_number` หรือออกนอกปลายทางทดสอบที่ยืนยันแล้วให้ตรวจ local และคงช่อง real-provider evidence เป็น pending การอนุญาตนี้ไม่ปลด HOLD ของ 07/08 จนได้ผลจริง ไม่ยุติคำขอเดิมใน 09 และไม่เปิดสิทธิ์ old-data inventory ใน 10
+
+#### เพดานการทดสอบในรอบนี้
+
+**2026-11-19 — ลองได้สูงสุด 3 ครั้งต่อเคส รวมครั้งแรก** นับตาม scenario เดิมแม้เปลี่ยนวิธีขับทดสอบ บันทึกผลและสาเหตุแต่ละครั้ง หลังครั้งที่ 3 ยังไม่ผ่านให้รายงาน **ทำต่อไม่ได้ — ล้มเหลว** พร้อมสาเหตุที่สังเกตได้ ไม่ลองครั้งที่ 4 ถ้าขาดสิทธิ์/ไม่มีเงื่อนไขทดสอบที่ปลอดภัย ให้หยุดและรายงานได้ก่อนครบ 3 ครั้ง
+
+เพดานนี้เป็นกติกาการเก็บหลักฐาน ไม่เปลี่ยน retry ในตัวแอป ไม่อนุญาตให้ส่ง POST ซ้ำเมื่อผลไม่แน่นอน หรือส่ง DELETE จริง ไม่ลองซ้ำเพื่อข้าม guard หรือพิสูจน์ผลคำขอเดิม
 
 ### Evidence และ provenance
 
@@ -378,3 +388,29 @@ SHA-256 ต่อไปนี้ระบุ Working Tree snapshot ที่ใ�
 - Source01–05รวมแล้ว Application baselineล่าสุด `c91472d`;01/02/04/05เป็น ready-for-human ส่วน03/06ยัง needs-info ตาม native support matrix ที่พิสูจน์ได้ ไม่ประกาศสเปก accepted หรือเปลี่ยน policy เพื่อปิดช่องที่ยังไม่ตรวจ
 - [Acceptance report](acceptance-report.md) และ [native supplement N09–N18](acceptance/06-native-final/report.md) แยก revision, actual HTTP/native/browser, before/after bug proof, source-only/unit evidence, partial/unverified และ remaining risks ไว้ชัดเจน ผลเก่าไม่ถูก relabel เป็นผล source ใหม่
 - Provider07/08, original-request settlement09, old-data10 และ human acceptanceยัง HOLD ตาม prerequisites ของตน แม้ local suitesผ่าน ไม่เพิ่ม byte-comparison/aggregate-capacity workload และไม่ถือ teardown ระบบจำลองเป็น provider DELETE/finality evidence
+
+### Local continuation — 2026-11-19 — base1071d3c
+
+- Working Tree fixes shared cold hidden/zero-area button projection/normalization and classifies only the initial deletion transaction's verified serialization abort as409 before external dispatch. No retry, weaker isolation, new schema/dependency/config/export contract or guard removal.
+- Added actual cold geometry, native keyboard hidden-target, physical-row removal/minimum-row, native Correction/history/download and normal User Submit/default-next evidence. [Continuation report](acceptance-report.md#local-continuation-from-1071d3c--2026-11-19) and its typed artifact retain exact source-stage limits; local originals/transport do not establish DCM acceptance.
+- 01/02/04/05 remains ready-for-human;03/06 remains needs-info for the stated native matrix/confirmed-removal gaps and footer risk.07–10 and human review remain HOLD. Original nine Wayfinder tickets, real DCM/live data/real DELETE, push and deploy were not changed or exercised.
+
+### Combined native evidence continuation — 2026-11-19
+
+- [Added actual native report](acceptance-report.md#combined-native-matrix-continuation--2026-11-19) proves every picker binding in four User/Admin × legacy/template scopes under combined filter/hidden-width0/hidden-heights22/0 geometry. Coupled save/removal/reopen, canonical physical-row receipts, immutable revisions and literal originals remain consistent; normal browser next-round behavior is unchanged.
+- Settled/cold520 footer samples fit without a layout patch. Actual native control deletion fails capture before provider writes; Undo retains pending File. These bounded observations neither certify every native permutation nor close already-queued confirmed-removal, provider/settlement/old-data or human acceptance.
+- No application change in this added evidence phase, no decision reopened, no original Wayfinder ticket edited and no real DCM/data/DELETE/push/deploy. Existing ticket dispositions and authorization gates remain unchanged.
+
+### Current ticket dispositions
+
+All ten implementation tickets are closed under the [scoped owner decisions](acceptance-report.md#remaining-actions-by-ticket). Scoped closure of 03/06 does not certify the unchecked native matrix or genuinely queued removal delivered after capture. 09 is closed for the scoped DCM HTTP 422 requests only; it does not establish finality for the old HTTP 500. The limited audit in 10 does not certify uninspected history. Cleanup of retained DCM test files is separate from closure. None of these decisions authorizes push or deployment.
+
+The owner separately authorized and accepted the ticket 07 disposable-file DELETE test and the ticket 08 `กทอ.67-00-0001` to `กทอ.67-00-0003` routing test. These are case-specific results, not broader Production access. Use the acceptance report for the exact limits.
+
+### Why live tests use DCM Production
+
+The owner relayed that DCM has no UAT server for Folio integration testing. DCM allows testing against its Production service and expects the resulting test artifacts to be cleaned up. This statement is an owner-relayed provider policy, not proof of a specific API guarantee or approval to deploy Folio.
+
+Before each run, identify the exact document number, approved folder/template and Folio service account; use only known synthetic input. Verify target visibility and existing-file/ownership boundaries before a write. Record the cleanup owner and exact artifact identity so cleanup can be tracked. Only delete a specifically authorized, verified synthetic resource with no surviving references; no wildcard or automatic cleanup against real data, no retry after uncertain dispatch, and no change to existing Folio guards. The owner handles retained artifacts unless a specific DELETE is authorized.
+
+The owner authorized document numbers `กทอ.67-00-0000` through `กทอ.67-00-0009` for scoped DCM testing; each run still names the exact project, frozen template and cleanup owner. The owner also reported that a successful API upload creates a missing folder. Do not infer from an empty search that upload cannot work, or treat this as a verified guarantee. For an intentionally missing folder, verify the intended routing and record that folder creation is an expected Production side effect of the authorized test. The 0001-to-0003 case did not exercise this because both target directories were already present.

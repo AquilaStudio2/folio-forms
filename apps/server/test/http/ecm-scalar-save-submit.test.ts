@@ -26,6 +26,7 @@ import {
   serializeSpreadsheetXml,
 } from "../../src/documents/spreadsheets/xml";
 import type { SpreadsheetXmlNode } from "../../src/documents/spreadsheets/xml";
+import { lockAttachmentLedger } from "../../src/ecm/identity";
 import { actionEditorCapability } from "../../src/editor/authorization";
 import type { EditorLeaseGrant } from "../../src/editor/leases";
 import { claimEditorLease } from "../../src/editor/leases";
@@ -1008,7 +1009,7 @@ const fillFirstReceiptBudget = (f: Fixture) => {
     proof: {
       file_link: `${provider.url.origin}/files/${"a".repeat(36)}`,
       file_token: "a".repeat(64),
-      original_name: "Original.BIN",
+      original_name: "Original.PDF",
       size_bytes: 4,
     },
   };
@@ -1047,7 +1048,7 @@ const tableRowsSchema = z.array(
     proof: tableAttachmentSchema.nullable(),
   })
 );
-const file = (bytes = new Uint8Array([0, 255, 7, 1]), name = "Original.BIN") =>
+const file = (bytes = new Uint8Array([0, 255, 7, 1]), name = "Original.PDF") =>
   new File([bytes], name, { type: "application/x-encrypted-private" });
 interface CorrectionBridgeFixture {
   capabilities: Record<string, string>;
@@ -1244,7 +1245,7 @@ test("template scalar object receipt saves without year but a new upload cannot 
     bytes: new Uint8Array([0, 255, 7, 1]),
     category: null,
     fields: ["documentFile", "template"],
-    name: "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+    name: "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).PDF",
     number: null,
     template: "1",
     year: null,
@@ -1262,7 +1263,7 @@ test("template scalar object receipt saves without year but a new upload cannot 
     await send(
       owner,
       {
-        folio_proof: file(new Uint8Array([9, 8]), "Replacement.BIN"),
+        folio_proof: file(new Uint8Array([9, 8]), "Replacement.PDF"),
       },
       "submit"
     )
@@ -1420,7 +1421,7 @@ test("Correction authenticates independent bearer and cookie credentials while p
       owner,
       admin,
       bridge,
-      { folio_proof: file(new Uint8Array([9]), "verified.bin") },
+      { folio_proof: file(new Uint8Array([9, 254]), "verified.pdf") },
       {},
       false,
       { Authorization: `Bearer ${admin.bearer}`, Cookie: admin.cookie }
@@ -1432,7 +1433,7 @@ test("Correction authenticates independent bearer and cookie credentials while p
     where: { responseId: owner.response.id },
   });
   expect(correction.data).toMatchObject({
-    proof: { original_name: "verified.bin", size_bytes: 1 },
+    proof: { original_name: "verified.pdf", size_bytes: 2 },
   });
 });
 
@@ -1575,7 +1576,7 @@ test("template unknown overwrite retains canonical answer but reports mutable UR
     await send(
       owner,
       {
-        folio_proof: file(new Uint8Array([4, 3, 2]), "New.BIN"),
+        folio_proof: file(new Uint8Array([4, 3, 2]), "New.PDF"),
       },
       "draft",
       checkpoint
@@ -1674,7 +1675,7 @@ test("template docs_number change reuses authenticated original without picker, 
     path: "/api/beeecm/public/file",
   });
   expect(received.at(-1)?.bytes).toEqual(new Uint8Array([0, 255, 7, 1]));
-  expect(received.at(-1)?.name).toBe("CHANGED-ก่อหนี้-4_ขยาย(45).BIN");
+  expect(received.at(-1)?.name).toBe("CHANGED-ก่อหนี้-4_ขยาย(45).PDF");
   await resume(owner);
   expect((await poll(owner, await send(owner, {}, "submit"))).status).toBe(
     "completed"
@@ -1683,23 +1684,115 @@ test("template docs_number change reuses authenticated original without picker, 
   expect(originalReads.length).toBe(reads + 1);
 });
 
+const seedHistoricalAttachmentBytes = async (
+  operationId: string,
+  receipt: z.infer<typeof attachmentSchema>,
+  bytes: Uint8Array
+) => {
+  // Keep the actual committed receipt, snapshot reference and workbook URL.
+  const path = new URL(receipt.file_link).pathname;
+  providerFiles.set(path, { ...fixtureValue(providerFiles.get(path)), bytes });
+  const { count } = await prisma.ecmAttachmentVersion.updateMany({
+    data: {
+      originalName: receipt.original_name,
+      originalSha256: new Bun.CryptoHasher("sha256")
+        .update(bytes)
+        .digest("hex"),
+      sizeBytes: receipt.size_bytes,
+    },
+    where: { fileToken: receipt.file_token, operationId, state: "committed" },
+  });
+  expect(count).toBe(1);
+};
+
+const draftAttachmentReferences = async (f: Fixture) =>
+  (
+    await prisma.ecmAttachmentReference.findMany({
+      orderBy: { versionId: "asc" },
+      select: { snapshotId: true, versionId: true },
+      where: { responseId: f.response.id },
+    })
+  ).map(({ snapshotId, versionId }) => ({
+    current: snapshotId === f.documentKey,
+    versionId,
+  }));
+
 test.each([
-  ["binary.BIN", new Uint8Array([0, 255, 7, 1])],
-  ["original.html", new TextEncoder().encode("<!doctype html><p>original</p>")],
+  ["Original.PDF", 0],
+  ["Original.PDF", 1],
+  ["Original.BIN", 2],
+  ["Original", 2],
+] as const)(
+  "historical %s (%i bytes) remains readable and satisfies Submit without reupload",
+  async (name, size) => {
+    const f = await fixture({ templateMode: true });
+    const initial = await poll(f, await send(f, { folio_proof: file() }));
+    expect(initial.status).toBe("completed");
+    const saved = await draft(f);
+    const receipt = {
+      ...attachmentSchema.parse(saved.proof),
+      original_name: name,
+      size_bytes: size,
+    };
+    const bytes = new Uint8Array([255, 254]).slice(0, size);
+    await seedHistoricalAttachmentBytes(initial.operationId, receipt, bytes);
+    const historical = { ...saved, proof: receipt };
+    await prisma.response.update({
+      data: { draftData: jsonValue(historical) },
+      where: { id: f.response.id },
+    });
+    expect(await draft(f)).toEqual(historical);
+    const downloaded = await fetch(receipt.file_link);
+    expect(downloaded.status).toBe(200);
+    expect(new Uint8Array(await downloaded.arrayBuffer())).toEqual(bytes);
+    await resume(f);
+    const uploads = received.length;
+    const reads = originalReads.length;
+    const deletes = deleted.length;
+    const workbook = fixtureValue(snapshots.get(f.documentKey));
+    snapshots.set(
+      f.documentKey,
+      replaceCell(workbook, "B2", `CHANGED.${f.response.id}`)
+    );
+    const blocked = await poll(f, await send(f, {}));
+    expect(blocked.status).toBe("failed");
+    expect(blocked.result?.errorMessage).toContain("กรุณาเลือกไฟล์ใหม่");
+    if (!name.toLowerCase().endsWith(".pdf")) {
+      expect(blocked.result?.errorMessage).toContain(
+        "รองรับเฉพาะไฟล์ PDF, DOCX, XLSX, PNG และ TXT"
+      );
+    }
+    expect(await draft(f)).toEqual(historical);
+    snapshots.set(f.documentKey, workbook);
+    const submitted = await poll(f, await send(f, {}, "submit"));
+    expect(submitted.status).toBe("completed");
+    const submission = await prisma.submission.findFirstOrThrow({
+      where: { responseId: f.response.id },
+    });
+    expect(submission.data).toMatchObject({ proof: receipt });
+    expect(received.length).toBe(uploads);
+    expect(originalReads.length).toBe(reads);
+    expect(deleted.length).toBe(deletes);
+  }
+);
+
+test.each([
+  ["binary.PDF", new Uint8Array([0, 255, 7, 1])],
+  ["original.txt", new TextEncoder().encode("<!doctype html><p>original</p>")],
   ["plain.txt", new TextEncoder().encode("ต้นฉบับ\n")],
   ["image.PNG", new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])],
   [
-    "protected.zip",
+    "protected.DOCX",
     Buffer.from(
       "UEsDBAoACQAAAGhUcV2gTZqnEAAAAAQAAAAMABwAb3JpZ2luYWwuYmluVVQJAAN0y/tqEM37anV4CwABBPUBAAAEAAAAADHQzZpxfvkmszL+oRDy49FQSwcIoE2apxAAAAAEAAAAUEsBAh4DCgAJAAAAaFRxXaBNmqcQAAAABAAAAAwAGAAAAAAAAAAAAKSBAAAAAG9yaWdpbmFsLmJpblVUBQADdMv7anV4CwABBPUBAAAEAAAAAFBLBQYAAAAAAQABAFIAAABmAAAAAAA=",
       "base64"
     ),
   ],
-  ["extensionless", new Uint8Array([5, 4, 3])],
-  ["empty", new Uint8Array(0)],
-  ["one.bin", new Uint8Array([255])],
-  ["near-maximum.bin", new Uint8Array(9_999_999)],
-  ["maximum.bin", new Uint8Array(10_000_000)],
+  ["original.XLSX", new Uint8Array([5, 4, 3])],
+  ["minimum.txt", new Uint8Array([0, 254])],
+  ["small.pdf", new Uint8Array([255, 254, 253])],
+  ["near-maximum.pdf", new Uint8Array(9_999_999)],
+  ["maximum.pdf", new Uint8Array(10_000_000)],
 ] as const)(
   "template number change preserves exact simulated original %s",
   async (name, bytes) => {
@@ -1812,7 +1905,7 @@ test("template replacement wins over original retrieval on number change", async
       await poll(
         owner,
         await send(owner, {
-          folio_proof: file(new Uint8Array([8, 9]), "new.bin"),
+          folio_proof: file(new Uint8Array([8, 9]), "new.pdf"),
         })
       )
     ).status
@@ -1826,7 +1919,7 @@ test.each([
   "same-size-preview",
   "same-size-error",
 ] as const)(
-  "template digest rejects %s without rejecting legitimate HTML originals",
+  "template digest rejects %s for a TXT original containing HTML",
   async (mode) => {
     const owner = await fixture({ templateMode: true });
     const bytes = new TextEncoder().encode(
@@ -1836,7 +1929,7 @@ test.each([
       (
         await poll(
           owner,
-          await send(owner, { folio_proof: file(bytes, "original.html") })
+          await send(owner, { folio_proof: file(bytes, "original.txt") })
         )
       ).status
     ).toBe("completed");
@@ -1942,8 +2035,8 @@ test.each([
   }
 );
 
-test.each([0, 10_000_000])(
-  "template scalar preserves %i original bytes and extensionless filename",
+test.each([2, 10_000_000])(
+  "template scalar preserves %i original bytes and uppercase extension",
   async (size) => {
     const owner = await fixture({ templateMode: true });
     const bytes = new Uint8Array(size);
@@ -1956,14 +2049,14 @@ test.each([0, 10_000_000])(
           owner,
           await send(
             owner,
-            { folio_proof: file(bytes, "extensionless") },
+            { folio_proof: file(bytes, "original.XLSX") },
             "submit"
           )
         )
       ).status
     ).toBe("completed");
     expect(received.at(-1)?.bytes).toEqual(bytes);
-    expect(received.at(-1)?.name.endsWith("-ก่อหนี้-4_ขยาย(45)")).toBe(true);
+    expect(received.at(-1)?.name).toMatch(/-ก่อหนี้-4_ขยาย\(45\)\.XLSX$/u);
   }
 );
 
@@ -1982,7 +2075,7 @@ test("template distinct replacement keeps B usable with persistent old-file clea
       await poll(
         owner,
         await send(owner, {
-          folio_proof: file(new Uint8Array([6]), "Replacement.BIN"),
+          folio_proof: file(new Uint8Array([6, 254]), "Replacement.PDF"),
         })
       )
     ).status
@@ -2027,7 +2120,7 @@ test("template received same-identity overwrite cannot pretend rollback after ca
   receiptBarrier = { enter: () => entered.resolve(), release: release.promise };
   const deletes = deleted.length;
   const accepted = await send(owner, {
-    folio_proof: file(new Uint8Array([7, 6]), "Replacement.BIN"),
+    folio_proof: file(new Uint8Array([7, 6]), "Replacement.PDF"),
   });
   await entered.promise;
   await prisma.editorLease.delete({ where: { id: owner.lease.id } });
@@ -2102,7 +2195,10 @@ test("Correction validates reason, required physical slots and eligibility befor
     await send(
       owner,
       {
-        '["folio_row_proof",2]': file(new Uint8Array(), "required-row"),
+        '["folio_row_proof",2]': file(
+          new Uint8Array([0, 254]),
+          "required-row.pdf"
+        ),
         folio_proof: file(),
       },
       "submit"
@@ -2121,15 +2217,15 @@ test("Correction validates reason, required physical slots and eligibility befor
       proof: {
         file_link: expect.any(String),
         file_token: expect.any(String),
-        original_name: "required-row",
+        original_name: "required-row.pdf",
         row_index: 2,
-        size_bytes: 0,
+        size_bytes: 2,
       },
     },
   ]);
   const bridge = await openCorrection(owner, admin);
   expect(bridge.uploadPoc.savedData).toMatchObject({
-    proof: { original_name: "Original.BIN" },
+    proof: { original_name: "Original.PDF" },
   });
   const uploads = received.length;
   const deletes = deleted.length;
@@ -2256,14 +2352,14 @@ test("template Correction freezes catalog routing and preserves history while re
   });
   const admin = await fixture({ admin: true });
   const scalar = new Uint8Array([6, 0, 255]);
-  const row = new Uint8Array();
+  const row = new Uint8Array([0, 254]);
   const operationResult2 = await poll(
     owner,
     await send(
       owner,
       {
         '["folio_row_proof",2]': file(row, "empty.TXT"),
-        folio_proof: file(scalar, "scalar.BIN"),
+        folio_proof: file(scalar, "scalar.PDF"),
       },
       "submit"
     )
@@ -2354,11 +2450,11 @@ test("template Correction freezes catalog routing and preserves history while re
     {
       bytes: [...scalar],
       fields: ["documentFile", "template"],
-      name: `CORRECTION.${owner.response.id}-ก่อหนี้-4_ขยาย(45)${templateNameSuffix}.BIN`,
+      name: `CORRECTION.${owner.response.id}-ก่อหนี้-4_ขยาย(45)${templateNameSuffix}.PDF`,
       template: "1",
     },
     {
-      bytes: [],
+      bytes: [...row],
       fields: ["documentFile", "template"],
       name: `CORRECTION.${owner.response.id}-หลักฐาน-ตาราง${templateNameSuffix}.TXT`,
       template: "1",
@@ -2422,7 +2518,7 @@ test("template Correction freezes catalog routing and preserves history while re
   const protectedCorrection = await poll(
     admin,
     await postCorrection(owner, admin, latest, {
-      folio_proof: file(scalar, "newer.BIN"),
+      folio_proof: file(scalar, "newer.PDF"),
     })
   );
   expect(protectedCorrection.status).toBe("completed");
@@ -2447,8 +2543,8 @@ test("Correction metadata and removal preserve older selected file versions and 
     await send(
       owner,
       {
-        folio_other: file(new Uint8Array([3]), "optional"),
-        folio_proof: file(new Uint8Array([1, 2]), "proof.BIN"),
+        folio_other: file(new Uint8Array([3, 254]), "optional.txt"),
+        folio_proof: file(new Uint8Array([1, 2]), "proof.PDF"),
       },
       "submit"
     )
@@ -2476,7 +2572,7 @@ test("Correction metadata and removal preserve older selected file versions and 
   expect(corrected.status).toBe("completed");
   expect(received.slice(uploads).map((entry) => [...entry.bytes])).toEqual([
     [1, 2],
-    [3],
+    [3, 254],
   ]);
   expect(received.slice(uploads).map((entry) => entry.number)).toEqual([
     "CORRECTED.57",
@@ -2791,6 +2887,60 @@ const operatorAction = (
     )
   );
 
+test("TCP listener rejects unsupported attachments without mutation and accepts uppercase supported extensions", async () => {
+  const f = await fixture({ templateMode: true });
+  const listenerUrl = new URL(fixtureValue(app.server).url);
+  listenerUrl.hostname = "127.0.0.1";
+  const { origin } = listenerUrl;
+  const before = await draft(f);
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const bytes = new Uint8Array([17, 23]);
+  for (const name of [
+    "proof.html",
+    "proof.bin",
+    "proof.zip",
+    "proof",
+    ".PDF",
+  ]) {
+    const rejected = await send(
+      f,
+      { folio_proof: new File([bytes], name, { type: "application/pdf" }) },
+      "draft",
+      crypto.randomUUID(),
+      {},
+      origin
+    );
+    expect(rejected.status).toBe(422);
+    expect(await rejected.json()).toMatchObject({
+      error: "invalid_attachment",
+      message: expect.stringContaining(
+        "รองรับเฉพาะไฟล์ PDF, DOCX, XLSX, PNG และ TXT"
+      ),
+    });
+    expect(await draft(f)).toEqual(before);
+    expect(received.length).toBe(uploads);
+    expect(deleted.length).toBe(deletes);
+  }
+  const accepted = await poll(
+    f,
+    await send(
+      f,
+      { folio_proof: new File([bytes], "Proof.PDF") },
+      "draft",
+      crypto.randomUUID(),
+      {},
+      origin
+    )
+  );
+  expect(accepted.status).toBe("completed");
+  expect(received.length).toBe(uploads + 1);
+  expect(received.at(-1)).toMatchObject({ bytes });
+  expect(received.at(-1)?.name).toMatch(/\.PDF$/u);
+  const saved = await draft(f);
+  expect(saved.proof).toMatchObject({ original_name: "Proof.PDF" });
+});
+
 test("TCP listener accepts fourteen valid 10,000,000-byte files in one atomic Draft", async () => {
   const f = await fixture({ tableAttachments: true, tableRows: 7 });
   const listenerUrl = new URL(fixtureValue(app.server).url);
@@ -2802,11 +2952,11 @@ test("TCP listener accepts fourteen valid 10,000,000-byte files in one atomic Dr
   for (let row = 0; row < 7; row += 1) {
     files[JSON.stringify(["folio_row_proof", row])] = file(
       bytes,
-      `proof-${row}.BIN`
+      `proof-${row}.PDF`
     );
     files[JSON.stringify(["folio_row_other", row])] = file(
       bytes,
-      `other-${row}.BIN`
+      `other-${row}.PDF`
     );
   }
   const completed = await poll(
@@ -2820,12 +2970,12 @@ test("TCP listener accepts fourteen valid 10,000,000-byte files in one atomic Dr
   for (let row = 0; row < 7; row += 1) {
     expect(rows[row]).toMatchObject({
       other: {
-        original_name: `other-${row}.BIN`,
+        original_name: `other-${row}.PDF`,
         row_index: row,
         size_bytes: 10_000_000,
       },
       proof: {
-        original_name: `proof-${row}.BIN`,
+        original_name: `proof-${row}.PDF`,
         row_index: row,
         size_bytes: 10_000_000,
       },
@@ -2885,24 +3035,85 @@ test("TCP chunked multipart cannot exceed its trusted slot budget or start provi
   expect(await draft(f)).toEqual(before);
 });
 
+test("HTTP rejects zero- and one-byte scalar and table uploads before dispatch, but accepts two bytes", async () => {
+  const f = await fixture({ tableAttachments: true });
+  const table = JSON.stringify(["folio_row_proof", 2]);
+  const other = JSON.stringify(["folio_row_other", 2]);
+  const initial = await poll(
+    f,
+    await send(f, { folio_proof: file(), [table]: file(), [other]: file() })
+  );
+  expect(initial.status).toBe("completed");
+  const before = await draft(f);
+  await resume(f);
+  const uploads = received.length;
+  const listenerUrl = new URL(fixtureValue(app.server).url);
+  listenerUrl.hostname = "127.0.0.1";
+  const valid = file(new Uint8Array([17, 23]), "minimum.PDF");
+  for (const bytes of [new Uint8Array(), new Uint8Array([11])]) {
+    for (const binding of ["folio_proof", table]) {
+      const rejected = await send(
+        f,
+        { folio_proof: valid, [table]: valid, [binding]: file(bytes) },
+        "draft",
+        crypto.randomUUID(),
+        {},
+        listenerUrl.origin
+      );
+      expect(rejected.status).toBe(422);
+      expect(await rejected.json()).toMatchObject({
+        error: "invalid_attachment",
+      });
+      expect(received.length).toBe(uploads);
+      expect(await draft(f)).toEqual(before);
+    }
+  }
+  const completed = await poll(
+    f,
+    await send(
+      f,
+      { [table]: valid },
+      "draft",
+      crypto.randomUUID(),
+      {},
+      listenerUrl.origin
+    )
+  );
+  expect(completed.status).toBe("completed");
+  const oldRows = tableRowsSchema.parse(before.rows);
+  const saved = await draft(f);
+  expect(saved).toMatchObject({
+    ...before,
+    rows: [
+      {
+        ...oldRows[0],
+        proof: { original_name: "minimum.PDF", row_index: 2, size_bytes: 2 },
+      },
+    ],
+  });
+  expect(received.slice(uploads).map((entry) => [...entry.bytes])).toEqual([
+    [17, 23],
+  ]);
+});
+
 for (const templateMode of [false, true]) {
-  test(`${templateMode ? "template " : ""}table attachments retain physical gaps and attachment-only zero-byte rows across multiple columns`, async () => {
+  test(`${templateMode ? "template " : ""}table attachments retain physical gaps and attachment-only two-byte rows across multiple columns`, async () => {
     const f = await fixture({ tableAttachments: true, templateMode });
     const uploads = received.length;
     const completed = await poll(
       f,
       await send(f, {
         [JSON.stringify(["folio_row_proof", 2])]: file(
-          new Uint8Array(),
+          new Uint8Array([0, 254]),
           "empty.TXT"
         ),
         [JSON.stringify(["folio_row_other", 2])]: file(
-          new Uint8Array([7]),
-          "other.BIN"
+          new Uint8Array([7, 254]),
+          "other.PDF"
         ),
         [JSON.stringify(["folio_row_other", 3])]: file(
-          new Uint8Array([9]),
-          "last.BIN"
+          new Uint8Array([9, 254]),
+          "last.PDF"
         ),
       })
     );
@@ -2914,16 +3125,16 @@ for (const templateMode of [false, true]) {
         other: {
           file_link: expect.any(String),
           file_token: expect.any(String),
-          original_name: "other.BIN",
+          original_name: "other.PDF",
           row_index: 2,
-          size_bytes: 1,
+          size_bytes: 2,
         },
         proof: {
           file_link: expect.any(String),
           file_token: expect.any(String),
           original_name: "empty.TXT",
           row_index: 2,
-          size_bytes: 0,
+          size_bytes: 2,
         },
       },
       {
@@ -2931,17 +3142,17 @@ for (const templateMode of [false, true]) {
         other: {
           file_link: expect.any(String),
           file_token: expect.any(String),
-          original_name: "last.BIN",
+          original_name: "last.PDF",
           row_index: 3,
-          size_bytes: 1,
+          size_bytes: 2,
         },
         proof: null,
       },
     ]);
     expect(received.slice(uploads).map((entry) => [...entry.bytes])).toEqual([
-      [],
-      [7],
-      [9],
+      [0, 254],
+      [7, 254],
+      [9, 254],
     ]);
     await resume(f);
     const workbook = readSpreadsheetWorkbook(
@@ -2967,7 +3178,7 @@ for (const templateMode of [false, true]) {
         {
           folio_proof: file(),
           [JSON.stringify(["folio_row_proof", 2])]: file(
-            new Uint8Array(),
+            new Uint8Array([0, 254]),
             "empty.TXT"
           ),
         },
@@ -3018,7 +3229,7 @@ for (const templateMode of [false, true]) {
     expect(received.length).toBe(uploads);
   });
 
-  test(`${templateMode ? "template " : ""}table zero-byte required files submit with valid ordinary input at physical not compact indices`, async () => {
+  test(`${templateMode ? "template " : ""}table two-byte required files submit with valid ordinary input at physical not compact indices`, async () => {
     const f = await fixture({
       tableAttachments: true,
       tableItemRequired: true,
@@ -3039,7 +3250,7 @@ for (const templateMode of [false, true]) {
         {
           folio_proof: file(),
           [JSON.stringify(["folio_row_proof", 2])]: file(
-            new Uint8Array(),
+            new Uint8Array([0, 254]),
             "empty.TXT"
           ),
         },
@@ -3061,7 +3272,7 @@ for (const templateMode of [false, true]) {
           file_token: expect.any(String),
           original_name: "empty.TXT",
           row_index: 2,
-          size_bytes: 0,
+          size_bytes: 2,
         },
       },
     ]);
@@ -3073,12 +3284,12 @@ for (const templateMode of [false, true]) {
       f,
       await send(f, {
         [JSON.stringify(["folio_row_proof", 2])]: file(
-          new Uint8Array(),
+          new Uint8Array([0, 254]),
           "empty.TXT"
         ),
         [JSON.stringify(["folio_row_other", 3])]: file(
-          new Uint8Array([9]),
-          "last.BIN"
+          new Uint8Array([9, 254]),
+          "last.PDF"
         ),
       })
     );
@@ -3173,11 +3384,11 @@ for (const templateMode of [false, true]) {
       await send(f, {
         [JSON.stringify(["folio_row_proof", 0])]: file(
           new Uint8Array([1, 2]),
-          "A.BIN"
+          "A.PDF"
         ),
         [JSON.stringify(["folio_row_other", 2])]: file(
           new Uint8Array([3, 4]),
-          "B.BIN"
+          "B.PDF"
         ),
       })
     );
@@ -3220,8 +3431,8 @@ for (const templateMode of [false, true]) {
         f,
         await send(f, {
           [JSON.stringify(["folio_row_proof", 0])]: file(
-            new Uint8Array([9]),
-            "pending.BIN"
+            new Uint8Array([9, 254]),
+            "pending.PDF"
           ),
         })
       );
@@ -3320,16 +3531,16 @@ for (const templateMode of [false, true]) {
       f,
       await send(f, {
         [JSON.stringify(["folio_row_proof", 2])]: file(
-          new Uint8Array(),
+          new Uint8Array([0, 254]),
           "empty.TXT"
         ),
         [JSON.stringify(["folio_row_other", 2])]: file(
-          new Uint8Array([7]),
-          "other.BIN"
+          new Uint8Array([7, 254]),
+          "other.PDF"
         ),
         [JSON.stringify(["folio_row_other", 3])]: file(
-          new Uint8Array([9]),
-          "last.BIN"
+          new Uint8Array([9, 254]),
+          "last.PDF"
         ),
       })
     );
@@ -3379,7 +3590,7 @@ test.each([false, true])(
       f,
       await send(f, {
         [JSON.stringify(["folio_row_proof", 2])]: file(
-          new Uint8Array([1]),
+          new Uint8Array([1, 254]),
           "old.TXT"
         ),
       })
@@ -3393,29 +3604,29 @@ test.each([false, true])(
       f,
       await send(f, {
         [JSON.stringify(["folio_row_proof", 2])]: file(
-          new Uint8Array([2]),
+          new Uint8Array([2, 254]),
           "replace.TXT"
         ),
         [JSON.stringify(["folio_row_other", 2])]: file(
-          new Uint8Array([3]),
-          "reject.BIN"
+          new Uint8Array([3, 254]),
+          "reject.PDF"
         ),
         [JSON.stringify(["folio_row_other", 3])]: file(
-          new Uint8Array([4]),
-          "not-sent.BIN"
+          new Uint8Array([4, 254]),
+          "not-sent.PDF"
         ),
       })
     );
     expect(result.status).toBe("failed");
     expect(received.slice(uploads).map((entry) => [...entry.bytes])).toEqual([
-      [2],
-      [3],
+      [2, 254],
+      [3, 254],
     ]);
     expect(await draft(f)).toEqual(before);
   }
 );
 
-test("template table rejects invalid Draft files and requires other attachment columns on an attachment-only zero-byte row", async () => {
+test("template table rejects invalid Draft files and requires other attachment columns on an attachment-only two-byte row", async () => {
   const f = await fixture({ tableAttachments: true, templateMode: true });
   const uploads = received.length;
   const oversized = await send(f, {
@@ -3430,8 +3641,8 @@ test("template table rejects invalid Draft files and requires other attachment c
       {
         folio_proof: file(),
         [JSON.stringify(["folio_row_other", 2])]: file(
-          new Uint8Array(),
-          "empty.BIN"
+          new Uint8Array([0, 254]),
+          "empty.PDF"
         ),
       },
       "submit"
@@ -3459,24 +3670,24 @@ test("template batch same names preserve each physical row's original bytes and 
     f,
     await send(f, {
       [JSON.stringify(["folio_row_proof", 0])]: file(
-        new Uint8Array([1]),
+        new Uint8Array([1, 254]),
         "first.PDF"
       ),
       [JSON.stringify(["folio_row_proof", 1])]: file(
-        new Uint8Array([2]),
+        new Uint8Array([2, 254]),
         "second.PDF"
       ),
       [JSON.stringify(["folio_row_proof", 2])]: file(
-        new Uint8Array([3]),
+        new Uint8Array([3, 254]),
         "third.PDF"
       ),
       [JSON.stringify(["folio_row_proof", 3])]: file(
-        new Uint8Array([4]),
-        "extensionless"
+        new Uint8Array([4, 254]),
+        "original.XLSX"
       ),
       [JSON.stringify(["folio_row_proof", 4])]: file(
-        new Uint8Array([5]),
-        "also-extensionless"
+        new Uint8Array([5, 254]),
+        "another.XLSX"
       ),
     })
   );
@@ -3485,8 +3696,8 @@ test("template batch same names preserve each physical row's original bytes and 
     `${number}-ก่อหนี้-4_ขยาย(45).PDF`,
     `${number}-ก่อหนี้-4_ขยาย(45).PDF`,
     `${number}-ก่อหนี้-4_ขยาย(45).PDF`,
-    `${number}-ก่อหนี้-4_ขยาย(45)`,
-    `${number}-ก่อหนี้-4_ขยาย(45)`,
+    `${number}-ก่อหนี้-4_ขยาย(45).XLSX`,
+    `${number}-ก่อหนี้-4_ขยาย(45).XLSX`,
   ]);
   const saved = await draft(f);
   const rows = tableRowsSchema.parse(saved.rows);
@@ -3495,7 +3706,7 @@ test("template batch same names preserve each physical row's original bytes and 
     expect(attachment.row_index).toBe(index);
     const original = await fetch(attachment.file_link);
     expect(new Uint8Array(await original.arrayBuffer())).toEqual(
-      new Uint8Array([index + 1])
+      new Uint8Array([index + 1, 254])
     );
   }
   await resume(f);
@@ -3518,17 +3729,17 @@ test("template batch names retain literal suffixes across scalar and table colum
   const result = await poll(
     f,
     await send(f, {
-      folio_proof: file(new Uint8Array([1]), "scalar.pdf"),
+      folio_proof: file(new Uint8Array([1, 254]), "scalar.pdf"),
       [JSON.stringify(["folio_row_proof", 0])]: file(
-        new Uint8Array([2]),
+        new Uint8Array([2, 254]),
         "first.pdf"
       ),
       [JSON.stringify(["folio_row_other", 0])]: file(
-        new Uint8Array([3]),
+        new Uint8Array([3, 254]),
         "literal.pdf"
       ),
       [JSON.stringify(["folio_row_proof", 2])]: file(
-        new Uint8Array([4]),
+        new Uint8Array([4, 254]),
         "last.pdf"
       ),
     })
@@ -3551,7 +3762,7 @@ test("template batch names retain literal suffixes across scalar and table colum
   for (const [index, attachment] of attachments.entries()) {
     const original = await fetch(attachment.file_link);
     expect(new Uint8Array(await original.arrayBuffer())).toEqual(
-      new Uint8Array([index + 1])
+      new Uint8Array([index + 1, 254])
     );
   }
 });
@@ -3570,14 +3781,14 @@ test("template batch same names do not bypass a provider receipt alias conflict"
   const result = await poll(
     f,
     await send(f, {
-      [JSON.stringify(["folio_row_proof", 0])]: file(new Uint8Array([1])),
-      [JSON.stringify(["folio_row_proof", 2])]: file(new Uint8Array([2])),
+      [JSON.stringify(["folio_row_proof", 0])]: file(new Uint8Array([1, 254])),
+      [JSON.stringify(["folio_row_proof", 2])]: file(new Uint8Array([2, 254])),
     })
   );
   expect(result.status).toBe("failed");
   expect(received.slice(uploads).map((entry) => entry.name)).toEqual([
-    `${number}-หลักฐาน-ตาราง.BIN`,
-    `${number}-หลักฐาน-ตาราง.BIN`,
+    `${number}-หลักฐาน-ตาราง.PDF`,
+    `${number}-หลักฐาน-ตาราง.PDF`,
   ]);
   expect(await draft(f)).toEqual({});
   expect(deleted.length).toBe(deletes);
@@ -3591,7 +3802,7 @@ test("template table paired own-Draft receipts stop new uploads without deleting
   const first = await poll(
     f,
     await send(f, {
-      '["folio_row_proof",0]': file(new Uint8Array(), "empty.BIN"),
+      '["folio_row_proof",0]': file(new Uint8Array([0, 254]), "empty.PDF"),
     })
   );
   expect(first.status).toBe("completed");
@@ -3605,7 +3816,7 @@ test("template table paired own-Draft receipts stop new uploads without deleting
   const refused = await poll(
     f,
     await send(f, {
-      '["folio_row_proof",2]': file(new Uint8Array([7, 8]), "last.BIN"),
+      '["folio_row_proof",2]': file(new Uint8Array([7, 8]), "last.PDF"),
     })
   );
   expect(refused.status).toBe("failed");
@@ -3628,8 +3839,8 @@ test("template table identical shared receipts keep both physical attempt refere
     f,
     await send(f, {
       [JSON.stringify(["folio_row_proof", 0])]: file(
-        new Uint8Array([1]),
-        "same.BIN"
+        new Uint8Array([1, 254]),
+        "same.PDF"
       ),
     })
   );
@@ -3641,8 +3852,8 @@ test("template table identical shared receipts keep both physical attempt refere
     f,
     await send(f, {
       [JSON.stringify(["folio_row_proof", 2])]: file(
-        new Uint8Array([2]),
-        "same.BIN"
+        new Uint8Array([2, 254]),
+        "same.PDF"
       ),
     })
   );
@@ -3688,8 +3899,8 @@ test("template table identical shared receipts keep both physical attempt refere
     f,
     await send(f, {
       [JSON.stringify(["folio_row_proof", 1])]: file(
-        new Uint8Array([3]),
-        "same.BIN"
+        new Uint8Array([3, 254]),
+        "same.PDF"
       ),
     })
   );
@@ -3707,7 +3918,7 @@ test("template table identical shared receipts keep both physical attempt refere
   const sharedReceipt = fixtureValue(sharedRows[0]?.proof);
   expect(
     providerFiles.get(new URL(sharedReceipt.file_link).pathname)?.bytes
-  ).toEqual(new Uint8Array([3]));
+  ).toEqual(new Uint8Array([3, 254]));
   expect(received.length).toBe(uploads + 1);
   expect(deleted.length).toBe(deletes);
   await resume(f);
@@ -3787,9 +3998,9 @@ test("template table same names allow independent receipts across foreign Respon
       const operationResult12 = await poll(
         admin,
         await postCorrection(owner, admin, bridge, {
-          folio_proof: file(new Uint8Array(), "safe-scalar.TXT"),
+          folio_proof: file(new Uint8Array([0, 254]), "safe-scalar.TXT"),
           [JSON.stringify(["folio_row_proof", 0])]: file(
-            new Uint8Array(),
+            new Uint8Array([0, 253]),
             "safe.TXT"
           ),
           [JSON.stringify(["folio_row_other", 0])]: file(),
@@ -3809,8 +4020,8 @@ test("template table uncertain shared overwrite keeps the complete Draft and hol
     f,
     await send(f, {
       [JSON.stringify(["folio_row_proof", 2])]: file(
-        new Uint8Array([1]),
-        "old.BIN"
+        new Uint8Array([1, 254]),
+        "old.PDF"
       ),
     })
   );
@@ -3831,11 +4042,11 @@ test("template table uncertain shared overwrite keeps the complete Draft and hol
       {
         [JSON.stringify(["folio_row_proof", 2])]: file(
           new Uint8Array([2, 3]),
-          "new.BIN"
+          "new.PDF"
         ),
         [JSON.stringify(["folio_row_other", 3])]: file(
-          new Uint8Array([4]),
-          "not-sent.BIN"
+          new Uint8Array([4, 254]),
+          "not-sent.PDF"
         ),
       },
       "draft",
@@ -3863,12 +4074,12 @@ test("table metadata changes reupload saved original bytes for every physical sl
     f,
     await send(f, {
       [JSON.stringify(["folio_row_proof", 2])]: file(
-        new Uint8Array(),
+        new Uint8Array([0, 254]),
         "empty.TXT"
       ),
       [JSON.stringify(["folio_row_other", 3])]: file(
-        new Uint8Array([8]),
-        "last.BIN"
+        new Uint8Array([8, 254]),
+        "last.PDF"
       ),
     })
   );
@@ -3889,8 +4100,8 @@ test("table metadata changes reupload saved original bytes for every physical sl
       year: entry.year,
     }))
   ).toEqual([
-    { bytes: [], category: "หลักฐาน", number: "DOC.43", year: "2570" },
-    { bytes: [8], category: "อื่น", number: "DOC.43", year: "2570" },
+    { bytes: [0, 254], category: "หลักฐาน", number: "DOC.43", year: "2570" },
+    { bytes: [8, 254], category: "อื่น", number: "DOC.43", year: "2570" },
   ]);
   const saved = await draft(f);
   const rows = tableRowsSchema.parse(saved.rows);
@@ -3906,8 +4117,8 @@ test("template table removes overwritten row A and reuses surviving B original b
     f,
     await send(f, {
       [JSON.stringify(["folio_row_proof", 0])]: file(
-        new Uint8Array([1]),
-        "same.BIN"
+        new Uint8Array([1, 254]),
+        "same.PDF"
       ),
     })
   );
@@ -3919,8 +4130,8 @@ test("template table removes overwritten row A and reuses surviving B original b
     f,
     await send(f, {
       [JSON.stringify(["folio_row_proof", 2])]: file(
-        new Uint8Array([2]),
-        "same.BIN"
+        new Uint8Array([2, 254]),
+        "same.PDF"
       ),
     })
   );
@@ -3966,13 +4177,13 @@ test("template table removes overwritten row A and reuses surviving B original b
       .slice(uploads)
       .map((entry) => ({ bytes: [...entry.bytes], name: entry.name }))
   ).toEqual([
-    { bytes: [2], name: `SURVIVOR.${f.response.id}-หลักฐาน-ตาราง.BIN` },
+    { bytes: [2, 254], name: `SURVIVOR.${f.response.id}-หลักฐาน-ตาราง.PDF` },
   ]);
   const savedDraft8 = await draft(f);
   const saved = fixtureValue(tableRowsSchema.parse(savedDraft8.rows)[0]?.proof);
   expect(saved.row_index).toBe(1);
   expect(providerFiles.get(new URL(saved.file_link).pathname)?.bytes).toEqual(
-    new Uint8Array([2])
+    new Uint8Array([2, 254])
   );
 });
 
@@ -3982,20 +4193,20 @@ test("template table metadata reuse reads every shifted physical slot through th
     f,
     await send(f, {
       [JSON.stringify(["folio_row_proof", 0])]: file(
-        new Uint8Array(),
+        new Uint8Array([0, 254]),
         "empty.TXT"
       ),
       [JSON.stringify(["folio_row_proof", 2])]: file(
         new Uint8Array([0, 255, 7]),
-        "binary.BIN"
+        "binary.PDF"
       ),
       [JSON.stringify(["folio_row_other", 2])]: file(
         new TextEncoder().encode("<html>original</html>"),
-        "original.html"
+        "original.txt"
       ),
       [JSON.stringify(["folio_row_other", 3])]: file(
-        new Uint8Array([8]),
-        "extensionless"
+        new Uint8Array([8, 254]),
+        "original.XLSX"
       ),
     })
   );
@@ -4035,7 +4246,7 @@ test("template table metadata reuse reads every shifted physical slot through th
     }))
   ).toEqual([
     {
-      bytes: [],
+      bytes: [0, 254],
       fields: ["documentFile", "template"],
       name: `CHANGED.${f.response.id}-หลักฐาน-ตาราง.TXT`,
       template: "1",
@@ -4043,19 +4254,19 @@ test("template table metadata reuse reads every shifted physical slot through th
     {
       bytes: [0, 255, 7],
       fields: ["documentFile", "template"],
-      name: `CHANGED.${f.response.id}-หลักฐาน-ตาราง.BIN`,
+      name: `CHANGED.${f.response.id}-หลักฐาน-ตาราง.PDF`,
       template: "1",
     },
     {
       bytes: [...new TextEncoder().encode("<html>original</html>")],
       fields: ["documentFile", "template"],
-      name: `CHANGED.${f.response.id}-อื่น-ตาราง.html`,
+      name: `CHANGED.${f.response.id}-อื่น-ตาราง.txt`,
       template: "1",
     },
     {
-      bytes: [8],
+      bytes: [8, 254],
       fields: ["documentFile", "template"],
-      name: `CHANGED.${f.response.id}-อื่น-ตาราง`,
+      name: `CHANGED.${f.response.id}-อื่น-ตาราง.XLSX`,
       template: "1",
     },
   ]);
@@ -4076,8 +4287,8 @@ test("template table ambiguous or missing current-alias digests stop metadata re
       f,
       await send(f, {
         [JSON.stringify(["folio_row_proof", 0])]: file(
-          new Uint8Array([1]),
-          "same.BIN"
+          new Uint8Array([1, 254]),
+          "same.PDF"
         ),
       })
     );
@@ -4089,8 +4300,8 @@ test("template table ambiguous or missing current-alias digests stop metadata re
       f,
       await send(f, {
         [JSON.stringify(["folio_row_proof", 2])]: file(
-          new Uint8Array([missing ? 1 : 2]),
-          "same.BIN"
+          new Uint8Array([missing ? 1 : 2, 254]),
+          "same.PDF"
         ),
       })
     );
@@ -4147,7 +4358,7 @@ test.each([
           folio_proof: file(),
           [JSON.stringify(["folio_row_proof", 0])]: file(
             new Uint8Array([2, 4]),
-            "row.BIN"
+            "row.PDF"
           ),
         },
         correction ? "submit" : "draft"
@@ -4542,10 +4753,10 @@ test("Draft metadata change refetches original bytes without reselection and cle
   const canonicalData5 = await draft(f);
   const updated = attachmentSchema.parse(canonicalData5.proof);
   expect(updated.file_link).not.toBe(old.file_link);
-  expect(updated.original_name).toBe("Original.BIN");
+  expect(updated.original_name).toBe("Original.PDF");
   expect([...fixtureValue(received.at(-1)).bytes]).toEqual([0, 255, 7, 1]);
   expect(fixtureValue(received.at(-1)).number).toBe("DOC.43");
-  expect(fixtureValue(received.at(-1)).name.endsWith(".BIN")).toBe(true);
+  expect(fixtureValue(received.at(-1)).name.endsWith(".PDF")).toBe(true);
   expect(deleted).toContain(old.file_token);
   expect(
     fixtureValue(
@@ -4681,7 +4892,7 @@ test("metadata refetch rejects redirects and actual oversized or mismatched byte
   originalReadMode = "ok";
 });
 
-test.each([0, 10_000_000])(
+test.each([2, 10_000_000])(
   "metadata refetch preserves exactly %i original bytes",
   async (size) => {
     const f = await fixture();
@@ -4692,7 +4903,7 @@ test.each([0, 10_000_000])(
     }
     const operationOutcome19 = await poll(
       f,
-      await send(f, { folio_proof: file(bytes, "boundary.BIN") })
+      await send(f, { folio_proof: file(bytes, "boundary.PDF") })
     );
     expect(operationOutcome19.status).toBe("completed");
     const canonicalData20 = await draft(f);
@@ -4710,7 +4921,7 @@ test.each([0, 10_000_000])(
     expect(fixtureValue(received.at(-1)).bytes).toEqual(bytes);
     const canonicalData22 = await draft(f);
     expect(attachmentSchema.parse(canonicalData22.proof)).toMatchObject({
-      original_name: "boundary.BIN",
+      original_name: "boundary.PDF",
       size_bytes: size,
     });
   }
@@ -4721,7 +4932,7 @@ test("a later original-fetch validation failure prevents every planned replaceme
   const operationOutcome23 = await poll(
     f,
     await send(f, {
-      folio_other: file(new Uint8Array([3, 4, 5]), "other"),
+      folio_other: file(new Uint8Array([3, 4, 5]), "other.pdf"),
       folio_proof: file(),
     })
   );
@@ -4738,7 +4949,9 @@ test("a later original-fetch validation failure prevents every planned replaceme
   const authentication = logins;
   const operationOutcome24 = await poll(
     f,
-    await send(f, { folio_proof: file(new Uint8Array([8]), "pending") })
+    await send(f, {
+      folio_proof: file(new Uint8Array([8, 254]), "pending.pdf"),
+    })
   );
   expect(operationOutcome24.status).toBe("failed");
   expect(received.length).toBe(uploads);
@@ -4768,7 +4981,7 @@ test("replacement wins over metadata refetch and invalid removal plans cannot wr
   const operationOutcome26 = await poll(
     f,
     await send(f, {
-      folio_proof: file(new Uint8Array([8, 9]), "replacement"),
+      folio_proof: file(new Uint8Array([8, 9]), "replacement.pdf"),
     })
   );
   expect(operationOutcome26.status).toBe("completed");
@@ -4777,7 +4990,7 @@ test("replacement wins over metadata refetch and invalid removal plans cannot wr
   expect([...fixtureValue(received.at(-1)).bytes]).toEqual([8, 9]);
   const canonicalData27 = await draft(f);
   expect(attachmentSchema.parse(canonicalData27.proof).original_name).toBe(
-    "replacement"
+    "replacement.pdf"
   );
   await resume(f);
   const uploads = received.length;
@@ -4882,7 +5095,7 @@ test("Draft replacement preserves globally shared and immutable historical refer
     const deletes = deleted.length;
     const operationOutcome31 = await poll(
       f,
-      await send(f, { folio_proof: file(new Uint8Array([5]), "new") })
+      await send(f, { folio_proof: file(new Uint8Array([5, 254]), "new.pdf") })
     );
     expect(operationOutcome31.status).toBe("completed");
     expect(deleted.slice(deletes)).not.toContain(old.file_token);
@@ -4953,7 +5166,9 @@ test("implicit row saves reconcile canonical references without ECM writes befor
   deleteSettlements.set(old.file_token, cleanup);
   const operationOutcome37 = await poll(
     f,
-    await send(f, { folio_proof: file(new Uint8Array([3]), "after-row") })
+    await send(f, {
+      folio_proof: file(new Uint8Array([3, 254]), "after-row.pdf"),
+    })
   );
   expect(operationOutcome37.status).toBe("completed");
   await cleanup.promise;
@@ -5247,8 +5462,8 @@ test("final Admin Correction replaces scalar and table files while preserving th
     await send(
       owner,
       {
-        '["folio_row_proof",2]': file(originalRow, "row.bin"),
-        folio_proof: file(originalScalar, "submitted.bin"),
+        '["folio_row_proof",2]': file(originalRow, "row.pdf"),
+        folio_proof: file(originalScalar, "submitted.pdf"),
       },
       "submit"
     )
@@ -5296,7 +5511,7 @@ test("final Admin Correction replaces scalar and table files while preserving th
   const uploads = received.length;
   const deletes = deleted.length;
   const replacementScalar = new Uint8Array([66, 77, 88, 99]);
-  const replacementRow = new Uint8Array();
+  const replacementRow = new Uint8Array([0, 254]);
   const body = new FormData();
   body.set(
     "payload",
@@ -5308,10 +5523,10 @@ test("final Admin Correction replaces scalar and table files while preserving th
       snapshotUrl: "http://office.test/cache/snapshot.xlsx",
     })
   );
-  body.set("attachment:folio_proof", file(replacementScalar, "corrected.BIN"));
+  body.set("attachment:folio_proof", file(replacementScalar, "corrected.PDF"));
   body.set(
     `attachment:${encodeURIComponent('["folio_row_proof",2]')}`,
-    file(replacementRow, "corrected-row")
+    file(replacementRow, "corrected-row.pdf")
   );
   const corrected = await poll(
     admin,
@@ -5344,13 +5559,13 @@ test("final Admin Correction replaces scalar and table files while preserving th
       ?.proof
   );
   expect(correctedScalar).toMatchObject({
-    original_name: "corrected.BIN",
+    original_name: "corrected.PDF",
     size_bytes: 4,
   });
   expect(correctedRow).toMatchObject({
-    original_name: "corrected-row",
+    original_name: "corrected-row.pdf",
     row_index: 2,
-    size_bytes: 0,
+    size_bytes: 2,
   });
   expect(correctedScalar.file_token).not.toBe(scalar.file_token);
   expect(correctedRow.file_token).not.toBe(row.file_token);
@@ -5479,7 +5694,7 @@ test("explicit Draft accepts original scalar File bytes and reopens canonical re
     docs_number: "DOC.42",
     fiscal_year: "2570",
     other: null,
-    proof: { original_name: "Original.BIN", size_bytes: 4 },
+    proof: { original_name: "Original.PDF", size_bytes: 4 },
   });
   const proof = attachmentSchema.parse(data.proof);
   const publicFile = await fetch(proof.file_link);
@@ -5501,7 +5716,7 @@ test("explicit Draft accepts original scalar File bytes and reopens canonical re
     year: "2570",
   });
   expect(fixtureValue(received[start]).name).toMatch(
-    /^DOC\.42-.+-หลักฐาน\.BIN$/u
+    /^DOC\.42-.+-หลักฐาน\.PDF$/u
   );
   const saved = await prisma.response.findUniqueOrThrow({
     where: { id: f.response.id },
@@ -5531,8 +5746,8 @@ test("explicit Draft accepts original scalar File bytes and reopens canonical re
   expect(logins).toBe(beforeLogin);
 });
 
-test.each([0, 1, 9_999_999, 10_000_000])(
-  "scalar accepts %i actual bytes including encrypted and extensionless originals",
+test.each([2, 9_999_999, 10_000_000])(
+  "scalar accepts %i actual bytes without inspecting file contents",
   async (size) => {
     const f = await fixture();
     const start = received.length;
@@ -5543,14 +5758,14 @@ test.each([0, 1, 9_999_999, 10_000_000])(
     }
     const result = await poll(
       f,
-      await send(f, { folio_proof: file(bytes, "encrypted-original") })
+      await send(f, { folio_proof: file(bytes, "encrypted-original.DOCX") })
     );
     expect(result.status).toBe("completed");
     expect(fixtureValue(received[start]).bytes).toEqual(bytes);
-    expect(fixtureValue(received[start]).name).toMatch(/-หลักฐาน$/u);
+    expect(fixtureValue(received[start]).name).toMatch(/-หลักฐาน\.DOCX$/u);
     const data = await draft(f);
     expect(data.proof).toMatchObject({
-      original_name: "encrypted-original",
+      original_name: "encrypted-original.DOCX",
       size_bytes: size,
     });
   }
@@ -5588,14 +5803,14 @@ test.each([
   }
 );
 
-test("direct Submit durably commits a required zero-byte attachment and exactly one Submission", async () => {
+test("direct Submit durably commits a required two-byte attachment and exactly one Submission", async () => {
   const f = await fixture();
   const checkpoint = crypto.randomUUID();
   const result = await poll(
     f,
     await send(
       f,
-      { folio_proof: file(new Uint8Array(), "empty") },
+      { folio_proof: file(new Uint8Array([0, 254]), "empty.pdf") },
       "submit",
       checkpoint
     )
@@ -5606,7 +5821,7 @@ test("direct Submit durably commits a required zero-byte attachment and exactly 
   });
   expect(submissions).toHaveLength(1);
   expect(fixtureValue(submissions[0]).data).toMatchObject({
-    proof: { original_name: "empty", size_bytes: 0 },
+    proof: { original_name: "empty.pdf", size_bytes: 2 },
   });
   const beforeRecovery = received.length;
   const recovered = await app.handle(
@@ -5630,7 +5845,7 @@ test("direct Submit durably commits a required zero-byte attachment and exactly 
   expect(received.length).toBe(beforeRecovery);
   const replay = await send(
     f,
-    { folio_proof: file(new Uint8Array(), "empty") },
+    { folio_proof: file(new Uint8Array([0, 254]), "empty.pdf") },
     "submit",
     checkpoint
   );
@@ -5648,7 +5863,7 @@ test("multi-scalar Folio failure after verified receipts is atomic and never reu
   const result = await poll(
     f,
     await send(f, {
-      folio_other: file(new Uint8Array([9]), "other"),
+      folio_other: file(new Uint8Array([9, 254]), "other.pdf"),
       folio_proof: file(),
     })
   );
@@ -5665,7 +5880,7 @@ test("multi-scalar Folio failure after verified receipts is atomic and never reu
   const retried = await poll(
     f,
     await send(f, {
-      folio_other: file(new Uint8Array([9]), "other"),
+      folio_other: file(new Uint8Array([9, 254]), "other.pdf"),
       folio_proof: file(),
     })
   );
@@ -5770,7 +5985,7 @@ test.each([262_144, 262_145])(
       proof: {
         file_link: customLink,
         file_token: customToken,
-        original_name: "Original.BIN",
+        original_name: "Original.PDF",
         size_bytes: 4,
       },
     };
@@ -6445,6 +6660,93 @@ test("Admin cancellation before dispatch fences an auth-waiting sender without t
   }
 });
 
+test("whole-Response deletion reports a ledger serialization conflict without effects or provider retry", async () => {
+  const f = await fixture();
+  const savedOperation = await poll(f, await send(f, { folio_proof: file() }));
+  expect(savedOperation.status).toBe("completed");
+  const saved = await draft(f);
+  const references = await prisma.ecmAttachmentReference.findMany({
+    orderBy: [{ versionId: "asc" }, { snapshotId: "asc" }],
+    where: { responseId: f.response.id },
+  });
+  const reference = fixtureValue(references[0]);
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const locked = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  const cleanup = prisma.$transaction(
+    async (tx) => {
+      await lockAttachmentLedger(tx);
+      await tx.ecmAttachmentVersion.update({
+        data: { generation: { increment: 1 } },
+        where: { id: reference.versionId },
+      });
+      locked.resolve();
+      await release.promise;
+    },
+    { timeout: 15_000 }
+  );
+  await locked.promise;
+  const remove = () =>
+    app.handle(
+      new Request(`http://test.local/api/responses/${f.response.id}`, {
+        headers: { Authorization: `Bearer ${f.bearer}` },
+        method: "DELETE",
+      })
+    );
+  const pending = remove();
+  let waiting = false;
+  try {
+    for (let attempt = 0; attempt < 100; attempt += 1) {
+      const [row] = await prisma.$queryRaw<{ waiting: boolean }[]>`
+        SELECT EXISTS (
+          SELECT FROM pg_locks
+          WHERE locktype = 'advisory' AND classid = 176117 AND objid = 3
+            AND NOT granted
+            AND database = (
+              SELECT oid FROM pg_database WHERE datname = current_database()
+            )
+        ) AS waiting
+      `;
+      if (row?.waiting) {
+        waiting = true;
+        break;
+      }
+      // PostgreSQL's real lock-wait state is the barrier; fake timers cannot drive it.
+      await Bun.sleep(10);
+    }
+  } finally {
+    release.resolve();
+    await cleanup;
+  }
+  const refused = await pending;
+  expect(waiting).toBe(true);
+  expect(refused.status).toBe(409);
+  expect(await refused.json()).toMatchObject({
+    error: "operation_in_progress",
+  });
+  expect(await draft(f)).toEqual(saved);
+  expect(
+    await prisma.ecmAttachmentReference.findMany({
+      orderBy: [{ versionId: "asc" }, { snapshotId: "asc" }],
+      where: { responseId: f.response.id },
+    })
+  ).toEqual(references);
+  expect(
+    await prisma.deletionTombstone.count({
+      where: { ownerUserId: f.identity.id },
+    })
+  ).toBe(0);
+  expect(received.length).toBe(uploads);
+  expect(deleted.length).toBe(deletes);
+  const explicitLaterDeletion = await remove();
+  expect(explicitLaterDeletion.status).toBe(200);
+  expect(deleted.slice(deletes)).toEqual([
+    attachmentSchema.parse(saved.proof).file_token,
+  ]);
+  expect(received.length).toBe(uploads);
+});
+
 test("Results retains trusted cleanup tracking after real Response deletion without restoring a normal result row", async () => {
   const f = await fixture();
   const admin = await fixture({ admin: true });
@@ -6523,7 +6825,7 @@ test("physical-row deletion retains cleanup-only follow-up and permits only an A
     f,
     await send(f, {
       [JSON.stringify(["folio_row_proof", 2])]: file(
-        new Uint8Array(),
+        new Uint8Array([0, 254]),
         "retired.TXT"
       ),
     })
@@ -6569,7 +6871,7 @@ test("physical-row deletion retains cleanup-only follow-up and permits only an A
   const publicBefore = await fetch(attachment.file_link);
   expect(publicBefore.status).toBe(200);
   const publicBytes = await publicBefore.arrayBuffer();
-  expect(publicBytes.byteLength).toBe(0);
+  expect(publicBytes.byteLength).toBe(2);
   const trusted = { generation: version.generation, versionId: version.id };
   const denied = await operatorAction(
     viewer,
@@ -6614,6 +6916,18 @@ test("template whole-Response deletion protects surviving alias B and deletes th
   expect(operationResult19.status).toBe("completed");
   const savedDraft10 = await draft(owner);
   const first = attachmentSchema.parse(savedDraft10.proof);
+  const firstVersion = await prisma.ecmAttachmentVersion.findFirstOrThrow({
+    select: { id: true },
+    where: { operationId: operationResult19.operationId, state: "committed" },
+  });
+  // Keep A live until B is seeded as the surviving historical alias.
+  const sharedReference = await prisma.ecmAttachmentReference.create({
+    data: {
+      responseId: other.response.id,
+      snapshotId: other.documentKey,
+      versionId: firstVersion.id,
+    },
+  });
   await resume(owner);
   const replacement = new Uint8Array([83, 72, 65, 82, 69, 68]);
   const operationResult20 = await poll(
@@ -6635,11 +6949,13 @@ test("template whole-Response deletion protects surviving alias B and deletes th
   });
   expect(aliases).toHaveLength(2);
   const surviving = fixtureValue(aliases.at(-1));
-  await prisma.ecmAttachmentReference.create({
-    data: {
-      responseId: other.response.id,
-      snapshotId: other.documentKey,
-      versionId: surviving.id,
+  await prisma.ecmAttachmentReference.update({
+    data: { versionId: surviving.id },
+    where: {
+      versionId_snapshotId: {
+        snapshotId: sharedReference.snapshotId,
+        versionId: sharedReference.versionId,
+      },
     },
   });
   const uploads = received.length;
@@ -7468,7 +7784,7 @@ test.each(["paired", "token-only", "link-only"] as const)(
     const refused = await poll(
       admin,
       await postCorrection(owner, admin, bridge, {
-        folio_proof: file(new Uint8Array([9]), "replacement.BIN"),
+        folio_proof: file(new Uint8Array([9, 254]), "replacement.PDF"),
       })
     );
     expect(refused.status).toBe("failed");
@@ -7505,8 +7821,102 @@ test.each(["paired", "token-only", "link-only"] as const)(
 );
 
 test.each([false, true])(
-  "one physical row with saved zero-byte attachment rejects deletion without mutation (template=%s)",
+  "historical zero- and one-byte table rows keep their own receipts after deleting a physical gap (template=%s)",
   async (templateMode) => {
+    const owner = await fixture({
+      tableAttachments: true,
+      tableRows: 3,
+      templateMode,
+    });
+    const initial = await poll(
+      owner,
+      await send(owner, {
+        '["folio_row_other",2]': file(),
+        '["folio_row_proof",0]': file(),
+      })
+    );
+    expect(initial.status).toBe("completed");
+    const saved = await draft(owner);
+    const [first, last] = tableRowsSchema.parse(saved.rows);
+    const zero = { ...fixtureValue(first?.proof), size_bytes: 0 };
+    const one = { ...fixtureValue(last?.other), size_bytes: 1 };
+    await seedHistoricalAttachmentBytes(
+      initial.operationId,
+      zero,
+      new Uint8Array()
+    );
+    await seedHistoricalAttachmentBytes(
+      initial.operationId,
+      one,
+      new Uint8Array([17])
+    );
+    await prisma.response.update({
+      data: {
+        draftData: jsonValue({
+          ...saved,
+          rows: [
+            { ...first, proof: zero },
+            { ...last, other: one },
+          ],
+        }),
+      },
+      where: { id: owner.response.id },
+    });
+    await resume(owner);
+    const references = await draftAttachmentReferences(owner);
+    expect(references).toEqual([
+      { current: true, versionId: expect.any(String) },
+      { current: true, versionId: expect.any(String) },
+    ]);
+    const uploads = received.length;
+    const reads = originalReads.length;
+    const deletes = deleted.length;
+    const shifted = await poll(
+      owner,
+      await send(owner, {}, "draft", crypto.randomUUID(), {
+        rowChange: { action: "delete", index: 1 },
+      })
+    );
+    expect(shifted.status, String(shifted.result?.errorMessage)).toBe(
+      "completed"
+    );
+    const shiftedDraft = await draft(owner);
+    expect(shiftedDraft.rows).toEqual([
+      { item: null, other: null, proof: zero },
+      { item: null, other: { ...one, row_index: 1 }, proof: null },
+    ]);
+    await resume(owner);
+    const workbook = readSpreadsheetWorkbook(
+      fixtureValue(snapshots.get(owner.documentKey))
+    );
+    expect(workbook.cells.get("C10")?.value).toBe(zero.file_link);
+    expect(workbook.cells.get("D11")?.value).toBe(one.file_link);
+    expect(workbook.cells.get("D12")?.value ?? null).toBeNull();
+    expect(await draftAttachmentReferences(owner)).toEqual(references);
+    expect(received).toHaveLength(uploads);
+    expect(originalReads).toHaveLength(reads);
+    expect(deleted).toHaveLength(deletes);
+    for (const [receipt, bytes] of [
+      [zero, []],
+      [one, [17]],
+    ] as const) {
+      const download = await fetch(receipt.file_link);
+      expect(download.status).toBe(200);
+      expect([...new Uint8Array(await download.arrayBuffer())]).toEqual([
+        ...bytes,
+      ]);
+    }
+  }
+);
+
+test.each([
+  [false, 0],
+  [false, 1],
+  [true, 0],
+  [true, 1],
+] as const)(
+  "one physical row with a historical attachment rejects deletion without mutation (template=%s, size=%i)",
+  async (templateMode, size) => {
     const owner = await fixture({
       tableAttachments: true,
       tableRows: 1,
@@ -7515,12 +7925,28 @@ test.each([false, true])(
     const savedAttachmentOperation = await poll(
       owner,
       await send(owner, {
-        '["folio_row_proof",0]': file(new Uint8Array(), "empty.BIN"),
+        '["folio_row_proof",0]': file(),
       })
     );
     expect(savedAttachmentOperation.status).toBe("completed");
+    const saved = await draft(owner);
+    const row = fixtureValue(tableRowsSchema.parse(saved.rows)[0]);
+    const receipt = { ...fixtureValue(row.proof), size_bytes: size };
+    await seedHistoricalAttachmentBytes(
+      savedAttachmentOperation.operationId,
+      receipt,
+      new Uint8Array([17]).slice(0, size)
+    );
+    const before = { ...saved, rows: [{ ...row, proof: receipt }] };
+    await prisma.response.update({
+      data: { draftData: jsonValue(before) },
+      where: { id: owner.response.id },
+    });
     await resume(owner);
-    const before = await draft(owner);
+    const references = await draftAttachmentReferences(owner);
+    expect(references).toEqual([
+      { current: true, versionId: expect.any(String) },
+    ]);
     const { documentKey } = owner;
     const bytes = fixtureValue(snapshots.get(documentKey));
     const uploads = received.length;
@@ -7540,6 +7966,7 @@ test.each([false, true])(
     expect(await readObject(fixtureValue(response.draftObjectKey))).toEqual(
       bytes
     );
+    expect(await draftAttachmentReferences(owner)).toEqual(references);
     expect(received.length).toBe(uploads);
     expect(deleted.length).toBe(deletes);
   }
@@ -7575,8 +8002,8 @@ test("template split token/link aliases retain both Draft resources and original
   const initial = await poll(
     owner,
     await send(owner, {
-      folio_other: file(new Uint8Array([2])),
-      folio_proof: file(new Uint8Array([1])),
+      folio_other: file(new Uint8Array([2, 254])),
+      folio_proof: file(new Uint8Array([1, 254])),
     })
   );
   expect(initial.status).toBe("completed");
@@ -7591,7 +8018,7 @@ test("template split token/link aliases retain both Draft resources and original
   const refused = await poll(
     owner,
     await send(owner, {
-      folio_proof: file(new Uint8Array([3])),
+      folio_proof: file(new Uint8Array([3, 254])),
     })
   );
   expect(refused.status).toBe("failed");

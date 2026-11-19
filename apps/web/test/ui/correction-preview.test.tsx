@@ -315,7 +315,7 @@ it.each(["none", "replacement", "removal", "candidate", "ordinary"] as const)(
     ).toBeDisabled();
     const lateFile = new File(
       ["newer selection outside accepted snapshot"],
-      "newer.BIN"
+      "newer.TXT"
     );
     const lateSlot = {
       action: "correction",

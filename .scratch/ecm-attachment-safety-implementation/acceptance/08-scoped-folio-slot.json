@@ -1,0 +1,225 @@
+{
+  "schemaVersion": 1,
+  "head": "1071d3c7c50293f8706597e850036e4a5f50e28b",
+  "branch": "feat/ecm-attachment-safety-implementation",
+  "at": "2026-11-19T07:42:21.331Z",
+  "provider": "https://pdms-documentmanagement.enconfund.go.th/backend/api/beeecm/public",
+  "project": "กทอ.67-00-0001",
+  "target": "DMS/ShareFiles/2567/กทอ.67-00-0001/2. มติและการก่อหนี้",
+  "filename": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).pdf",
+  "versions": {
+    "browser": "Chrome/150.0.7871.24",
+    "onlyOffice": "Native 9.4.0-129 / workspace gateway",
+    "bun": "1.4.4"
+  },
+  "sourceSha256": {
+    "apps/server/src/app.ts": "9539114e41d6bd805b10807d1dd8b622cbb8fb014a83157157940dae4932ed47",
+    "apps/server/src/ecm/client.ts": "c846eed2af0fe72db46b160a88e7c433cb73ad4f3dc9734657915c4e11adabe5",
+    "apps/server/src/responses/attachment-operation.ts": "8e7c787cfe0afe6c64c1f469973b1e26a2b64f6bab3394f1490d18322ea44f67",
+    "apps/web/src/components/onlyoffice-editor.tsx": "6b86459fb1d42ce622435c5ac695734c17e4423606b46ea239eabf4020f7b40c",
+    "apps/onlyoffice-plugin/src/upload-poc-picker.js": "6c21c4099de7705c4ca0be24255501738cb11034b641d423fde5058215bfa3f2"
+  },
+  "attemptCapTotal": 3,
+  "setupFailures": [
+    {
+      "scope": "managed browser launch",
+      "attempt": 1,
+      "cause": "Chrome shared profile SingletonLock; recovered via private CDP attempt 2"
+    },
+    {
+      "scope": "initial native fixture",
+      "attempt": 1,
+      "cause": "Workbook omitted canonical table-column tracking marker; replaced isolated historical fixtures, native opening passed on attempt 2"
+    }
+  ],
+  "live": {
+    "slot": {
+      "bindingId": "folio_scalar",
+      "rowIndex": null,
+      "cell": "C4",
+      "observedNativeMetadata": {
+        "bindingId": "folio_scalar",
+        "kind": "folio-upload-poc",
+        "rowIndex": null,
+        "tag": "scalar",
+        "version": 1
+      }
+    },
+    "case": {
+      "id": "pdf-scalar",
+      "attempt": 1,
+      "slot": "scalar",
+      "sizeBytes": 631,
+      "arm": {
+        "status": 200,
+        "body": {
+          "armed": "pdf-scalar",
+          "knownPairCount": 6
+        }
+      },
+      "save": {
+        "admission": 202,
+        "status": "failed",
+        "error": "document_save_failed",
+        "responseId": "b5c83a63-a86f-4969-aecf-7d1879521d88",
+        "operationId": "6d6aa62f-a336-44f2-a69d-aba60d35cf21"
+      },
+      "folio": {
+        "operation": "failed",
+        "errorCode": "document_save_failed",
+        "resultReason": "attachment_upload_failed",
+        "batch": "cleanup-pending",
+        "noSavedAttachment": true,
+        "versionStates": [
+          {
+            "state": "unknown",
+            "sent": true,
+            "received": false,
+            "requestSettlementRecorded": false,
+            "hasPairedReceipt": false
+          }
+        ],
+        "canonicalReferences": 0
+      },
+      "providerAccess": {
+        "status": 200,
+        "mediaType": "application/pdf",
+        "bodyReadable": true,
+        "bodyEmpty": false
+      },
+      "status": "failed_folio_after_known_provider_success_no_retry"
+    },
+    "fixture": {
+      "originalName": "pdf-scalar.pdf",
+      "fileSizeBytes": 631
+    },
+    "dispatch": {
+      "counts": {
+        "login": 0,
+        "search": 1,
+        "upload": 1,
+        "access": 1,
+        "delete": 0
+      },
+      "events": [
+        {
+          "kind": "search",
+          "at": "2026-11-19T07:39:25.239Z",
+          "ordinal": 1,
+          "caseId": null,
+          "status": 200
+        },
+        {
+          "kind": "upload",
+          "at": "2026-11-19T07:39:26.057Z",
+          "ordinal": 1,
+          "caseId": "pdf-scalar",
+          "status": 200,
+          "providerDate": "Thu, 19 Nov 2026 07:39:26 GMT"
+        },
+        {
+          "kind": "access",
+          "at": "2026-11-19T07:40:01.742Z",
+          "ordinal": 1,
+          "caseId": null,
+          "status": 200
+        }
+      ],
+      "halted": false,
+      "armed": null,
+      "rosterCount": 7,
+      "cases": [
+        {
+          "id": "pdf-scalar",
+          "created": "2026-11-19 14:39:26",
+          "reportedSize": "631 bytes",
+          "businessStatus": 200,
+          "directReceiptDistinct": true,
+          "access": {
+            "status": 200,
+            "mediaType": "application/pdf",
+            "bodyReadable": true,
+            "bodyEmpty": false
+          }
+        }
+      ]
+    },
+    "folioAppError": "Decompression error: ZlibError",
+    "noRetry": true,
+    "receivedButNotCommitted": true,
+    "doesNotEstablishFolioReopen": true
+  },
+  "local": {
+    "loopbackRepro": {
+      "rawRelayRejectedWith": "ZlibError",
+      "upstreamAdvertisedEncoding": "gzip",
+      "decodedBodyMatches": true,
+      "normalizedRelayStatus": 200,
+      "normalizedBodyMatches": true,
+      "normalizedAdvertisesEncoding": false,
+      "externalCalls": 0
+    },
+    "tableFollowUp": {
+      "attempts": [
+        {
+          "id": "pdf-table-local-transport-check",
+          "attempt": 1,
+          "error": "Waiting failed: 3000ms exceeded"
+        },
+        {
+          "id": "pdf-table-local-transport-check",
+          "attempt": 2,
+          "error": "Waiting failed: 3500ms exceeded"
+        },
+        {
+          "id": "pdf-table-local-transport-check",
+          "attempt": 3,
+          "status": "cannot_continue_failed_at_three_attempts",
+          "error": "Waiting failed: 3000ms exceeded"
+        }
+      ],
+      "transport": {
+        "uploads": 0,
+        "externalCalls": 0
+      },
+      "details": [
+        "Attempt 1: native context menu did not expose Edit object for the table slot.",
+        "Attempt 2: browser did not close the prior native menu via the Home tab.",
+        "Attempt 3: fresh opening did not expose Edit object for the initial calibration object. No fourth attempt."
+      ]
+    }
+  },
+  "remaining": {
+    "liveCellsPassed": 0,
+    "pdfScalar": "DCM receipt and original access supported, Folio Save failed before canonical commit; reopen not run",
+    "pdfTable": "No live attempt after first Folio/transport failure",
+    "inclusiveBoundaries": "No live 0 or 10000000-byte upload after safety stop; prior local evidence remains separate",
+    "otherTypes": "No live destination evidence for extensions other than the confirmed PDF route",
+    "numberChange": "Out-of-project scenario remains local",
+    "oversize": "No live dispatch; prior local 413 evidence retained"
+  },
+  "authorization": {
+    "syntheticFileCustodian": "pyw1tt",
+    "realDelete": false,
+    "liveFolioRecordsAccessed": false,
+    "projectOnly": true,
+    "noOtherExternalFileMutation": true,
+    "protectedRuntimeUnchanged": true
+  },
+  "cleanup": {
+    "objectsRemoved": 15,
+    "bucketDeleteStatus": 204,
+    "bucketHeadStatus": 404,
+    "ownedDbRemaining": 0,
+    "privateDirectoryRemoved": true,
+    "privateChromeClosed": true,
+    "ownedPorts": [
+      18857,
+      18858,
+      15258,
+      18258,
+      19258
+    ],
+    "liveDcmDeleteCount": 0
+  }
+}

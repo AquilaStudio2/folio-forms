@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `c91472d94fb8ddd8c06f7c08ad2c7709674319b5`
+Commit: `1071d3c7c50293f8706597e850036e4a5f50e28b`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -20,14 +20,14 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `/admin/forms/new` | `apps/web/src/routes/admin/forms/new.tsx:367` |
 | `/admin/` | `apps/web/src/routes/admin/index.tsx:5` |
 | `/admin/results/$responseId/correction` | `apps/web/src/routes/admin/results/$responseId/correction.tsx:297` |
-| `/admin/results/$responseId/` | `apps/web/src/routes/admin/results/$responseId/index.tsx:546` |
+| `/admin/results/$responseId/` | `apps/web/src/routes/admin/results/$responseId/index.tsx:596` |
 | `/admin/results/` | `apps/web/src/routes/admin/results/index.tsx:813` |
 | `/admin/results` | `apps/web/src/routes/admin/results.tsx:5` |
 | `/admin/storage-templates` | `apps/web/src/routes/admin/storage-templates.tsx:478` |
 | `/admin/users` | `apps/web/src/routes/admin/users.tsx:749` |
 | `/admin` | `apps/web/src/routes/admin.tsx:35` |
 | `/change-password` | `apps/web/src/routes/change-password.tsx:229` |
-| `/dashboard` | `apps/web/src/routes/dashboard.tsx:383` |
+| `/dashboard` | `apps/web/src/routes/dashboard.tsx:415` |
 | `/forms/$publicId/fill` | `apps/web/src/routes/forms/$publicId/fill.tsx:1414` |
 | `/forms/$publicId/submissions` | `apps/web/src/routes/forms/$publicId/submissions.tsx:243` |
 | `/handoff` | `apps/web/src/routes/handoff.tsx:59` |

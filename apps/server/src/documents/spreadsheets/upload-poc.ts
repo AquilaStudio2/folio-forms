@@ -699,6 +699,14 @@ export const normalizeSpreadsheetUploadPocAnchors = (
       Number(node.attributes.ht ?? defaultHeight),
     ])
   );
+  const hiddenRows = new Set(
+    nodes(sheet, "row")
+      .filter(
+        (node) =>
+          node.attributes.hidden === "1" || node.attributes.hidden === "true"
+      )
+      .map((node) => Number(node.attributes.r) - 1)
+  );
   for (const object of objects) {
     const relationshipId = Object.entries(object.attributes).find(
       ([key]) => key.split(":").at(-1) === "id"
@@ -746,7 +754,13 @@ export const normalizeSpreadsheetUploadPocAnchors = (
     const lastRow = metadata.tag.includes(".") ? row : range.lastRow;
     let cellHeight = 0;
     for (let current = row; current <= lastRow; current += 1) {
-      cellHeight += rowHeights.get(current) ?? defaultHeight;
+      const rowHeight = rowHeights.get(current) ?? defaultHeight;
+      if (!Number.isFinite(rowHeight) || rowHeight < 0) {
+        throw new Error("Attachment button cell has invalid row height");
+      }
+      if (!hiddenRows.has(current)) {
+        cellHeight += rowHeight;
+      }
     }
     let cellWidth = 0;
     for (let current = column; current <= range.lastColumn; current += 1) {
@@ -755,15 +769,24 @@ export const normalizeSpreadsheetUploadPocAnchors = (
           Number(node.attributes.min) <= current + 1 &&
           Number(node.attributes.max) >= current + 1
       );
+      const columnWidth = Number(definition?.attributes.width ?? defaultWidth);
+      if (!Number.isFinite(columnWidth) || columnWidth < 0) {
+        throw new Error("Attachment button cell has invalid column width");
+      }
+      const hidden = definition?.attributes.hidden;
       cellWidth +=
-        definition?.attributes.hidden === "1"
+        hidden === "1" || hidden === "true" || columnWidth === 0
           ? 0
-          : Math.floor(
-              Number(definition?.attributes.width ?? defaultWidth) * 7 + 5
-            );
+          : Math.floor(columnWidth * 7 + 5);
     }
     const scale = Math.min(1, cellWidth / 110, (cellHeight * 4) / 3 / 24);
-    if (!Number.isFinite(scale) || scale <= 0) {
+    // Hidden rows/columns keep their physical mappings and collapsed previews;
+    // invalid geometry still fails rather than substituting a visible target.
+    if (
+      !Number.isFinite(scale) ||
+      scale < 0 ||
+      (scale === 0 && cellWidth !== 0 && cellHeight !== 0)
+    ) {
       throw new Error("Attachment button cell has no visible space");
     }
     const width = 110 * scale;

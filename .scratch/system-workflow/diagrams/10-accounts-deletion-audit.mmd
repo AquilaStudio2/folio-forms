@@ -25,7 +25,10 @@ flowchart LR
     users --> erase --> clean
     clean -->|"ไม่ผ่าน"| denied
     clean -->|"ผ่าน"| account
-    response --> check --> intents --> delete --> files
+    response --> check --> intents --> delete --> dbCommit{"initial SERIALIZABLE transaction commit หรือไม่"}
+    dbCommit -->|"commit แล้ว"| files
+    dbCommit -->|"verified serialization abort"| dbConflict["409 operation_in_progress; คง Response/refs; ยังไม่ dispatch DELETE"]
+    dbConflict --> fresh["User Dashboard / Admin Detail ปิดกล่องเดิม โหลดข้อมูลล่าสุด ให้ผู้ใช้ตรวจและยืนยันใหม่เอง"]
     files -->|"failed / unknown"| retry
     files -->|"confirmed หรือ protected by surviving refs"| tombstone
     retry --> tombstone

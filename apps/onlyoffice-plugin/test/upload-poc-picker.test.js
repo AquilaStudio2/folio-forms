@@ -319,6 +319,7 @@ test("canonical removal and undo are staged until Save, while originals remain a
   const host = savedHost();
   const h = open({ host }, scalar);
   expect(h.elements.get("saved-link").href).toBe(saved.file_link);
+  expect(h.elements.get("saved-link").textContent).toBe("original.bin");
   h.elements.get("remove").trigger("click");
   expect(h.messages).toHaveLength(1);
   expect(h.store.hasPending()).toBe(false);
@@ -361,11 +362,11 @@ test("undoing a previously confirmed pending File needs Save and restores the ca
   expect(host.savedData.document).toEqual(saved);
 });
 
-test.each([0, 10_000_000])(
+test.each([2, 10_000_000])(
   "a %s-byte File is confirmed without uploading",
   (size) => {
     const h = open();
-    const file = new File([new Uint8Array(size)], "boundary.bin");
+    const file = new File([new Uint8Array(size)], "boundary.txt");
     h.choose(file);
     expect(h.messages).toHaveLength(1);
     h.plugin.button(0);
@@ -380,7 +381,7 @@ test.each([0, 10_000_000])(
 );
 
 test.each([data, scalar])(
-  "10,000,001 bytes reports the slot without poisoning the prior choice: $tag",
+  "invalid sizes report the slot without poisoning the prior choice: $tag",
   (target) => {
     const first = open(undefined, target);
     const accepted = new File(["accepted"], "accepted.txt");
@@ -390,21 +391,52 @@ test.each([data, scalar])(
     const next = open({ store: first.store }, target);
     const valid = new File(["valid"], "valid.txt");
     next.choose(valid);
-    next.choose(new File([new Uint8Array(10_000_001)], "oversized.bin"));
-    expect(next.elements.get("status").textContent).toContain(target.tag);
-    if (target.rowIndex !== null) {
-      expect(next.elements.get("status").textContent).toContain(
-        `แถว ${target.rowIndex + 1}`
+    for (const size of [0, 1, 10_000_001]) {
+      next.choose(new File([new Uint8Array(size)], `invalid-${size}.txt`));
+      const status = next.elements.get("status");
+      expect(status.hidden).toBe(false);
+      expect(status.dataset.error).toBe("true");
+      expect(status.textContent).toBe(
+        `ช่อง ${target.tag}${target.rowIndex === null ? "" : ` / แถว ${target.rowIndex + 1}`}: รองรับการอัปโหลดไฟล์ที่มีขนาดมากกว่า 1 bytes และไม่เกิน 10 MB`
       );
+      expect(next.elements.get("filename").textContent).toBe(valid.name);
     }
     expect(next.messages).toHaveLength(1);
     expect([...next.store.snapshot().values()]).toEqual([accepted]);
-    expect(next.elements.get("filename").textContent).toBe(valid.name);
+    expect(next.candidates).toHaveLength(1);
     next.plugin.button(0);
     next.ack();
     expect([...next.store.snapshot().values()]).toEqual([valid]);
   }
 );
+
+test("unsupported names leave both the uppercase candidate and confirmed File intact", () => {
+  const first = open();
+  const confirmed = new File(["confirmed"], "confirmed.txt");
+  first.choose(confirmed);
+  first.plugin.button(0);
+  first.ack();
+
+  const next = open({ store: first.store });
+  const candidate = new File(["candidate"], "candidate.PDF");
+  next.choose(candidate);
+  for (const name of ["report.pdf.zip", ".pdf", "report", "report.pdf "]) {
+    next.choose(new File(["invalid"], name, { type: "application/pdf" }));
+    const status = next.elements.get("status");
+    expect(status.hidden).toBe(false);
+    expect(status.dataset.error).toBe("true");
+    expect(status.textContent).toBe(
+      "ช่อง items.file / แถว 3: รองรับเฉพาะไฟล์ PDF, DOCX, XLSX, PNG และ TXT"
+    );
+    expect(next.elements.get("filename").textContent).toBe("candidate.PDF");
+    expect([...first.store.snapshot().values()]).toEqual([confirmed]);
+  }
+  expect(next.messages).toHaveLength(1);
+  expect(next.candidates).toHaveLength(1);
+  next.plugin.button(0);
+  next.ack();
+  expect([...first.store.snapshot().values()]).toEqual([candidate]);
+});
 
 test("forged, stale and malformed replies cannot confirm Save or close the picker", () => {
   const h = open();

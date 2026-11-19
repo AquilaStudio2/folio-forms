@@ -4,9 +4,11 @@
 
 **Blocked by:** 04 — เตือนก่อนออกและแยกสถานะไฟล์ที่ยังไม่บันทึก.
 
-**Status:** ready-for-human
+**Status:** resolved
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US72–81; H09, U04 และส่วน async/pending ของ U05
+
+**Human acceptance:** pyw1tt ยืนยันตรวจรับผล implementation ของตั๋วนี้แล้ว ไม่ถือว่าเคส native queued confirmation ของ 03/06 ผ่านหรือปลด runtime guard.
 
 **Execution gate:** ต้องให้ผู้ใช้ตรวจตั๋วและสั่งเริ่ม implementation ก่อนพัฒนา ใช้ actual browser/editor กับ isolated app/data/provider เท่านั้น ไม่มี real DCM/DELETE authorization จากตั๋วนี้
 

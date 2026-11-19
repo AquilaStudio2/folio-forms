@@ -5,6 +5,10 @@ import { useEffect, useRef, useState } from "react";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { DocumentKindBadge } from "@/components/document-kind-badge";
 import { ListPagination } from "@/components/list-pagination";
+import {
+  isResponseDeleteConflict,
+  ResponseDeleteConflictNotice,
+} from "@/components/response-delete-conflict";
 import { Badge, Button, Card, Notice, Spinner } from "@/components/ui";
 import { ApiError, apiDelete, apiGet, formatDate } from "@/lib/api";
 import type { Submission, ResponseDeletionOutcome } from "@/lib/api";
@@ -55,6 +59,8 @@ const DashboardRoute = () => {
   const [discardError, setDiscardError] = useState<string | null>(null);
   const [discardSuccess, setDiscardSuccess] = useState<string | null>(null);
   const [discardCleanupPending, setDiscardCleanupPending] = useState(false);
+  const [discardReload, setDiscardReload] = useState(0);
+  const discardWarningRef = useRef<HTMLDivElement | null>(null);
   const discardTriggerRef = useRef<HTMLButtonElement | null>(null);
   const discardStatusRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -67,6 +73,11 @@ const DashboardRoute = () => {
       discardStatusRef.current?.focus();
     }
   }, [discardSuccess]);
+  useEffect(() => {
+    if (discardReload) {
+      discardWarningRef.current?.focus();
+    }
+  }, [discardReload]);
   useEffect(() => {
     if (!user) {
       setLoading(false);
@@ -100,7 +111,7 @@ const DashboardRoute = () => {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, discardReload]);
   const requestDiscard = (id: string, trigger: HTMLButtonElement) => {
     discardTriggerRef.current = trigger;
     setDiscardCandidateId(id);
@@ -136,7 +147,12 @@ const DashboardRoute = () => {
       setDiscardCleanupPending(outcome.attachmentCleanup.state === "pending");
       setDiscardSuccess(outcome.attachmentCleanup.warning ?? "ทิ้งฉบับร่างแล้ว");
     } catch (caughtError) {
-      if (
+      if (isResponseDeleteConflict(caughtError)) {
+        discardTriggerRef.current = null;
+        setDiscardCandidateId(null);
+        setLoading(true);
+        setDiscardReload((reload) => reload + 1);
+      } else if (
         caughtError instanceof ApiError &&
         caughtError.code === "attachment_outcome_unresolved"
       ) {
@@ -171,7 +187,9 @@ const DashboardRoute = () => {
 
   let responseContent: React.ReactNode;
   if (error) {
-    responseContent = <Notice tone="danger">{error}</Notice>;
+    responseContent = discardReload ? null : (
+      <Notice tone="danger">{error}</Notice>
+    );
   } else if (loading) {
     responseContent = <Centered message="กำลังโหลดคำตอบ…" />;
   } else if (rows.length === 0) {
@@ -270,6 +288,32 @@ const DashboardRoute = () => {
   }
 
   const discardCandidate = rows.find((row) => row.id === discardCandidateId);
+  let discardFeedback: React.ReactNode = null;
+  if (discardSuccess) {
+    discardFeedback = (
+      <div
+        ref={discardStatusRef}
+        className="mb-4"
+        role="status"
+        aria-live="polite"
+        tabIndex={-1}
+      >
+        <Notice tone={discardCleanupPending ? "neutral" : "success"}>
+          {discardSuccess}
+        </Notice>
+      </div>
+    );
+  } else if (discardReload && !discardCandidate) {
+    discardFeedback = (
+      <ResponseDeleteConflictNotice
+        action="ทิ้ง"
+        failed={error !== null}
+        loading={loading}
+        ref={discardWarningRef}
+        subject="ฉบับร่าง"
+      />
+    );
+  }
   return (
     <AppShell>
       {discardCandidate ? (
@@ -318,19 +362,7 @@ const DashboardRoute = () => {
           </div>
         </div>
       ) : null}
-      {discardSuccess ? (
-        <div
-          ref={discardStatusRef}
-          className="mb-4"
-          role="status"
-          aria-live="polite"
-          tabIndex={-1}
-        >
-          <Notice tone={discardCleanupPending ? "neutral" : "success"}>
-            {discardSuccess}
-          </Notice>
-        </div>
-      ) : null}
+      {discardFeedback}
       <PageHeader
         title="แดชบอร์ด"
         description="กลับไปกรอกฉบับร่างที่บันทึกไว้ หรือดูคำตอบที่ส่งแล้ว"

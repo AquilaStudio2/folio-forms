@@ -22,8 +22,11 @@ import { routeTree } from "@/routeTree.gen";
 let role: Role;
 let rows: Submission[];
 let discardResponse: (() => Response) | null;
+let responsesOverride: Promise<Response> | null;
 let deletionWarnings: ResponseAttachmentCleanup[];
 const fetchMock = vi.fn<typeof fetch>();
+const deleteRequests = () =>
+  fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE");
 const accountLinkRequests = () =>
   fetchMock.mock.calls.filter(
     ([input]) => new URL(String(input)).pathname === "/api/admin/account-links"
@@ -56,6 +59,7 @@ beforeEach(() => {
   role = "user";
   rows = Array.from({ length: 11 }, (_, index) => response(index));
   discardResponse = null;
+  responsesOverride = null;
   deletionWarnings = [];
   localStorage.setItem(SESSION_KEY, "pagination-test-session");
   fetchMock.mockReset();
@@ -71,7 +75,7 @@ beforeEach(() => {
       return Response.json({ warnings: deletionWarnings });
     }
     if (url.pathname === "/api/responses/me") {
-      return Response.json({ responses: rows });
+      return responsesOverride ?? Response.json({ responses: rows });
     }
     if (
       url.pathname.startsWith("/api/responses/") &&
@@ -164,6 +168,61 @@ it("paginates My responses without changing global statistics and returns to the
   ).toHaveTextContent("10");
   expect(within(nav).getByRole("button", { name: "หน้าถัดไป" })).toBeDisabled();
 });
+
+it.each([true, false])(
+  "closes stale discard confirmation and requires fresh data (%s)",
+  async (refreshSucceeds) => {
+    rows = [response(0)];
+    await mount("/dashboard");
+    await screen.findByText("Response 1");
+    const refresh = Promise.withResolvers<Response>();
+    responsesOverride = refresh.promise;
+    discardResponse = () =>
+      Response.json({ error: "operation_in_progress" }, { status: 409 });
+    await userEvent.click(
+      screen.getByRole("button", { exact: true, name: "ทิ้งฉบับร่าง" })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "ยืนยันการทิ้ง" }));
+    const warning = await screen.findByRole("alert");
+    expect(warning).toHaveFocus();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const stale = screen.queryByRole("button", { name: "ทิ้งฉบับร่าง" });
+    if (stale) {
+      expect(stale).toBeDisabled();
+    }
+    expect(deleteRequests()).toHaveLength(1);
+
+    refresh.resolve(
+      refreshSucceeds
+        ? Response.json({
+            responses: [{ ...response(0), formTitle: "Refreshed response" }],
+          })
+        : Response.json({ error: "refresh_failed" }, { status: 500 })
+    );
+    if (!refreshSucceeds) {
+      expect(await screen.findByText(/โหลดข้อมูลล่าสุดไม่สำเร็จ/u)).toBeVisible();
+      const blocked = screen.queryByRole("button", { name: "ทิ้งฉบับร่าง" });
+      if (blocked) {
+        expect(blocked).toBeDisabled();
+      }
+      expect(deleteRequests()).toHaveLength(1);
+      return;
+    }
+    expect(await screen.findByText("Refreshed response")).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(/ตรวจสอบข้อมูลล่าสุด/u);
+    expect(deleteRequests()).toHaveLength(1);
+    discardResponse = null;
+    await userEvent.click(screen.getByRole("button", { name: "ทิ้งฉบับร่าง" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("Refreshed response");
+    expect(deleteRequests()).toHaveLength(1);
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "ยืนยันการทิ้ง" })
+    );
+    expect(await screen.findByText("ทิ้งฉบับร่างแล้ว")).toBeVisible();
+    expect(deleteRequests()).toHaveLength(2);
+  }
+);
 
 it.each([undefined, "ผลการอัปโหลดไฟล์ยังไม่ชัดเจน กรุณาติดต่อผู้ดูแลระบบก่อนดำเนินการต่อ"])(
   "keeps a held Draft and actionable guidance after refused deletion (%s)",

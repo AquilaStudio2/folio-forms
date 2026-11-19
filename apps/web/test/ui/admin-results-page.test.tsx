@@ -42,8 +42,12 @@ const result = (id = "11111111-1111-4111-8111-111111111111"): AdminResult => ({
 });
 
 const fetchMock = vi.fn<typeof fetch>();
+const deleteRequests = () =>
+  fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE");
 let sessionRole: Role;
 let listResponse: () => Response | Promise<Response>;
+let detailOverride: Promise<Response> | null;
+let deleteOverride: (() => Response) | null;
 let attachmentFollowUps: AttachmentFollowUp[];
 let deletionOutcome: ResponseAttachmentCleanup;
 
@@ -95,6 +99,8 @@ const mount = async (path = "/admin/results") => {
 beforeEach(() => {
   sessionRole = "admin";
   listResponse = () => Response.json(resultsPayload([result()]));
+  detailOverride = null;
+  deleteOverride = null;
   attachmentFollowUps = [];
   deletionOutcome = { caseReference: null, state: "complete", warning: null };
   localStorage.setItem(SESSION_KEY, "results-reader-test-token");
@@ -119,12 +125,18 @@ beforeEach(() => {
       pathname === `/api/admin/responses/${result().id}` &&
       init?.method === "DELETE"
     ) {
+      if (deleteOverride) {
+        return deleteOverride();
+      }
       return Response.json({
         attachmentCleanup: deletionOutcome,
         deleted: true,
       });
     }
     if (pathname === `/api/admin/results/${result().id}`) {
+      if (detailOverride) {
+        return detailOverride;
+      }
       return Response.json({
         result: {
           ...result(),
@@ -1043,4 +1055,131 @@ it("requires confirmation and retains the incomplete file outcome after Admin de
     ],
   ]);
   expect(screen.getByRole("link", { name: "กลับไปรายการผลลัพธ์" })).toBeVisible();
+});
+
+it.each([true, false])(
+  "closes stale permanent delete confirmation and requires fresh detail (%s)",
+  async (refreshSucceeds) => {
+    await mount(`/admin/results/${result().id}`);
+    const refresh = Promise.withResolvers<Response>();
+    detailOverride = refresh.promise;
+    deleteOverride = () =>
+      Response.json({ error: "operation_in_progress" }, { status: 409 });
+    await userEvent.click(screen.getByRole("button", { name: "ลบคำตอบถาวร" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "ยืนยันการลบถาวร" })
+    );
+    const warning = await screen.findByRole("alert");
+    expect(warning).toHaveFocus();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const stale = screen.queryByRole("button", { name: "ลบคำตอบถาวร" });
+    if (stale) {
+      expect(stale).toBeDisabled();
+    }
+    expect(deleteRequests()).toHaveLength(1);
+
+    refresh.resolve(
+      refreshSucceeds
+        ? Response.json({
+            result: {
+              ...result(),
+              correction: null,
+              data: {},
+              document: { available: false, state: "draft" },
+              fields: [],
+              formTitle: "Refreshed provincial report",
+              revision: null,
+            },
+          })
+        : Response.json({ error: "refresh_failed" }, { status: 500 })
+    );
+    if (!refreshSucceeds) {
+      expect(await screen.findByText(/โหลดข้อมูลล่าสุดไม่สำเร็จ/u)).toBeVisible();
+      const blocked = screen.queryByRole("button", { name: "ลบคำตอบถาวร" });
+      if (blocked) {
+        expect(blocked).toBeDisabled();
+      }
+      expect(deleteRequests()).toHaveLength(1);
+      return;
+    }
+    expect(
+      await screen.findByRole("heading", {
+        name: "Refreshed provincial report",
+      })
+    ).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(/ตรวจสอบข้อมูลล่าสุด/u);
+    expect(deleteRequests()).toHaveLength(1);
+    deleteOverride = null;
+    await userEvent.click(screen.getByRole("button", { name: "ลบคำตอบถาวร" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "ยกเลิก" })).toHaveFocus();
+    expect(deleteRequests()).toHaveLength(1);
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "ยืนยันการลบถาวร" })
+    );
+    expect(await screen.findByText("ลบข้อมูลคำตอบถาวรแล้ว")).toBeVisible();
+    expect(deleteRequests()).toHaveLength(2);
+  }
+);
+
+it("requires the current Submission revision before reconfirming a conflicted delete", async () => {
+  await mount(`/admin/results/${result().id}`);
+  const revision = Promise.withResolvers<Response>();
+  const originalFetch = fetchMock.getMockImplementation();
+  fetchMock.mockImplementation(async (input, init) => {
+    if (
+      new URL(String(input)).pathname ===
+      `/api/responses/${result().id}/corrections`
+    ) {
+      return revision.promise;
+    }
+    if (!originalFetch) {
+      throw new Error("Missing result HTTP fixture");
+    }
+    return originalFetch(input, init);
+  });
+  detailOverride = Promise.resolve(
+    Response.json({
+      result: {
+        ...result(),
+        correction: null,
+        data: {},
+        document: { available: false, state: "submission" },
+        fields: [],
+        formTitle: "Newly submitted report",
+        latestCorrectionNumber: 0,
+        revision: 0,
+        state: "submitted",
+        submissionId: "submission",
+      },
+    })
+  );
+  deleteOverride = () =>
+    Response.json({ error: "operation_in_progress" }, { status: 409 });
+  await userEvent.click(screen.getByRole("button", { name: "ลบคำตอบถาวร" }));
+  await userEvent.click(screen.getByRole("button", { name: "ยืนยันการลบถาวร" }));
+  expect(
+    await screen.findByRole("heading", { name: "Newly submitted report" })
+  ).toBeVisible();
+  expect(screen.getByRole("button", { name: "ลบคำตอบถาวร" })).toBeDisabled();
+  expect(deleteRequests()).toHaveLength(1);
+  revision.resolve(
+    Response.json({
+      latestRevision: 0,
+      revisions: [
+        {
+          createdAt: "2026-10-27T00:00:00.000Z",
+          data: {},
+          document: { available: false, state: "submission" },
+          reason: null,
+          revision: 0,
+        },
+      ],
+    })
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "ลบคำตอบถาวร" })).toBeEnabled()
+  );
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(deleteRequests()).toHaveLength(1);
 });

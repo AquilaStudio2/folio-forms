@@ -1,0 +1,68 @@
+{
+  "status": "partial; 03/06 remain needs-info",
+  "environment": {
+    "date": "2026-11-19",
+    "branch": "feat/ecm-attachment-safety-implementation",
+    "head": "1071d3c7c50293f8706597e850036e4a5f50e28b",
+    "source": "Current Working Tree, actual Vite/app/native gateway; no source edits in this continuation. Selected Working Tree hashes sampled at teardown, not a full served-asset hash audit.",
+    "selectedSourceSha256": {
+      "apps/web/src/components/onlyoffice-editor.tsx": "6b86459fb1d42ce622435c5ac695734c17e4423606b46ea239eabf4020f7b40c",
+      "apps/web/src/features/onlyoffice/upload-poc-pending.ts": "15730a3a614e03db75581c72736ccbf1496b8f95cae9f5dbba6ffd84d0c5bcbd",
+      "apps/onlyoffice-plugin/src/upload-poc-picker.js": "6c21c4099de7705c4ca0be24255501738cb11034b641d423fde5058215bfa3f2",
+      "apps/onlyoffice-plugin/src/operations.js": "fbce64a88ae37cdeadc2c08de3ed371da7ea9e6d31f2f44700673cf16943156c",
+      "apps/server/src/documents/spreadsheets/upload-poc-command.js": "e79ea9e94963d5f6cec1c90fe88a53ca6d196843488d86018aea1c088823059f",
+      "apps/server/src/documents/spreadsheets/upload-poc.ts": "3fd0f3d64075ff348232faa3cd0007235407797ae9823e14bed44219c789a13b"
+    },
+    "chrome": "Chrome/150.0.7871.24, --headless=new, private temporary profile and CDP listener",
+    "onlyoffice": "Native 9.4.0-129, SDK build 9.4.0-ae9ceb648960c9359d8339c7c6044e63",
+    "fixture": "Synthetic historical Published legacy XLSX clone with visible three-row table, two attachment columns and seven OLE controls. No publication test. Admin eligibility came from normal authenticated HTTP Submit using the snapshot produced by an actual User Excel-export action, not status seeding or browser automatic-next interception.",
+    "isolation": "App fetch fenced to loopback development endpoints; no real DCM/PDMS, no real DELETE. Browser domain allowlist local only. File selection used actual disk-backed app file inputs via CDP uploadFile; native picker confirmation was pointer/keyboard. The initial OS chooser wait timed out and is not claimed as proof of working OS dialog automation. No fake bridge event or workbook-model mutation. Native workbook/model observations passive. No system clipboard access."
+  },
+  "scenarios": [
+    {
+      "name": "User Draft with confirmed replacement: row and column drag, sort and native row Cut/Paste",
+      "attempts": [{"number": 1, "result": "Observed real row-selection and column-selection pointer drags; selected bounds confirmed. Row drag showed cell/plus cursor, column drag showed move cursor. Monitored values and managed anchors unchanged. Ascending/descending workbook Sort affordances disabled, not forced. Whole-row Cut set native clipboard Cut flag; Paste showed editor-tab clipboard notice; dismissed through native OK, and monitored values and anchors stayed equal. Not evidence of OS clipboard or successful structural payload transfer."}],
+      "preservation": "Exact saved Draft JSON, document key, SHA-256 bdc32fd2f13cc11183067069d75015775040259120574a811546913360918151 and reference equality. C10 projection matched the paired saved receipt and the controlled original matched all four expected bytes. Provider state identical. Exact same physical rows.proof row_index 0 picker showed replacement.BIN, 3 bytes. Reopen probe 1 timed out waiting for native Edit object; probe 2 succeeded after Escape and native frame scroll. Gestures not repeated. User pending bytes not uploaded in this scenario."
+    },
+    {
+      "name": "Admin Correction with confirmed replacement: row and column drag, sort and native row Cut/Paste",
+      "attempts": [{"number": 1, "result": "Actual row/column drags left monitored mapping and values equal. Four workbook Sort buttons disabled. Whole-row Cut set native Cut flag; ensuing Paste and editor-tab notice dismissal left monitored values and anchors equal. No OS clipboard or successful structural payload transfer claimed."}],
+      "preservation": "Exact Submission JSON, workbook hash, document key, references and provider state equal after gestures. First exact picker reopen probe timed out waiting for native Edit object. Second after Escape/frame scroll found rows.proof physical row_index 0 with replacement.BIN, 3 bytes. Explicit Save Correction then completed (202 admission); expected three literal bytes retrieved on its new receipt, original Submission data and workbook hash stayed equal."
+    },
+    {
+      "name": "Browser Back with confirmed User replacement",
+      "attempts": [{"number": 1, "result": "Actual history entry navigation reached Dashboard. Dialog dismissal could not be controlled: raw handler got 'No dialog is showing' after the managed driver accepted. Reentry initially raced iframe readiness; later passive readiness and real picker showed blank local filename. Exact saved Draft and reference state unchanged. No dismissed-Back result claimed."}]
+    },
+    {
+      "name": "Actual Admin pre-capture candidate and Refresh",
+      "attempts": [
+        {"number": 1, "result": "Pointer calibration failed: saved picker stayed candidate=false after Remove pointer attempt. Normal Correction save posted, made revision 2 with only independently staged D10 four-byte attachment. Not a candidate-gate result."},
+        {"number": 2, "result": "Native pointer click again did not activate Remove. Focused actual Remove button + trusted Enter activated candidate with saved 3-byte receipt shown. Host Save refused before any Correction POST: มีการเลือกในกล่องที่ยังไม่ยืนยัน กรุณายืนยันหรือยกเลิกในกล่องก่อนดำเนินการ. Actual Page.reload emitted beforeunload; accepted navigation changed timeOrigin, exact canonical state remained equal. No same-document retention after accepted Refresh claimed."}
+      ],
+      "setupLimits": "Direct native D10 Edit-object setup timed out; genuine Tab from a real OLE selected the correct D10. Native C10 post-D10 pointer setup timed out; keyboard OLE activation reached exact C10. A later keyboard OLE setup found no selected object and used trusted pointer after frame scroll instead. These are setup failures, not extra structural gesture/capture passes."
+    },
+    {
+      "name": "Already-queued confirmed removal delivered after captured Correction",
+      "attempts": [{"number": 1, "result": "In an actual Correction, staged D10 three-byte replacement then preopened clean C10 saved 3-byte picker. Actual Save admitted 202; controlled provider paused original POST. While scoped native wrapper inert, a trusted pointer action targeted Remove bounds; passive trusted click listener stayed false and removal stayed absent. Released original POST in finally; Correction 3 completed. Prior two Corrections equal; Submission hash unchanged; exact C10 receipt unchanged and corrected D10 retained three bytes."}],
+      "verdict": "Queued confirmation ordering NOT REACHED. Stop before repeating deterministic inert boundary. Native Remove is only a local candidate (picker lines 337–351), and native footer emits pending-file-remove only on confirmation (lines 388–402). Dirty pre-capture candidate is refused; ordinary post-capture user action cannot activate inert picker. Neither result proves already-queued delivery. Need genuine scheduler/event evidence with the real emitted confirmation; do not inject/replay, bypass inert, or count controlled HTTP/host tests as native proof."
+    },
+    {
+      "name": "Old Admin workspace with confirmed pending and accepted tab close",
+      "attempts": [
+        {"number": 1, "result": "Native Cancel footer did not settle in 10s on prior candidate setup; no old tab created."},
+        {"number": 2, "result": "Opened real second Admin Correction tab. Initial Tab selection did not find native target; trusted pointer after frame scroll subsequently staged four-byte base.BIN and confirmed with native footer/Enter. Newer-tab save pointer calibration timed out waiting for any POST; revision did not advance."},
+        {"number": 3, "result": "Reused staged old workspace. Newer tab focused and native B10 typed NEWER-SCOPE; actual Save accepted 202 and revision advanced to 4. Brought old tab forward, real Save via Enter: no mutation POST observed, terminal notice เอกสารเปลี่ยนแล้ว กรุณาเก็บข้อมูลในตัวแก้ไขก่อนเปิดใหม่ and pending-file warning remained. Exact canonical and provider state equal after terminal. Actual Page.close on this stale pending tab emitted beforeunload and closed it. No stale write or automatic resend observed."}
+      ]
+    }
+  ],
+  "cleanup": {
+    "providerWrites": {"POST": 4, "POSTSizes": [4, 3, 4, 3], "DELETE": 0},
+    "ownedListenersClosed": [15206, 18206, 18806, 18807, 19206],
+    "sharedListenersStillReachable": [5433, 8081, 9000],
+    "ownedBucketObjectsRemoved": 10,
+    "ownedBucketHeadAfterDelete": 404,
+    "ownedDatabaseRemaining": 0,
+    "removed": "Both owned tabs, owned Chrome, app/provider/web, gateway, synthetic bucket/database, private temp directories/Chrome profile and exact download. Gateway 137 followed deliberate Docker stop. Shared services and data untouched."
+  },
+  "limits": "Only named visible legacy User/Admin paths, not full contract × role × pending-state × gesture matrix. Clipboard payload transfer, intervening beforeunload dismissal variants, platform-wide behavior and genuinely queued confirmed removal remain unverified. No provider, Production or human acceptance."
+}

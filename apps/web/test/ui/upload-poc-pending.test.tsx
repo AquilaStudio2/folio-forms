@@ -71,7 +71,7 @@ describe("local POC pending files", () => {
         const selection = message({
           type:
             state === "removal" ? "pending-file-remove" : "pending-file-set",
-          file: state === "invalid" ? {} : new File([], "zero.bin"),
+          file: state === "invalid" ? {} : new File(["row"], "row.txt"),
         });
         if (state === "invalid") {
           expect(() => store.handle(selection, host)).toThrow();
@@ -186,7 +186,7 @@ describe("local POC pending files", () => {
         }),
         host
       );
-      const newer = new File(["new"], "newer.bin");
+      const newer = new File(["new"], "newer.txt");
       store.handle(
         message({ ...slot, type: "pending-file-set", file: newer }),
         host
@@ -198,7 +198,7 @@ describe("local POC pending files", () => {
       ).toMatchObject({
         removal: false,
         hasPending: true,
-        filename: "newer.bin",
+        filename: "newer.txt",
       });
     } finally {
       vi.restoreAllMocks();
@@ -225,7 +225,7 @@ describe("local POC pending files", () => {
         message({
           ...slot,
           type: "pending-file-set",
-          file: new File(["valid"], "valid.bin"),
+          file: new File(["valid"], "valid.txt"),
         }),
         host
       );
@@ -234,16 +234,16 @@ describe("local POC pending files", () => {
           message({
             ...slot,
             type: "pending-file-set",
-            file: new File([new Uint8Array(10_000_001)], "large.bin"),
+            file: new File([new Uint8Array(10_000_001)], "large.txt"),
           }),
           host
         )
-      ).toThrow(/10,000,000/u);
+      ).toThrow(/มากกว่า 1 bytes และไม่เกิน 10 MB/u);
       expect(
         store.handle(message({ ...slot, type: "pending-file-get" }), host)
       ).toMatchObject({
         saved,
-        filename: "valid.bin",
+        filename: "valid.txt",
         validationError: expect.any(String),
       });
       await expect(
@@ -256,7 +256,7 @@ describe("local POC pending files", () => {
           }),
           host
         )
-      ).rejects.toThrow(/10,000,000/u);
+      ).rejects.toThrow(/มากกว่า 1 bytes และไม่เกิน 10 MB/u);
       expect(post).not.toHaveBeenCalled();
       expect(
         store.handle(message({ ...slot, type: "pending-file-cancel" }), host)
@@ -296,7 +296,7 @@ describe("local POC pending files", () => {
         hasPending: true,
         saved,
       });
-      const replacement = new File([], "empty");
+      const replacement = new File(["ok"], "replacement.txt");
       store.handle(
         message({ ...slot, type: "pending-file-set", file: replacement }),
         host
@@ -305,8 +305,8 @@ describe("local POC pending files", () => {
         store.handle(message({ ...slot, type: "pending-file-get" }), host)
       ).toMatchObject({
         saved,
-        filename: "empty",
-        size: 0,
+        filename: "replacement.txt",
+        size: 2,
         removal: false,
         validationError: null,
       });
@@ -314,6 +314,42 @@ describe("local POC pending files", () => {
     } finally {
       vi.restoreAllMocks();
     }
+  });
+  it("rejects unsupported replacements without losing the confirmed File", () => {
+    const store = new UploadPocPendingFiles();
+    const file = new File(["confirmed"], "confirmed.DoCx");
+    const warning =
+      "ช่อง items.file / แถว 1: รองรับเฉพาะไฟล์ PDF, DOCX, XLSX, PNG และ TXT";
+    expect(
+      store.handle(message({ type: "pending-file-set", file }), options)
+    ).toMatchObject({ filename: "confirmed.DoCx", validationError: null });
+    for (const name of ["report.png.zip", ".png", "report"]) {
+      expect(() =>
+        store.handle(
+          message({
+            type: "pending-file-set",
+            file: new File(["replacement"], name, { type: "image/png" }),
+          }),
+          options
+        )
+      ).toThrow(warning);
+      expect(store.handle(message(), options)).toMatchObject({
+        filename: "confirmed.DoCx",
+        hasPending: true,
+        size: file.size,
+        validationError: warning,
+      });
+      expect(() => store.snapshot()).toThrow(warning);
+    }
+    expect(
+      store.handle(
+        message({
+          type: "pending-file-set",
+          file: new File(["replacement"], "replacement.PNG"),
+        }),
+        options
+      )
+    ).toMatchObject({ filename: "replacement.PNG", validationError: null });
   });
   it.each(["pending-file-cancel", "pending-file-remove"])(
     "rejects forged %s without discarding an existing File",
@@ -324,7 +360,7 @@ describe("local POC pending files", () => {
         rowIndex: null,
         tag: "document",
       };
-      const file = new File(["private"], "private.bin");
+      const file = new File(["private"], "private.txt");
       store.handle(
         message({ ...slot, type: "pending-file-set", file }),
         options
@@ -347,7 +383,7 @@ describe("local POC pending files", () => {
   it("retains the File until explicit negative-admission proof and never resends on lookup absence alone", async () => {
     sessionStorage.clear();
     const store = new UploadPocPendingFiles();
-    const selected = new File(["private"], "private.bin");
+    const selected = new File(["private"], "private.txt");
     store.handle(
       message({
         bindingId: "folio_scalar",
@@ -455,8 +491,8 @@ describe("local POC pending files", () => {
   it("joins a late original admission without clearing a newer File selection", async () => {
     sessionStorage.clear();
     const store = new UploadPocPendingFiles();
-    const first = new File(["first"], "first.bin");
-    const replacement = new File(["new"], "new.bin");
+    const first = new File(["first"], "first.txt");
+    const replacement = new File(["new"], "new.txt");
     const scalar = {
       bindingId: "folio_scalar",
       rowIndex: null,
@@ -507,7 +543,7 @@ describe("local POC pending files", () => {
   it("never treats an old completed receipt as acceptance of a current native snapshot or a newly selected File", async () => {
     sessionStorage.clear();
     const store = new UploadPocPendingFiles();
-    const selected = new File(["new"], "new.bin");
+    const selected = new File(["new"], "new.txt");
     store.handle(
       message({
         bindingId: "folio_scalar",
@@ -585,7 +621,7 @@ describe("local POC pending files", () => {
   it("permits a new explicit snapshot only after a failed batch is proven canceled, retaining its unaccepted File", async () => {
     sessionStorage.clear();
     const store = new UploadPocPendingFiles();
-    const selected = new File(["retry"], "retry.bin");
+    const selected = new File(["retry"], "retry.txt");
     store.handle(
       message({
         bindingId: "folio_scalar",
@@ -813,29 +849,30 @@ describe("local POC pending files", () => {
       )
     ).toMatchObject({ allowed: true, hasPending: true });
   });
-  it("rejects non-Files and files over the stated 10MB POC limit without replacing the retained file", () => {
+  it("rejects non-Files and files outside the stated size range without replacing the retained file", () => {
     const store = new UploadPocPendingFiles();
     store.handle(
       message({ file: new File(["ok"], "ok.txt"), type: "pending-file-set" }),
       options
     );
-    expect(() =>
-      store.handle(
-        message({ file: { name: "fake" }, type: "pending-file-set" }),
-        options
-      )
-    ).toThrow(/10,000,000/u);
-    expect(() =>
-      store.handle(
-        message({
-          file: new File([new Uint8Array(10_000_001)], "large.bin"),
-          type: "pending-file-set",
-        }),
-        options
-      )
-    ).toThrow(/10,000,000/u);
-    expect(store.handle(message(), options).filename).toBe("ok.txt");
-    expect(() => store.snapshot()).toThrow(/10,000,000/u);
+    const warning =
+      "ช่อง items.file / แถว 1: รองรับการอัปโหลดไฟล์ที่มีขนาดมากกว่า 1 bytes และไม่เกิน 10 MB";
+    for (const file of [
+      { name: "fake" },
+      new File([], "empty.txt"),
+      new File(["x"], "one-byte.txt"),
+      new File([new Uint8Array(10_000_001)], "large.txt"),
+    ]) {
+      expect(() =>
+        store.handle(message({ file, type: "pending-file-set" }), options)
+      ).toThrow(warning);
+      expect(store.handle(message(), options)).toMatchObject({
+        filename: "ok.txt",
+        size: 2,
+        validationError: warning,
+      });
+      expect(() => store.snapshot()).toThrow(warning);
+    }
   });
   it("allows Correction choices only through final Save Correction and preserves pending workspace choices", () => {
     const store = new UploadPocPendingFiles();
@@ -910,7 +947,7 @@ describe("local POC pending files", () => {
   });
   it("clears only accepted File objects and preserves a newer selection across document-key transition", () => {
     const store = new UploadPocPendingFiles();
-    const first = new File([], "empty");
+    const first = new File(["first"], "first.txt");
     const scalar = {
       bindingId: "folio_scalar",
       rowIndex: null,
@@ -919,7 +956,7 @@ describe("local POC pending files", () => {
     };
     store.handle(message({ ...scalar, file: first }), options);
     const accepted = store.snapshot();
-    const replacement = new File(["new"], "new.bin");
+    const replacement = new File(["new"], "new.txt");
     store.handle(message({ ...scalar, file: replacement }), options);
     store.accept(accepted);
     expect(store.hasPending()).toBe(true);
@@ -942,7 +979,7 @@ describe("local POC pending files", () => {
   });
   it("moves original File identities and removals only through verified physical row transitions", () => {
     const store = new UploadPocPendingFiles();
-    const selected = new File([], "empty.TXT");
+    const selected = new File(["row"], "row.TXT");
     store.handle(
       message({ rowIndex: 2, type: "pending-file-set", file: selected }),
       options
@@ -1007,7 +1044,7 @@ describe("local POC pending files", () => {
     ).toMatchObject({ removal: true });
     expect(
       store.handle(message({ documentKey: "draft-2", rowIndex: 1 }), next)
-    ).toMatchObject({ filename: "empty.TXT", size: 0 });
+    ).toMatchObject({ filename: "row.TXT", size: 3 });
   });
   it("reads saved table slots by physical metadata rather than compact array position or dotted root tags", () => {
     const store = new UploadPocPendingFiles();
@@ -1038,7 +1075,7 @@ describe("local POC pending files", () => {
 it("sends table Files and removals through the existing multipart save while retaining original File identity", async () => {
   sessionStorage.clear();
   const store = new UploadPocPendingFiles();
-  const selected = new File([], "empty.TXT");
+  const selected = new File(["proof"], "proof.TXT");
   const host = { ...options, publicId: "form", responseId: "response" };
   store.handle(
     message({ rowIndex: 1, file: selected, type: "pending-file-set" }),
@@ -1074,8 +1111,8 @@ it("sends table Files and removals through the existing multipart save while ret
     if (!(file instanceof File)) {
       throw new Error("Table upload part must contain original bytes");
     }
-    expect(file.name).toBe("empty.TXT");
-    expect(file.size).toBe(0);
+    expect(file.name).toBe("proof.TXT");
+    expect(file.size).toBe(5);
     expect(
       JSON.parse(String(multipart.get("payload"))).attachmentRemovals
     ).toEqual([{ bindingId: "folio_file", rowIndex: 2 }]);

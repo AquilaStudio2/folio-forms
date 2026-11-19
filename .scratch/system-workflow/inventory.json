@@ -1,8 +1,8 @@
 {
-  "commit": "c91472d94fb8ddd8c06f7c08ad2c7709674319b5",
+  "commit": "1071d3c7c50293f8706597e850036e4a5f50e28b",
   "branch": "feat/ecm-attachment-safety-implementation",
-  "source_fingerprint": "12483a74dd12cdb2f4f8557f74f1a6842e2fc6414f277df031f179f8a0f70e02",
-  "source_files": 312,
+  "source_fingerprint": "4a82f7addb040b65fad96c94af4a7f77c1c8448a36eee14a8f3378829792a15b",
+  "source_files": 313,
   "pages": [
     {
       "route": "__root",
@@ -57,7 +57,7 @@
     {
       "route": "/admin/results/$responseId/",
       "file": "apps/web/src/routes/admin/results/$responseId/index.tsx",
-      "line": 546
+      "line": 596
     },
     {
       "route": "/admin/results/",
@@ -92,7 +92,7 @@
     {
       "route": "/dashboard",
       "file": "apps/web/src/routes/dashboard.tsx",
-      "line": 383
+      "line": 415
     },
     {
       "route": "/forms/$publicId/fill",
