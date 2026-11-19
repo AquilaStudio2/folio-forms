@@ -4,11 +4,13 @@
 
 **Blocked by:** 01 — ส่งชื่อเดิมได้ พร้อม receipt และคำเตือนถูกประเภท; 03 — กัน native table edits ที่ทำไฟล์ผิดแถว; 05 — Loading ระหว่าง Save และทางออกของ unknown/Correction.
 
-**Status:** needs-info
+**Status:** resolved — scoped integrated and native evidence accepted
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US82–84, US88, US90 และ integrated regression coverage ของ US01–81; H01–H10 และ U01–U06
 
 **Execution gate:** ต้องให้ผู้ใช้ตรวจตั๋วและสั่งเริ่ม implementation/isolated acceptance ก่อนรัน ไม่มี real DCM/live-data/DELETE/push/deploy authorization จากตั๋วนี้
+
+**Human acceptance:** pyw1tt ยืนยันตรวจรับและให้ปิด 06 เฉพาะผลทดสอบที่บันทึกไว้ ไม่ถือว่าพิสูจน์การส่งคำสั่งยืนยันนำไฟล์ออกที่ค้างในคิวจาก ONLYOFFICE จริงหลังจับ snapshot หรือรับรอง native matrix ทั้งหมด.
 
 ## Acceptance criteria
 
@@ -64,3 +66,39 @@ Provider evidence tickets 07–09 และ old-data ticket 10 ไม่บล�
 - Final native supplement publishes13 audited PNGs and valid scoped evidence links. Partial native cells and07–10/human HOLD remain; no blanket acceptance box is checked for those boundaries.
 
 - Final cleanup verified private fixture/credential/provider/probe directory absent and removed six exact owned temporary screenshot originals after preserving audited evidence. No managed safety tab lease remains. Shared browser/native cache erasure and original pre-test clipboard restoration are not claimed.
+
+### Local continuation from1071d3c — 2026-11-19
+
+- Continued on the requested integration branch/base with uncommitted source, tests and documentation. [Continuation report](../acceptance-report.md#local-continuation-from-1071d3c--2026-11-19) owns the added source hashes, actual cold/keyboard/native/HTTP evidence and remaining limits; N01–N18 retain their original provenance.
+- Cold hidden widths0/12 and hidden row heights0/22 now initialize without the previous500. Genuine native keyboard selection/Shift+F10/Edit object reaches the collapsed physical binding. Named User Draft and Admin Correction cases retained distinct row/column receipts, literal synthetic originals, pending removal across row mapping, minimum-one-row controls, URL-only download and normal automatic next-round behavior.
+- Initial deletion-transaction serialization abort now returns409 `operation_in_progress` before provider/object DELETE, rather than generic500. The actual PostgreSQL-waiter HTTP case preserves Response/references and performs a later explicit deletion once. There is no automatic retry, nonblocking-lock mode, isolation weakening or reinterpretation of postcommit uncertainty.
+- Executed: scalar HTTP161/8,809 assertions; final targeted deletion1/34; native runtime7/267; plugin343; spreadsheet-unit118/324; root scoped lint/format6 files, types5/5 and build3/3. Existing web source was unchanged; prior web results were not relabeled as a newly run suite.
+- **03/06 remains needs-info;01/02/04/05 remains ready-for-human.** Full native role/contract/gesture and later confirmed-removal-generation cells remain unverified. Footer clipping at an immediate viewport520 sample remains a risk, not a fixed layout claim.07–10/human approval and real DCM/data/DELETE/push/deploy gates remain unchanged.
+
+### Combined native matrix continuation — 2026-11-19
+
+- [Added report](../acceptance-report.md#combined-native-matrix-continuation--2026-11-19) records all seven genuine keyboard/pointer picker targets across User/Admin × durable legacy/template with combined filtered/hidden-zero geometry. Named Saves, eligible Corrections, saved-zero removal, pending retention after invalid native capture and physical-row2 reopen preserve canonical/history/original bytes.
+- Actual template browser Submit/default-next reuses the same Response with null new-Draft data and clean Exit. Separate authentic HTTP/native-export Submit consumers establish Correction eligibility; they are not relabeled as browser Submit. Admin has no row commands.
+- Final second-sandbox audit:11 POST/0 DELETE,11 literal originals,18 references,7 immutable snapshots; canonical XLSX/paired receipts match actual physical rows. No provider restart, fabricated bridge, SDK mutation or guard weakening in this phase.
+- Settled and cold520 footer evidence fits; transient/all-viewport guarantees remain unclaimed. Headless clipboard isolation has pinned primary-source/runtime evidence; earlier original-clipboard restoration remains unclaimed.
+- 03/06 stays needs-info. Named combined-target gaps narrowed; full gesture/state/old-session/navigation permutations and genuinely already-queued confirmed-removal generation are not certified. Ordinary post-capture inert blocking and pre-admission candidate rejection do not replace that proof.07–10/human review and real-data/DCM/DELETE/push/deploy gates remain unchanged.
+
+### 2026-11-19 — Capped native journey verification
+
+[Attempt ledger](../acceptance/03-06-capped-continuation/evidence.json) adds named native structural, Back/reentry, Refresh, stale Admin workspace and tab-close observations. Stale workspace refused Save without a mutation POST on attempt 3. Queued confirmed removal after capture was not reached: the earlier candidate blocked admission, and the later native click was blocked by `inert`. No fourth attempt, no fabricated event and no complete U01–U06/native matrix claim. Status remains `needs-info`.
+
+The [capped template-native continuation](../acceptance-report.md#capped-template-native-continuation) adds actual User Submit with the original receipt, followed by a separate eligible Admin workbook opening. The original Submission's data digest, object key and reference count remained unchanged after the native-export HTTP setup Submit. Three Admin row-0 native clicks did not open the picker in this run; no fourth attempt or forced pending/queued event. Status stays `needs-info`.
+
+### Native Admin removal guards around the capture boundary
+
+On a fresh eligible sandbox Submission, actual Admin Correction opened the correct physical row-0 picker. A native removal candidate left unconfirmed in that picker caused the real main Save to refuse capture with the candidate notice. The dialog remained open; no Correction POST was made for that action.
+
+In the separate clean-save case, a browser transport barrier held the genuine Correction POST after native snapshot capture. Its multipart payload contained no removal. While the live editor was inert, clicking the visible native remove button produced no candidate or picker state change. After the barrier released, the genuine Correction completed and returned to Results. Read-only database verification found one Submission and one Correction with the identical canonical attachment receipt, two references to the same committed upload version, and zero additional provider POSTs.
+
+An already-confirmed removal delivered after an older captured save was not observed. These two unmodified guards prevent the attempted UI orderings; the transport barrier delayed only the HTTP request and never fabricated or reordered a picker message. Status remains `needs-info` for the exact queued event and remaining native matrix limits.
+
+### Deterministic late-removal verification
+
+Ran the existing `Correction completion preserves a late removal until an explicit exit decision` route/host case and `keeps scalar removal local until explicit save and preserves a newer removal across an older receipt` pending-store case. Both passed. The route case delivers a test bridge message and verifies the removal remains pending in the same editor; the retired workspace cannot save again, and Stay leaves the editor open. The store case independently verifies that completion accepts only the captured removal generation, leaving the newer removal intact.
+
+These results verify what Folio does if the late removal is delivered. They do not demonstrate that actual ONLYOFFICE emits and delivers a confirmation in that order. In the observed native flow, the picker reports a dirty candidate before the footer can send a confirmation, and the editor is inert during an active Save. Did not repeat the same native attempts, fabricate a message in the live browser, or relax either guard. pyw1tt accepted and closed the tested scope; genuine native delivery and the unchecked native matrix remain unverified.

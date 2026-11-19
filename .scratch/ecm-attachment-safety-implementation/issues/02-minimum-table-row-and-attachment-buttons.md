@@ -4,9 +4,11 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US41–55; H07–H08 และ U01
+
+**Human acceptance:** pyw1tt ยืนยันตรวจรับผล implementation ของตั๋วนี้แล้ว ไม่ถือว่าตรวจ native matrix ของ 03/06 ครบ.
 
 **Execution gate:** ต้องให้ผู้ใช้ตรวจตั๋วและสั่งเริ่ม implementation ก่อนพัฒนา การเผยแพร่ตั๋วไม่ authorize real DCM, live-data changes, DELETE, push หรือ deploy
 

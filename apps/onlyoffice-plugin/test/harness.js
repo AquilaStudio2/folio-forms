@@ -567,7 +567,10 @@ export const createHarness = ({
     GetDefNames: () =>
       [...spreadsheetNames.keys()].map((name) => Api.GetDefName(name)),
     GetName: () => spreadsheetSelection?.sheet || "Sheet1",
-    GetRange: spreadsheetRange,
+    GetRange: (address) =>
+      /^\d+:\d+$/u.test(address)
+        ? { GetHidden: () => false }
+        : spreadsheetRange(address),
     GetRangeByNumber: (row, column) => {
       let letters = "";
       for (

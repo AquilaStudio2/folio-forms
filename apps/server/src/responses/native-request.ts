@@ -22,7 +22,7 @@ import {
   asRecord,
 } from "../http/input";
 import type { JsonRecord } from "../model-types";
-import { attachmentSlotKey } from "./attachment-data";
+import { attachmentSlotKey, attachmentUploadIssue } from "./attachment-data";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import { maxResponseDataBytes } from "./data";
 
@@ -198,11 +198,13 @@ export async function nativeResponseRequest(
         fail(400, "invalid_attachment", "ช่องแนบไม่ตรงกับสัญญาฟอร์มหรือซ้ำ");
       }
       const bytes = await value.arrayBuffer();
-      if (bytes.byteLength > 10_000_000) {
+      const { byteLength } = bytes;
+      const message = attachmentUploadIssue(value.name, byteLength);
+      if (message) {
         fail(
-          413,
+          byteLength > 10_000_000 ? 413 : 422,
           "invalid_attachment",
-          `${field.label}${rowIndex === null ? "" : ` / แถว ${rowIndex + 1}`}: ${bytes.byteLength} bytes เกิน 10,000,000 bytes`
+          `${field.label}${rowIndex === null ? "" : ` / แถว ${rowIndex + 1}`}: ${message}`
         );
       }
       attachments.set(slotKey, value);

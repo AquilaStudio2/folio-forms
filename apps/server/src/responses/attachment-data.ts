@@ -9,6 +9,33 @@ import type {
 } from "../documents/spreadsheets/contract";
 import { fail } from "../http/errors";
 
+const minimumAttachmentUploadBytes = 2;
+const attachmentUploadSizeMessage =
+  "รองรับการอัปโหลดไฟล์ที่มีขนาดมากกว่า 1 bytes และไม่เกิน 10 MB";
+const attachmentUploadTypeMessage =
+  "รองรับเฉพาะไฟล์ PDF, DOCX, XLSX, PNG และ TXT";
+
+const attachmentUploadExtensions = new Set([
+  "pdf",
+  "docx",
+  "xlsx",
+  "png",
+  "txt",
+]);
+export const attachmentUploadIssue = (
+  name: string,
+  size: number
+): string | null => {
+  if (size < minimumAttachmentUploadBytes || size > 10_000_000) {
+    return attachmentUploadSizeMessage;
+  }
+  const dot = name.lastIndexOf(".");
+  return dot > 0 &&
+    attachmentUploadExtensions.has(name.slice(dot + 1).toLowerCase())
+    ? null
+    : attachmentUploadTypeMessage;
+};
+
 const safeLink = z.url().refine((value) => {
   const url = new URL(value);
   return (

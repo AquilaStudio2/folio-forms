@@ -4,9 +4,11 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** ready-for-human
+**Status:** resolved
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US64–71, US76–77; U03 และ canonical/no-extra-write ส่วนที่เกี่ยวข้องของ H06/H09
+
+**Human acceptance:** pyw1tt ยืนยันตรวจรับผล implementation ของตั๋วนี้แล้ว ไม่ขยาย browser refresh/close guarantees.
 
 **Execution gate:** ต้องให้ผู้ใช้ตรวจตั๋วและสั่งเริ่ม implementation ก่อนพัฒนา ใช้ระบบแยก ไม่เรียก real DCM หรือแก้ข้อมูลใช้งานจริง
 

@@ -784,14 +784,14 @@ it.each([
       send(picker.source, {
         ...candidate,
         bindingId: "folio_file",
-        file: new File(["later"], "later.bin"),
+        file: new File(["later"], "later.txt"),
         rowIndex: null,
         tag: "file",
         type: "pending-file-set",
       });
       await waitFor(() =>
         expect(picker.send).toHaveBeenCalledWith(
-          expect.objectContaining({ filename: "later.bin" }),
+          expect.objectContaining({ filename: "later.txt" }),
           window.location.origin
         )
       );
@@ -898,7 +898,7 @@ it.each([
     send(picker.source, {
       ...candidate,
       bindingId: "folio_file",
-      file: new File(["late"], "late.bin"),
+      file: new File(["late"], "late.txt"),
       rowIndex: null,
       tag: "file",
       type: "pending-file-set",
@@ -907,7 +907,7 @@ it.each([
       expect(picker.send).toHaveBeenCalledWith(
         expect.objectContaining({
           documentKey: "document-1",
-          filename: "late.bin",
+          filename: "late.txt",
         }),
         window.location.origin
       )
@@ -1149,14 +1149,14 @@ it("reports candidates independently from ordinary edits and confirmed pending w
   send(picker.source, {
     ...message,
     bindingId: "folio_file",
-    file: new File([], "confirmed.bin"),
+    file: new File(["confirmed"], "confirmed.txt"),
     rowIndex: null,
     tag: "file",
     type: "pending-file-set",
   });
   await waitFor(() =>
     expect(picker.send).toHaveBeenCalledWith(
-      expect.objectContaining({ filename: "confirmed.bin" }),
+      expect.objectContaining({ filename: "confirmed.txt" }),
       window.location.origin
     )
   );
@@ -1351,7 +1351,7 @@ it("adopts only the fenced recovery lease and ignores a stale capability reply w
     };
     send(plugin.source, {
       ...fileRequest,
-      file: new File(["proof"], "proof.bin"),
+      file: new File(["proof"], "proof.txt"),
       type: "pending-file-set",
     });
     send(plugin.source, {
@@ -1412,7 +1412,7 @@ it("adopts only the fenced recovery lease and ignores a stale capability reply w
     await waitFor(() =>
       expect(plugin.send).toHaveBeenLastCalledWith(
         expect.objectContaining({
-          filename: "proof.bin",
+          filename: "proof.txt",
           requestId: "retained",
         }),
         window.location.origin
@@ -2416,7 +2416,7 @@ it("holds an internal row completion instead of remounting over a later confirme
   send(picker.source, {
     bindingId: "folio_file",
     documentKey: "document-1",
-    file: new File([], "later.BIN"),
+    file: new File(["later"], "later.TXT"),
     requestId: "late-file",
     rowIndex: 2,
     scopeIdentity: "actor/response",
@@ -2426,7 +2426,7 @@ it("holds an internal row completion instead of remounting over a later confirme
   });
   await waitFor(() =>
     expect(picker.send).toHaveBeenCalledWith(
-      expect.objectContaining({ filename: "later.BIN" }),
+      expect.objectContaining({ filename: "later.TXT" }),
       window.location.origin
     )
   );
@@ -2476,7 +2476,7 @@ it("keeps pending table bytes through a real host remount only after reading the
   const plugin = pluginFrame(office);
   send(plugin.source, { type: "bridge-ready" });
   const picker = pluginFrame(office);
-  const selected = new File([], "empty.TXT");
+  const selected = new File(["row"], "row.TXT");
   const request = {
     bindingId: "folio_file",
     documentKey: "document-1",
@@ -2489,7 +2489,7 @@ it("keeps pending table bytes through a real host remount only after reading the
   send(picker.source, { ...request, file: selected, type: "pending-file-set" });
   await waitFor(() =>
     expect(picker.send).toHaveBeenCalledWith(
-      expect.objectContaining({ filename: "empty.TXT", size: 0 }),
+      expect.objectContaining({ filename: "row.TXT", size: 3 }),
       window.location.origin
     )
   );
@@ -2563,9 +2563,9 @@ it("keeps pending table bytes through a real host remount only after reading the
   await waitFor(() =>
     expect(nextPicker.send).toHaveBeenCalledWith(
       expect.objectContaining({
-        filename: "empty.TXT",
+        filename: "row.TXT",
         hasPending: true,
-        size: 0,
+        size: 3,
       }),
       window.location.origin
     )
@@ -2628,7 +2628,7 @@ it("retains a File and dirty guard before held status, includes it in faster Sav
       title="Held attachment status"
     />
   );
-  const selected = new File(["retained during status outage"], "retained.bin");
+  const selected = new File(["retained during status outage"], "retained.txt");
   const statusError = new ApiError(
     503,
     "attachment_status_unavailable",

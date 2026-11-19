@@ -274,6 +274,9 @@ test("creating a table around an existing attachment makes it a table-column but
   };
   const { harness, projections, state } = await setup({ selected });
   await click(harness);
+  expect(harness.statusElement.textContent).toContain(
+    "เพิ่มช่องแนบไฟล์และบันทึกต้นแบบแล้ว"
+  );
   const [attachment] = state().fields;
   expect(attachment?.attachment).toEqual(choice("หลักฐาน"));
 

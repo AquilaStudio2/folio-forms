@@ -307,15 +307,26 @@ export const initializeUploadPocPicker = (hostWindow, document, plugin) => {
     if (!file || pending || uncertain || unavailable || !baseline) {
       return;
     }
+    const slotLabel = `ช่อง ${target.tag}${target.rowIndex === null ? "" : ` / แถว ${target.rowIndex + 1}`}`;
     if (
       !Number.isSafeInteger(file.size) ||
-      file.size < 0 ||
+      file.size < 2 ||
       file.size > 10_000_000
     ) {
       notify(
-        `ช่อง ${target.tag}${target.rowIndex === null ? "" : ` / แถว ${target.rowIndex + 1}`}: เลือกไฟล์ขนาด 0–10,000,000 ไบต์`,
+        `${slotLabel}: รองรับการอัปโหลดไฟล์ที่มีขนาดมากกว่า 1 bytes และไม่เกิน 10 MB`,
         true
       );
+      return;
+    }
+    const dot = file.name.lastIndexOf(".");
+    if (
+      dot <= 0 ||
+      !["pdf", "docx", "xlsx", "png", "txt"].includes(
+        file.name.slice(dot + 1).toLowerCase()
+      )
+    ) {
+      notify(`${slotLabel}: รองรับเฉพาะไฟล์ PDF, DOCX, XLSX, PNG และ TXT`, true);
       return;
     }
     selected = file;

@@ -1,0 +1,1270 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-11-19T06:11:39.898Z",
+  "branch": "feat/ecm-attachment-safety-implementation",
+  "baseRevision": "1071d3c7c50293f8706597e850036e4a5f50e28b",
+  "source": "Uncommitted integration Working Tree; same six final source/test hashes as 06-local-continuation. No application changes in this added native phase.",
+  "sourceSha256": {
+    "apps/server/src/documents/spreadsheets/upload-poc-command.js": "e79ea9e94963d5f6cec1c90fe88a53ca6d196843488d86018aea1c088823059f",
+    "apps/server/src/documents/spreadsheets/upload-poc.ts": "3fd0f3d64075ff348232faa3cd0007235407797ae9823e14bed44219c789a13b",
+    "apps/server/src/responses/deletion.ts": "896976bbd80cf52cb3b590f794f678712cfc45c45101322c528f0da23a6e9e8c",
+    "apps/onlyoffice-plugin/test/harness.js": "ce277cce4fd4bdf35c19c3a10390dc73de07ae6f49b76588583c4aceaa9f018b",
+    "apps/server/test/spreadsheet-runtime/upload-poc.test.ts": "f9b02040785e616d6691b70733d0781d46cfde889f9e21367c364ce2122d23c8",
+    "apps/server/test/http/ecm-scalar-save-submit.test.ts": "3c604e85d54bc8648e30ba0dfef8a49da02f592e702702857083fdf4f30fcc36"
+  },
+  "evidenceStatus": "partial: named native cells supported; full role/contract/gesture-state matrix, already-queued confirmed-removal, provider and human acceptance not certified",
+  "environment": {
+    "browser": {
+      "protocolVersion": "1.3",
+      "product": "Chrome/150.0.7871.24",
+      "revision": "@791ba97058eb8c1e257ea50380b0d8c6bb9b8f64",
+      "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+      "jsVersion": "15.0.245.5"
+    },
+    "onlyoffice": "9.4.0-129 / 9.4.0-ae9ceb648960c9359d8339c7c6044e63",
+    "origin": "http://localhost:18198",
+    "syntheticOnly": true,
+    "outboundFence": "Actual app allows only its isolated localhost/provider/store/native ports; no real DCM or PDMS calls.",
+    "providerModel": "Distinct stored resources/tokens per accepted POST, including equal generated template filenames; persistent separate process with no resets in this phase. Not a DCM identity/overwrite/finality guarantee.",
+    "fixture": "Frozen historical legacy/template artifacts; not publication or category-provider acceptance.",
+    "geometry": {
+      "worksheet": "Form",
+      "body": "B10:D12",
+      "hiddenAttachmentColumn": "C",
+      "storedWidth": 0,
+      "storedHiddenRows": [
+        {
+          "row": 11,
+          "height": 22
+        },
+        {
+          "row": 12,
+          "height": 0
+        }
+      ],
+      "nativeVisibleRowHeights": [
+        22,
+        0,
+        0
+      ],
+      "nativeColumnWidths": [
+        0,
+        90
+      ],
+      "filterRange": "B9:D12",
+      "filterOrdinaryValue": "A",
+      "managedControls": 7
+    }
+  },
+  "clipboard": {
+    "sourceRevision": "@791ba97058eb8c1e257ea50380b0d8c6bb9b8f64",
+    "headlessSwitches": [
+      "--headless=new"
+    ],
+    "clipboardBackend": "HeadlessClipboard extends ClipboardNonBacked",
+    "sourceURLs": [
+      "https://chromium.googlesource.com/chromium/src/+/791ba97058eb8c1e257ea50380b0d8c6bb9b8f64/chrome/browser/headless/chrome_browser_main_extra_parts_headless.cc?format=HTML",
+      "https://chromium.googlesource.com/chromium/src/+/791ba97058eb8c1e257ea50380b0d8c6bb9b8f64/components/headless/clipboard/headless_clipboard.cc?format=HTML"
+    ],
+    "systemClipboardReadOrWritten": false
+  },
+  "footer": {
+    "status": "supported for settled samples only; no layout source change",
+    "settled": [
+      {
+        "viewport": 768,
+        "frame": 692,
+        "modal": {
+          "x": 394,
+          "y": 188,
+          "width": 460,
+          "height": 450,
+          "top": 188,
+          "right": 854,
+          "bottom": 638,
+          "left": 394
+        },
+        "footer": {
+          "x": 395,
+          "y": 583,
+          "width": 458,
+          "height": 39,
+          "top": 583,
+          "right": 853,
+          "bottom": 622,
+          "left": 395
+        },
+        "buttons": [
+          {
+            "text": "บันทึก",
+            "rect": {
+              "x": 533,
+              "y": 598,
+              "width": 86,
+              "height": 24,
+              "top": 598,
+              "right": 619,
+              "bottom": 622,
+              "left": 533
+            }
+          },
+          {
+            "text": "ยกเลิก",
+            "rect": {
+              "x": 629,
+              "y": 598,
+              "width": 86,
+              "height": 24,
+              "top": 598,
+              "right": 715,
+              "bottom": 622,
+              "left": 629
+            }
+          }
+        ],
+        "allButtonsWithin": true
+      },
+      {
+        "viewport": 600,
+        "frame": 524,
+        "modal": {
+          "x": 394,
+          "y": 40,
+          "width": 460,
+          "height": 444,
+          "top": 40,
+          "right": 854,
+          "bottom": 484,
+          "left": 394
+        },
+        "footer": {
+          "x": 395,
+          "y": 429,
+          "width": 458,
+          "height": 39,
+          "top": 429,
+          "right": 853,
+          "bottom": 468,
+          "left": 395
+        },
+        "buttons": [
+          {
+            "text": "บันทึก",
+            "rect": {
+              "x": 533,
+              "y": 444,
+              "width": 86,
+              "height": 24,
+              "top": 444,
+              "right": 619,
+              "bottom": 468,
+              "left": 533
+            }
+          },
+          {
+            "text": "ยกเลิก",
+            "rect": {
+              "x": 629,
+              "y": 444,
+              "width": 86,
+              "height": 24,
+              "top": 444,
+              "right": 715,
+              "bottom": 468,
+              "left": 629
+            }
+          }
+        ],
+        "allButtonsWithin": true
+      },
+      {
+        "viewport": 520,
+        "frame": 444,
+        "modal": {
+          "x": 394,
+          "y": 40,
+          "width": 460,
+          "height": 364,
+          "top": 40,
+          "right": 854,
+          "bottom": 404,
+          "left": 394
+        },
+        "footer": {
+          "x": 395,
+          "y": 349,
+          "width": 458,
+          "height": 39,
+          "top": 349,
+          "right": 853,
+          "bottom": 388,
+          "left": 395
+        },
+        "buttons": [
+          {
+            "text": "บันทึก",
+            "rect": {
+              "x": 533,
+              "y": 364,
+              "width": 86,
+              "height": 24,
+              "top": 364,
+              "right": 619,
+              "bottom": 388,
+              "left": 533
+            }
+          },
+          {
+            "text": "ยกเลิก",
+            "rect": {
+              "x": 629,
+              "y": 364,
+              "width": 86,
+              "height": 24,
+              "top": 364,
+              "right": 715,
+              "bottom": 388,
+              "left": 629
+            }
+          }
+        ],
+        "allButtonsWithin": true
+      }
+    ],
+    "coldSmall": {
+      "frame": 444,
+      "buttons": [
+        {
+          "text": "บันทึก",
+          "top": 365,
+          "bottom": 389
+        },
+        {
+          "text": "ยกเลิก",
+          "top": 365,
+          "bottom": 389
+        }
+      ]
+    },
+    "priorImmediateClip": "Earlier immediate resize sample at520 clipped transiently. This phase observed settled/reopened520 buttons inside444px frame. Not all viewport, zoom, browser or resize-animation certification.",
+    "actualCancelCompleted": true,
+    "dispatches": 0
+  },
+  "activation": {
+    "method": "Real renderer-calibrated pointer selected visible Other0; actual Tab plus Shift+F10/Edit object opened each exact native metadata binding. Passive SDK reads only; no SDK selection/model mutation or forged bridge.",
+    "userLegacy": [
+      {
+        "tag": "rows.proof",
+        "rowIndex": 0,
+        "physicalRow": 9,
+        "physicalColumn": 2,
+        "tabsUsed": 4
+      },
+      {
+        "tag": "rows.proof",
+        "rowIndex": 1,
+        "physicalRow": 10,
+        "physicalColumn": 2,
+        "tabsUsed": 1
+      },
+      {
+        "tag": "rows.proof",
+        "rowIndex": 2,
+        "physicalRow": 11,
+        "physicalColumn": 2,
+        "tabsUsed": 1
+      },
+      {
+        "tag": "rows.other",
+        "rowIndex": 0,
+        "physicalRow": 9,
+        "physicalColumn": 3,
+        "tabsUsed": 1
+      },
+      {
+        "tag": "rows.other",
+        "rowIndex": 1,
+        "physicalRow": 10,
+        "physicalColumn": 3,
+        "tabsUsed": 1
+      },
+      {
+        "tag": "rows.other",
+        "rowIndex": 2,
+        "physicalRow": 11,
+        "physicalColumn": 3,
+        "tabsUsed": 1
+      },
+      {
+        "tag": "scalar",
+        "rowIndex": null,
+        "physicalRow": 3,
+        "physicalColumn": 2,
+        "tabsUsed": 1
+      }
+    ],
+    "adminLegacy": [
+      {
+        "tag": "rows.proof",
+        "row": 0,
+        "physicalRow": 9,
+        "physicalColumn": 2,
+        "keyboardOpened": true
+      },
+      {
+        "tag": "rows.proof",
+        "row": 1,
+        "physicalRow": 10,
+        "physicalColumn": 2,
+        "keyboardOpened": true
+      },
+      {
+        "tag": "rows.proof",
+        "row": 2,
+        "physicalRow": 11,
+        "physicalColumn": 2,
+        "keyboardOpened": true
+      },
+      {
+        "tag": "rows.other",
+        "row": 0,
+        "physicalRow": 9,
+        "physicalColumn": 3,
+        "keyboardOpened": true
+      },
+      {
+        "tag": "rows.other",
+        "row": 1,
+        "physicalRow": 10,
+        "physicalColumn": 3,
+        "keyboardOpened": true
+      },
+      {
+        "tag": "rows.other",
+        "row": 2,
+        "physicalRow": 11,
+        "physicalColumn": 3,
+        "keyboardOpened": true
+      },
+      {
+        "tag": "scalar",
+        "row": null,
+        "physicalRow": 3,
+        "physicalColumn": 2,
+        "keyboardOpened": true
+      }
+    ],
+    "userTemplate": [
+      {
+        "tag": "rows.proof",
+        "row": 0,
+        "physicalRow": 9,
+        "physicalColumn": 2,
+        "tabsUsed": 4,
+        "pendingName": "original.BIN"
+      },
+      {
+        "tag": "rows.proof",
+        "row": 1,
+        "physicalRow": 10,
+        "physicalColumn": 2,
+        "tabsUsed": 1,
+        "pendingName": null
+      },
+      {
+        "tag": "rows.proof",
+        "row": 2,
+        "physicalRow": 11,
+        "physicalColumn": 2,
+        "tabsUsed": 1,
+        "pendingName": "replacement.BIN"
+      },
+      {
+        "tag": "rows.other",
+        "row": 0,
+        "physicalRow": 9,
+        "physicalColumn": 3,
+        "tabsUsed": 1,
+        "pendingName": null
+      },
+      {
+        "tag": "rows.other",
+        "row": 1,
+        "physicalRow": 10,
+        "physicalColumn": 3,
+        "tabsUsed": 1,
+        "pendingName": "zero.BIN"
+      },
+      {
+        "tag": "rows.other",
+        "row": 2,
+        "physicalRow": 11,
+        "physicalColumn": 3,
+        "tabsUsed": 1,
+        "pendingName": null
+      },
+      {
+        "tag": "scalar",
+        "row": null,
+        "physicalRow": 3,
+        "physicalColumn": 2,
+        "tabsUsed": 3,
+        "pendingName": null
+      }
+    ],
+    "adminTemplate": [
+      {
+        "tag": "rows.proof",
+        "row": 0,
+        "physicalRow": 9,
+        "physicalColumn": 2,
+        "tabsUsed": 4,
+        "pendingName": null
+      },
+      {
+        "tag": "rows.proof",
+        "row": 1,
+        "physicalRow": 10,
+        "physicalColumn": 2,
+        "tabsUsed": 1,
+        "pendingName": null
+      },
+      {
+        "tag": "rows.proof",
+        "row": 2,
+        "physicalRow": 11,
+        "physicalColumn": 2,
+        "tabsUsed": 1,
+        "pendingName": "later-B.BIN"
+      },
+      {
+        "tag": "rows.other",
+        "row": 0,
+        "physicalRow": 9,
+        "physicalColumn": 3,
+        "tabsUsed": 1,
+        "pendingName": null
+      },
+      {
+        "tag": "rows.other",
+        "row": 1,
+        "physicalRow": 10,
+        "physicalColumn": 3,
+        "tabsUsed": 1,
+        "pendingName": null
+      },
+      {
+        "tag": "rows.other",
+        "row": 2,
+        "physicalRow": 11,
+        "physicalColumn": 3,
+        "tabsUsed": 1,
+        "pendingName": null
+      },
+      {
+        "tag": "scalar",
+        "row": null,
+        "physicalRow": 3,
+        "physicalColumn": 2,
+        "tabsUsed": 1,
+        "pendingName": null
+      }
+    ],
+    "adminRowControls": {
+      "legacy": 0,
+      "template": 0
+    },
+    "cleanCancelledExits": {
+      "userLegacy": {
+        "dialogs": 0
+      },
+      "readOnlyTemplateCorrection": {
+        "dialogs": 0,
+        "path": "/admin/results/dca6055a-2175-4621-bad2-b02d18d2cfbb"
+      }
+    }
+  },
+  "legacy": {
+    "ordinary": [
+      {
+        "action": "type",
+        "text": [
+          "A-edited",
+          "B"
+        ]
+      },
+      {
+        "action": "Undo",
+        "text": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "action": "Redo",
+        "text": [
+          "A-edited",
+          "B"
+        ]
+      }
+    ],
+    "disabledNativeAffordances": [
+      {
+        "id": "",
+        "label": "Merge and center",
+        "disabled": true
+      },
+      {
+        "id": "",
+        "label": "Merge and center",
+        "disabled": true
+      },
+      {
+        "id": "id-toolbar-toolbar__icon btn-sort-down0",
+        "label": "Sort ascending",
+        "disabled": true
+      },
+      {
+        "id": "id-toolbar-toolbar__icon btn-sort-up0",
+        "label": "Sort descending",
+        "disabled": true
+      },
+      {
+        "id": "id-toolbar-toolbar__icon btn-autofilter0",
+        "label": "Filter (Ctrl+Shift+L)",
+        "disabled": true
+      },
+      {
+        "id": "id-toolbar-toolbar__icon btn-clear-filter0",
+        "label": "Clear Filter",
+        "disabled": true
+      },
+      {
+        "id": "",
+        "label": "Insert cells (⌘+⇧+Num +)",
+        "disabled": true
+      },
+      {
+        "id": "",
+        "label": "Delete cells (⌘+⇧+Num -)",
+        "disabled": true
+      },
+      {
+        "id": "id-toolbar-toolbar__icon btn-autofilter1",
+        "label": "Filter (Ctrl+Shift+L)",
+        "disabled": true
+      },
+      {
+        "id": "id-toolbar-toolbar__icon btn-sort-down1",
+        "label": "Sort ascending",
+        "disabled": true
+      },
+      {
+        "id": "id-toolbar-toolbar__icon btn-clear-filter1",
+        "label": "Clear Filter",
+        "disabled": true
+      },
+      {
+        "id": "id-toolbar-toolbar__icon btn-sort-up1",
+        "label": "Sort descending",
+        "disabled": true
+      },
+      {
+        "id": "",
+        "label": "Sort comments",
+        "disabled": false
+      }
+    ],
+    "drags": [
+      {
+        "gesture": {
+          "range": "10:10",
+          "axis": "row",
+          "row": 9,
+          "col": 1,
+          "toRow": 14,
+          "toCol": 1
+        },
+        "selected": {
+          "r1": 9,
+          "r2": 9,
+          "c1": 0,
+          "c2": 16383
+        },
+        "nativeMappingAndValuesUnchanged": true,
+        "cursorMove": false
+      },
+      {
+        "gesture": {
+          "range": "B:B",
+          "axis": "column",
+          "row": 8,
+          "col": 1,
+          "toRow": 8,
+          "toCol": 4
+        },
+        "selected": {
+          "r1": 0,
+          "r2": 1048575,
+          "c1": 1,
+          "c2": 1
+        },
+        "nativeMappingAndValuesUnchanged": true,
+        "cursorMove": true
+      }
+    ],
+    "clipboard": [
+      {
+        "item": {
+          "source": "10:10",
+          "target": "12:12",
+          "action": "Cut",
+          "axis": "row"
+        },
+        "nativePayload": {
+          "cut": true,
+          "ownOrdinaryValue": false
+        },
+        "copyNotices": [],
+        "pasteNotices": [
+          "Copy, cut and paste actions Copy, cut and paste actions using the editor toolbar buttons and context menu actions will be performed within this editor tab only.To copy or paste to or from applications outside the editor tab use the following keyboard combinations:⌘+Cfor Copy⌘+Xfor Cut⌘+Vfor PasteDon't show this message againOK"
+        ],
+        "mappingAndValuesUnchanged": true
+      },
+      {
+        "item": {
+          "source": "10:10",
+          "target": "12:12",
+          "action": "Copy",
+          "axis": "row"
+        },
+        "nativePayload": {
+          "cut": false,
+          "ownOrdinaryValue": true
+        },
+        "copyNotices": [
+          "Warning The cell or chart you are trying to change is on a protected sheet.To make a change, unprotect the sheet. You might be requested to enter a password.OK",
+          "Warning The cell or chart you are trying to change is on a protected sheet.To make a change, unprotect the sheet. You might be requested to enter a password.OK",
+          "Warning The cell or chart you are trying to change is on a protected sheet.To make a change, unprotect the sheet. You might be requested to enter a password.OK"
+        ],
+        "pasteNotices": [
+          "Copy, cut and paste actions Copy, cut and paste actions using the editor toolbar buttons and context menu actions will be performed within this editor tab only.To copy or paste to or from applications outside the editor tab use the following keyboard combinations:⌘+Cfor Copy⌘+Xfor Cut⌘+Vfor PasteDon't show this message againOK",
+          "Warning The cell or chart you are trying to change is on a protected sheet.To make a change, unprotect the sheet. You might be requested to enter a password.OK",
+          "Copy, cut and paste actions Copy, cut and paste actions using the editor toolbar buttons and context menu actions will be performed within this editor tab only.To copy or paste to or from applications outside the editor tab use the following keyboard combinations:⌘+Cfor Copy⌘+Xfor Cut⌘+Vfor PasteDon't show this message againOK"
+        ],
+        "mappingAndValuesUnchanged": true
+      },
+      {
+        "item": {
+          "source": "B:B",
+          "target": "D:D",
+          "action": "Cut",
+          "axis": "column"
+        },
+        "nativePayload": {
+          "cut": true,
+          "ownOrdinaryValue": false
+        },
+        "copyNotices": [],
+        "pasteNotices": [
+          "Copy, cut and paste actions Copy, cut and paste actions using the editor toolbar buttons and context menu actions will be performed within this editor tab only.To copy or paste to or from applications outside the editor tab use the following keyboard combinations:⌘+Cfor Copy⌘+Xfor Cut⌘+Vfor PasteDon't show this message againOK"
+        ],
+        "mappingAndValuesUnchanged": true
+      },
+      {
+        "item": {
+          "source": "B:B",
+          "target": "D:D",
+          "action": "Copy",
+          "axis": "column"
+        },
+        "nativePayload": {
+          "cut": false,
+          "ownOrdinaryValue": true
+        },
+        "copyNotices": [],
+        "pasteNotices": [
+          "Copy, cut and paste actions Copy, cut and paste actions using the editor toolbar buttons and context menu actions will be performed within this editor tab only.To copy or paste to or from applications outside the editor tab use the following keyboard combinations:⌘+Cfor Copy⌘+Xfor Cut⌘+Vfor PasteDon't show this message againOK"
+        ],
+        "mappingAndValuesUnchanged": true
+      }
+    ],
+    "clipboardLimit": "Native editor-tab Copy/Paste and Cut flag observed; no OS clipboard transfer claim. Protected-sheet warnings were not attributed to every command when delayed/stacked.",
+    "draftSave": {
+      "id": "b3b27a62-dba2-41af-84fb-726b2346ac97",
+      "status": "completed",
+      "error": null
+    },
+    "eligibleSubmit": "Authentic HTTP Submit consumer using actual native Excel-export snapshot and current capability. No status flip or browser-next interception.",
+    "correctionOne": {
+      "snapshotId": "241a99f4-3e19-4432-bfe6-2bedb6949323",
+      "revision": 1,
+      "status": "committed",
+      "sizes": [
+        [
+          3,
+          null
+        ],
+        [
+          null,
+          0
+        ],
+        [
+          3,
+          null
+        ]
+      ]
+    },
+    "lateUnconfirmedRemovalAttempt": {
+      "inert": true,
+      "pickerStillExists": true,
+      "after": {
+        "removal": false,
+        "clicks": [],
+        "filename": "ยังไม่ได้เลือกไฟล์"
+      },
+      "confirmed": false
+    },
+    "unconfirmedCandidateSaveGate": {
+      "admissions": 0,
+      "feedbackKind": "Confirm or cancel the picker candidate before saving"
+    },
+    "correctionTwo": {
+      "acceptedStatus": 202,
+      "id": "a3a52677-67ae-4a4b-8201-1f648bb7262c",
+      "status": "completed",
+      "error": null
+    },
+    "pendingReplacementRetainedAcrossGate": true,
+    "immutableSubmissionAndCorrectionOneUnchanged": true,
+    "removalPreservesPhysicalRowTwo": true
+  },
+  "template": {
+    "draftSave": {
+      "acceptedStatus": 202,
+      "id": "76a41c8a-edf5-47cd-b289-1ef0c831d43b",
+      "status": "completed",
+      "error": null
+    },
+    "normalBrowserSubmit": {
+      "acceptedStatus": 202,
+      "id": "72e0abfe-9362-4952-b688-4fa10f62c58d",
+      "status": "completed",
+      "error": null
+    },
+    "defaultNext": {
+      "sameResponseId": true,
+      "status": "draft",
+      "draftData": null,
+      "nativeControls": 7,
+      "extraProviderWrites": 0,
+      "cleanExitWithoutDiscard": true
+    },
+    "secondDraftSave": {
+      "acceptedStatus": 202,
+      "id": "25be6b60-a879-4e6e-8835-93e4dd04c60d",
+      "status": "completed",
+      "error": null
+    },
+    "eligibleSubmit": "Second round uses authentic HTTP Submit consumer from real native Excel export, retaining eligibility for Admin Correction; this is not a second normal-browser Submit claim.",
+    "ordinary": [
+      {
+        "action": "type",
+        "value": "A-template-admin"
+      },
+      {
+        "action": "Undo",
+        "value": "A"
+      },
+      {
+        "action": "Redo",
+        "value": "A-template-admin"
+      }
+    ],
+    "disabledNativeAffordances": [
+      {
+        "label": "Merge and center",
+        "disabled": true
+      },
+      {
+        "label": "Merge and center",
+        "disabled": true
+      },
+      {
+        "label": "Sort ascending",
+        "disabled": true
+      },
+      {
+        "label": "Sort descending",
+        "disabled": true
+      },
+      {
+        "label": "Filter (Ctrl+Shift+L)",
+        "disabled": true
+      },
+      {
+        "label": "Clear Filter",
+        "disabled": true
+      },
+      {
+        "label": "Insert cells (⌘+⇧+Num +)",
+        "disabled": true
+      },
+      {
+        "label": "Delete cells (⌘+⇧+Num -)",
+        "disabled": true
+      },
+      {
+        "label": "Filter (Ctrl+Shift+L)",
+        "disabled": true
+      },
+      {
+        "label": "Sort ascending",
+        "disabled": true
+      },
+      {
+        "label": "Clear Filter",
+        "disabled": true
+      },
+      {
+        "label": "Sort descending",
+        "disabled": true
+      }
+    ],
+    "invalidCut": {
+      "beforeControlCount": 7,
+      "afterControlCount": 6,
+      "ordinary": [
+        {
+          "action": "type",
+          "value": "A-template-admin"
+        },
+        {
+          "action": "Undo",
+          "value": "A"
+        },
+        {
+          "action": "Redo",
+          "value": "A-template-admin"
+        }
+      ],
+      "note": "Native name-box row selection did not clear a prior scalar graphic selection; genuine Cut removed the selected scalar control. Do not label this a row clipboard transfer.",
+      "save": {
+        "acceptedStatus": 202,
+        "id": "6607f63a-4e08-4a99-be8c-e699c7f6d1db",
+        "status": "failed",
+        "error": "document_save_failed"
+      },
+      "retained": {
+        "filename": "later-B.BIN",
+        "details": [
+          "1 ไฟล์ · สูงสุด 10 MB (10,000,000 ไบต์)",
+          "later-B.BIN 5 ไบต์"
+        ]
+      },
+      "providerWrites": 0,
+      "nativeUndoRestoredControls": 7
+    },
+    "correctionOne": {
+      "acceptedStatus": 202,
+      "id": "ae1dce73-fc1e-4b45-8602-9dc0a501a2e7",
+      "status": "completed",
+      "error": null
+    },
+    "templateHoldProbeLimit": "Concurrent calls to one browser tab were rejected by the browser tool. Finally released the provider barrier and awaited the already-admitted successful operation. No template post-capture removal result claimed; no retry.",
+    "confirmedZeroRemoval": {
+      "trustedPointer": true,
+      "beforeBytes": 0,
+      "save": {
+        "acceptedStatus": 202,
+        "id": "04fc54bb-726a-4cd8-af49-ce7cc0151c4b",
+        "status": "completed",
+        "error": null
+      },
+      "extraPost": 0,
+      "extraDelete": 0
+    },
+    "historicalSnapshotsUnchanged": 3,
+    "reopenedLatest": {
+      "metadataRow": 2,
+      "physicalRow": 11,
+      "canonicalArrayIndex": 1,
+      "bytes": 5,
+      "exactLinkComparedPrivately": true,
+      "cleanExitDialogs": 0
+    }
+  },
+  "finalAudit": {
+    "providerEvents": {
+      "post": 11,
+      "delete": 0
+    },
+    "resources": [
+      {
+        "storageMode": "legacy",
+        "bindingId": "folio_proof",
+        "rowIndex": 0,
+        "originalName": "original.BIN",
+        "bytes": 4,
+        "sha256": "9ba246312184f082466acc3acc3468eb62c0a472a08dd613732820aad3125282",
+        "referenceCount": 1
+      },
+      {
+        "storageMode": "legacy",
+        "bindingId": "folio_other",
+        "rowIndex": 1,
+        "originalName": "zero.BIN",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "referenceCount": 2
+      },
+      {
+        "storageMode": "legacy",
+        "bindingId": "folio_proof",
+        "rowIndex": 2,
+        "originalName": "replacement.BIN",
+        "bytes": 3,
+        "sha256": "6fc79a7fb4589c131f8147615a0550e159bfe9ebaf0bed107ce936fc404b1f02",
+        "referenceCount": 3
+      },
+      {
+        "storageMode": "legacy",
+        "bindingId": "folio_proof",
+        "rowIndex": 0,
+        "originalName": "replacement.BIN",
+        "bytes": 3,
+        "sha256": "6fc79a7fb4589c131f8147615a0550e159bfe9ebaf0bed107ce936fc404b1f02",
+        "referenceCount": 1
+      },
+      {
+        "storageMode": "legacy",
+        "bindingId": "folio_proof",
+        "rowIndex": 0,
+        "originalName": "later-B.BIN",
+        "bytes": 5,
+        "sha256": "fbedc5da4d813a4ff6b75d3d06a7ef444694e418abcf4b437bd6d64b65a50cc2",
+        "referenceCount": 1
+      },
+      {
+        "storageMode": "template",
+        "bindingId": "folio_proof",
+        "rowIndex": 0,
+        "originalName": "original.BIN",
+        "bytes": 4,
+        "sha256": "9ba246312184f082466acc3acc3468eb62c0a472a08dd613732820aad3125282",
+        "referenceCount": 1
+      },
+      {
+        "storageMode": "template",
+        "bindingId": "folio_other",
+        "rowIndex": 1,
+        "originalName": "zero.BIN",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "referenceCount": 1
+      },
+      {
+        "storageMode": "template",
+        "bindingId": "folio_proof",
+        "rowIndex": 2,
+        "originalName": "replacement.BIN",
+        "bytes": 3,
+        "sha256": "6fc79a7fb4589c131f8147615a0550e159bfe9ebaf0bed107ce936fc404b1f02",
+        "referenceCount": 1
+      },
+      {
+        "storageMode": "template",
+        "bindingId": "folio_proof",
+        "rowIndex": 0,
+        "originalName": "original.BIN",
+        "bytes": 4,
+        "sha256": "9ba246312184f082466acc3acc3468eb62c0a472a08dd613732820aad3125282",
+        "referenceCount": 3
+      },
+      {
+        "storageMode": "template",
+        "bindingId": "folio_other",
+        "rowIndex": 1,
+        "originalName": "zero.BIN",
+        "bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "referenceCount": 2
+      },
+      {
+        "storageMode": "template",
+        "bindingId": "folio_proof",
+        "rowIndex": 2,
+        "originalName": "later-B.BIN",
+        "bytes": 5,
+        "sha256": "fbedc5da4d813a4ff6b75d3d06a7ef444694e418abcf4b437bd6d64b65a50cc2",
+        "referenceCount": 2
+      }
+    ],
+    "receivedResourceCount": 11,
+    "referenceCount": 18,
+    "snapshots": [
+      {
+        "snapshotId": "ec791baf-4d0e-4b11-be77-f39fbab14d37",
+        "responseId": "80da6c8c-54e0-4412-acfe-1f409e5d1eda",
+        "workbookBytes": 26918,
+        "workbookSha256": "5046b5e583c5f55837b6093002a43fb2cc2d6c703f60772213af1e10175174f6",
+        "attachments": [
+          {
+            "tag": "rows.proof",
+            "physicalRow": 0,
+            "bytes": 4,
+            "cell": "C10"
+          },
+          {
+            "tag": "rows.other",
+            "physicalRow": 1,
+            "bytes": 0,
+            "cell": "D11"
+          },
+          {
+            "tag": "rows.proof",
+            "physicalRow": 2,
+            "bytes": 3,
+            "cell": "C12"
+          }
+        ],
+        "pairedReferencesAndCellsMatch": true
+      },
+      {
+        "snapshotId": "241a99f4-3e19-4432-bfe6-2bedb6949323",
+        "responseId": "80da6c8c-54e0-4412-acfe-1f409e5d1eda",
+        "workbookBytes": 26917,
+        "workbookSha256": "e59add855f059fd94e9a0126ff55ae61b2a46c8c086c7b53f3e044af9bbab70d",
+        "attachments": [
+          {
+            "tag": "rows.proof",
+            "physicalRow": 0,
+            "bytes": 3,
+            "cell": "C10"
+          },
+          {
+            "tag": "rows.other",
+            "physicalRow": 1,
+            "bytes": 0,
+            "cell": "D11"
+          },
+          {
+            "tag": "rows.proof",
+            "physicalRow": 2,
+            "bytes": 3,
+            "cell": "C12"
+          }
+        ],
+        "pairedReferencesAndCellsMatch": true
+      },
+      {
+        "snapshotId": "34d82251-c90d-4257-867e-d5e30123d0ef",
+        "responseId": "80da6c8c-54e0-4412-acfe-1f409e5d1eda",
+        "workbookBytes": 26844,
+        "workbookSha256": "8e462a5e510a0cab6ae44af8b7f7c6e111d94c86b55176808fe680c7e99e4714",
+        "attachments": [
+          {
+            "tag": "rows.proof",
+            "physicalRow": 0,
+            "bytes": 5,
+            "cell": "C10"
+          },
+          {
+            "tag": "rows.proof",
+            "physicalRow": 2,
+            "bytes": 3,
+            "cell": "C12"
+          }
+        ],
+        "pairedReferencesAndCellsMatch": true
+      },
+      {
+        "snapshotId": "36b88124-c764-4d79-9ea7-a3901771e22c",
+        "responseId": "dca6055a-2175-4621-bad2-b02d18d2cfbb",
+        "workbookBytes": 26918,
+        "workbookSha256": "d80a50679c40ef9b69808c2cf217e4cd03189f082e27e1a302781a12fd2e49c6",
+        "attachments": [
+          {
+            "tag": "rows.proof",
+            "physicalRow": 0,
+            "bytes": 4,
+            "cell": "C10"
+          },
+          {
+            "tag": "rows.other",
+            "physicalRow": 1,
+            "bytes": 0,
+            "cell": "D11"
+          },
+          {
+            "tag": "rows.proof",
+            "physicalRow": 2,
+            "bytes": 3,
+            "cell": "C12"
+          }
+        ],
+        "pairedReferencesAndCellsMatch": true
+      },
+      {
+        "snapshotId": "788de677-073e-44aa-a70f-5eb9b6f12daa",
+        "responseId": "dca6055a-2175-4621-bad2-b02d18d2cfbb",
+        "workbookBytes": 26842,
+        "workbookSha256": "65fa5993dc1cce416d9a357650355f3ba225f45710847b91b06933f62dbbfd95",
+        "attachments": [
+          {
+            "tag": "rows.proof",
+            "physicalRow": 0,
+            "bytes": 4,
+            "cell": "C10"
+          },
+          {
+            "tag": "rows.other",
+            "physicalRow": 1,
+            "bytes": 0,
+            "cell": "D11"
+          }
+        ],
+        "pairedReferencesAndCellsMatch": true
+      },
+      {
+        "snapshotId": "d75aadd7-d271-4f19-88d6-c9e22cf31d8d",
+        "responseId": "dca6055a-2175-4621-bad2-b02d18d2cfbb",
+        "workbookBytes": 26926,
+        "workbookSha256": "4251d975098bb5333cc9ef4d589b503fa897441473c7df29527de18ab59d1e99",
+        "attachments": [
+          {
+            "tag": "rows.proof",
+            "physicalRow": 0,
+            "bytes": 4,
+            "cell": "C10"
+          },
+          {
+            "tag": "rows.other",
+            "physicalRow": 1,
+            "bytes": 0,
+            "cell": "D11"
+          },
+          {
+            "tag": "rows.proof",
+            "physicalRow": 2,
+            "bytes": 5,
+            "cell": "C12"
+          }
+        ],
+        "pairedReferencesAndCellsMatch": true
+      },
+      {
+        "snapshotId": "7cd92c91-8560-4593-9aff-eef2ac0cfb42",
+        "responseId": "dca6055a-2175-4621-bad2-b02d18d2cfbb",
+        "workbookBytes": 26853,
+        "workbookSha256": "ddf20d892c3333e81904a8cdb09f6ee26623c2301c559116854be8b492534974",
+        "attachments": [
+          {
+            "tag": "rows.proof",
+            "physicalRow": 0,
+            "bytes": 4,
+            "cell": "C10"
+          },
+          {
+            "tag": "rows.proof",
+            "physicalRow": 2,
+            "bytes": 5,
+            "cell": "C12"
+          }
+        ],
+        "pairedReferencesAndCellsMatch": true
+      }
+    ],
+    "allLiteralOriginalsMatch": true,
+    "allReceiptsJoinedByActualDocumentKey": true,
+    "allCanonicalXlsxCellsAndPairedReferencesMatch": true,
+    "noProviderReset": true
+  },
+  "remaining": {
+    "tickets03and06": "needs-info",
+    "tickets01and02and04and05": "ready-for-human",
+    "tickets07to10": "HOLD",
+    "queuedConfirmedRemoval": "A genuine already-queued confirmed removal delivered after captured Correction remains unproved. Ordinary post-capture interaction is inert; an earlier unconfirmed candidate blocks admission. Neither observation is the queued-event proof.",
+    "fullNativeMatrix": "Named four role/contract activation and coupled save/history cells do not certify every structural gesture crossed with saved/replacement/removal/invalid states, old sessions, navigation/refresh/close and browser variants. Existing N01-N18 provenance remains separate.",
+    "provider": "Controlled identity and literal-original checks are not DCM overwrite, settlement, type/size or production acceptance.",
+    "human": "No human review or release approval claimed."
+  },
+  "permissions": {
+    "realDcm": false,
+    "realPdms": false,
+    "realData": false,
+    "realDelete": false,
+    "push": false,
+    "deploy": false,
+    "hindsightWrites": false,
+    "originalNineWayfinderTicketsChanged": false
+  },
+  "screenshots": [
+    {
+      "path": "settled-native-footer-520.png",
+      "bytes": 120020,
+      "sha256": "c33a2d1add02f22ba6174761a9568909a80ce1452aa5e8ba2c0629ddae4641ca",
+      "audit": "Visually inspected; no complete receipt URL pixels."
+    },
+    {
+      "path": "combined-filter-hidden-template.png",
+      "bytes": 115696,
+      "sha256": "e0dea1a152cb5404f74d3866f742bddbcc3737ef17ae5d19c8a0f26db713b420",
+      "audit": "Visually inspected; no complete receipt URL pixels."
+    }
+  ],
+  "cleanup": {
+    "at": "2026-11-19T06:16:51.444Z",
+    "ownedTabClosed": true,
+    "ownedServicesStopped": [
+      "app",
+      "provider",
+      "web",
+      "gateway"
+    ],
+    "gatewayExit137": "Deliberate Docker stop of the owned --rm gateway, not an application failure",
+    "ports": {
+      "5433": true,
+      "8081": true,
+      "9000": true,
+      "15198": false,
+      "18198": false,
+      "18797": false,
+      "18798": false
+    },
+    "ownedDatabase": "folio_ecm_matrix_94b19ebd",
+    "databaseDropped": true,
+    "databaseRemainingCount": 0,
+    "ownedBucket": "folio-ecm-matrix-94b19ebd",
+    "bucketObjectsDeleted": 18,
+    "bucketDeleteStatus": 204,
+    "bucketAbsenceStatus": 404,
+    "privateDirectoryAbsent": true,
+    "ownBrowserDownloadsAbsent": true,
+    "temporaryScreenshotOriginalsRemoved": 5,
+    "sharedFourContainersPreserved": true,
+    "sharedNativeCachesErased": false,
+    "realDcmDeleteAcceptance": false
+  },
+  "workflowCheck": {
+    "runtimeSources": 312,
+    "diagrams": 22,
+    "rendered": 22,
+    "htmlBytes": 3008532,
+    "sourceLinksValid": true,
+    "statusEnumGroups": 5,
+    "pageRoutes": 20,
+    "sharingZipCurrent": true,
+    "actualVisual": "Prior continuation exercised the generated guide surface after its source/map change; this added native evidence phase did not change system flows/map."
+  },
+  "verification": {
+    "at": "2026-11-19T06:18:29.207Z",
+    "persistedJsonParsed": true,
+    "sourceHashesMatched": 6,
+    "screenshotHashesMatched": 2,
+    "relativeLinksAndAnchorsChecked": 7,
+    "privateReceiptFieldsPublished": false,
+    "distinctReceivedPairs": 11,
+    "snapshotAttachmentsEqualReferences": 18
+  }
+}

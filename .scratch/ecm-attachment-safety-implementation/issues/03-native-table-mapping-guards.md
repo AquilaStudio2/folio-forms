@@ -4,11 +4,13 @@
 
 **Blocked by:** 02 — ทุกตาราง XLSX เหลืออย่างน้อยหนึ่งแถวและปุ่มแนบครบ.
 
-**Status:** needs-info
+**Status:** resolved — scoped native evidence accepted
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US52–63; H08 และ U02
 
 **Execution gate:** ต้องให้ผู้ใช้ตรวจตั๋วและสั่งเริ่ม implementation ก่อนพัฒนา การตรวจ native runtime ใช้ระบบแยก ไม่ authorize real DCM หรือข้อมูลใช้งานจริง
+
+**Human acceptance:** pyw1tt ยืนยันตรวจรับและให้ปิด 03 ตามขอบเขตที่ทดสอบ รวม [Undo/Redo ขณะมีไฟล์รอบันทึก](#native-b12-edit-and-undoredo-with-a-pending-row-0-replacement) โดยไม่รับรองชุด role/contract/gesture ที่ยังไม่ได้ตรวจ.
 
 ## Acceptance criteria
 
@@ -79,3 +81,30 @@ Blocker 02 จำเป็นเพราะตั๋วนี้ตรวจ na
 - Real protected structural affordances, trusted drags with unchanged anchors, invalid drawing/capture rejection, ordinary external paste, pending retention and verified internal row transitions are observed. Forbidden mutations were not forced through disabled controls.
 - Actual hidden row height0 and actual initialized historical C-column width0/drawing extX0 are observed. Visible adjacent D control genuinely confirms rows.other, not rows.proof. Hidden C namebox selection has no distinct pointer hit region/picker; no hidden-target invocation/export rejection is certified. Cold hidden-column initialization separately failed; literal-width0 returned engine(-3)/HTTP500, cause unproved.
 - Successful cut/reorder/cross-sheet mutation and every role/contract/queued-removal combination remain unverified, not PASS or an approved scope reduction. Human review of this explicit support boundary is pending. Guards/security were not weakened to manufacture evidence.
+
+### Local continuation from1071d3c — 2026-11-19
+
+- Fixed the cold hidden-column failure in the shared native projection and anchor normalizer, then found and fixed the same root boundary for explicitly hidden zero/positive-height rows. Zero-area previews retain exact physical bindings; default-height rows remain visible. Negative/nonfinite geometry, native protection and saved-button/ownership checks remain enforced.
+- Actual User/Admin native evidence now includes both stored hidden column widths0/12 and hidden row heights0/22. Tab can select a collapsed OLE; Shift+F10 / Edit object activates its actual saved binding. Named keyboard-targeted hidden slots and visible neighbors saved distinct bytes at physical rows0/1 without visible-index substitution. No SDK mutation or fabricated bridge supplied the target.
+- Template pending removal survived genuine two-to-one Folio transition, retained both column controls and disabled final-row deletion without provider writes; explicit later Save alone applied removal. Eligible native Admin Correction retained its no-row-controls boundary and immutable Submission originals. Actual URL-only Excel export and normal User Submit/default-next clean Exit also passed within their recorded source scopes.
+- [Continuation report](../acceptance-report.md#local-continuation-from-1071d3c--2026-11-19) and [typed evidence](../acceptance/06-local-continuation/evidence.json) distinguish width-only journeys from the later final row-geometry source. Runtime/button7 tests/267 assertions, plugin343 and spreadsheet-unit118 passed; malformed hidden widths remain rejected.
+- **Status remains needs-info.** The two unchecked criteria are not silently waived: combined/filter geometry, every role/contract/native-gesture permutation and queued confirmed-removal combinations are not certified. Native footer clipping during resize remains a separate observed risk. No original Wayfinder edit or provider/human acceptance.
+
+### Combined native geometry continuation — 2026-11-19
+
+- [Added report](../acceptance-report.md#combined-native-matrix-continuation--2026-11-19) and [typed evidence](../acceptance/06-native-matrix-continuation/evidence.json) now prove seven actual picker targets in each User/Admin × legacy/template scope with hidden C width0, hidden row heights22/0, a preconfigured filter and A/gap/B physical rows0/1/2. No neighbor/compact-index substitution or SDK mutation supplied a target.
+- Coupled genuine Saves/Corrections/removals preserve exact originals, paired canonical XLSX/JSON/reference targets and immutable history. Final native reopen maps canonical array index1 to physical row2. Actual missing-scalar-control Cut was rejected before provider writes; Undo restored all seven controls and retained the pending File.
+- Settled768/600/520 and cold520 footer samples fit and Cancel works; no source layout patch or all-resize guarantee. This narrows the earlier immediate-clipping risk without erasing its transient observation.
+- Both unchecked acceptance criteria remain unchecked: named combined targets are supported, not every gesture/state/old-session/browser combination. Already-queued confirmed-removal proof and human acceptance remain missing. Guards, permissions, original nine tickets and07–10 HOLD are unchanged.
+
+### 2026-11-19 — Capped native guard verification
+
+[Attempt ledger](../acceptance/03-06-capped-continuation/evidence.json) adds actual visible legacy User Draft and Admin Correction drag/Sort/Cut-Paste checks with a confirmed replacement. Observed positions and canonical artifacts/references stayed equal; reopened exact physical picker held the same three-byte File. Sort disabled, no bypass, no successful clipboard payload transfer claimed. The broader native matrix remains `needs-info`.
+
+The [capped template-native continuation](../acceptance-report.md#capped-template-native-continuation) adds real User pending replacement → Exit → Stay and pending removal → reopen on the original row, with no provider POST or canonical change during those transitions. Native B12 edit while a replacement was pending did not reach the expected value in three attempts; Undo/Redo is unverified. Status stays `needs-info`.
+
+### Native B12 edit and Undo/Redo with a pending row-0 replacement
+
+Passed the named User Draft case in private Chromium/ONLYOFFICE with Storage Template bindings. With `replacement.TXT` confirmed pending at physical row 0, native pointer selection of unlocked B12 and keyboard typing changed `B-ORIGINAL` to `edited-03`. The native toolbar Undo restored `B-ORIGINAL`; Redo restored `edited-03`. The native canvas origin was included in pointer coordinates; earlier capped results remain separate.
+
+The same row-0 picker still showed pending `replacement.TXT` and saved `original.TXT`. All four button coordinates and bindings, row A and the blank gap, canonical attachment/link/reference, and provider POST count remained unchanged. pyw1tt accepted and closed the tested scope; the unchecked full role/contract/gesture matrix remains unverified.

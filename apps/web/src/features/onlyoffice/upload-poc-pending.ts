@@ -1008,14 +1008,25 @@ export class UploadPocPendingFiles {
       }
     }
     if (value.type === "pending-file-set") {
-      if (!(value.file instanceof File) || value.file.size > 10_000_000) {
-        this.invalidFiles.set(
-          key,
-          `${slotLabel}: กรุณาเลือกไฟล์จริงขนาดไม่เกิน 10,000,000 ไบต์ใหม่ก่อนบันทึก`
-        );
-        throw new Error(
-          `${slotLabel}: ไฟล์ ${value.file instanceof File ? value.file.size : "ไม่ทราบ"} ไบต์ เกินขนาด 10,000,000 ไบต์หรือไม่ใช่ไฟล์จริง`
-        );
+      if (
+        !(value.file instanceof File) ||
+        value.file.size < 2 ||
+        value.file.size > 10_000_000
+      ) {
+        const warning = `${slotLabel}: รองรับการอัปโหลดไฟล์ที่มีขนาดมากกว่า 1 bytes และไม่เกิน 10 MB`;
+        this.invalidFiles.set(key, warning);
+        throw new Error(warning);
+      }
+      const dot = value.file.name.lastIndexOf(".");
+      if (
+        dot <= 0 ||
+        !["pdf", "docx", "xlsx", "png", "txt"].includes(
+          value.file.name.slice(dot + 1).toLowerCase()
+        )
+      ) {
+        const warning = `${slotLabel}: รองรับเฉพาะไฟล์ PDF, DOCX, XLSX, PNG และ TXT`;
+        this.invalidFiles.set(key, warning);
+        throw new Error(warning);
       }
       this.invalidFiles.delete(key);
       this.removals.delete(key);

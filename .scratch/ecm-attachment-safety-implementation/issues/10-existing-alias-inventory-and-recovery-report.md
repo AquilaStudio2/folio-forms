@@ -4,11 +4,13 @@
 
 **Blocked by:** None (can start immediately).
 
-**Status:** needs-info
+**Status:** resolved — รับผลภายในขอบเขตที่ตรวจเท่านั้น
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US89–90; approved inventory/recovery/data-use policy และ old-data HOLD register
 
 **Execution prerequisites:** ต้องมีคำสั่งเริ่มงานหลังตรวจตั๋ว และ authorization แยกสำหรับ environment/DB, record/access scope, sanitized report และ original-byte retrieval หากจำเป็น ไม่อนุญาต actual remediation/DELETE จากตั๋วรายงานนี้
+
+**Human acceptance:** pyw1tt ยืนยันตรวจรับและให้ปิดตั๋ว 10 สำหรับ [การสำรวจข้อมูลเดิมและเคสสังเคราะห์ที่ใช้ DCM จริง](#scoped-existing-record-search-and-live-synthetic-correction--2026-11-19) ใน `localhost:8080` เฉพาะ `กทอ.67-00-0001` / `ก่อหนี้-4_ขยาย(45)`.
 
 ## Acceptance criteria
 
@@ -112,3 +114,53 @@ Report จริงเมื่อมี input ต้องระบุ environm
 **Data-use ระหว่าง pending:** คง existing ownership/history/shared-reference/unknown-operation guards ไม่ลบ aliases หรือปลด HOLD ด้วยโน้ต ไม่บล็อกทั้งระบบเพราะ inventory ยังไม่ครบ อ่าน/export saved revisions ตามสิทธิ์เดิม และสื่อข้อจำกัดแก่ผู้ดูแล/ผู้เปิด revision ที่เกี่ยวข้องผ่าน existing surfaces ตาม D03 ไม่เพิ่ม dashboard/manual unlock หรือถือ frozen JSON ว่า external bytes immutable
 
 **Checks/evidence:** อ่าน spec/ticket/canonical resolution และ source ranges ตาม register; ancestry check และ snapshot hashing เท่านั้น ไม่รัน tests/build/lint/formatter, DB audit หรือ provider checks เพราะแก้เฉพาะ ticket หลักฐานจริงและ human acceptance ทุกข้อที่ต้อง environment/records/retrieval ยัง unchecked Parent ต้องเชื่อม report นี้ใน integration evidence โดยคง external HOLD ไม่ถือ documentation completion ว่าปิดตั๋ว
+
+### 2026-11-19 — Current inventory gate
+
+Scoped test approval for 07/08 did not authorize an old-data audit. The latest project preflight's same-name count cannot classify paired receipts, shared identities, surviving Folio references, integrity or recovery. No live application record was read for this ticket. To proceed, a named executor needs an approved read-only channel or sanitized export with the exact environment/schema, record scope and cutoff above. Any original retrieval also needs exact-resource authority and trusted original provenance. Keep integrity unknown without that evidence; remediation and DELETE still require separate authorization.
+
+### Started — scoped read-only authorization and preliminary evidence
+
+pyw1tt authorized starting ticket 10 and opening real originals within the existing limits. The outer boundary remains exact project `กทอ.67-00-0001`, frozen Storage Template `ก่อหนี้-4_ขยาย(45)`, and the previously approved DCM destination. This is read-only: no other projects, arbitrary DCM inventory, data edits, retries of mutations, DELETE, recovery, push or deploy. Do not request the file-open authorization again for an exact resource verified inside that boundary.
+
+**Current report — partial, historical samples only.** Integration working tree `feat/ecm-attachment-safety-implementation`, HEAD `1071d3c7c502`; no target Folio environment, deployed revision or production schema inspected. Mounted memory recall returned navigation results; it did not expose bank/types/budget selectors or canonical document/chunk/revision IDs. Used the [approved policy](../../ecm-attachment-safety/issues/03-existing-aliases-recovery.md#resolution--2026-11-18--pyw1tt--เห็นด้วยกับ-q1-ถึง-q3), [implementation boundary](../spec.md#authorization-และ-hold-register) and these retained observations, not the recall summary, as evidence:
+
+| Source | Supported for the recorded sample | Not established |
+| --- | --- | --- |
+| [07 exact-receipt PDF comparison](../acceptance/07-scoped-dcm-same-name-pdf.json) | Six same-name PDF records in the sample; the new paired receipt was distinct from the five baseline receipts. The new 628-byte synthetic original matched its fixture; the five baselines had identical size and SHA-256 before and after that POST. | The five files' upload-time originals, present integrity, or surviving Folio references. |
+| [08 scoped Folio follow-up](../acceptance/08-sandbox-and-live-follow-up.json) | Three historical synthetic saves in an isolated Folio DB had matching committed slot references and reopened the same receipt; their exact live DCM GETs returned HTTP 200. | Current Folio records, full-byte integrity, or cross-revision aliases. |
+| [08 separate relay failure](../acceptance/08-scoped-folio-slot.json) | No canonical reference committed in that sandbox run. Exclude it from counts of saved Folio attachments. | Current provider resource lifecycle or any historical Folio corruption. |
+
+Validated the sample scopes, PDF digests, three historical Folio reference joins and the failed relay exclusion against the retained JSON. Those reports do not carry exact live retrieval keys or a current scoped Folio export. Filenames, sizes and timestamps do not replace those keys. No current Draft, Submission, Correction, workspace, eligible Operation or retained deletion record was inspected; current identities, aliases and integrity are **not inspected**, not zero. Made zero DCM requests or DB connections in this continuation.
+
+**Next input:** an approved read-only Folio export/channel with the target environment/schema and exact selected Forms or Responses for this project/template, including a snapshot cutoff. For full coverage it must include saved snapshots, slot/physical-row references, workspaces, eligible Operations and retained deletion records, or mark omitted surfaces. Match project/template against each historical attachment record, not against the latest answer alone. Use opaque report labels; keep exact saved receipt resolution in the approved channel, not in chat or the repo. Open only originals linked to verified in-scope Folio references when needed; compare against independently trusted historical digests when available, otherwise keep historical integrity unknown. `needs-info` remains for current input and human report review, not for permission to start.
+
+### One provided local Response — 2026-11-19
+
+**Scope and source:** pyw1tt supplied one receipt in the Folio instance at `localhost:8080`. Resolved it to local sample `R1` and its original `Submission S1`; project `กทอ.67-00-0001` and template `ก่อหนี้-4_ขยาย(45)` matched the saved answer and attachment ledger. Examined the local PostgreSQL snapshot at `2026-11-19T11:46:57.502347Z` in a repeatable-read, read-only transaction. The provider was live DCM; its deployed revision is unknown.
+
+**Inventory — supported for R1:** one Submission (revision 0), one scalar attachment, one committed upload attempt, and one active Provider File Identity. The scalar answer's exact saved token/link pair matched the ledger and identity. No saved Draft, Correction, Correction workspace, eligible Operation with a document key, retained deletion case, or retained cleanup for this attachment was found. There was only one reference in R1, so this sample did not exercise a shared identity across revisions. Other Responses and arbitrary DCM files were out of scope.
+
+**Integrity — matched `A1`:** a single HTTPS original GET by the saved receipt returned HTTP 200 at `2026-11-19T11:48:42.609Z`. Both the 2-byte size and streamed SHA-256 exactly matched Folio's original upload evidence. The hash was captured from the upload File and persisted before provider dispatch; it was not backfilled from the download. Used the existing authenticated service session without a fresh login. One setup error occurred before any DCM request. No bytes, token, evidence URL, or raw identifier was retained in this report. No data mutation, DELETE, or recovery was performed.
+
+**Still open:** a separate approved Response with at least two saved snapshots that reference attachments is needed to check sharing across revisions. This finding does not certify other Responses, all current DCM files, or recovery. `needs-info` remains for broader coverage and pyw1tt's review.
+
+### Synthetic cross-revision inventory — local sandbox
+
+Ran two existing cases in [`ecm-scalar-save-submit.test.ts`](../../../apps/server/test/http/ecm-scalar-save-submit.test.ts) against a new isolated PostgreSQL database and RustFS bucket with the existing local DCM double: `template same-name Correction retains protected history with distinct receipts` and `Correction metadata and removal preserve older selected file versions and exports`. Actual Folio endpoints created the Submission and Corrections. Both cases passed (168 assertions), including the selected older exports and original access in the removal case.
+
+Eight independent assertions against the saved ledger passed. The two synthetic Responses had five saved snapshots and seven references. Each reference matched the canonical token/link pair and ledger identity. In the legacy test, Corrections 1 and 2 shared one Provider File Identity and one Upload Attempt for the unchanged scalar file. In the Storage Template test, Submission and Correction 1 had identical filenames and equal upload digests but two distinct paired receipts and identities. Neither filename nor equal bytes established shared identity.
+
+Removed the isolated database and bucket (13 synthetic objects). No access to current Folio records, real DCM, or real DELETE in this run. This verifies the grouping distinction in the sandbox, not the integrity or alias coverage of actual historical revisions. The prior live R1 byte comparison remains separate. `needs-info` stays for real cross-revision evidence and owner review.
+
+### Scoped existing-record search and live synthetic Correction — 2026-11-19
+
+pyw1tt authorized a read-only search of other Responses in `localhost:8080` under the existing exact project and template, and creation of a synthetic case with live DCM if none qualified. At `12:06:42Z`, a read-only PostgreSQL snapshot found three Submissions with exact project `กทอ.67-00-0001`, two verified canonical attachment references under template `ก่อหนี้-4_ขยาย(45)`, and zero Submissions with an in-scope attachment in both the original and a Correction. No other project or Folio environment was inspected.
+
+An isolated Folio instance used actual authenticated Submit, final Correction and XLSX export routes. The workbook was synthetic. The Submission uploaded one 32-byte TXT to live DCM. Correction changed only an ordinary field, kept the original paired receipt, and made no additional upload. The two saved snapshots had two references to one committed upload and one Provider File Identity. Both separately selected XLSX revision exports contained the same saved link. The scoped integration case passed once (53 assertions).
+
+The relay stopped before DCM on the first preflight setup (historical environment copy); the current local coordinator then completed preflight. Before upload it verified the exact directory roster and both previously known same-name TXT receipts. The upload returned HTTP/business 200 and a receipt distinct from all 26 previously listed pairs. After the Correction, one exact-receipt GET returned HTTP 200 and the new 32-byte original matched the fixture's SHA-256. All 26 previous pairs remained present, and both same-name TXT originals (38 and 39 bytes) matched their respective pre-upload SHA-256. Counts: three scoped metadata searches, five original GETs, one file POST, zero new logins and zero DCM DELETEs. No response bodies, tokens, links, or bytes are stored in the report.
+
+The new synthetic DCM artifact remains with pyw1tt: `กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).txt`, 32 bytes, created `2026-11-19 19:10:22` DCM local time (UTC+7), in `2. มติและการก่อหนี้`. Removed only the temporary relay, test harness, isolated DB and isolated bucket (five synthetic objects). No existing Folio answer was changed.
+
+**Owner disposition — accepted and closed for this scope:** pyw1tt confirmed acceptance of the scoped supplied Response check, the existing-record search with no eligible cross-revision pair, and the successful synthetic cross-revision journey against live DCM. No current or historical integrity claim is made for uninspected records or environments. No recovery was needed or executed. This closes ticket 10 for the accepted scope only; it does not authorize broader audits, remediation, DELETE, push or deploy, or close ticket 07 or 08.

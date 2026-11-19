@@ -5,6 +5,10 @@ import { useEffect, useRef, useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
 import {
+  isResponseDeleteConflict,
+  ResponseDeleteConflictNotice,
+} from "@/components/response-delete-conflict";
+import {
   SubmissionResultViewer,
   SubmissionRevisionHistory,
 } from "@/components/submission-result-viewer";
@@ -125,6 +129,10 @@ const AdminResultDetailRoute = () => {
   const [deleteCleanupWarning, setDeleteCleanupWarning] = useState<
     string | null
   >(null);
+  const [deleteReload, setDeleteReload] = useState<{
+    responseId: string;
+  } | null>(null);
+  const deleteWarningRef = useRef<HTMLDivElement | null>(null);
   const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
   const deleteFeedbackRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -155,7 +163,7 @@ const AdminResultDetailRoute = () => {
     return () => {
       cancelled = true;
     };
-  }, [responseId]);
+  }, [responseId, deleteReload]);
 
   useEffect(() => {
     if (!result || result.state !== "submitted" || !result.submissionId) {
@@ -232,6 +240,11 @@ const AdminResultDetailRoute = () => {
       deleteFeedbackRef.current?.focus();
     }
   }, [deleteError, deleteSuccess]);
+  useEffect(() => {
+    if (deleteReload?.responseId === responseId) {
+      deleteWarningRef.current?.focus();
+    }
+  }, [deleteReload, responseId]);
 
   const requestDelete = (trigger: HTMLButtonElement) => {
     deleteTriggerRef.current = trigger;
@@ -265,7 +278,20 @@ const AdminResultDetailRoute = () => {
       setResult(null);
       setDeleteSuccess(true);
     } catch (caughtError) {
-      setDeleteError(deletionErrorMessage(caughtError));
+      if (isResponseDeleteConflict(caughtError)) {
+        deleteTriggerRef.current = null;
+        setDeleteConfirmation(false);
+        setResult(null);
+        setHistory([]);
+        setHistoryError(null);
+        setViewRevision(null);
+        setFieldsRevision(null);
+        setLoading(true);
+        setError(null);
+        setDeleteReload({ responseId });
+      } else {
+        setDeleteError(deletionErrorMessage(caughtError));
+      }
     } finally {
       setDeleting(false);
     }
@@ -315,10 +341,31 @@ const AdminResultDetailRoute = () => {
     );
   }
 
+  const recoveringDeletion = deleteReload?.responseId === responseId;
+  const waitingForRevision =
+    recoveringDeletion && result?.state === "submitted" && history.length === 0;
+  const deleteWarning =
+    recoveringDeletion && !deleteConfirmation ? (
+      <ResponseDeleteConflictNotice
+        action="ลบ"
+        failed={Boolean(error || historyError || (!loading && !result))}
+        loading={loading || waitingForRevision}
+        ref={deleteWarningRef}
+        subject="คำตอบ"
+      />
+    ) : null;
   if (loading) {
-    return <Spinner />;
+    return (
+      <>
+        {deleteWarning}
+        <Spinner />
+      </>
+    );
   }
   if (error || !result) {
+    if (deleteWarning) {
+      return <>{deleteWarning}</>;
+    }
     return (
       <Notice tone="danger">
         <strong>เปิดผลลัพธ์ไม่สำเร็จ</strong>
@@ -363,6 +410,7 @@ const AdminResultDetailRoute = () => {
   }
   return (
     <>
+      {deleteWarning}
       {canManage && deleteConfirmation ? (
         <div
           className="fixed inset-0 z-50 grid place-items-center bg-black/35 px-5"
@@ -478,7 +526,9 @@ const AdminResultDetailRoute = () => {
                 type="button"
                 variant="danger"
                 onClick={(event) => requestDelete(event.currentTarget)}
-                disabled={deleting || downloading !== null}
+                disabled={
+                  deleting || downloading !== null || waitingForRevision
+                }
               >
                 <Trash2 size={16} />
                 ลบคำตอบถาวร

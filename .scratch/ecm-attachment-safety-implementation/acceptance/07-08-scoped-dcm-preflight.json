@@ -1,0 +1,90 @@
+{
+  "schemaVersion": 1,
+  "revision": "1071d3c7c50293f8706597e850036e4a5f50e28b",
+  "branch": "feat/ecm-attachment-safety-implementation",
+  "ecmClientSha256": "c846eed2af0fe72db46b160a88e7c433cb73ad4f3dc9734657915c4e11adabe5",
+  "providerRevision": null,
+  "providerApi": "https://pdms-documentmanagement.enconfund.go.th/backend/api/beeecm/public",
+  "authorizationSpec": "../spec.md#ขอบเขตทดสอบ-dcm-จริง",
+  "maxTotalAttemptsPerScenario": 3,
+  "run": {
+    "result": "scoped_read_preflight_complete",
+    "scope": {
+      "project": "กทอ.67-00-0001",
+      "target": "DMS/ShareFiles/2567/กทอ.67-00-0001/2. มติและการก่อหนี้",
+      "base": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45)"
+    },
+    "events": [
+      {
+        "endpoint": "search",
+        "ordinal": 1,
+        "at": "2026-11-19T06:54:35.120Z",
+        "status": 200
+      },
+      {
+        "endpoint": "search",
+        "ordinal": 2,
+        "at": "2026-11-19T06:54:35.680Z",
+        "status": 200
+      },
+      {
+        "endpoint": "search",
+        "ordinal": 3,
+        "at": "2026-11-19T06:54:35.785Z",
+        "status": 200
+      }
+    ],
+    "cases": [
+      {
+        "kind": "project_exact",
+        "attempt": 1,
+        "at": "2026-11-19T06:54:35.038Z",
+        "status": 200,
+        "businessStatus": 200,
+        "resultCount": 6,
+        "exactProjectFolders": 1
+      },
+      {
+        "kind": "project_path",
+        "attempt": 1,
+        "at": "2026-11-19T06:54:35.676Z",
+        "status": 200,
+        "businessStatus": 200,
+        "resultCount": 10,
+        "exactTargetFolders": 1
+      },
+      {
+        "kind": "target_path",
+        "attempt": 1,
+        "at": "2026-11-19T06:54:35.781Z",
+        "status": 200,
+        "businessStatus": 200,
+        "resultCount": 5,
+        "exactDestinationEntries": 5,
+        "sameBaseFileCount": 5,
+        "sameBasePdfCount": 5,
+        "unrelatedResultsIgnored": 0,
+        "providerRevision": null
+      }
+    ],
+    "counts": {
+      "login": 0,
+      "search": 3,
+      "upload": 0,
+      "delete": 0,
+      "originalGet": 0
+    },
+    "retainedPrivateFields": false,
+    "writeGate": "known_same_name_files_current_provenance_and_custody_not_established"
+  },
+  "interpretation": {
+    "searchPostIsReadOnly": true,
+    "noneOfFiveIdentifiedAsDisposable": true,
+    "oldOriginalReadsNotAuthorizedFromSearch": true,
+    "newUploadDispatches": 0,
+    "realDeleteDispatches": 0,
+    "retryAfterUnknown": false,
+    "providerMatrix": "not run; usable same-name ownership/custody safety precondition not established",
+    "noExternalArtifactsCreated": true
+  }
+}

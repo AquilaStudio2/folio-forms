@@ -13,6 +13,7 @@ import { requireCorrectionWorkspace } from "../operations/correction-workspace";
 import { operationMetadata } from "../operations/model";
 import {
   attachmentSchema,
+  attachmentUploadIssue,
   canonicalAttachment,
   checkAttachmentJsonBytes,
   spreadsheetAttachmentSlots,
@@ -446,6 +447,13 @@ const originalForChangedMetadata = async (
     )
   ) {
     return undefined;
+  }
+  const uploadIssue = attachmentUploadIssue(
+    saved.original_name,
+    saved.size_bytes
+  );
+  if (uploadIssue) {
+    fail(422, "invalid_attachment", `${label}: ${uploadIssue} กรุณาเลือกไฟล์ใหม่`);
   }
   try {
     if (

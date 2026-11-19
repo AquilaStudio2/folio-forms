@@ -4,11 +4,13 @@
 
 **Blocked by:** 01 — ส่งชื่อเดิมได้ พร้อม receipt และคำเตือนถูกประเภท.
 
-**Status:** needs-info
+**Status:** resolved — scoped live DCM evidence accepted
 
 **Spec coverage:** ECM Attachment Safety implementation spec — US84, US90; Testing Decisions C.1 และ approved resource/history evidence plan
 
-**Execution prerequisites:** ต้องมีคำสั่งเริ่มงานหลังตรวจตั๋ว และ real-provider account/environment/synthetic destination/write scope/ownership-collision boundary/stop conditions/cleanup owner ที่อนุญาตจริง การอนุมัติตั๋วไม่ขยายเป็น DELETE หรือการทดลองกับข้อมูลใช้งานจริง
+**Execution prerequisites:** ผู้ใช้อนุญาตให้ทดสอบ DCM จริงตาม [ขอบเขตในสเปก](../spec.md#ขอบเขตทดสอบ-dcm-จริง) แล้ว เฉพาะ `กทอ.67-00-0001` ยืนยัน account/environment/synthetic destination/ownership-collision boundary/stop conditions/cleanup owner ก่อน POST ไม่มีสิทธิ์ DELETE หรือเปลี่ยนข้อมูลใช้งานจริงจากการอนุญาตนี้
+
+**Human acceptance:** pyw1tt ยืนยันตรวจรับและให้ปิดตั๋ว 07 เฉพาะ [ผล DELETE isolation ของไฟล์ทดสอบ 37 bytes](#scoped-live-delete-isolation--fresh-disposable-txt) และหลักฐาน same-name ที่รายงาน ไม่ใช่การรับรอง DELETE ทุกกรณีหรือสิทธิ์ลบไฟล์อื่น.
 
 ## Acceptance criteria
 
@@ -117,3 +119,33 @@ All paths are relative to the assigned worktree at `1affbc02aa20cf23ca240cb1c85d
 | `apps/server/src/ecm/client.ts` | `c846eed2af0fe72db46b160a88e7c433cb73ad4f3dc9734657915c4e11adabe5` |
 
 **Actions not performed:** no real DCM login/search/original GET/upload/DELETE; no live DB or app/record mutation; no config read/change; no build/test/lint/formatter/browser run; no push/deploy; no new finality guarantee. Only this ticket changes. Existing external originals and retained synthetic artifacts remain untouched; provider/history/DELETE gates and human acceptance remain open.
+
+### 2026-11-19 — อนุญาตทดสอบ DCM จริงแบบจำกัดโครงการ
+
+ผู้ใช้อนุญาตเริ่มทดสอบใน `กทอ.67-00-0001` ตาม [ขอบเขตในสเปก](../spec.md#ขอบเขตทดสอบ-dcm-จริง) แล้ว แทนข้อที่ยังรออนุญาตเริ่มรอบใหม่ใน assessment เดิม ตรวจ account/environment/ปลายทางและ known files ก่อนอัปโหลดไฟล์สังเคราะห์ ห้าม DELETE รวมถึง cleanup อัตโนมัติ หลักฐาน same-name/history และ DELETE isolation ยังไม่ผ่าน
+
+### 2026-11-19 — Scoped real DCM preflight, stopped before upload
+
+[Sanitized attempt evidence](../acceptance/07-08-scoped-dcm-preflight.json): 06:54 UTC, shared coordinator reused its existing authentication; three read-only searches, each HTTP 200 / business 200 on attempt 1. Exact `กทอ.67-00-0001` folder and exact `2. มติและการก่อหนี้` destination each matched once. The destination returned five exact same-base PDFs. Their current ownership/authorized original provenance and the test-file custody boundary were not established. Do not infer who uploaded them or which are fixtures.
+
+**ทำต่อไม่ได้ก่อนส่ง:** 0 file POST, 0 original GET, 0 DELETE. The preflight succeeded; this is a safety stop, not an upload failure or an exhausted retry budget. To resume same-name writes, establish the owner-approved boundary for these known files, trusted original references allowed for before/after checks, and custody of the new synthetic artifact without DELETE. Keep the historical PDF sample separate; neither it nor this search proves isolation or settles the earlier HTTP 500.
+
+### 2026-11-19 — User confirmed the known-file boundary
+
+pyw1tt authorized reading the five same-base PDFs identified by the scoped preflight for before/after comparison, confirmed `2. มติและการก่อหนี้` and frozen template `ก่อหนี้-4_ขยาย(45)` in exact project `กทอ.67-00-0001`, and took custody of the synthetic test artifact. This supersedes the waiting-for-confirmation portion of the previous stop. Reconfirm the exact current scope before dispatch. It does not authorize DELETE (including automatic cleanup), another project, or a resend after an uncertain outcome.
+
+### 2026-11-19 — Live same-name PDF sample supported
+
+[Live evidence](../acceptance/07-scoped-dcm-same-name-pdf.json): one `template=1` PDF POST at `07:26:37Z`, HTTP/business 200, using the confirmed destination and exact filename. `EcmClient.upload` accepted the original response pair; neither token nor link matched any of the five existing pairs. Original GET matched the exact new 628-byte fixture. Each existing original matched its own pre-POST size and SHA-256. The directory then returned six exact same-name PDFs, with all six pairs accounted for. Three scoped searches and eleven original GETs returned HTTP 200; no new login, repeat POST or DELETE.
+
+The synthetic artifact remains with pyw1tt: `กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).pdf`, DCM create time `2026-11-19 14:26:37`, 628 bytes. This is provider-level evidence for this PDF run, not a Folio scalar/table/Correction journey, DELETE isolation, global non-overwrite guarantee or settlement of the previous HTTP 500. Remaining ticket criteria and human review stay open.
+
+pyw1tt authorized continuing ticket 07. The DELETE isolation case still needs one exact disposable test artifact within the approved project and verification that no surviving reference uses it before dispatch. Do not infer that the previous 628-byte artifact or any other file in the directory is disposable. No new DCM request or DELETE was sent for this continuation.
+
+### Scoped live DELETE isolation — fresh disposable TXT
+
+pyw1tt authorized the specific test and a fresh disposable fallback. The 32-byte ticket 10 artifact was not deleted: the private canonical ledger and its original raw receipt had been removed after that earlier test. Kept it as a control, together with the previous 38- and 39-byte TXT files. A live exact-directory preflight found all three known same-name files; the 32-byte file also matched its known original SHA-256.
+
+Created a new 37-byte synthetic TXT in isolated Folio, with a distinct live DCM paired receipt. Verified its saved Draft reference and original SHA-256. Then used the actual authenticated owner discard route on that Draft. The unchanged server deletion guard recorded the verified original receipt, attempted state and zero surviving references across aliases before the relay sent one DELETE for that new token. Folio recorded cleanup `deleted`; HTTP/business DELETE returned 200. The deleted token returned HTTP 404 and disappeared from the exact directory, all 27 previous receipt pairs and metadata remained, and the three same-name originals matched their pre-test SHA-256. No delete of the earlier 32-byte file.
+
+The integration case passed (36 assertions). Counts: one file POST, one DELETE, four scoped metadata searches, eleven original GETs including the expected 404, zero new logins. No mutation was retried. Removed the isolated DB, relay, test harness and bucket (one local object). pyw1tt accepted and closed the scoped case. This does not establish provider-wide independence or the settlement of any earlier request.
