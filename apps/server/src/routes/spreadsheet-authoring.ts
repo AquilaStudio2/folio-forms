@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 import { AuditOutcome, OperationStatus, Prisma, prisma } from "@onlyoffice/db";
 import type { Elysia } from "elysia";
 import { z } from "zod";
@@ -99,6 +101,31 @@ const applyTableChange = (
         "field_rule_conflict",
         "มีตารางรายการแล้ว กรุณาแก้ไขตารางเดิมหรือลบตารางเดิมก่อน"
       );
+    }
+    if (!next.table && Array.isArray(value?.columns)) {
+      const requested = new Map(
+        value.columns.map((column) => [column?.id, column])
+      );
+      next.fields = next.fields.filter((field) => {
+        const column = requested.get(field.id);
+        if (!field.attachment || !column) {
+          return true;
+        }
+        const {
+          anchor: _anchor,
+          prefillPointer: _prefillPointer,
+          prefillPolicy: _prefillPolicy,
+          ...saved
+        } = field;
+        if (!isDeepStrictEqual(column, { ...saved, offset: column.offset })) {
+          fail(
+            409,
+            "field_rule_conflict",
+            "การย้ายช่องแนบเข้าตารางต้องใช้การตั้งค่าเดิม กรุณาอ่านการตั้งค่าล่าสุดแล้วลองอีกครั้ง"
+          );
+        }
+        return false;
+      });
     }
     next.table = {
       ...value,

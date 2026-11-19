@@ -485,6 +485,35 @@ export const createHarness = ({
       spreadsheetNames.set(name, reference);
       return true;
     },
+    AddOleObject(_preview, _width, _height, data, guid, col, _x, row, _y) {
+      spreadsheetSelection.oleObjects ??= [];
+      const objects = spreadsheetSelection.oleObjects;
+      let currentData = data;
+      const from = { col, row };
+      const object = {
+        Drawing: {
+          Id: `native-ole-${objects.length}`,
+          deleteDrawingBase() {
+            this.removed = true;
+          },
+          drawingBase: { from },
+        },
+        GetApplicationId: () => guid,
+        GetData: () => currentData,
+        SetData(value) {
+          currentData = value;
+        },
+        SetLockValue() {},
+        SetName() {},
+        SetPosition(nextColumn, _columnOffset, nextRow) {
+          from.col = nextColumn;
+          from.row = nextRow;
+        },
+        SetSize() {},
+      };
+      objects.push(object);
+      return object;
+    },
     AddShape(
       type,
       width,
@@ -572,6 +601,7 @@ export const createHarness = ({
     },
     GetFormula: () =>
       spreadsheetSelection?.formulas?.[normalizedAddress(address)] || "",
+    GetHidden: () => false,
     GetNumberFormat: () =>
       spreadsheetNumberFormats.get(normalizedAddress(address)) ?? "General",
     GetRow: () => position(normalizedAddress(address)).row,

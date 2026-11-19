@@ -67,6 +67,14 @@ export const spreadsheetBindingAttempt = ({
   }
   if (change.kind === "table") {
     expected.table = change.action === "delete" ? null : change.value;
+    if (expected.table?.columns && !previous.table) {
+      const columnIds = new Set(
+        expected.table.columns.map((column) => column.id)
+      );
+      expected.fields = expected.fields.filter(
+        (field) => !field.attachment || !columnIds.has(field.id)
+      );
+    }
   } else {
     const property =
       change.kind === "field" ? expected.fields : expected.table.columns;

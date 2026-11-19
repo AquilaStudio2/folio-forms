@@ -39,6 +39,7 @@ export function tableSelection(address, headers = false) {
 }
 export function selectedBinding(selected, bindings, preferColumn = false) {
   const point = selectionPosition(selected.address);
+  const end = selectionPosition(selected.address.split(":").at(-1));
   for (const [anchor, reference] of selected.anchors || []) {
     if (!reference) {
       continue;
@@ -64,7 +65,8 @@ export function selectedBinding(selected, bindings, preferColumn = false) {
       continue;
     }
     const field = bindings?.fields?.find((item) => item.anchor === anchor);
-    if (field) {
+    // A larger selection starting at a scalar can be a new table, not an edit.
+    if (field && end.column <= last.column && end.row <= last.row) {
       return ["field", field];
     }
     if (bindings?.table?.anchor === anchor) {

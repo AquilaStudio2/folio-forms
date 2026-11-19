@@ -1,5 +1,7 @@
 # Folio Forms: แผนผังการทำงานทั้งระบบ
 
+ทบทวน Admin XLSX Template Draft วันที่ 20 พฤศจิกายน 2026 บน `fix/admin-excel-button-before-table` จากฐาน `1071d3c` พร้อม Working Tree: สร้างตารางครอบช่องแนบเดิมจะย้าย binding เข้าคอลัมน์ สร้างปุ่มครบแถวข้อมูล และบันทึกต้นแบบใน editor เดิม ดู §05 และ §08 ขอบเขตไม่รวม Production, DCM จริง หรือการแก้ฟอร์มเดิมอัตโนมัติ
+
 ทบทวน source และหลักฐานล่าสุดวันที่ 19 พฤศจิกายน 2026 บน `feat/ecm-attachment-safety-implementation` ฐาน application `c91472d` โดยแยกผลแต่ละ revision: แก้ startup false-dirty แล้วตรวจ clean/default-next Exit เทียบ real edits; retained Draft คืน canonical attachment projections ก่อนรับ ACK โดยไม่แตะ ordinary answers/history หรือปลด protection การดึงหรือตรวจ continuation config หลังยืนยัน commit ล้มเหลวต้องเป็น known-commit blocked ไม่กลายเป็น unknown ผล native จริงมี failing-before/passing-after รวม genuine later FileChooser และ Save รอบถัดไป ดู [หลักฐานรวม](../ecm-attachment-safety-implementation/acceptance-report.md) และ [native supplement N09–N18](../ecm-attachment-safety-implementation/acceptance/06-native-final/report.md)
 
 Observed local evidence เพิ่ม own-Draft/history warnings, inert/loading/unknown/saved copy, exact lost-ack checkpoint reconciliation โดยไม่ resend, saved-removal/minimum-row/invalid/zero-byte/two-column, actual Back/reload/close และการสูญเสียงาน local, ordinary paste และ hidden row/column geometry พร้อม adjacent physical target ที่ไม่สลับ Tag ผล HTTP246 cases, plugin343, configured web282 บวก lifecycle12 และ types5/5 ผ่านตาม source provenance ไม่ใช่ full native matrix หรือ provider/Production acceptance ตั๋ว03/06ยัง needs-info;07–10และ human reviewยัง HOLD คง runtime integrity/security checks และแผน provider ชนิด/ขนาดต่อปุ่ม ไม่เพิ่ม byte comparison หรือ aggregate workload
@@ -201,6 +203,8 @@ DOCX อัปโหลดได้ไม่เกิน 25 MiB ใช้ conten
 
 XLSX ไม่รับนำเข้าต้นแบบ ใช้ native editor จัด workbook แล้วผูกเซลล์หรือ merged cell กับ key ผ่าน named ranges ฟิลด์ร่วมกันอยู่ใน `DraftFieldRule` ก่อนเผยแพร่ และ `ManifestField` หลังเผยแพร่ ไม่สร้างตารางข้อมูล Excel อีกชุด
 
+เมื่อช่วงข้อมูลของตารางใหม่ครอบช่องแนบเดิมที่อยู่เซลล์เดียว ระบบย้ายช่องนั้นเข้าคอลัมน์และบันทึก Template Draft อัตโนมัติ ตารางที่ไม่ได้ย้ายช่องแนบยังใช้ปุ่ม **บันทึกแบบร่าง** เดิม
+
 Save Template ไม่ใช่ Publish เมื่อ Publish สำเร็จ โครงสร้างและ policy ถูกตรึง Form เดิมไม่ให้แก้โครงสร้างหรือ publish ซ้ำ การ Duplicate คัดลอกเอกสารและกฎไป Form ใหม่พร้อม share ID ใหม่ โดยไม่ย้าย Response หรือ Submission
 
 ชื่อและคำอธิบายแก้ได้ภายหลัง การเปลี่ยน DOCX Fill Method ใช้กับ Response ที่มีอยู่ด้วย และ Native form ต้องผ่านการตรวจชนิดฟิลด์ที่รองรับ XLSX ใช้ ONLYOFFICE เสมอ
@@ -266,6 +270,8 @@ Catalog ที่โหลดสำเร็จเป็น snapshot ของ�
 Production จะเปิดความสามารถนี้เมื่อ `PDMS_PROJECT_NAME_SOURCE_ENABLED` เป็นจริงและมี configuration ที่ใช้ได้ แผนผังนี้ไม่ได้ยืนยันว่าระบบปลายทางเปิด flag แล้ว
 
 ปุ่มเดิมต่อยอดผ่าน **เพิ่มช่องแนบไฟล์** และปุ่มในชีต **แนบไฟล์** คง GUID, stable binding, marker และ protocol identifiers เดิม Admin แก้ Title, Tag และ required ในแผง Field เดิม Storage Template กำหนดต่อ scalar หรือ column ทุกแถวใช้ตัวเลือกเดียวกัน type ยังคง text แต่สัญญาแนบระบุด้วย `attachment` ไม่เดาจาก Tag/ข้อความ Migration เพิ่ม `attachmentStorageMode`, `attachmentCategoryId`, `attachmentTemplateId`, `attachmentTemplateName` ใน normal DraftFieldRule/ManifestField ไม่ใส่ routing metadata ใน placement-only Excel Binding
+
+เมื่อสร้างตารางใหม่ครอบช่องแนบเดิม ระบบตรวจตำแหน่งและปุ่มจริงก่อนย้าย เก็บ binding ID, Title, Tag ของช่อง, required และ Storage Template เดิมไว้ในคอลัมน์ ลบ scalar binding และ named range เดิม เปลี่ยน Tag บนปุ่มเป็น `tableKey.columnKey` และวางปุ่มครบทุกแถวข้อมูลโดยไม่รวมแถวหัวตาราง แล้วบันทึกต้นแบบและตรวจ workbook ใน editor เดิมโดยไม่เรียก DCM หากมีหลายช่องแนบในคอลัมน์เดียวหรือช่วงข้อมูลทับช่องที่ย้ายไม่ได้ ระบบหยุดก่อนแก้ข้อมูล หากผลบันทึกต้นแบบยังไม่สำเร็จ ให้ยืนยันผลการตั้งค่าก่อนเมื่อจำเป็น แล้วใช้ **บันทึกแบบร่าง** เพื่อลองบันทึกต้นแบบเดิมก่อนแก้ช่องอื่น
 
 ก่อนเผยแพร่ทุก managed PoC OLE ต้องมีหลักฐาน saved-button ที่ตรวจจริงตรงกับ marker, binding, Tag และตำแหน่ง/แถว ไม่มี orphan หรือปุ่มซ้ำ และทุก declared attachment ต้องมีปุ่มจริงครบช่อง scalar หรือทุกแถวของ column การมี marker อย่างเดียวไม่พอ ระบบปฏิเสธก่อน engine เปลี่ยน workbook ไม่ strip ปุ่มที่ยังไม่ได้ตั้งค่าเพื่อทำให้ Publish ผ่าน และไม่เพิ่มการลบ foreign objects หรือบังคับให้ Template Draft ตั้งค่าครบ
 

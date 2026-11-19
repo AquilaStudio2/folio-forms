@@ -55,6 +55,7 @@ import {
 import { spreadsheetUploadPocActivationCommand } from "./spreadsheet-upload-poc-activation.js";
 import { spreadsheetUploadPocDeleteCommand } from "./spreadsheet-upload-poc-delete.js";
 import {
+  attachmentsForNewTable,
   selectedUploadPocTarget,
   selectedUploadPocBinding,
   existingUploadPocEntry,
@@ -281,6 +282,9 @@ export function initializeSpreadsheet(options, setStatus) {
   let ensureAuthoringReady = async () => {};
   let validatePanelDrafts = () => {};
   let uploadPocSaveInFlight = false;
+  let pendingUploadPocPromotion = null;
+  const pendingPromotionMessage =
+    "ตารางและปุ่มแนบไฟล์ยังรอบันทึกต้นแบบ กรุณากดบันทึกแบบร่างเพื่อลองอีกครั้งก่อนแก้ไขต่อ";
   let pdmsSourceSaveInFlight = false;
   let uploadPocDeleteNeedsSave = false;
   let pendingTemplateDeletePurpose = "manual";
@@ -379,11 +383,15 @@ export function initializeSpreadsheet(options, setStatus) {
         action === ACTIONS.SAVE_TEMPLATE &&
         context?.preserveEditorSession === true
       ) {
+        pendingUploadPocPromotion = null;
         uploadPocDeleteNeedsSave = false;
         pendingUploadPocChanges.clear();
       }
     },
     beforeAction: async (action, rowChange, context) => {
+      if (pendingUploadPocPromotion && action !== ACTIONS.SAVE_TEMPLATE) {
+        throw new Error(pendingPromotionMessage);
+      }
       if (uploadPocDeleteNeedsSave && action !== ACTIONS.SAVE_TEMPLATE) {
         throw new Error(
           "การลบปุ่มยังรอบันทึกต้นแบบ กรุณากดบันทึกแบบร่างเพื่อลองอีกครั้งก่อนแก้ไขต่อ"
@@ -494,6 +502,10 @@ export function initializeSpreadsheet(options, setStatus) {
     panel.append(node);
     node.addEventListener("click", () => {
       if (busy || node.disabled) {
+        return;
+      }
+      if (pendingUploadPocPromotion && !recoveryAction) {
+        setStatus(pendingPromotionMessage, "error");
         return;
       }
       if (uploadPocDeleteNeedsSave && !recoveryAction) {
@@ -649,6 +661,43 @@ export function initializeSpreadsheet(options, setStatus) {
   }
   preparePreservedTemplateSave = async () => {
     // Operations invokes this only after freezing the native editor.
+    if (pendingUploadPocPromotion) {
+      const { tableId, sheet, ids } = pendingUploadPocPromotion;
+      const table = bindings.table;
+      const columns = table?.columns.filter((column) => ids.has(column.id));
+      if (
+        table?.id !== tableId ||
+        columns.length !== ids.size ||
+        columns.some((column) => !column.attachment)
+      ) {
+        throw new Error("การตั้งค่าคอลัมน์แนบที่รอบันทึกเปลี่ยนไป กรุณาตรวจสอบต้นแบบล่าสุด");
+      }
+      window.Asc.scope.folioSpreadsheetUploadPoc = {
+        mark: true,
+        targets: columns.map((column) => ({
+          bindingId: column.id,
+          bodyAnchor: table.anchor,
+          columnOffset: column.offset,
+          kind: "column",
+          sheet,
+          tag: `${table.key}.${column.key}`,
+        })),
+        preview: uploadPocPreview,
+        guid: uploadPocGuid,
+      };
+      try {
+        const raw = await office.callCommandResult(
+          spreadsheetUploadPocCommand,
+          true
+        );
+        const result = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (!result?.ok) {
+          throw new Error(result?.error || "สร้างปุ่มแนบไฟล์ในตารางไม่สำเร็จ");
+        }
+      } finally {
+        delete window.Asc.scope.folioSpreadsheetUploadPoc;
+      }
+    }
     for (const pending of pendingUploadPocChanges.values()) {
       const current = [
         ...(bindings.fields || []),
@@ -1533,13 +1582,22 @@ export function initializeSpreadsheet(options, setStatus) {
       try {
         saved = await operations.runAction(ACTIONS.SAVE_TEMPLATE, "", null, {
           preserveEditorSession: true,
-          preserveEditorSessionPurpose: "placement",
-          uploadPocBindingId: bindingId,
+          ...(bindingId
+            ? {
+                preserveEditorSessionPurpose: "placement",
+                uploadPocBindingId: bindingId,
+              }
+            : { preserveEditorSessionPurpose: "manual" }),
         });
       } finally {
         uploadPocSaveInFlight = false;
       }
       if (!saved?.ok) {
+        if (!bindingId) {
+          throw new Error(
+            `${pendingPromotionMessage}: ${saved?.error || "ยังยืนยันผลไม่ได้"}`
+          );
+        }
         throw new Error(
           `บันทึกต้นแบบยังไม่สำเร็จ: ${saved?.error || "ยังยืนยันผลไม่ได้"} กรุณาลองอีกครั้งที่ช่องเดิม ระบบจะใช้ปุ่มและ Tag เดิม ยังยืนยันการตั้งค่าช่องแนบไม่ได้`
         );
@@ -2068,6 +2126,7 @@ export function initializeSpreadsheet(options, setStatus) {
         );
       }
       let body = current;
+      let promotions = [];
       if (kind.value === "table") {
         value = {
           ...editing,
@@ -2084,6 +2143,15 @@ export function initializeSpreadsheet(options, setStatus) {
           }
           const setup = tableSelection(current.address, headers.checked);
           body = { ...current, address: setup.address };
+          const selectionWithAnchors = await selection();
+          const byOffset = attachmentsForNewTable(
+            { ...body, anchors: selectionWithAnchors.anchors },
+            bindings
+          );
+          promotions = [...byOffset.values()];
+          if (promotions.length) {
+            validatePanelDrafts(draftKey());
+          }
           let titles = [];
           if (headers.checked) {
             window.Asc.scope.folioSpreadsheetSelection = {
@@ -2100,16 +2168,31 @@ export function initializeSpreadsheet(options, setStatus) {
               titles = [titles];
             }
           }
-          value.columns = Array.from({ length: setup.width }, (_, offset) => ({
-            id: id(),
-            key: `column_${offset + 1}`,
-            label: String(titles?.[offset] || `คอลัมน์ ${offset + 1}`),
-            offset,
-            type: "text",
-            required: false,
-            computed: false,
-            options: [],
-          }));
+          const promotedKeys = new Set(
+            promotions.map(({ column }) => column.key)
+          );
+          let nextKey = setup.width + 1;
+          value.columns = Array.from({ length: setup.width }, (_, offset) => {
+            const promoted = byOffset.get(offset);
+            if (promoted) {
+              return promoted.column;
+            }
+            let columnKey = `column_${offset + 1}`;
+            while (promotedKeys.has(columnKey)) {
+              columnKey = `column_${nextKey}`;
+              nextKey += 1;
+            }
+            return {
+              id: id(),
+              key: columnKey,
+              label: String(titles?.[offset] || `คอลัมน์ ${offset + 1}`),
+              offset,
+              type: "text",
+              required: false,
+              computed: false,
+              options: [],
+            };
+          });
         }
       } else if (kind.value !== "column") {
         value.anchor = editing?.anchor || bindingId;
@@ -2123,6 +2206,13 @@ export function initializeSpreadsheet(options, setStatus) {
             : editing?.prefillPolicy || "editable";
       }
       const newTable = kind.value === "table" && !editing;
+      // ONLYOFFICE can retain the old marker reference when it is edited in place.
+      const promotionNames = promotions.flatMap(
+        ({ anchor: oldAnchor, column }) => [
+          oldAnchor,
+          `_folio_upload_poc_${column.id}`,
+        ]
+      );
       const target = {
         anchor:
           kind.value === "column"
@@ -2130,10 +2220,13 @@ export function initializeSpreadsheet(options, setStatus) {
             : value.anchor,
         ...(kind.value === "table"
           ? {
-              extraAnchorNames: spreadsheetBindingAnchors({
-                fields: [],
-                table: value,
-              }).filter((name) => name !== value.anchor),
+              extraAnchorNames: [
+                ...spreadsheetBindingAnchors({
+                  fields: [],
+                  table: value,
+                }).filter((name) => name !== value.anchor),
+                ...promotionNames,
+              ],
             }
           : {}),
       };
@@ -2154,6 +2247,41 @@ export function initializeSpreadsheet(options, setStatus) {
         { kind: kind.value, action: "upsert", value },
         target,
         async () => {
+          if (promotions.length) {
+            const targets = await captureUploadPocTargets(
+              promotions.map(({ column }) => column.id)
+            );
+            const firstColumn = selectionPosition(body.address).column;
+            if (
+              targets.length !== promotions.length ||
+              promotions.some(
+                ({ row, column }) =>
+                  !targets.some(
+                    (item) =>
+                      item.bindingId === column.id &&
+                      item.sheet === body.sheet &&
+                      item.row === row &&
+                      item.column === firstColumn + column.offset
+                  )
+              )
+            ) {
+              throw new Error(
+                "ยืนยันตำแหน่งปุ่มแนบไฟล์เดิมไม่ได้ กรุณาบันทึกต้นแบบเดิมก่อนลองอีกครั้ง"
+              );
+            }
+            window.Asc.scope.folioSpreadsheetUploadPocCleanup = promotionNames;
+            try {
+              if (
+                (await office.callCommandResult(
+                  spreadsheetUploadPocCleanupCommand
+                )) !== true
+              ) {
+                throw new Error("ลบตำแหน่งช่องแนบเดิมไม่สำเร็จ");
+              }
+            } finally {
+              delete window.Asc.scope.folioSpreadsheetUploadPocCleanup;
+            }
+          }
           if (kind.value !== "column" && !editing) {
             await anchor(value.anchor, body);
           }
@@ -2197,6 +2325,13 @@ export function initializeSpreadsheet(options, setStatus) {
             setStatus("บันทึกฟิลด์และกรอบรูปแล้ว กรุณาบันทึกต้นแบบ", "success");
           }
           if (newTable) {
+            if (promotions.length) {
+              pendingUploadPocPromotion = {
+                tableId: value.id,
+                sheet: body.sheet,
+                ids: new Set(promotions.map(({ column }) => column.id)),
+              };
+            }
             window.Asc.scope.folioSpreadsheetTableBorders = current;
             if (
               (await office.callCommandResult(
@@ -2212,6 +2347,10 @@ export function initializeSpreadsheet(options, setStatus) {
           }
         }
       );
+      if (promotions.length) {
+        await saveAttachmentTemplate();
+        setStatus("บันทึกตารางและปุ่มแนบไฟล์ทุกแถวแล้ว", "success");
+      }
     };
     const projectHelp = document.createElement("p");
     projectHelp.id = "spreadsheet-project-save-help";

@@ -39,6 +39,44 @@ const contains = (outer, inner) =>
   outer.from.row <= inner.from.row &&
   outer.to.row >= inner.to.row;
 
+export const attachmentsForNewTable = (selection, bindings) => {
+  const body = bounds(selection.address);
+  const references = new Map(selection.anchors || []);
+  const byOffset = new Map();
+  for (const field of bindings.fields) {
+    const range = referenceBounds(
+      references.get(field.anchor),
+      selection.sheet
+    );
+    if (!overlaps(body, range)) {
+      continue;
+    }
+    const {
+      anchor,
+      prefillPointer: _prefillPointer,
+      prefillPolicy: _prefillPolicy,
+      ...column
+    } = field;
+    const offset = range.from.column - body.from.column;
+    if (
+      !column.attachment ||
+      range.from.row !== range.to.row ||
+      range.from.column !== range.to.column ||
+      byOffset.has(offset)
+    ) {
+      throw new Error(
+        "ช่วงข้อมูลตารางทับช่องเดิมที่ย้ายไม่ได้ กรุณาเลือกช่วงใหม่หรือแก้ช่องที่ทับกัน"
+      );
+    }
+    byOffset.set(offset, {
+      anchor,
+      column: { ...column, offset },
+      row: range.from.row,
+    });
+  }
+  return byOffset;
+};
+
 export const missingUploadPocBindings = (selection, bindings) => {
   const references = new Map(selection.anchors || []);
   return [...(bindings.fields || []), bindings.table]

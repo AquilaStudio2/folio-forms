@@ -1,7 +1,7 @@
 {
-  "commit": "c91472d94fb8ddd8c06f7c08ad2c7709674319b5",
-  "branch": "feat/ecm-attachment-safety-implementation",
-  "source_fingerprint": "12483a74dd12cdb2f4f8557f74f1a6842e2fc6414f277df031f179f8a0f70e02",
+  "commit": "1071d3c7c50293f8706597e850036e4a5f50e28b",
+  "branch": "fix/admin-excel-button-before-table",
+  "source_fingerprint": "5919cea8f456d8f5c782dbff2827085ca35973b0e71077d38531a46b9b3945aa",
   "source_files": 312,
   "pages": [
     {
@@ -663,25 +663,25 @@
       "method": "GET",
       "path": "/api/admin/forms/:publicId/attachment-categories",
       "file": "apps/server/src/routes/spreadsheet-authoring.ts",
-      "line": 234
+      "line": 261
     },
     {
       "method": "GET",
       "path": "/api/admin/forms/:publicId/spreadsheet-bindings",
       "file": "apps/server/src/routes/spreadsheet-authoring.ts",
-      "line": 244
+      "line": 271
     },
     {
       "method": "PATCH",
       "path": "/api/admin/forms/:publicId/spreadsheet-bindings",
       "file": "apps/server/src/routes/spreadsheet-authoring.ts",
-      "line": 261
+      "line": 288
     },
     {
       "method": "POST",
       "path": "/api/admin/forms/:publicId/spreadsheet-bindings/recover",
       "file": "apps/server/src/routes/spreadsheet-authoring.ts",
-      "line": 456
+      "line": 483
     },
     {
       "method": "GET",

@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `c91472d94fb8ddd8c06f7c08ad2c7709674319b5`
+Commit: `1071d3c7c50293f8706597e850036e4a5f50e28b`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -128,10 +128,10 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | GET | `/api/admin/results/:id/correction/editor-config` | `apps/server/src/routes/results.ts:711` |
 | POST | `/api/admin/results/:id/correction` | `apps/server/src/routes/results.ts:724` |
 | POST | `/api/admin/results/:id/correction/workspace` | `apps/server/src/routes/results.ts:727` |
-| GET | `/api/admin/forms/:publicId/attachment-categories` | `apps/server/src/routes/spreadsheet-authoring.ts:234` |
-| GET | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:244` |
-| PATCH | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:261` |
-| POST | `/api/admin/forms/:publicId/spreadsheet-bindings/recover` | `apps/server/src/routes/spreadsheet-authoring.ts:456` |
+| GET | `/api/admin/forms/:publicId/attachment-categories` | `apps/server/src/routes/spreadsheet-authoring.ts:261` |
+| GET | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:271` |
+| PATCH | `/api/admin/forms/:publicId/spreadsheet-bindings` | `apps/server/src/routes/spreadsheet-authoring.ts:288` |
+| POST | `/api/admin/forms/:publicId/spreadsheet-bindings/recover` | `apps/server/src/routes/spreadsheet-authoring.ts:483` |
 | GET | `/api/admin/storage-templates/categories` | `apps/server/src/routes/storage-templates.ts:66` |
 | GET | `/api/admin/storage-templates` | `apps/server/src/routes/storage-templates.ts:70` |
 | POST | `/api/admin/storage-templates` | `apps/server/src/routes/storage-templates.ts:89` |

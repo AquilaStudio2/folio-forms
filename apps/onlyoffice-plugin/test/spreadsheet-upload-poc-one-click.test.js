@@ -14,6 +14,10 @@ const input = (harness, title) =>
       node.tagName === "LABEL" && node.children[0]?.textContent === title
   )?.children[1];
 const empty = () => ({ fields: [], table: null, version: 1 });
+const button = (harness, text) =>
+  descendants(harness.body).find(
+    (node) => node.tagName === "BUTTON" && node.textContent === text
+  );
 const choice = (name) => ({
   category: null,
   document_category_id: 1,
@@ -82,24 +86,25 @@ const setup = async ({
       return { body: { error: "binding denied" }, httpStatus: 409 };
     } else {
       const { change } = JSON.parse(init.body);
-      state =
-        change.kind === "column"
-          ? {
-              ...state,
-              table: {
-                ...state.table,
-                columns: state.table.columns.map((column) =>
-                  column.id === change.value.id ? change.value : column
-                ),
-              },
-            }
-          : {
-              ...state,
-              fields: [
-                ...state.fields.filter((field) => field.id !== change.value.id),
-                change.value,
-              ],
-            };
+      if (change.kind === "table") {
+        const columnIds = new Set(
+          change.value.columns.map((column) => column.id)
+        );
+        state = {
+          ...state,
+          fields: state.fields.filter((field) => !columnIds.has(field.id)),
+          table: change.value,
+        };
+      } else if (change.kind === "column") {
+        state.table.columns = state.table.columns.map((column) =>
+          column.id === change.value.id ? change.value : column
+        );
+      } else {
+        state.fields = [
+          ...state.fields.filter((field) => field.id !== change.value.id),
+          change.value,
+        ];
+      }
       revision += 1;
     }
     return { bindings: state, documentKey: "document-key", revision };
@@ -136,6 +141,9 @@ const setup = async ({
         (call) => call.method === "SetEditingRestrictions"
       )?.args?.[0]
     );
+    if (selected.oleObjects) {
+      return original(...args);
+    }
     for (const target of targets) {
       harness.spreadsheetNames.set(
         `_folio_upload_poc_${target.bindingId}`,
@@ -256,6 +264,66 @@ test("binding rejection rolls back its anchor and never projects a button or mar
   expect(state().fields).toHaveLength(0);
   expect(projections).toHaveLength(0);
   expect([...harness.spreadsheetNames.keys()]).toHaveLength(0);
+});
+
+test("creating a table around an existing attachment makes it a table-column button", async () => {
+  const selected = {
+    address: "C2",
+    oleObjects: [],
+    values: { "A1:C1": [["1", "2", "btn"]] },
+  };
+  const { harness, projections, state } = await setup({ selected });
+  await click(harness);
+  const [attachment] = state().fields;
+  expect(attachment?.attachment).toEqual(choice("หลักฐาน"));
+
+  selected.address = "A1:C6";
+  harness.emitEditorEvent("onTargetPositionChanged");
+  await flushPlugin();
+  const kind = input(harness, "กำหนดช่วงที่เลือกเป็น");
+  kind.value = "table";
+  kind.dispatchEvent({ type: "change" });
+  const headers = input(harness, "ใช้แถวแรกเป็นชื่อคอลัมน์");
+  headers.checked = true;
+  headers.dispatchEvent({ type: "change" });
+  button(harness, "เพิ่มช่องจากช่วงที่เลือก").click();
+  await flushPlugin();
+
+  expect(harness.statusElement.textContent).not.toContain("ไม่พบตำแหน่งตาราง");
+  expect(state().fields).toEqual([]);
+  expect(state().table?.columns[2]).toMatchObject({
+    attachment: attachment.attachment,
+    id: attachment.id,
+    key: attachment.key,
+  });
+  expect(projections.at(-1)?.[0]).toMatchObject({
+    bindingId: attachment.id,
+    bodyAnchor: state().table.anchor,
+    columnOffset: 2,
+    kind: "column",
+  });
+  expect(harness.spreadsheetNames.get(state().table.anchor)).toBe(
+    "'Sheet1'!A2:C6"
+  );
+  expect(harness.spreadsheetNames.has(attachment.anchor)).toBe(false);
+  expect(
+    harness.spreadsheetNames.get(`_folio_upload_poc_${attachment.id}`)
+  ).toBe("'Sheet1'!$C$2:$C$6");
+  expect(
+    selected.oleObjects.map((object) => object.Drawing.drawingBase.from)
+  ).toEqual([
+    { col: 2, row: 1 },
+    { col: 2, row: 2 },
+    { col: 2, row: 3 },
+    { col: 2, row: 4 },
+    { col: 2, row: 5 },
+  ]);
+  expect(
+    selected.oleObjects.map((object) => JSON.parse(object.GetData()).rowIndex)
+  ).toEqual([0, 1, 2, 3, 4]);
+  expect(harness.statusElement.textContent).toContain(
+    "บันทึกตารางและปุ่มแนบไฟล์ทุกแถวแล้ว"
+  );
 });
 
 test("existing table column is reused with its metadata and body projection", async () => {
