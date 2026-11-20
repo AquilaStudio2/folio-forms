@@ -199,6 +199,7 @@ export const OnlyOfficeEditor = ({
   const [attachmentNotice, setAttachmentNotice] = useState<
     string | null | undefined
   >();
+  const [routingPending, setRoutingPending] = useState<boolean>();
   const [cleanupWarning, setCleanupWarning] = useState<
     string | null | undefined
   >();
@@ -513,6 +514,7 @@ export const OnlyOfficeEditor = ({
     loadedConfigUrlRef.current = null;
     setConfig(null);
     setAttachmentNotice(undefined);
+    setRoutingPending(undefined);
     setCleanupWarning(undefined);
     setCheckpointPending(true);
     setError(null);
@@ -1586,10 +1588,12 @@ export const OnlyOfficeEditor = ({
                 await uploadPocFilesRef.current?.refreshStatus(options);
               if (
                 !cancelled &&
-                requestSequence === requestSequenceRef.current &&
-                status?.cleanupWarning
+                requestSequence === requestSequenceRef.current
               ) {
-                setCleanupWarning(status.cleanupWarning);
+                if (status?.cleanupWarning) {
+                  setCleanupWarning(status.cleanupWarning);
+                }
+                setRoutingPending(status?.attachmentRoutingPending);
               }
             } catch {
               // Keep the last durable cleanup warning when its refresh is unavailable.
@@ -1831,6 +1835,17 @@ export const OnlyOfficeEditor = ({
             />
           ) : null}
         </div>
+      ) : null}
+      {(routingPending ?? config?.attachmentRoutingPending) ? (
+        <p
+          className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
+          role="status"
+          aria-live="polite"
+        >
+          บันทึกข้อมูลคำตอบแล้ว แต่ไฟล์แนบที่บันทึกไว้ยังอยู่ที่ปลายทางเดิม
+          กดบันทึกร่างหรือส่งคำตอบเพื่อใช้ปลายทางใหม่
+          ไฟล์ที่เพิ่งเลือกจะยังไม่ถูกอัปโหลดจนกว่าจะกดบันทึกร่างหรือส่งคำตอบ
+        </p>
       ) : null}
       {activeCleanupWarning ? (
         <p

@@ -1043,6 +1043,18 @@ const draft = async (f: Fixture) => {
   expect(result.status).toBe(200);
   return z.record(z.string(), z.unknown()).parse(await result.json());
 };
+const routingPending = async (f: Fixture) => {
+  const result = await app.handle(
+    new Request(
+      `http://test.local/api/forms/${f.form.publicId}/editor-config?responseId=${f.response.id}&action=draft`,
+      { headers: { Authorization: `Bearer ${f.bearer}` } }
+    )
+  );
+  expect(result.status).toBe(200);
+  return z
+    .object({ attachmentRoutingPending: z.boolean() })
+    .parse(await result.json()).attachmentRoutingPending;
+};
 const tableRowsSchema = z.array(
   z.object({
     item: z.string().nullable(),
@@ -5186,6 +5198,7 @@ test("internal project save preserves files and canonical references while metad
   expect(operationOutcome38.status).toBe("completed");
   const canonicalData39 = await draft(f);
   const old = attachmentSchema.parse(canonicalData39.proof);
+  expect(await routingPending(f)).toBe(false);
   await resume(f);
   const session = await prisma.pdmsProjectCatalogSession.create({
     data: {
@@ -5238,6 +5251,7 @@ test("internal project save preserves files and canonical references while metad
     })
   ).toBe(batches);
   await resume(f);
+  expect(await routingPending(f)).toBe(true);
   const version = await prisma.ecmAttachmentVersion.findFirstOrThrow({
     where: { fileToken: old.file_token },
   });
@@ -5260,6 +5274,58 @@ test("internal project save preserves files and canonical references while metad
   await cleanup.promise;
   expect(fixtureValue(received.at(-1)).year).toBe("2571");
   expect([...fixtureValue(received.at(-1)).bytes]).toEqual([0, 255, 7, 1]);
+  await resume(f);
+  expect(await routingPending(f)).toBe(false);
+});
+
+test("template internal row save keeps trusted file routing pending across reopen until explicit Save", async () => {
+  const f = await fixture({ tableAttachments: true, templateMode: true });
+  const uploaded = await poll(
+    f,
+    await send(f, { [JSON.stringify(["folio_row_proof", 2])]: file() })
+  );
+  expect(uploaded.status).toBe("completed");
+  const before = await draft(f);
+  const old = tableRowsSchema.parse(before.rows)[0]?.proof;
+  expect(old).toBeTruthy();
+  await resume(f);
+  expect(await routingPending(f)).toBe(false);
+  const number = `${before.docs_number}.changed`;
+  snapshots.set(
+    f.documentKey,
+    replaceCell(fixtureValue(snapshots.get(f.documentKey)), "B2", number)
+  );
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const reads = originalReads.length;
+  const internal = await poll(
+    f,
+    await send(f, {}, "draft", crypto.randomUUID(), {
+      rowChange: { action: "delete", index: 0 },
+    })
+  );
+  expect(internal.status).toBe("completed");
+  expect(await draft(f)).toMatchObject({
+    docs_number: number,
+    rows: [{ proof: { ...old, row_index: 1 } }],
+  });
+  expect(received.length).toBe(uploads);
+  expect(deleted.length).toBe(deletes);
+  expect(originalReads.length).toBe(reads);
+  await resume(f);
+  expect(await routingPending(f)).toBe(true);
+  const settled = await poll(f, await send(f, {}));
+  expect(settled.status).toBe("completed");
+  expect(received.slice(uploads)).toMatchObject([
+    {
+      fields: ["documentFile", "template"],
+      name: `${number}-หลักฐาน-ตาราง.PDF`,
+      template: "1",
+    },
+  ]);
+  expect([...fixtureValue(received.at(-1)).bytes]).toEqual([0, 255, 7, 1]);
+  await resume(f);
+  expect(await routingPending(f)).toBe(false);
 });
 
 test("an in-flight DELETE fences stale canonical receipt reference acquisition through HTTP", async () => {
