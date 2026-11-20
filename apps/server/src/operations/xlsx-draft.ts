@@ -30,7 +30,7 @@ import { readObject } from "../storage";
 export const xlsxDraftCandidateSchema = z
   .object({
     bindings: spreadsheetBindingSchema,
-    checkpoint: z.uuid(),
+    checkpoint: z.uuidv4(),
     revision: z.number().int().nonnegative(),
     version: z.literal(1),
   })

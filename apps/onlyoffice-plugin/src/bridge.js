@@ -141,7 +141,7 @@ export function createBridge(options, office, callbacks) {
     }
   }
 
-  function requestActionCapability(action) {
+  function requestActionCapability(action, draftCheckpoint) {
     if (
       !CAPABILITY_ACTIONS.includes(action) ||
       !isActionAllowedInMode(action)
@@ -185,6 +185,7 @@ export function createBridge(options, office, callbacks) {
         );
         postBridgeMessage({
           action,
+          ...(draftCheckpoint ? { draftCheckpoint } : {}),
           requestId,
           source: BRIDGE_MESSAGE_SOURCE,
           type: CAPABILITY_REQUEST_TYPE,

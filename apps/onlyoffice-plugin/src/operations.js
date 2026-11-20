@@ -270,21 +270,27 @@ export function createOperations(
       .join(" — ");
   }
 
-  async function pollOperation(operationId, label, operationCapability) {
+  async function pollOperation(
+    operationId,
+    label,
+    operationCapability,
+    readStatus
+  ) {
     const operationLabel = label === undefined ? "operation" : label;
     const id = requireOption(operationId, "operationId");
-    const capability = requireOption(
-      operationCapability,
-      "operationCapability"
-    );
+    const capability = readStatus
+      ? null
+      : requireOption(operationCapability, "operationCapability");
     let previousStatus = "";
 
     for (let attempt = 0; attempt < MAX_OPERATION_POLLS; attempt += 1) {
-      const payload = await api.requestJson(
-        `${API_ROUTES.OPERATIONS}/${encodeURIComponent(id)}`,
-        { method: "GET" },
-        capability
-      );
+      const payload = readStatus
+        ? await readStatus()
+        : await api.requestJson(
+            `${API_ROUTES.OPERATIONS}/${encodeURIComponent(id)}`,
+            { method: "GET" },
+            capability
+          );
       const status = operationStatus(payload);
 
       if (!status) {
@@ -433,6 +439,7 @@ export function createOperations(
         editorFrozen = true;
         bridge.notifyParent(action, "pending");
       }
+      let readDraftStatus;
       const storedDraft = tracksDraft
         ? window.sessionStorage.getItem(draftCheckpointKey)
         : null;
@@ -483,17 +490,19 @@ export function createOperations(
         editorFrozen = true;
         const original = JSON.parse(storedDraft);
         const capability = await bridge.requestActionCapability(action);
-        response = await api.requestJson(
-          api.adminFormPath("xlsx-draft/recover"),
-          {
-            method: "POST",
-            body: JSON.stringify({
-              checkpoint: original.checkpoint,
-              leaseId: original.leaseId,
-            }),
-          },
-          capability
-        );
+        readDraftStatus = () =>
+          api.requestJson(
+            api.adminFormPath("xlsx-draft/recover"),
+            {
+              method: "POST",
+              body: JSON.stringify({
+                checkpoint: original.checkpoint,
+                leaseId: original.leaseId,
+              }),
+            },
+            capability
+          );
+        response = await readDraftStatus();
         if (response.status === "not-admitted") {
           window.sessionStorage.removeItem(draftCheckpointKey);
           waitForReload = true;
@@ -543,7 +552,12 @@ export function createOperations(
         ) {
           attachmentCommitUnresolved = true;
         }
-        const capability = await bridge.requestActionCapability(action);
+        const capability = await bridge.requestActionCapability(
+          action,
+          tracksDraft && action === ACTIONS.PUBLISH
+            ? data.xlsxDraft.checkpoint
+            : undefined
+        );
         if (
           saveContext?.pdmsSelection &&
           saveContext.pdmsSelection.sessionId !==
@@ -599,10 +613,27 @@ export function createOperations(
       );
 
       if (operationId) {
+        const pollCapability = operationCapabilityFromResponse(response);
         completedPayload = await pollOperation(
           operationId,
           actionLabel(resultAction),
-          operationCapabilityFromResponse(response)
+          pollCapability,
+          readDraftStatus && !pollCapability
+            ? async () => {
+                const status =
+                  response.status === "completed" ||
+                  response.status === "failed"
+                    ? response
+                    : await readDraftStatus();
+                if (
+                  status.operationId !== operationId ||
+                  status.action !== resultAction
+                ) {
+                  throw new Error("ผลบันทึกไม่ตรงกับคำขอเดิม");
+                }
+                return { operation: status };
+              }
+            : undefined
         );
       }
 

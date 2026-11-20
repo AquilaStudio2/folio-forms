@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from "react";
 import { OnlyOfficeEditor } from "@/components/onlyoffice-editor";
 import { Badge, Button, Notice, Spinner } from "@/components/ui";
 import { FormMetadataPanel } from "@/features/admin-forms/form-metadata-panel";
+import { XlsxPublishRecovery } from "@/features/admin-forms/xlsx-publish-recovery";
 import type {
   EditorBridgeMessage,
   OnlyOfficeEditorState,
@@ -34,6 +35,7 @@ import {
   waitForOperation,
 } from "@/lib/api";
 import type { FillMethod, FormDetail, FormSummary } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useReauthenticationGuard } from "@/lib/use-reauthentication-guard";
 
 interface FormDetailResponse {
@@ -150,6 +152,7 @@ const FormEditorRoute = () => {
     from: "/admin/forms/$formId",
   });
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [form, setForm] = useState<FormDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -826,6 +829,13 @@ const FormEditorRoute = () => {
             : "แบบฟอร์มนี้เผยแพร่แล้ว สัญญาเอกสารและการตั้งค่า Field ไม่สามารถแก้ไขในที่เดิมได้ หากต้องการเปลี่ยนโครงสร้างให้สร้าง Form ใหม่"}
         </Notice>
       )}
+      {!canEditTemplate && loadedForm.documentKind === "xlsx" && user ? (
+        <XlsxPublishRecovery
+          key={JSON.stringify([user.id, publicId])}
+          actorId={user.id}
+          publicId={publicId}
+        />
+      ) : null}
       <FormMetadataPanel
         documentKind={loadedForm.documentKind ?? "docx"}
         title={title}
