@@ -922,6 +922,36 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
       error: "invalid_field_config",
       status: "failed",
     });
+
+    // The isolated fixture can stage valid bytes but cannot commit its new revision.
+    const faultConstraint = Prisma.raw(
+      `xlsx_draft_fault_${fixtureId.replaceAll("-", "")}`
+    );
+    const isolatedDraft = Prisma.raw(`'${templateId}'::uuid`);
+    await prisma.$executeRaw`
+      ALTER TABLE "template_drafts" ADD CONSTRAINT ${faultConstraint}
+      CHECK ("id" <> ${isolatedDraft} OR "binding_revision" = 0)
+    `;
+    try {
+      const rejectedCommit = await action(
+        "save",
+        saveCapability,
+        payload(candidate)
+      );
+      expect(await poll(rejectedCommit)).toMatchObject({
+        error: "force_save_failed",
+        status: "failed",
+      });
+      expect(
+        await bindingRequest("GET").then((response) => response.json())
+      ).toEqual(oldRules);
+      expect(contentHash(await readSaved())).toBe(contentHash(oldBytes));
+    } finally {
+      await prisma.$executeRaw`
+        ALTER TABLE "template_drafts" DROP CONSTRAINT ${faultConstraint}
+      `;
+    }
+
     const input = payload(candidate);
     const saved = await action("save", saveCapability, input);
     const recovery = await app.handle(
