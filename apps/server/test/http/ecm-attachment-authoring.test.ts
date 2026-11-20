@@ -1417,19 +1417,15 @@ test("duplicates keep independent links and frozen new choices; legacy duplicate
           plugins: {
             options: Record<
               string,
-              {
-                spreadsheetBindings?: SpreadsheetBindings;
-                xlsxDraftRevision?: number;
-              }
+              { spreadsheetBindings?: SpreadsheetBindings }
             >;
           };
         };
       };
     };
-    const copiedOptions = Object.values(
+    const copied = Object.values(
       config.config.editorConfig.plugins.options
-    ).find((entry) => entry.spreadsheetBindings);
-    const copied = copiedOptions?.spreadsheetBindings;
+    ).find((entry) => entry.spreadsheetBindings)?.spreadsheetBindings;
     expect(
       copied?.fields.find((field) => field.attachment)?.attachment
     ).toEqual(
@@ -1443,6 +1439,20 @@ test("duplicates keep independent links and frozen new choices; legacy duplicate
             template_name: null,
           }
     );
+    const committed = await app.handle(
+      new Request(
+        `http://test.local/api/admin/forms/${body.form.publicId}/spreadsheet-bindings`,
+        {
+          headers: {
+            "X-Editor-Capability":
+              config.bridge.capabilities["configure-fields"] ?? "",
+          },
+        }
+      )
+    );
+    expect(committed.status).toBe(200);
+    const { bindings, revision } = (await committed.json()) as BindingState;
+    expect(bindings).toEqual(copied);
     const rejected = await app.handle(
       new Request(
         `http://test.local/api/admin/forms/${body.form.publicId}/publish`,
@@ -1451,9 +1461,9 @@ test("duplicates keep independent links and frozen new choices; legacy duplicate
             documentKey: config.bridge.documentKey,
             spreadsheetAnchors: [["folio_proof", "'Form'!$B$3"]],
             xlsxDraft: {
-              bindings: copied,
+              bindings,
               checkpoint: crypto.randomUUID(),
-              revision: copiedOptions?.xlsxDraftRevision,
+              revision,
               version: 1,
             },
           }),
@@ -1466,12 +1476,17 @@ test("duplicates keep independent links and frozen new choices; legacy duplicate
         }
       )
     );
-    expect(rejected.status).toBe(422);
-    expect(await rejected.json()).toMatchObject({
-      error:
-        sourcePublicId === publicId
-          ? "attachment_template_stale"
-          : "attachment_category_required",
+    expect({
+      body: await rejected.json(),
+      status: rejected.status,
+    }).toMatchObject({
+      body: {
+        error:
+          sourcePublicId === publicId
+            ? "attachment_template_stale"
+            : "attachment_category_required",
+      },
+      status: 422,
     });
     const original = await app.handle(
       new Request(`http://test.local/api/forms/${sourcePublicId}`, {
