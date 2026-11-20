@@ -459,171 +459,182 @@ const poll = async (response: Response) => {
   }
   throw new Error("Test operation did not finish");
 };
-test("a split draft stays readable; verified rebind commits, stale and failed repairs do not", async () => {
-  const id = crypto.randomUUID();
-  const slug = id.replaceAll("-", "");
-  const objectKey = `tests/${fixtureId}/${id}.xlsx`;
-  const bytes = fixtureWorkbook({
-    cells: [],
-    merges: [],
-    names: { [field.anchor]: "#REF!" },
-  });
-  await putObject(objectKey, bytes, XLSX_CONTENT_TYPE);
-  storedObjects.push(objectKey);
-  const form = await prisma.form.create({
-    data: {
-      createdBy: adminId,
-      documentKind: "xlsx",
-      publicId: slug,
-      templateDraft: {
-        create: {
-          contentHash: contentHash(bytes),
-          documentKey: `xlsx-repair-${id}`,
-          fieldRules: {
-            createMany: {
-              data: spreadsheetDraftFieldData({
-                ...emptySpreadsheetBindings(),
-                fields: [field],
-              }),
+test.each(["rebind", "remove"])(
+  "a split draft stays readable until verified %s; stale and failed repairs do not commit",
+  async (kind) => {
+    const rebind = kind === "rebind";
+    const id = crypto.randomUUID();
+    const slug = id.replaceAll("-", "");
+    const objectKey = `tests/${fixtureId}/${id}.xlsx`;
+    const bytes = fixtureWorkbook({
+      cells: [],
+      merges: [],
+      names: { [field.anchor]: "#REF!" },
+    });
+    await putObject(objectKey, bytes, XLSX_CONTENT_TYPE);
+    storedObjects.push(objectKey);
+    const form = await prisma.form.create({
+      data: {
+        createdBy: adminId,
+        documentKind: "xlsx",
+        publicId: slug,
+        templateDraft: {
+          create: {
+            contentHash: contentHash(bytes),
+            documentKey: `xlsx-repair-${id}`,
+            fieldRules: {
+              createMany: {
+                data: spreadsheetDraftFieldData({
+                  ...emptySpreadsheetBindings(),
+                  fields: [field],
+                }),
+              },
             },
+            objectKey,
           },
-          objectKey,
         },
+        title: "Split Excel draft",
       },
-      title: "Split Excel draft",
-    },
-  });
-  const path = `/api/admin/forms/${slug}`;
-  try {
-    const config = await request(`${path}/editor-config`, bearer);
-    expect(config.status).toBe(200);
-    const configBody = (await config.json()) as {
-      bridge: {
-        documentKey: string;
-        capabilities: { "save-template": string };
-      };
-      config: {
-        editorConfig: { plugins: { options: Record<string, unknown> } };
-      };
-    };
-    const {
-      bridge,
-      config: { editorConfig: nativeConfig },
-    } = configBody;
-    expect(nativeConfig.plugins.options[pluginGuid]).toMatchObject({
-      xlsxDraftIssues: [
-        { bindingId: field.id, code: "missing_or_broken_anchor" },
-      ],
     });
-    const duplicate = await app.handle(
-      new Request(`http://test.local${path}/duplicate`, {
-        body: "{}",
-        headers: {
-          Authorization: `Bearer ${bearer}`,
-          "Content-Type": "application/json",
-        },
-        method: "POST",
-      })
-    );
-    expect(duplicate.status).toBe(422);
-    expect(await duplicate.json()).toMatchObject({
-      error: "xlsx_draft_needs_repair",
-    });
-    const download = await request(`${path}/template/xlsx`, bearer);
-    expect(download.status).toBe(200);
-    expect(contentHash(new Uint8Array(await download.arrayBuffer()))).toBe(
-      contentHash(bytes)
-    );
-    const candidate: SpreadsheetBindings = {
-      ...emptySpreadsheetBindings(),
-      fields: [field],
-    };
-    const repair = (draftKey: string, saveToken: string, address: string) =>
-      app.handle(
-        new Request(`http://test.local${path}/save`, {
-          body: JSON.stringify({
-            documentKey: draftKey,
-            spreadsheetAnchors: [[field.anchor, `Form!${address}`]],
-            xlsxDraft: {
-              bindings: candidate,
-              checkpoint: crypto.randomUUID(),
-              revision: 0,
-              version: 1,
-            },
-          }),
+    const path = `/api/admin/forms/${slug}`;
+    try {
+      const config = await request(`${path}/editor-config`, bearer);
+      expect(config.status).toBe(200);
+      const configBody = (await config.json()) as {
+        bridge: {
+          documentKey: string;
+          capabilities: { "save-template": string };
+        };
+        config: {
+          editorConfig: { plugins: { options: Record<string, unknown> } };
+        };
+      };
+      const {
+        bridge,
+        config: { editorConfig: nativeConfig },
+      } = configBody;
+      expect(nativeConfig.plugins.options[pluginGuid]).toMatchObject({
+        xlsxDraftIssues: [
+          { bindingId: field.id, code: "missing_or_broken_anchor" },
+        ],
+      });
+      const duplicate = await app.handle(
+        new Request(`http://test.local${path}/duplicate`, {
+          body: "{}",
           headers: {
+            Authorization: `Bearer ${bearer}`,
             "Content-Type": "application/json",
-            "X-Editor-Capability": saveToken,
           },
           method: "POST",
         })
       );
-    nativeSnapshot = fixtureWorkbook({ cells: [], merges: [], names: {} });
-    nativeSnapshotUrl = new URL("/repair.xlsx", nativeServer.url).href;
-    expect(
-      await poll(
-        await repair(
-          bridge.documentKey,
-          bridge.capabilities["save-template"],
-          "E5"
+      expect(duplicate.status).toBe(422);
+      expect(await duplicate.json()).toMatchObject({
+        error: "xlsx_draft_needs_repair",
+      });
+      const download = await request(`${path}/template/xlsx`, bearer);
+      expect(download.status).toBe(200);
+      expect(contentHash(new Uint8Array(await download.arrayBuffer()))).toBe(
+        contentHash(bytes)
+      );
+      const candidate: SpreadsheetBindings = {
+        ...emptySpreadsheetBindings(),
+        fields: rebind ? [field] : [],
+      };
+      const repair = (draftKey: string, saveToken: string, address: string) =>
+        app.handle(
+          new Request(`http://test.local${path}/save`, {
+            body: JSON.stringify({
+              documentKey: draftKey,
+              spreadsheetAnchors: rebind
+                ? [[field.anchor, `Form!${address}`]]
+                : [],
+              xlsxDraft: {
+                bindings: candidate,
+                checkpoint: crypto.randomUUID(),
+                revision: 0,
+                version: 1,
+              },
+            }),
+            headers: {
+              "Content-Type": "application/json",
+              "X-Editor-Capability": saveToken,
+            },
+            method: "POST",
+          })
+        );
+      const repairedNames = { [field.anchor]: "Form!E5" };
+      nativeSnapshot = fixtureWorkbook({
+        cells: [],
+        merges: [],
+        names: rebind ? {} : repairedNames,
+      });
+      nativeSnapshotUrl = new URL("/repair.xlsx", nativeServer.url).href;
+      expect(
+        await poll(
+          await repair(
+            bridge.documentKey,
+            bridge.capabilities["save-template"],
+            "E5"
+          )
         )
-      )
-    ).toMatchObject({
-      status: "failed",
-    });
-    const savedDownload = await request(`${path}/template/xlsx`, bearer);
-    expect(contentHash(new Uint8Array(await savedDownload.arrayBuffer()))).toBe(
-      contentHash(bytes)
-    );
-    nativeSnapshot = fixtureWorkbook({
-      cells: [],
-      merges: [],
-      names: { [field.anchor]: "Form!E5" },
-    });
-    expect(
-      await poll(
-        await repair(
-          bridge.documentKey,
-          bridge.capabilities["save-template"],
-          "E5"
+      ).toMatchObject({
+        status: "failed",
+      });
+      const savedDownload = await request(`${path}/template/xlsx`, bearer);
+      expect(
+        contentHash(new Uint8Array(await savedDownload.arrayBuffer()))
+      ).toBe(contentHash(bytes));
+      nativeSnapshot = fixtureWorkbook({
+        cells: [],
+        merges: [],
+        names: rebind ? repairedNames : {},
+      });
+      expect(
+        await poll(
+          await repair(
+            bridge.documentKey,
+            bridge.capabilities["save-template"],
+            "E5"
+          )
         )
-      )
-    ).toMatchObject({
-      result: { bindingRevision: 1, bindings: candidate },
-      status: "completed",
-    });
-    const repaired = await request(`${path}/editor-config`, bearer);
-    const current = (await repaired.json()) as typeof configBody;
-    expect(
-      current.config.editorConfig.plugins.options[pluginGuid]
-    ).toMatchObject({ xlsxDraftIssues: [] });
-    const stale = await repair(
-      current.bridge.documentKey,
-      current.bridge.capabilities["save-template"],
-      "E6"
-    );
-    expect(stale.status).toBe(409);
-    expect(await stale.json()).toMatchObject({ error: "stale_document" });
-    const repairedDownload = await request(`${path}/template/xlsx`, bearer);
-    expect(
-      readSpreadsheetWorkbook(
+      ).toMatchObject({
+        result: { bindingRevision: 1, bindings: candidate },
+        status: "completed",
+      });
+      const repaired = await request(`${path}/editor-config`, bearer);
+      const current = (await repaired.json()) as typeof configBody;
+      expect(
+        current.config.editorConfig.plugins.options[pluginGuid]
+      ).toMatchObject({ xlsxDraftIssues: [] });
+      const stale = await repair(
+        current.bridge.documentKey,
+        current.bridge.capabilities["save-template"],
+        "E6"
+      );
+      expect(stale.status).toBe(409);
+      expect(await stale.json()).toMatchObject({ error: "stale_document" });
+      const repairedDownload = await request(`${path}/template/xlsx`, bearer);
+      const placement = readSpreadsheetWorkbook(
         new Uint8Array(await repairedDownload.arrayBuffer())
-      ).names.get(field.anchor)
-    ).toMatchObject({
-      firstColumn: 4,
-      firstRow: 4,
-    });
-    const draft = await prisma.templateDraft.findUniqueOrThrow({
-      where: { formId: form.id },
-    });
-    storedObjects.push(draft.objectKey);
-  } finally {
-    nativeSnapshotUrl = null;
-    nativeSnapshot = null;
-    await prisma.operation.deleteMany({ where: { formId: form.id } });
-    await prisma.form.delete({ where: { id: form.id } });
+      ).names.get(field.anchor);
+      if (rebind) {
+        expect(placement).toMatchObject({ firstColumn: 4, firstRow: 4 });
+      } else {
+        expect(placement).toBeUndefined();
+      }
+      const draft = await prisma.templateDraft.findUniqueOrThrow({
+        where: { formId: form.id },
+      });
+      storedObjects.push(draft.objectKey);
+    } finally {
+      nativeSnapshotUrl = null;
+      nativeSnapshot = null;
+      await prisma.operation.deleteMany({ where: { formId: form.id } });
+      await prisma.form.delete({ where: { id: form.id } });
+    }
   }
-});
+);
 
 const table: NonNullable<SpreadsheetBindings["table"]> = {
   anchor: "folio_rows_anchor",
