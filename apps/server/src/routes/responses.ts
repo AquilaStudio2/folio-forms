@@ -25,6 +25,7 @@ import {
 import {
   attachmentCleanupWarning,
   attachmentMutationNotice,
+  attachmentRoutingPending,
 } from "../ecm/attachments";
 import {
   requireActionEditorAuthorization,
@@ -89,6 +90,7 @@ export function registerResponseRoutes(
           fail(403, "forbidden", "You may only access your own Response");
         }
         return {
+          attachmentRoutingPending: await attachmentRoutingPending(response.id),
           cleanupWarning: await attachmentCleanupWarning(response.id),
           mutationNotice: await attachmentMutationNotice(response.id),
         };

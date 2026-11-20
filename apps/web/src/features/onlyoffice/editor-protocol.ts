@@ -59,6 +59,7 @@ export interface PdmsProjectCatalog {
 
 export interface EditorConfig {
   attachmentNotice?: string | null;
+  attachmentRoutingPending?: boolean;
   pdmsProjectCatalog?: PdmsProjectCatalog;
   apiScriptUrl?: string;
   apiUrl?: string;
