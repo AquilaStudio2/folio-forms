@@ -33,6 +33,23 @@ import type { OperationMetadata, OperationCompletion } from "./model";
 import { objectCleanupIntentGraceMs } from "./object-cleanup";
 import { lockXlsxDraftCommit, replaceXlsxDraftBindings } from "./xlsx-draft";
 
+const templateCommitTimeoutMs = 5000;
+
+const retireFinalWorkbookIntent = async (
+  tx: Prisma.TransactionClient,
+  objectKey: string
+): Promise<void> => {
+  const retired = await tx.objectCleanupIntent.deleteMany({
+    where: {
+      cleanupAfter: { gt: new Date(Date.now() + templateCommitTimeoutMs) },
+      objectKey,
+    },
+  });
+  if (retired.count !== 1) {
+    fail(409, "stale_operation", "The new workbook could not be committed");
+  }
+};
+
 export async function completeTemplateOperation(
   operation: Operation,
   metadata: OperationMetadata,
@@ -174,6 +191,9 @@ export async function completeTemplateOperation(
           "The form changed while this operation was running"
         );
       }
+      if (candidate) {
+        await retireFinalWorkbookIntent(tx, metadata.finalObjectKey);
+      }
       await markOperationCompleted(
         tx,
         operation.id,
@@ -189,7 +209,10 @@ export async function completeTemplateOperation(
         targetId: form.publicId,
       });
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: templateCommitTimeoutMs,
+    }
   );
   return { cleanupObjectKeys };
 }
@@ -455,6 +478,9 @@ export async function completePublishOperation(
       if (updated.count !== 1) {
         fail(409, "stale_operation", "The form changed while publishing");
       }
+      if (candidate) {
+        await retireFinalWorkbookIntent(tx, metadata.finalObjectKey);
+      }
       await markOperationCompleted(
         tx,
         operation.id,
@@ -470,7 +496,10 @@ export async function completePublishOperation(
         targetId: currentForm.publicId,
       });
     },
-    { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+    {
+      isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+      timeout: templateCommitTimeoutMs,
+    }
   );
   return { cleanupObjectKeys };
 }

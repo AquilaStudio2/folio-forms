@@ -596,6 +596,7 @@ test("Excel Apply stays local and a lost admission response checks the same chec
       },
       completedOperation({
         bindingRevision: 1,
+        bindings: { fields: [], table: null, version: 1 },
         documentKey: "document-key",
         editorSessionPreserved: true,
       }),
@@ -660,6 +661,60 @@ test("Excel Apply stays local and a lost admission response checks the same chec
     status: "completed",
   });
 });
+
+test.each([true, false])(
+  "Excel unlocks a rejected POST only when rejection explicitly proves no admission (%s)",
+  async (preAdmission) => {
+    const scopeIdentity = "author/rejected-form";
+    const harness = createHarness({
+      action: "template-edit",
+      capabilityResponses: ["save-capability"],
+      documentKind: "xlsx",
+      responses: [
+        {
+          body: { error: "duplicate_field_tag", preAdmission },
+          httpStatus: 409,
+        },
+      ],
+      scopeIdentity,
+    });
+    acknowledgeBridge(harness);
+    await flushPlugin();
+    const save = harness.window.FormBridge.runAction("save-template");
+    await flushPlugin();
+    const guard = harness.messages.find(
+      ({ message }) => message.type === "pending-file-check"
+    ).message;
+    harness.dispatch({
+      data: {
+        ...guard,
+        allowed: true,
+        source: "folio-upload-poc-host",
+        type: "pending-file-result",
+      },
+      origin: harness.parentOrigin,
+      source: harness.parentWindow,
+    });
+    await expect(save).resolves.toMatchObject({ ok: false });
+    expect(harness.requests).toHaveLength(1);
+    expect(
+      Boolean(
+        harness.window.sessionStorage.getItem(
+          `folio-xlsx-draft:${scopeIdentity}`
+        )
+      )
+    ).toBe(!preAdmission);
+    expect(
+      harness.messages
+        .filter(({ message }) => message.type === "operation")
+        .at(-1).message
+    ).toMatchObject({
+      attachmentCommitUnresolved: !preAdmission,
+      status: "failed",
+    });
+    expect(harness.editorRestriction).toBe(preAdmission ? "none" : "readOnly");
+  }
+);
 
 test("reopening an Excel editor with an unresolved checkpoint advertises recovery before making any request", async () => {
   const scopeIdentity = "author/form";

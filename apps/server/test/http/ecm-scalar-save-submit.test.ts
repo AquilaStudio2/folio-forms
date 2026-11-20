@@ -3981,7 +3981,11 @@ for (const templateMode of [false, true]) {
   });
 }
 
-test.each(["missing scalar link", "swapped physical links"])(
+test.each([
+  "missing scalar link",
+  "swapped physical links",
+  "internal link without a receipt",
+])(
   "final Builder output with %s cannot replace the committed Draft",
   async (fault) => {
     const f = await fixture({ tableAttachments: true, templateMode: true });
@@ -4062,11 +4066,17 @@ test.each(["missing scalar link", "swapped physical links"])(
         );
         archive[path] = strToU8(serializeSpreadsheetXml(relationships));
         links.children = links.children.filter((node) => node !== scalar);
-      } else {
+      } else if (fault === "swapped physical links") {
         const first = at("C12");
         const second = at("D13");
         first.attributes.ref = "D13";
         second.attributes.ref = "C12";
+      } else {
+        links.children.push({
+          attributes: { location: "Form!A1", ref: "C13" },
+          children: [],
+          name: at("D13").name,
+        });
       }
       archive[sheetPath] = strToU8(serializeSpreadsheetXml(sheet));
       faults += 1;

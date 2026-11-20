@@ -387,6 +387,8 @@ export function createOperations(
       Boolean(draftCheckpointKey) &&
       [ACTIONS.SAVE_TEMPLATE, ACTIONS.PUBLISH].includes(action);
     let draftUnresolved = false;
+    let expectedDraftRevision;
+    let preservedDraftKey;
     const correctionReason = typeof reason === "string" ? reason.trim() : "";
     const attachmentSave =
       hasAttachments &&
@@ -489,6 +491,8 @@ export function createOperations(
         await office.freezeEditor();
         editorFrozen = true;
         const original = JSON.parse(storedDraft);
+        expectedDraftRevision = original.revision;
+        preservedDraftKey = original.preservedDocumentKey;
         const capability = await bridge.requestActionCapability(action);
         readDraftStatus = () =>
           api.requestJson(
@@ -568,11 +572,18 @@ export function createOperations(
           );
         }
         if (tracksDraft) {
+          expectedDraftRevision = data.xlsxDraft.revision;
+          preservedDraftKey =
+            saveContext?.preserveEditorSession === true
+              ? options.documentKey
+              : undefined;
           window.sessionStorage.setItem(
             draftCheckpointKey,
             JSON.stringify({
               action,
               checkpoint: data.xlsxDraft.checkpoint,
+              revision: expectedDraftRevision,
+              preservedDocumentKey: preservedDraftKey,
               leaseId: requireOption(
                 options.xlsxDraftLeaseId,
                 "Excel authoring lease"
@@ -581,14 +592,22 @@ export function createOperations(
           );
           draftUnresolved = true;
         }
-        response = await postAction(
-          action,
-          data,
-          correctionReason,
-          capability,
-          rowChange,
-          saveContext
-        );
+        try {
+          response = await postAction(
+            action,
+            data,
+            correctionReason,
+            capability,
+            rowChange,
+            saveContext
+          );
+        } catch (error) {
+          if (tracksDraft && error.preAdmission === true) {
+            window.sessionStorage.removeItem(draftCheckpointKey);
+            draftUnresolved = false;
+          }
+          throw error;
+        }
       }
       if (
         attachmentSave &&
@@ -639,23 +658,34 @@ export function createOperations(
 
       const completion = completedPayload || response;
       const result = completion?.operation?.result ?? completion?.result;
-      if (tracksDraft && (!result || !operationId)) {
-        throw new Error("ยังยืนยันผลบันทึกต้นแบบ Excel ไม่ได้");
-      }
       if (tracksDraft) {
+        const savedTemplate = resultAction === ACTIONS.SAVE_TEMPLATE;
+        if (
+          !operationId ||
+          !isRecord(result) ||
+          typeof result.documentKey !== "string" ||
+          !result.documentKey ||
+          (savedTemplate &&
+            (!Number.isSafeInteger(result.bindingRevision) ||
+              (Number.isSafeInteger(expectedDraftRevision) &&
+                result.bindingRevision !== expectedDraftRevision + 1) ||
+              result.bindingRevision < 1 ||
+              !isRecord(result.bindings) ||
+              result.bindings.version !== 1 ||
+              !Array.isArray(result.bindings.fields))) ||
+          (savedTemplate &&
+            preservedDraftKey &&
+            (result.editorSessionPreserved !== true ||
+              result.documentKey !== preservedDraftKey)) ||
+          (!savedTemplate &&
+            (result.publicId !== options.publicId ||
+              !Number.isSafeInteger(result.version) ||
+              result.version < 1))
+        ) {
+          throw new Error("ยังยืนยันผลบันทึกต้นแบบ Excel ไม่ได้");
+        }
         window.sessionStorage.removeItem(draftCheckpointKey);
         draftUnresolved = false;
-      }
-      const preservedResult = completedPayload?.operation?.result;
-      if (
-        !recoveredCheckpoint &&
-        saveContext?.preserveEditorSession === true &&
-        (preservedResult?.editorSessionPreserved !== true ||
-          preservedResult.documentKey !== options.documentKey)
-      ) {
-        throw new Error(
-          "ยังยืนยันการบันทึกต้นแบบในตัวแก้ไขเดิมไม่ได้ กรุณาลองบันทึกซ้ำ หรือกดบันทึกแบบร่างเพื่อลองบันทึกต้นแบบอีกครั้ง"
-        );
       }
       waitForReload =
         (tracksDraft && recoveredCheckpoint) ||
@@ -763,13 +793,7 @@ export function createOperations(
         result,
       };
     } catch (error) {
-      if (
-        tracksDraft &&
-        (error.operationTerminal === true ||
-          ["invalid_template", "attachment_template_stale"].includes(
-            error.code
-          ))
-      ) {
+      if (tracksDraft && error.operationTerminal === true) {
         window.sessionStorage.removeItem(draftCheckpointKey);
         draftUnresolved = false;
       }

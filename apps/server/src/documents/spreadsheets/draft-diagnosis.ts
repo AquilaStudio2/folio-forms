@@ -126,7 +126,8 @@ export const diagnoseXlsxDraft = (
           fields: "columns" in root ? [] : [root],
           table: "columns" in root ? root : null,
         },
-        workbook
+        workbook,
+        true
       );
     } catch {
       add(root.id, "placement_mismatch");

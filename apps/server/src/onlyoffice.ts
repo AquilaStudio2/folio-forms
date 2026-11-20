@@ -160,6 +160,7 @@ export interface EditorOptions {
     renewUrl: string;
   };
   documentKey: string;
+  templateDraftObjectKey?: string;
   documentServerKey?: string;
   operationId?: string;
   prefill?: {
@@ -455,6 +456,19 @@ export function verifyDocumentAccessToken(
   );
 }
 
+export function verifyEditableSpreadsheetToken(
+  token: string,
+  documentKey: string
+): string | null {
+  const claims = verifiedTokenPayload(token, env.ONLYOFFICE_JWT_SECRET);
+  return claims?.kind === "onlyoffice-editable-spreadsheet" &&
+    claims.documentKey === documentKey &&
+    liveExpiry(claims.expiresAt) &&
+    typeof claims.objectKey === "string"
+    ? claims.objectKey
+    : null;
+}
+
 interface SavedSpreadsheetSnapshot {
   objectKey: string;
   publishedTemplateId: string;
@@ -590,6 +604,23 @@ export function documentUrl(documentKey: string): string {
   return documentUrlFor(documentKey, env.ONLYOFFICE_DOCUMENT_BASE_URL);
 }
 
+function editableSpreadsheetDocumentUrl(
+  documentKey: string,
+  objectKey: string
+): string {
+  const token = signToken(
+    {
+      documentKey,
+      expiresAt: expiresIn(tokenLifetimeSeconds),
+      kind: "onlyoffice-editable-spreadsheet",
+      objectKey,
+    },
+    env.ONLYOFFICE_JWT_SECRET
+  );
+  const base = trimOrigin(env.ONLYOFFICE_DOCUMENT_BASE_URL);
+  return `${base}/onlyoffice/document/${encodeURIComponent(documentKey)}?token=${encodeURIComponent(token)}&editable=1`;
+}
+
 // oxlint-disable-next-line complexity -- Compose the existing plugin capabilities and optional source popup in one signed editor config.
 export function editorConfig(
   options: EditorOptions,
@@ -664,7 +695,12 @@ export function editorConfig(
         review: false,
       },
       title: `${options.action}-${options.publicId}.${documentFileType}`,
-      url: documentUrl(options.documentKey),
+      url: options.templateDraftObjectKey
+        ? editableSpreadsheetDocumentUrl(
+            options.documentKey,
+            options.templateDraftObjectKey
+          )
+        : documentUrl(options.documentKey),
     },
     documentType: options.documentKind === "xlsx" ? "cell" : "word",
     editorConfig: {

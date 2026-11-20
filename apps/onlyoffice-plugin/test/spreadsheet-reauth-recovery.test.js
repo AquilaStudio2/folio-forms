@@ -18,6 +18,7 @@ test("a reauthenticated editor settles the exact old checkpoint without a pollin
         ...operation,
         result: {
           bindingRevision: 1,
+          bindings: { fields: [], table: null, version: 1 },
           documentKey: "saved-draft-key",
           editorSessionPreserved: true,
         },

@@ -17,6 +17,7 @@ import {
   readSpreadsheetWorkbook,
   resolveSpreadsheetContract,
 } from "../documents/spreadsheets/workbook";
+import type { SpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
 import { validateAttachmentStorageMappings } from "../ecm/categories";
 import { validateFieldRulePointer } from "../forms/field-rules";
 import {
@@ -47,9 +48,8 @@ export type XlsxDraftCandidate = z.infer<typeof xlsxDraftCandidateSchema> & {
 export async function validateXlsxDraftCapture(
   candidate: XlsxDraftCandidate,
   previous: SpreadsheetBindings,
-  bytes: Uint8Array
-): Promise<SpreadsheetBindings> {
-  const workbook = readSpreadsheetWorkbook(bytes);
+  workbook: SpreadsheetWorkbook
+) {
   const bindings = reconcileSpreadsheetColumns(
     candidate.bindings,
     workbook.names
@@ -101,7 +101,8 @@ export async function validateXlsxDraftCapture(
       fields: bindings.fields.filter((root) => !root.unbound),
       table: bindings.table?.unbound ? null : bindings.table,
     },
-    workbook
+    workbook,
+    true
   );
   if (placed.table?.columns.length) {
     const marker = workbook.names.get(
@@ -194,7 +195,7 @@ export async function validateXlsxDraftCapture(
       );
     }
   }
-  return bindings;
+  return { bindings, saved };
 }
 
 export async function replaceXlsxDraftBindings(

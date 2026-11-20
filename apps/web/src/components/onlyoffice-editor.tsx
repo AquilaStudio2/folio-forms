@@ -1422,17 +1422,16 @@ export const OnlyOfficeEditor = ({
         setMutationState("saving");
       }
       const result = message.operation?.result;
-      if (
-        message.action === "publish" &&
-        publishCheckpoint &&
-        message.operationId
-      ) {
-        if (message.status === "pending") {
+      if (message.action === "publish" && publishCheckpoint) {
+        if (message.status === "pending" && message.operationId) {
           publishCheckpoint.operationId ??= message.operationId;
         } else if (
-          message.status === "completed" &&
-          isNonEmptyString(result?.documentKey) &&
-          publishCheckpoint.operationId === message.operationId
+          (message.status === "completed" &&
+            isNonEmptyString(result?.documentKey) &&
+            publishCheckpoint.operationId === message.operationId) ||
+          (message.status === "failed" &&
+            message.attachmentCommitUnresolved === false &&
+            publishCheckpoint.operationId === message.operationId)
         ) {
           const { key, value } = publishCheckpoint;
           try {
@@ -1877,7 +1876,9 @@ export const OnlyOfficeEditor = ({
           ) : null}
         </div>
       ) : null}
-      {(routingPending ?? config?.attachmentRoutingPending) ? (
+      {mutationState === "idle" &&
+      !uploadPocFilesRef.current?.hasUnresolvedCommit() &&
+      (routingPending ?? config?.attachmentRoutingPending) ? (
         <p
           className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
           role="status"

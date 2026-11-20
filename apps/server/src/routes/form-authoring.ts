@@ -43,7 +43,7 @@ import {
   spreadsheetDraftBindings,
   validateSpreadsheetPublication,
 } from "../forms/spreadsheet-fields";
-import { fail } from "../http/errors";
+import { fail, HttpError } from "../http/errors";
 import {
   readJsonRecord,
   publicIdPattern,
@@ -65,6 +65,9 @@ import { pdmsProjectSourceEnabled } from "../pdms/projects";
 import { submissionSummary } from "../responses/query";
 import { objectExists, objectKey, readObject } from "../storage";
 import type { RouteDependencies } from "./dependencies";
+
+// Legacy binding edits allowed 256 KiB each. Atomic authoring carries all Rules and anchoring evidence.
+const xlsxAuthoringMaximumBytes = 16 * 1024 * 1024;
 
 const readTemplateActionInput = async (
   request: Request,
@@ -91,7 +94,7 @@ const readTemplateActionInput = async (
         : {}),
     })
     .strict()
-    .safeParse(await readJsonRecord(request, 256 * 1024));
+    .safeParse(await readJsonRecord(request, xlsxAuthoringMaximumBytes));
   if (input.success && !input.data.xlsxDraft) {
     fail(
       409,
@@ -218,17 +221,21 @@ export function registerFormAuthoringRoutes(
                   const rules = await spreadsheetDraftBindings(current.id, tx);
                   return {
                     bindings: rules,
-                    ...diagnoseXlsxDraft(
-                      await readObject(current.objectKey),
-                      rules,
-                      current.contentHash
-                    ),
+                    contentHash: current.contentHash,
+                    objectKey: current.objectKey,
                   };
                 },
                 { isolationLevel: "RepeatableRead" }
               )
             : undefined;
-        const { bindings, issues, savedButtons } = savedDraft ?? {};
+        const bindings = savedDraft?.bindings;
+        const { issues, savedButtons } = savedDraft
+          ? diagnoseXlsxDraft(
+              await readObject(savedDraft.objectKey),
+              savedDraft.bindings,
+              savedDraft.contentHash
+            )
+          : {};
         const pdmsProjectCatalog = bindings
           ? await openPdmsProjectCatalog({
               bindings,
@@ -258,6 +265,7 @@ export function registerFormAuthoringRoutes(
             ...(form.documentKind === "xlsx"
               ? {
                   spreadsheetBindings: bindings,
+                  templateDraftObjectKey: savedDraft?.objectKey,
                   uploadPocSavedButtons: savedButtons,
                   xlsxDraftIssues: issues,
                   xlsxDraftProtocol: 1 as const,
@@ -665,8 +673,10 @@ export function registerFormAuthoringRoutes(
         const { actor: identity } = authorization;
         requireAdmin(identity);
         const publicId = params.publicId;
+        let xlsxPreAdmission = false;
         try {
           const form = await findFormByPublicId(publicId);
+          xlsxPreAdmission = form.documentKind === "xlsx";
           if (form.status === FormStatus.published || form.publishedTemplate) {
             fail(
               409,
@@ -750,6 +760,7 @@ export function registerFormAuthoringRoutes(
             result: { documentKey: nextDocumentKey },
             stagedObjectKey,
           };
+          xlsxPreAdmission = false;
           const operation = await createOperation({
             actorId: identity.id,
             authorization,
@@ -785,6 +796,14 @@ export function registerFormAuthoringRoutes(
           } catch {
             // Preserve the route error if the failure audit cannot be persisted.
           }
+          if (xlsxPreAdmission && error instanceof HttpError) {
+            set.status = error.httpStatus;
+            return {
+              error: error.code,
+              message: error.message,
+              preAdmission: true,
+            };
+          }
           throw error;
         }
       },
@@ -796,8 +815,10 @@ export function registerFormAuthoringRoutes(
         const authorization = await requireActionEditorAuthorization(request);
         const { actor: identity } = authorization;
         requireAdmin(identity);
+        let xlsxPreAdmission = false;
         try {
           const form = await findFormByPublicId(params.publicId);
+          xlsxPreAdmission = form.documentKind === "xlsx";
           if (form.status === FormStatus.published || form.publishedTemplate) {
             fail(
               409,
@@ -874,6 +895,7 @@ export function registerFormAuthoringRoutes(
             publishedVersion: version,
             stagedObjectKey,
           };
+          xlsxPreAdmission = false;
           const operation = await createOperation({
             actorId: identity.id,
             authorization,
@@ -910,6 +932,14 @@ export function registerFormAuthoringRoutes(
             });
           } catch {
             // Preserve the route error if the failure audit cannot be persisted.
+          }
+          if (xlsxPreAdmission && error instanceof HttpError) {
+            set.status = error.httpStatus;
+            return {
+              error: error.code,
+              message: error.message,
+              preAdmission: true,
+            };
           }
           throw error;
         }

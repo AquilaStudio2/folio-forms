@@ -149,6 +149,19 @@ it("shows saved attachment routing pending without blocking the editor", async (
   expect(office.closest("[inert]")).toBeNull();
 });
 
+it("hides attachment routing instructions while the prior provider outcome is held", async () => {
+  transport.get.mockResolvedValue({
+    ...config(),
+    attachmentNotice: "ยังตรวจผลไฟล์แนบรอบเดิมไม่ได้ ห้ามส่งซ้ำ",
+    attachmentRoutingPending: true,
+  });
+
+  render(<OnlyOfficeEditor configUrl="/editor-config" title="Excel" />);
+
+  await screen.findByText(/ห้ามส่งซ้ำ/u);
+  expect(screen.queryByText(/ไฟล์แนบที่บันทึกไว้ยังอยู่ที่ปลายทางเดิม/u)).toBeNull();
+});
+
 describe("ONLYOFFICE plugin reconnect", () => {
   it("reuses the open workbook and adopts a reacquired lease for later downloads", async () => {
     transport.get

@@ -28,20 +28,21 @@ export const validateSpreadsheetSaveSnapshot = (
   workbook: SpreadsheetWorkbook
 ): void => {
   const expected = new Map(snapshot);
-  const anchors = [
+  const tracked = spreadsheetBindingAnchors(bindings);
+  const roots = [
     ...bindings.fields.map((field) => field.anchor),
     ...(bindings.table ? [bindings.table.anchor] : []),
   ];
-  // Older clients did not snapshot internal column identities. Accept their
-  // original shape only for genuinely legacy workbooks without these names.
-  const trackedAnchors = spreadsheetBindingAnchors(bindings);
-  if (
-    trackedAnchors.some(
-      (anchor) => !anchors.includes(anchor) && workbook.names.has(anchor)
+  // Version 1 snapshots include verified null tracking names on unbound tables.
+  const anchors =
+    bindings.table?.unbound ||
+    tracked.some(
+      (anchor) =>
+        !roots.includes(anchor) &&
+        (workbook.names.has(anchor) || expected.has(anchor))
     )
-  ) {
-    anchors.splice(0, anchors.length, ...trackedAnchors);
-  }
+      ? tracked
+      : roots;
   if (
     expected.size !== snapshot.length ||
     expected.size !== anchors.length ||

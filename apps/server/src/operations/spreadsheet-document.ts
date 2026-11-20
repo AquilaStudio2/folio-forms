@@ -35,7 +35,10 @@ import {
   stripSpreadsheetUploadPoc,
   validateSpreadsheetAttachmentButtons,
 } from "../documents/spreadsheets/upload-poc";
-import { applySpreadsheetValidation } from "../documents/spreadsheets/validation";
+import {
+  applySpreadsheetValidation,
+  mismatchedSpreadsheetDraftValidations,
+} from "../documents/spreadsheets/validation";
 import type { SpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
 import {
   extractSpreadsheetData,
@@ -88,7 +91,7 @@ const validateAttachmentProjection = (
   expectedLinks: ReadonlyMap<string, string>
 ): void => {
   const singleLinks = new Map<string, SpreadsheetHyperlink>();
-  const rangeLinks: SpreadsheetHyperlink[] = [];
+  const rangeLinks = [...workbook.localHyperlinks];
   for (const link of workbook.hyperlinks) {
     const { range } = link;
     const address = rangeAddress(range);
@@ -97,7 +100,7 @@ const validateAttachmentProjection = (
       range.firstColumn !== range.lastColumn ||
       singleLinks.has(address)
     ) {
-      rangeLinks.push(link);
+      rangeLinks.push(range);
     } else {
       singleLinks.set(address, link);
     }
@@ -123,7 +126,7 @@ const validateAttachmentProjection = (
       cell?.formula ||
       (link?.target ?? "") !== expectedLink ||
       rangeLinks.some((item) =>
-        spreadsheetRangesOverlap(item.range, range ?? cellRange)
+        spreadsheetRangesOverlap(item, range ?? cellRange)
       ) ||
       (range &&
         rangeAddress(range) !== rangeAddress(cellRange) &&
@@ -194,10 +197,10 @@ export const prepareSpreadsheetOperation = async (
       );
     }
     const previous = await spreadsheetDraftBindings(form.templateDraft.id);
-    const bindings = await validateXlsxDraftCapture(
+    const { bindings, saved } = await validateXlsxDraftCapture(
       candidate,
       previous,
-      snapshot
+      current
     );
     if (metadata.spreadsheetAnchors) {
       validateSpreadsheetSaveSnapshot(
@@ -225,20 +228,29 @@ export const prepareSpreadsheetOperation = async (
       }
       validateSpreadsheetAttachmentButtons(stripped, bindings, true);
       const normalized = normalizeSpreadsheetUploadPocAnchors(stripped);
-      if (!hasManagedValidation(bindings) && !hasManagedValidation(previous)) {
-        return compactSpreadsheetDraftOptions(normalized);
-      }
+      const needsRewrite =
+        hasManagedValidation(bindings) || hasManagedValidation(previous);
       const fields = bindings.fields.filter((field) => !field.unbound);
       const table = bindings.table?.unbound ? null : bindings.table;
       // Keep persisted validation authoritative even if capture omitted a native rule.
-      const validated =
-        fields.length || table?.columns.length
-          ? applySpreadsheetValidation(normalized, {
-              ...bindings,
-              fields,
-              table,
-            })
-          : normalized;
+      const validated = needsRewrite
+        ? applySpreadsheetValidation(
+            normalized,
+            { ...bindings, fields, table },
+            { bindings: previous, workbook: saved }
+          )
+        : normalized;
+      const mismatches = mismatchedSpreadsheetDraftValidations(
+        validated === snapshot ? current : readSpreadsheetWorkbook(validated),
+        { ...bindings, fields, table }
+      );
+      if (mismatches.length) {
+        fail(
+          422,
+          "invalid_template",
+          "Excel validation conflicts with the saved Field Rules"
+        );
+      }
       return compactSpreadsheetDraftOptions(validated);
     }
     validateSpreadsheetPublication(bindings);

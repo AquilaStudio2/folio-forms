@@ -68,10 +68,11 @@ const subtractRange = (
 
 const removeValidationNodes = (
   node: SpreadsheetXmlNode,
-  managed: SpreadsheetRange[]
+  sheetName: string,
+  managed: SpreadsheetRange[],
+  retired: { range: SpreadsheetRange; label: string; type: string }[]
 ): void => {
-  const [firstManaged] = managed;
-  if (!firstManaged) {
+  if (!managed.length && !retired.length) {
     return;
   }
   node.children = node.children.filter((child) => {
@@ -88,12 +89,22 @@ const removeValidationNodes = (
       .trim()
       .split(/\s+/u)
       .map((address) =>
-        parseSpreadsheetRange(
-          `'${firstManaged.sheet.replaceAll("'", "''")}'!${address}`
-        )
+        parseSpreadsheetRange(`'${sheetName.replaceAll("'", "''")}'!${address}`)
       );
+    // Only retire validations attributed to prior Folio Rules, not foreign rules.
+    const rewrite = [
+      ...managed,
+      ...retired
+        .filter(
+          ({ label, type }) =>
+            child.attributes.errorTitle === "Invalid value" &&
+            child.attributes.error === `Enter a valid value for ${label}` &&
+            (child.attributes.type ?? "none") === type
+        )
+        .map(({ range }) => range),
+    ];
     let remaining = original;
-    for (const input of managed) {
+    for (const input of rewrite) {
       remaining = remaining.flatMap((range) => subtractRange(range, input));
     }
     if (!remaining.length) {
@@ -101,7 +112,7 @@ const removeValidationNodes = (
     }
     if (
       !original.some((range) =>
-        managed.some((input) => spreadsheetRangesOverlap(range, input))
+        rewrite.some((input) => spreadsheetRangesOverlap(range, input))
       )
     ) {
       return true;
@@ -134,7 +145,7 @@ const removeValidationNodes = (
   });
   for (const child of node.children) {
     if (typeof child !== "string") {
-      removeValidationNodes(child, managed);
+      removeValidationNodes(child, sheetName, managed, retired);
       if (local(child) === "dataValidations") {
         child.attributes.count = String(
           spreadsheetXmlChildren(child, "dataValidation").length
@@ -250,6 +261,42 @@ const managedValidationTypes = {
   text: "none",
 } as const;
 
+type ValidationField =
+  | SpreadsheetBindings["fields"][number]
+  | NonNullable<SpreadsheetBindings["table"]>["columns"][number];
+
+const generatesValidation = (field: ValidationField): boolean =>
+  !field.computed &&
+  !field.source &&
+  (managedValidationTypes[field.type] !== "none" || Boolean(field.placeholder));
+
+const validationPlacements = (
+  bindings: SpreadsheetBindings,
+  names: SpreadsheetWorkbook["names"]
+) => {
+  const { table } = bindings;
+  const body = table && names.get(table.anchor);
+  return [
+    ...bindings.fields.map((field) => ({
+      field,
+      range: names.get(field.anchor),
+    })),
+    ...(body
+      ? (table?.columns ?? []).map((field) => ({
+          field,
+          range: {
+            ...body,
+            firstColumn: body.firstColumn + field.offset,
+            lastColumn: body.firstColumn + field.offset,
+          },
+        }))
+      : []),
+  ];
+};
+
+const xmlTrue = (value: string | undefined): boolean =>
+  value === "1" || value === "true";
+
 /** Check saved ranges without expanding them to individual cells. */
 export const mismatchedSpreadsheetDraftValidations = (
   workbook: SpreadsheetWorkbook,
@@ -285,29 +332,14 @@ export const mismatchedSpreadsheetDraftValidations = (
     }
   };
   visit(sheet);
-  const body = bindings.table && workbook.names.get(bindings.table.anchor);
-  const fields = [
-    ...bindings.fields.map((field) => ({
-      field,
-      range: workbook.names.get(field.anchor),
-    })),
-    ...(body
-      ? (bindings.table?.columns ?? []).map((field) => ({
-          field,
-          range: {
-            ...body,
-            firstColumn: body.firstColumn + field.offset,
-            lastColumn: body.firstColumn + field.offset,
-          },
-        }))
-      : []),
-  ];
+  const fields = validationPlacements(bindings, workbook.names);
   const mismatches: string[] = [];
   for (const { field, range } of fields) {
     if (!range || field.computed || field.source) {
       continue;
     }
     const expected = managedValidationTypes[field.type];
+    const generated = generatesValidation(field);
     let uncovered = [range];
     let conflict = false;
     for (const { rule, ranges } of validations) {
@@ -316,6 +348,14 @@ export const mismatchedSpreadsheetDraftValidations = (
       );
       if (!overlaps.length) {
         continue;
+      }
+      if (!generated) {
+        const type = rule.attributes.type ?? "none";
+        if (type === "none" || type === "custom") {
+          continue;
+        }
+        conflict = true;
+        break;
       }
       const formula = (name: string) => {
         const [node] = spreadsheetXmlChildren(rule, name);
@@ -341,10 +381,19 @@ export const mismatchedSpreadsheetDraftValidations = (
           : null;
       if (
         (rule.attributes.type ?? "none") !== expected ||
+        (field.placeholder &&
+          (rule.attributes.prompt !== field.placeholder ||
+            !xmlTrue(rule.attributes.showInputMessage))) ||
+        (expected !== "none" &&
+          (!xmlTrue(rule.attributes.allowBlank) ||
+            !xmlTrue(rule.attributes.showErrorMessage) ||
+            (rule.attributes.errorStyle ?? "stop") !== "stop")) ||
         (expected === "custom" && first.toUpperCase() !== numberFormula) ||
         (expected === "date" &&
-          (first !== "0" ||
-            !["2957003", "2958465"].includes(formula("formula2")))) ||
+          ((rule.attributes.operator ?? "between") !== "between" ||
+            first !== "0" ||
+            formula("formula2") !==
+              (workbook.date1904 ? "2957003" : "2958465"))) ||
         (expected === "list" &&
           (inline === null || (first !== inline && first !== `"${inline}"`)) &&
           !managedDraftOptionListMatches(workbook, first, list))
@@ -356,7 +405,7 @@ export const mismatchedSpreadsheetDraftValidations = (
         uncovered = uncovered.flatMap((part) => subtractRange(part, overlap));
       }
     }
-    if (conflict || (expected !== "none" && uncovered.length > 0)) {
+    if (conflict || (generated && uncovered.length > 0)) {
       mismatches.push(field.id);
     }
   }
@@ -366,10 +415,15 @@ export const mismatchedSpreadsheetDraftValidations = (
 /** Rebuild every editable field's validation from the versioned server contract. */
 export const applySpreadsheetValidation = (
   bytes: Uint8Array,
-  bindings: SpreadsheetBindings
+  bindings: SpreadsheetBindings,
+  draft?: { bindings: SpreadsheetBindings; workbook: SpreadsheetWorkbook }
 ): Uint8Array => {
   const workbook = readSpreadsheetWorkbook(bytes);
-  const contract = resolveSpreadsheetContract(bindings, workbook);
+  const contract = resolveSpreadsheetContract(
+    bindings,
+    workbook,
+    Boolean(draft)
+  );
   const { archive } = workbook;
   const book = spreadsheetXmlTree(
     templateArchiveText(archive, "xl/workbook.xml")
@@ -580,35 +634,13 @@ export const applySpreadsheetValidation = (
     existingLists.set(JSON.stringify(options), name);
     return name;
   };
-  const fields = contract.fields.map((field) => ({
-    field,
-    range: contract.locations[field.anchor] as SpreadsheetRange,
-  }));
-  if (contract.table) {
-    const body = contract.locations[contract.table.anchor] as SpreadsheetRange;
-    for (const field of contract.table.columns) {
-      fields.push({
-        field: {
-          ...field,
-          anchor: contract.table.anchor,
-          prefillPointer: null,
-          prefillPolicy: "editable",
-        },
-        range: {
-          ...body,
-          firstColumn: body.firstColumn + field.offset,
-          lastColumn: body.firstColumn + field.offset,
-        },
-      });
-    }
-  }
+  const fields = validationPlacements(contract, workbook.names);
+  const managed: SpreadsheetRange[] = [];
   for (const { field, range } of fields) {
-    if (field.computed || field.source) {
+    if (!range || !generatesValidation(field)) {
       continue;
     }
-    if (field.type === "text" && !field.placeholder) {
-      continue;
-    }
+    managed.push(range);
     const rule = spreadsheetXmlElement(rules, "dataValidation", {
       allowBlank: "1",
       error: `Enter a valid value for ${field.label}`,
@@ -651,10 +683,27 @@ export const applySpreadsheetValidation = (
   const sheet = spreadsheetXmlTree(
     templateArchiveText(archive, workbook.sheetPath)
   );
-  removeValidationNodes(
-    sheet,
-    fields.map(({ range }) => range)
-  );
+  const retired = draft
+    ? validationPlacements(draft.bindings, draft.workbook.names).flatMap(
+        ({ field, range }) => {
+          if (!range || !generatesValidation(field)) {
+            return [];
+          }
+          const {label} = field;
+          const type = managedValidationTypes[field.type];
+          const moved = fields.find(
+            (entry) => entry.field.id === field.id
+          )?.range;
+          return moved && rangeAddress(moved) !== rangeAddress(range)
+            ? [
+                { label, range, type },
+                { label, range: moved, type },
+              ]
+            : [{ label, range, type }];
+        }
+      )
+    : [];
+  removeValidationNodes(sheet, workbook.sheet, managed, retired);
   for (const previous of spreadsheetXmlChildren(sheet, "dataValidations")) {
     rules.children.unshift(
       ...spreadsheetXmlChildren(previous, "dataValidation")

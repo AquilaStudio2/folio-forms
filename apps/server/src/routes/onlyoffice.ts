@@ -16,6 +16,7 @@ import { readJsonRecord } from "../http/input";
 import { corsOrigin } from "../http/origins";
 import {
   verifyDocumentAccessToken,
+  verifyEditableSpreadsheetToken,
   verifyOnlyOfficeAuthorization,
   verifySavedSpreadsheetToken,
   pluginGuid,
@@ -73,10 +74,16 @@ export function registerOnlyOfficeRoutes(
       const token = typeof query.token === "string" ? query.token : "";
       const snapshot =
         query.readonly === "1" ? verifySavedSpreadsheetToken(token, key) : null;
+      const editableObjectKey =
+        query.editable === "1"
+          ? verifyEditableSpreadsheetToken(token, key)
+          : null;
       if (
         !(query.readonly === "1"
           ? snapshot
-          : verifyDocumentAccessToken(token, key)) ||
+          : query.editable === "1"
+            ? editableObjectKey
+            : verifyDocumentAccessToken(token, key)) ||
         !verifyOnlyOfficeAuthorization(request.headers.get("authorization"), {
           url: request.url,
         })
@@ -113,7 +120,7 @@ export function registerOnlyOfficeRoutes(
           },
         });
       }
-      const objectKey = await operationDocumentKey(key);
+      const objectKey = editableObjectKey ?? (await operationDocumentKey(key));
       if (!objectKey || !(await objectExists(objectKey))) {
         fail(404, "not_found", "Document was not found");
       }

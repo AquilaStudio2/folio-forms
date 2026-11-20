@@ -1,11 +1,15 @@
 import { expect, test } from "bun:test";
 
+import { spreadsheetBindingAnchors } from "../../src/documents/spreadsheets/columns";
 import {
   spreadsheetAnchorSnapshotSchema,
   validateSpreadsheetSaveSnapshot,
 } from "../../src/documents/spreadsheets/save-snapshot";
 import type { SpreadsheetAnchorSnapshot } from "../../src/documents/spreadsheets/save-snapshot";
-import { readSpreadsheetWorkbook } from "../../src/documents/spreadsheets/workbook";
+import {
+  readSpreadsheetWorkbook,
+  resolveSpreadsheetContract,
+} from "../../src/documents/spreadsheets/workbook";
 import { fixtureBindings, fixtureWorkbook } from "./fixture";
 
 const snapshot: SpreadsheetAnchorSnapshot = [
@@ -89,4 +93,44 @@ test("snapshot must cover exactly the current configuration with valid reference
   expect(
     spreadsheetAnchorSnapshotSchema.safeParse([["folio_a", {}]]).success
   ).toBe(false);
+});
+
+test("the versioned snapshot proves every tracking name absent on an unbound table with columns", () => {
+  const bindings = fixtureBindings();
+  if (!bindings.table) {
+    throw new Error("Missing fixture table");
+  }
+  bindings.table.unbound = true;
+  const workbook = readSpreadsheetWorkbook(fixtureWorkbook({ names: {} }));
+  const anchors: SpreadsheetAnchorSnapshot = spreadsheetBindingAnchors(
+    bindings
+  ).map((anchor) => [anchor, null]);
+  expect(() =>
+    validateSpreadsheetSaveSnapshot(anchors, bindings, workbook)
+  ).not.toThrow();
+  expect(() =>
+    validateSpreadsheetSaveSnapshot(
+      snapshot.map(([anchor]) => [anchor, null]),
+      bindings,
+      workbook
+    )
+  ).toThrow();
+});
+
+test("placed empty table has valid Draft geometry but cannot publish", () => {
+  const bindings = fixtureBindings();
+  if (!bindings.table) {
+    throw new Error("Missing fixture table");
+  }
+  bindings.table.columns = [];
+  const workbook = readSpreadsheetWorkbook(fixtureWorkbook());
+  expect(
+    resolveSpreadsheetContract(bindings, workbook, true).locations.folio_body
+  ).toMatchObject({
+    firstRow: 3,
+    lastRow: 7,
+  });
+  expect(() => resolveSpreadsheetContract(bindings, workbook)).toThrow(
+    "A table needs at least one input column"
+  );
 });

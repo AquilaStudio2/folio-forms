@@ -10,6 +10,7 @@ import { requireIdentity } from "../../src/auth/identity";
 import { contentHash } from "../../src/digests";
 import { templateArchiveText } from "../../src/documents/package";
 import { blankSpreadsheet } from "../../src/documents/spreadsheets/blank";
+import { spreadsheetBindingAnchors } from "../../src/documents/spreadsheets/columns";
 import type { SpreadsheetBindings } from "../../src/documents/spreadsheets/contract";
 import { emptySpreadsheetBindings } from "../../src/documents/spreadsheets/contract";
 import { protectSpreadsheet } from "../../src/documents/spreadsheets/protection";
@@ -38,7 +39,7 @@ import type { OperationMetadata } from "../../src/operations/model";
 import { completePublishOperation } from "../../src/operations/template-completion";
 import { putObject, readObject, deleteObject } from "../../src/storage";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
-import { fixtureWorkbook } from "../spreadsheet-unit/fixture";
+import { fixtureWorkbook, mutatePart } from "../spreadsheet-unit/fixture";
 
 if (!process.env.DATABASE_URL) {
   throw new Error(
@@ -842,12 +843,34 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
   const candidate: SpreadsheetBindings = {
     ...emptySpreadsheetBindings(),
     fields: [
-      { ...field, options: ["Updated choice"], type: "dropdown" },
+      {
+        ...field,
+        options: [
+          "Updated choice",
+          ...Array.from(
+            { length: 1400 },
+            (_, index) => `${index} ${"x".repeat(200)}`
+          ),
+        ],
+        type: "dropdown",
+      },
       dateField,
     ],
     table: {
       anchor: "folio_unfinished",
-      columns: [],
+      columns: [
+        {
+          computed: false,
+          id: "folio_unfinished_column",
+          key: "col",
+          label: "Column",
+          offset: 0,
+          options: [],
+          placeholder: null,
+          required: false,
+          type: "text",
+        },
+      ],
       id: "folio_unfinished",
       key: "rows",
       label: "Rows",
@@ -857,9 +880,13 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
   const payload = (bindings: SpreadsheetBindings) => ({
     documentKey,
     spreadsheetAnchors: [
-      [field.anchor, "'Form'!$E$5"],
-      [dateField.anchor, "'Form'!$F$5"],
-      [candidate.table?.anchor, null],
+      ...bindings.fields.map(({ anchor }) => [
+        anchor,
+        anchor === field.anchor ? "'Form'!$E$5" : "'Form'!$F$5",
+      ]),
+      ...spreadsheetBindingAnchors({ ...bindings, fields: [] }).map(
+        (anchor) => [anchor, null]
+      ),
     ],
     xlsxDraft: {
       bindings,
@@ -869,6 +896,15 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
     },
   });
   const oldBytes = await readSaved();
+  const configResponse = await request(
+    `/api/admin/forms/${publicId}/editor-config`,
+    bearer
+  );
+  expect(configResponse.status).toBe(200);
+  const opening = (await configResponse.json()) as {
+    config: { document: { url: string } };
+  };
+  const initialUrl = opening.config.document.url;
   const oldRules = await bindingRequest("GET").then((response) =>
     response.json()
   );
@@ -883,6 +919,7 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
   expect(duplicateTag.status).toBe(409);
   expect(await duplicateTag.json()).toMatchObject({
     error: "duplicate_field_tag",
+    preAdmission: true,
   });
   const legacy = await action("save", saveCapability, {
     documentKey,
@@ -894,7 +931,10 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
   });
   const denied = await action("publish", publishCapability, payload(candidate));
   expect(denied.status).toBe(422);
-  expect(await denied.json()).toMatchObject({ error: "invalid_template" });
+  expect(await denied.json()).toMatchObject({
+    error: "invalid_template",
+    preAdmission: true,
+  });
 
   const rejected = await action("save", saveCapability, payload(candidate));
   expect(await poll(rejected)).toMatchObject({ status: "failed" });
@@ -908,6 +948,31 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
   });
   nativeSnapshotUrl = new URL("/saved.xlsx", nativeServer.url).href;
   try {
+    const goodSnapshot = nativeSnapshot;
+    nativeSnapshot = mutatePart(
+      fixtureWorkbook({ names: { [field.anchor]: "Form!E5" } }),
+      "xl/worksheets/sheet1.xml",
+      (xml) =>
+        xml.replace(
+          "</worksheet>",
+          '<dataValidations count="1"><dataValidation type="list" sqref="E5"><formula1>"foreign"</formula1></dataValidation></dataValidations></worksheet>'
+        )
+    );
+    const textOnly = await action(
+      "save",
+      saveCapability,
+      payload({
+        ...candidate,
+        fields: [field],
+      })
+    );
+    expect(await poll(textOnly)).toMatchObject({
+      error: "invalid_template",
+      status: "failed",
+    });
+    expect(contentHash(await readSaved())).toBe(contentHash(oldBytes));
+    nativeSnapshot = goodSnapshot;
+
     const invalidPrefill = await action(
       "save",
       saveCapability,
@@ -986,6 +1051,22 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
       where: { id: templateId },
     });
     storedObjects.push(draft.objectKey);
+    expect(
+      await prisma.objectCleanupIntent.findUnique({
+        where: { objectKey: draft.objectKey },
+      })
+    ).toBeNull();
+    const pinned = await app.handle(
+      new Request(initialUrl, {
+        headers: {
+          Authorization: createOnlyOfficeAuthorization({ url: initialUrl }),
+        },
+      })
+    );
+    expect(pinned.status).toBe(200);
+    expect(contentHash(new Uint8Array(await pinned.arrayBuffer()))).toBe(
+      contentHash(oldBytes)
+    );
     expect(await spreadsheetDraftBindings(templateId)).toEqual(candidate);
     const savedBytes = await readSaved();
     expect(completion).toMatchObject({
@@ -1630,6 +1711,12 @@ test("publication freezes shared Excel fields, preserves scoped keys and Prefill
       type: "publish_form",
     },
   });
+  await prisma.objectCleanupIntent.create({
+    data: {
+      cleanupAfter: new Date(Date.now() + 60_000),
+      objectKey: metadata.finalObjectKey,
+    },
+  });
   const workbook = fixtureWorkbook({
     cells: [],
     merges: [],
@@ -1644,11 +1731,21 @@ test("publication freezes shared Excel fields, preserves scoped keys and Prefill
   expect(
     await prisma.publishedTemplate.count({ where: { formId: publishFormId } })
   ).toBe(0);
+  expect(
+    await prisma.objectCleanupIntent.findUnique({
+      where: { objectKey: metadata.finalObjectKey },
+    })
+  ).not.toBeNull();
   if (!metadata.xlsxDraft) {
     throw new Error("Missing XLSX publish fixture");
   }
   metadata.xlsxDraft.revision = 2;
   await completePublishOperation(operation, metadata, workbook);
+  expect(
+    await prisma.objectCleanupIntent.findUnique({
+      where: { objectKey: metadata.finalObjectKey },
+    })
+  ).toBeNull();
   const published = await prisma.publishedTemplate.findUniqueOrThrow({
     include: {
       manifest: { include: { fields: true } },

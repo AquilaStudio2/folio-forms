@@ -8,6 +8,7 @@ import {
   templateArchiveText,
   parseTemplateXml,
   templateAttribute,
+  templateOfficeRelationshipNamespaces,
 } from "../package";
 import { reconcileSpreadsheetColumns } from "./columns";
 import {
@@ -48,6 +49,7 @@ export interface SpreadsheetCell {
 }
 export interface SpreadsheetWorkbook {
   hyperlinks: SpreadsheetHyperlink[];
+  localHyperlinks: SpreadsheetRange[];
   archive: Record<string, Uint8Array>;
   sheet: string;
   sheetPath: string;
@@ -271,6 +273,7 @@ export const readSpreadsheetWorkbook = (
   }
   const cells = new Map<string, SpreadsheetCell>();
   const merges: SpreadsheetRange[] = [];
+  const localHyperlinks: SpreadsheetRange[] = [];
   let cell: SpreadsheetCell | null = null;
   let cellValue = "";
   let formula = "";
@@ -319,6 +322,21 @@ export const readSpreadsheetWorkbook = (
       }
       if (element.local === "mergeCell") {
         merges.push(
+          parseSpreadsheetRange(
+            `'${sheet.name.replaceAll("'", "''")}'!${templateAttribute(element, "ref") ?? ""}`
+          )
+        );
+      }
+      if (
+        element.local === "hyperlink" &&
+        templateAttribute(element, "location") &&
+        !element.attributes.some(
+          (attribute) =>
+            attribute.local === "id" &&
+            templateOfficeRelationshipNamespaces.has(attribute.uri)
+        )
+      ) {
+        localHyperlinks.push(
           parseSpreadsheetRange(
             `'${sheet.name.replaceAll("'", "''")}'!${templateAttribute(element, "ref") ?? ""}`
           )
@@ -385,6 +403,7 @@ export const readSpreadsheetWorkbook = (
       ...link,
       range: { ...link.range, sheet: sheet.name },
     })),
+    localHyperlinks,
     merges,
     names,
     sheet: sheet.name,
@@ -394,7 +413,8 @@ export const readSpreadsheetWorkbook = (
 
 export const resolveSpreadsheetContract = (
   input: SpreadsheetBindings,
-  workbook: SpreadsheetWorkbook
+  workbook: SpreadsheetWorkbook,
+  draft = false
 ): SpreadsheetContract => {
   const bindings = reconcileSpreadsheetColumns(input, workbook.names);
   const locations: Record<string, SpreadsheetRange> = {};
@@ -438,7 +458,7 @@ export const resolveSpreadsheetContract = (
     ) {
       throw new Error("Merged cells cannot cross table body rows");
     }
-    if (!bindings.table.columns.some((column) => !column.computed)) {
+    if (!draft && !bindings.table.columns.some((column) => !column.computed)) {
       throw new Error("A table needs at least one input column");
     }
     if (
