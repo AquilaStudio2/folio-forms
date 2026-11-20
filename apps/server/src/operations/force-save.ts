@@ -236,6 +236,8 @@ export function launchForceSave(
             plainXlsx &&
             failed &&
             failedMetadata &&
+            operation.actorId &&
+            operation.targetId &&
             failed.actorId === operation.actorId &&
             failedMetadata.documentKind === "xlsx" &&
             !failedMetadata.pdmsCatalogSessionId &&
