@@ -96,14 +96,13 @@ const response = {
   publishedTemplateId: "original-publication",
   spreadsheetInitialized: true,
   status: "draft",
-  submissions: [
-    {
-      corrections: [],
-      documentKey: "submission-document",
-      id: "submission",
-      objectKey: "draft.xlsx",
-    },
-  ],
+};
+const submission = {
+  corrections: [],
+  documentKey: "submission-document",
+  id: "submission",
+  objectKey: "draft.xlsx",
+  responseId,
 };
 const lease = {
   expiresAt: new Date(Date.now() + 60_000),
@@ -150,6 +149,10 @@ mock.module("@onlyoffice/db", () => ({
     response: {
       findFirst: () => Promise.resolve(response),
       findUnique: () => Promise.resolve({ ...response, status: "submitted" }),
+    },
+    submission: {
+      findFirst: () => Promise.resolve(submission),
+      findUnique: () => Promise.resolve(submission),
     },
   },
 }));
