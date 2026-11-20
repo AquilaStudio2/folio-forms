@@ -277,11 +277,6 @@ const DashboardRoute = () => {
                     ดูประวัติการส่งทั้งหมด
                   </Link>
                 ) : null}
-                {!submitted && hasSubmissionHistory ? (
-                  <span className="text-sm text-[var(--ink-soft)]">
-                    {draftHasHistoryMessage}
-                  </span>
-                ) : null}
                 {submitted || hasSubmissionHistory ? null : (
                   <Button
                     type="button"

@@ -1,6 +1,6 @@
 # Declared source inventory
 
-Commit: `fb4fc7daad8a897aa8f9a3b173d95df5e032f322`
+Commit: `080648a157379deb62edf5090831c5411b491675`
 
 Regenerate: `python3 .scratch/system-workflow/survey.py`
 
@@ -27,7 +27,7 @@ These are source declarations, not a live deployment or endpoint-availability ch
 | `/admin/users` | `apps/web/src/routes/admin/users.tsx:749` |
 | `/admin` | `apps/web/src/routes/admin.tsx:35` |
 | `/change-password` | `apps/web/src/routes/change-password.tsx:229` |
-| `/dashboard` | `apps/web/src/routes/dashboard.tsx:432` |
+| `/dashboard` | `apps/web/src/routes/dashboard.tsx:427` |
 | `/forms/$publicId/fill` | `apps/web/src/routes/forms/$publicId/fill.tsx:1414` |
 | `/forms/$publicId/submissions` | `apps/web/src/routes/forms/$publicId/submissions.tsx:243` |
 | `/handoff` | `apps/web/src/routes/handoff.tsx:59` |
