@@ -197,7 +197,7 @@ Live integration requires PDMS Auth's issue/exchange APIs and Portal's authorize
 
 PDMS role `admin (กปม.)` (case-insensitive, including `Admin` and `ADMIN`) maps to Folio Admin; otherwise the exact name `เจ้าหน้าที่ กปม.` maps to VIEWER; every other valid list, including `[]`, maps to User. The first successful SSO with no saved baseline applies this mapping, including for previously linked accounts. Later SSO keeps the effective Folio role when the mapped PDMS role is unchanged, so manual Admin edits persist; an observed mapping transition replaces the effective role. Manual edits never change the PDMS baseline. The role belongs to the account and applies to both password and SSO login.
 
-The linked Account stores only `lastMappedRole` and `lastSsoRoleGeneration`, not raw roles. A successful later-started login fences older callbacks and confirmations. Actual role changes revoke older sessions and end their AI authoring work; baseline-only changes do not. A downgrade that would remove the final enabled Admin rejects SSO without advancing the baseline, so another Admin must be available before retrying. SSO Admins retain the SSO exemption from local temporary-password replacement; password login still requires replacement.
+The linked Account stores only `lastMappedRole` and `lastSsoRoleGeneration`, not raw roles. A successful later-started login fences older callbacks and confirmations. Actual role changes revoke older sessions; baseline-only changes do not. A downgrade that would remove the final enabled Admin rejects SSO without advancing the baseline, so another Admin must be available before retrying. SSO Admins retain the SSO exemption from local temporary-password replacement; password login still requires replacement.
 
 Deploy PDMS's additive roles response first, then the nullable Folio migration and consumer. Migration itself does not change any role. The first subsequent SSO may replace a pre-upgrade manual role once. Role changes are checked at SSO, not in the background; changes that reverse between logins are not observed. See [ADR 0002](docs/adr/0002-legacy-one-time-code-sso.md) for session finalization and rollback constraints.
 
@@ -230,17 +230,27 @@ Publishing:
 - Failed publication leaves the prior Template Draft editable and exposes no shareable Published Form.
 - Structural or policy changes require a new Form and share ID; existing Responses remain reproducible.
 
-### AI Authoring
+### XLSX attachment authoring and Folio-only ECM configuration
 
-Admins open `/admin/ai-authoring` to create a DOCX template from a text description or an attached PDF, then refine it through repeated instructions in one authoring session. The current document, conversation, and source PDF remain available after a page refresh in the same Admin authentication session. Only one authoring session may be active per authentication session; ending it starts a new document. The feature is disabled unless the server has `OMNIROUTE_BASE_URL`, `OMNIROUTE_API_KEY`, and `OMNIROUTE_MODEL` configured. Set these values in the root `.env` for Compose deployments or in the server environment for local runs; blank values keep the feature disabled. Use only a permitted service credential and a PDF-capable, server-managed OmniRoute route; Folio does not select an upstream provider.
+Use the original **วางปุ่มและบันทึกต้นแบบ (POC)** action and existing Field settings. New controls keep automatic `attachment_N` Tags and stable bindings. Explicitly configure an existing scalar or table column as **ช่องแนบไฟล์จากปุ่มเดิม**, load **Document Category**, and save its actual category name, Title/Tag and requiredness. A column shares its category across all rows. Incomplete Template Draft settings may be saved. Publication requires complete categories, scalar root `fiscal_year` and `docs_number` Fields, and configured original buttons; the metadata cells may remain blank. Saved categories survive provider outages and renames, and complete saved settings publish without a live category recheck. Published contracts remain immutable.
 
-The Admin must consent before each instruction sends the prompt, current document content, and any attached PDF to OmniRoute and its configured provider. PDF uploads are limited to 10 MiB. Folio sends the original PDF bytes to the configured route on the initial request and again for each revision; it does not run local OCR or rely on a first-pass text summary. Folio keeps the current generated DOCX, conversation, and original PDF in a temporary, process-local authoring session. It deletes its copies when the Admin ends the session, when its owning authentication session is revoked, or after two hours of inactivity. A server restart also ends the process-local session. Upstream retention follows OmniRoute and its provider policies.
+Publication verifies every managed PoC OLE against its saved binding, marker, Tag and physical slot. Orphaned or duplicate controls fail; every declared scalar attachment or table-column row requires an actual verified button, not a marker alone. Incomplete Draft saving remains allowed. Publication never silently removes an unconfigured surviving button to pass validation.
 
-Each DOCX contains static text and tagged content controls. Folio validates the complete DOCX package and supported controls before preview or download, and keeps the last valid DOCX if a revision fails. Python output must also match its declared title, description, static paragraphs, field labels, and placeholders; changing only the document bytes cannot bypass revision checks. The Admin can download the document and upload it as a normal Template Draft. When the isolated document worker is configured and reachable, Pi can use model-generated Python to produce a DOCX; otherwise it offers only the built-in structured document tool. Python runs in a disposable worker container with no network or shell access and bounded CPU, memory, and execution time. Never run generated Python in the API container or mount application data into the worker.
+The pinned native exporter represents one button with an anchored OOXML `Choice` and an empty `Fallback`. Publication discounts that alias only inside the same `AlternateContent`, with one matching shape/relationship on each side. Other duplicate or unmatched controls still fail.
 
-For revisions, the model declares the exact existing paragraphs it intentionally rewrites or removes and the existing field tags it intentionally removes or changes. Folio rejects undeclared paragraph or control loss and declarations that do not reference the current document. Refinement does not require specific English edit keywords.
+ECM configuration is optional and server-only. Compose passes these four variables only to `server.environment`; local `bun run dev` reads `apps/server/.env`. Keep all four blank to leave ECM unavailable without disrupting ordinary Forms or Folio login:
 
-Compose starts a private Docker-in-Docker daemon and document-worker sidecar; the API receives only `DOCUMENT_WORKER_URL`, never the Docker socket. The daemon needs privileged container support. Neither daemon nor worker HTTP port is published in production. Worker containers do not retain stdout/stderr logs; restarting the sidecar removes abandoned job containers and source workspaces before accepting requests. For local host API testing, run `docker compose -f compose.yaml -f compose.dev.yaml up -d document-worker`, then set `DOCUMENT_WORKER_URL=http://127.0.0.1:3020`. Without a reachable worker, the Python tool is unavailable; structured DOCX generation remains available.
+- `ECM_API_URL`: the trusted HTTPS service base, with no credentials, query or fragment. A base ending in `/api/beeecm/public` is accepted; otherwise Folio appends that documented prefix. HTTP is accepted only for loopback test providers.
+- `ECM_USERNAME` and `ECM_PASSWORD`: a dedicated Folio service account, never an Ongoing account or browser credential.
+- `ECM_TOKEN_ENCRYPTION_KEY`: canonical Base64 encoding of a cryptographically random 32-byte key, provisioned through the deployment's private secret-management channel. Generate it in that secure channel (for example, `openssl rand -base64 32`), not in a ticket, workbook, browser console or shared log. Do not copy a sample key into production.
+
+Apply the checked-in PostgreSQL migration and generate Prisma before running the new application. Every Folio instance/worker using the account must share the same PostgreSQL coordination state and encryption key. Restrict backend/cache access, keep the key outside cache rows, and prohibit independent manual or other-environment logins on this account. Key rotation requires a coordinated maintenance window: stop all callers, let outstanding login requests settle, securely replace the key consistently, and invalidate that account's cached encrypted token before resuming. Do not change keys independently while instances remain active.
+
+Login validates the provider's actual timezone-aware expiry; ambiguous expiry is an integration error, not an invented lifetime. The shared job permits at most three total transient attempts, 15 seconds each within 30 seconds total, with 1/2-second backoff and bounded `Retry-After`. Generation fencing prevents stale results or late rejection from clearing a newer token. Category requests are not resent automatically after rejection. ECM failures never log the person out of Folio or return raw service errors, credentials or Bearer tokens.
+
+Cache activation first locks the owned PostgreSQL job row through a materialized CTE, then checks its persisted deadline against both the injected policy clock and PostgreSQL `clock_timestamp()`. A ready update queued past that deadline cannot activate the token.
+
+This authoring/authentication slice does not establish real provider upload/delete behavior or the later attachment Save/Submit/Correction lifecycle. Native browser/protection checks and authorized dedicated-account/provider verification remain release gates; controlled HTTP doubles do not prove real ECM expiry, zero-byte/encrypted/10 MB acceptance, or request settlement.
 
 ### User workflow
 
@@ -348,7 +358,7 @@ Form creation and hard deletion record Object Cleanup Intents before an object c
 - The browser Session token and editor capabilities are never included in the signed ONLYOFFICE or plugin configuration. Before each action, the browser parent obtains a fresh five-minute capability bound to the actor, role, Form, document target, action, and active lease, then sends only that capability over the source/origin-pinned bridge.
 - ONLYOFFICE Document Server uses `ONLYOFFICE_JWT_SECRET` for signed editor configuration, command/conversion requests, private document downloads, and callbacks. It never accepts a Better Auth Session or editor capability at that boundary.
 - Each session expires one hour after issuance; sessions do not refresh or slide. The client clears the token at expiry and warns during the final five minutes.
-- Logout and password replacement revoke sessions immediately. If AI Authoring cleanup fails after logout revokes the Session, the API reports the cleanup failure and confirms revocation so the browser clears auth state. Password replacement revokes every session, so the Admin must sign in again.
+- Logout and password replacement revoke sessions immediately. Password replacement revokes every session, so the Admin must sign in again.
 - Admin account creation, disablement, email/role changes, and password resets are attributable Audit Events. Account disablement and credential or identity changes revoke all target Sessions immediately.
 - A serialized database invariant prevents concurrent requests from disabling or demoting the final enabled Admin.
 - The server derives identity and role from Better Auth, never from client-supplied role fields.
@@ -381,7 +391,7 @@ X-Editor-Capability: <signed-action-or-operation-capability>
 | Method | Path | Purpose |
 | --- | --- | --- |
 | `POST` | `/api/auth/sign-in/email` | Provisioned email/password sign-in |
-| `POST` | `/api/auth/sign-out` | Revoke the current live Session. An AI cleanup error after revocation returns `sessionRevoked: true`; a revocation failure does not. |
+| `POST` | `/api/auth/sign-out` | Revoke the current live Session. A revocation failure leaves the browser authenticated so it can retry safely. |
 | `GET` | `/api/session` | Read the current live Session and absolute expiry |
 | `POST` | `/api/account/password` | Replace the authenticated account password and revoke its Sessions |
 | `GET` | `/api/legacy-sso/status` | Check whether Legacy SSO is configured |
@@ -522,15 +532,11 @@ apps/
   server/
     src/app.ts             Per-app configuration, hooks, and ordered route composition
     src/routes/            HTTP registrars with scoped per-app dependencies
-    src/ai-authoring.ts    Authoring reservations, sessions, expiry, and cleanup
-    src/ai-authoring/      Document generation, agent orchestration, shared types
     src/documents/         DOCX/package algorithms; spreadsheets/ owns XLSX processing
     src/forms/             Form settings, field rules, published spreadsheet contracts
     src/responses/         Draft preparation, editor configuration, response data
     src/operations/        Shared save/publish/submit/correction lifecycle
     src/prefill/           Handoff, snapshot and document-specific Prefill validation
-    src/document-worker.ts Python worker HTTP client
-    src/document-worker-server.ts Isolated document execution and container cleanup
     src/index.ts           Production listen entrypoint
     src/onlyoffice.ts      ONLYOFFICE URLs, HMAC tokens, force-save, PDF conversion
     src/storage.ts         Private RustFS object primitives
@@ -625,11 +631,13 @@ bun test --timeout 120000 ./apps/web/test/form-lifecycle.test.ts ./apps/onlyoffi
 
 Spreadsheet runtime tests require Docker and the locally available `onlyoffice/documentserver:9.4.0.1` image. The separate HTTP engine test is enabled with `RUN_SPREADSHEET_HTTP=1 bun test --timeout 120000 ./apps/server/test/spreadsheet-runtime/http.test.ts`; provide the local server/ONLYOFFICE environment required by its harness. The runtime script alone skips this HTTP test. Spreadsheet HTTP authoring tests, including column persistence and recovery-fence races, use the isolated database/bucket described above.
 
+The standard `test:http` runner also requires `ecm-attachment-authoring.test.ts` and `ecm-auth.test.ts` without opt-in flags. Both use isolated PostgreSQL and a controlled loopback ECM HTTP provider. The authoring suite additionally exercises the real ONLYOFFICE document-builder publication pipeline and isolated object storage: configure the local `ONLYOFFICE_INTERNAL_URL`/JWT and `ONLYOFFICE_DOCUMENT_BASE_URL` before starting Bun. The latter must address this test application's signed job listener on an explicit isolated local port other than `3000` (for example, `http://host.docker.internal:18183`, or `host.lima.internal` on Lima). The suite binds that port and stops its listener afterward. Do not point these tests at production or a live service account; the test supplies its own fake-provider credentials. Existing unrelated native opt-in suites retain their flags.
+
 Run the catalog tests independently with `bun run --cwd apps/server test:catalog` against an isolated migrated PostgreSQL database, and `bun run --cwd apps/web test:ui` for the interactive UI suite. UI tests mock HTTP and use controlled timers for the 2-second debounce, including stale responses, search cancellation, status/page transitions, deletion, and accessible keyboard controls. Catalog HTTP tests exercise real database search/pagination and authentication; they do not require a running document editor or object-storage service. Provide the required server environment variables, including test secrets and placeholder storage settings. The backend suite uses unique fixture IDs and accounts for retained immutable history so it can be rerun on the same disposable database.
 
 The HTTP script includes `test/http/list-pagination.test.ts` for exact totals, direct page navigation, timestamp ties, invalid page queries, empty results, clamping, and access checks. Run that suite independently with `bun --env-file=apps/server/.env test --timeout 120000 apps/server/test/http/list-pagination.test.ts` after setting `DATABASE_URL` to a migrated isolated database. The [browser verification script](.scratch/pagination-layout/verify-ui.mjs) checks numbered controls, shared card footers, Audit Trail filter padding, and complete history exports at desktop and mobile widths; setup instructions are in the [verification report](.scratch/pagination-layout/report.md).
 
-Provide the same isolated database and storage environment to both commands. Use a fresh disposable database for each full run; the scenarios retain records, including paginated account-link fixtures and immutable audit history. Set `DOCUMENT_WORKER_URL` to a running isolated document worker to exercise the Python-worker scenario.
+Provide the same isolated database and storage environment to both commands. Use a fresh disposable database for each full run; the scenarios retain records, including paginated account-link fixtures and immutable audit history.
 
 ## Troubleshooting
 

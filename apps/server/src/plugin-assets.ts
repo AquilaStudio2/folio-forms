@@ -77,3 +77,21 @@ export const pdmsPopupScriptResponse = async () =>
       : await buildPlugin(pluginDir, "pdms-popup-entry.js"),
     { headers: { "content-type": "text/javascript; charset=utf-8" } }
   );
+
+export const attachmentCategoryPopupIndexResponse = async () => {
+  const html = await Bun.file(
+    path.resolve(pluginDir, "attachment-category/index.html")
+  ).text();
+  const sdkUrl = `${env.ONLYOFFICE_URL.replace(/\/+$/u, "")}/sdkjs-plugins/v1/plugins.js`;
+  return new Response(
+    html.replace(onlyOfficePluginSdkUrlPlaceholder, htmlEscape(sdkUrl)),
+    { headers: { "content-type": "text/html; charset=utf-8" } }
+  );
+};
+export const attachmentCategoryPopupScriptResponse = async () =>
+  new Response(
+    env.NODE_ENV === "production"
+      ? Bun.file(path.resolve(pluginDir, "dist/attachment-category-popup.js"))
+      : await buildPlugin(pluginDir, "attachment-category-popup-entry.js"),
+    { headers: { "content-type": "text/javascript; charset=utf-8" } }
+  );

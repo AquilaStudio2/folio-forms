@@ -40,21 +40,15 @@ Creating a repeating table adds cell borders across the selected range, includin
 
 An Admin-selected DOCX Form setting that routes all current and new Responses through either the native web form or ONLYOFFICE. Changing the method does not change the shared Fields or saved DOCX. XLSX Forms use ONLYOFFICE.
 
-## AI Authoring Session
-
-An Admin's temporary workspace for creating or editing a Form from a PDF or chat description. It contains an iterative conversation and a generated DOCX that the Admin can preview and download.
-
-## OmniRoute
-
-The external model gateway used by AI Authoring Sessions. Folio calls it server-side; the upstream provider and model are configured in OmniRoute.
-
 ## Template Draft
 
 The editable document an Admin is currently preparing. Saving it does not change the document available through the Form's share link.
 
 An XLSX Template Draft may contain unfinished field or table configuration so an Admin can save work in progress. Its configuration uses the shared Draft Field Rules, with optional label/type/options/order and placement-only binding metadata. DOCX draft metadata remains in content controls and uses its existing rules. Publication requires a complete, valid Spreadsheet Contract.
 
-Unapplied field-panel edits remain local drafts and must be resolved before saving or publishing the Template Draft. An uncertain field-settings write blocks further mutations until the current document, revision, and complete bindings establish its outcome. Safe rollback additionally requires settlement of any delayed write and a matching native editor snapshot; dismissing an error notice does not settle the write.
+Attachment configuration may remain incomplete in a Template Draft. New publication requires a current Storage Template mapping for every attachment Field or table column, exactly one noncomputed scalar root `docs_number`, and configured existing attachment buttons. Attachments do not impose a `fiscal_year` prerequisite or require User-entered template values. Publication validates the local catalog under transaction locks without a live category-provider recheck; stale choices require explicit reselection without discarding the Draft.
+
+For XLSX, both unapplied edits and Rules applied in the editor remain local work until Save or Publish commits them with the verified workbook. An intentionally unbound Field or table differs from an established placement that cannot be found. After an uncertain Save or Publish, further edits wait for the outcome of the original Operation; reopening can recover that outcome, not unsaved local work.
 
 ## Published Template
 
@@ -63,6 +57,90 @@ The immutable document and field contract used to start new Responses. A publish
 ## Field
 
 A mapped input in a Form. For DOCX, it is a tagged content control: its Title/Alias is the user-facing label, its Tag is the stable identity in prefill and extracted data, and its Placeholder guides entry. If the Title/Alias is blank, use the Tag as the label. For XLSX, a Field maps a cell or complete merged cell to a key, label, type, and rules through a named range. Keys must be unique within their containing object and may be reused by different Forms.
+
+## Attachment Field
+
+An explicitly configured XLSX Field or table column associated with the existing attachment button and stable binding. Its Title, editable pre-publication Tag and requiredness use the existing Field settings. Attachment intent is never inferred from an `attachment_N` Tag, filename or URL string. Each new published slot freezes storage mode `template`, numeric category ID, catalog template identity and template name in normal Field metadata, never Excel Binding. A table column shares one choice across its rows. Existing Published Templates explicitly retain storage mode `legacy` and their saved category-name policy, independently of whether they contain `fiscal_year`. Changing a published contract requires duplicating the Form. Legacy duplicates require a new explicit catalog choice; copied new-mode choices still require current catalog validation before publication.
+
+An old Published PoC remains an ordinary text/URL contract, including its required rules and immutable history. Its old button explains that durable attachments need a newly configured Form; it cannot retain a File as a memory-only fallback. Duplicating the Form copies only its template and configuration, never User Responses, answers or files. An Admin must explicitly configure verified old PoC slots in the new Template Draft; the application never chooses a successor or archives, deletes, redirects or migrates the original Form. Attachment selection is a pending browser File, not a saved answer. Explicit User Save Draft or Submit persists its original bytes to ECM and commits the document, canonical receipt and Operation together. A saved attachment may contain zero bytes. Unknown upload or canceled-batch cleanup outcomes keep the previous canonical answer readable but prevent further response mutations until settled. An in-place provider overwrite may already have changed bytes at the old URL; a Folio rollback does not restore those bytes. A saved public URL is a projection, not ownership or deletion authority.
+
+New uploads accept one File per slot, from 2 to 10,000,000 bytes inclusive, with a final filename extension of `.pdf`, `.docx`, `.xlsx`, `.png`, or `.txt`. The extension check is case-insensitive and preserves the original name and extension casing; it does not inspect MIME or file contents. The policy also applies when a routing change would re-upload an original. Previously saved receipts with other extensions or 0–1 bytes still count as present and support unchanged saves, history and access. If a routing change would upload one again, prompt for a new File without changing the saved attachment.
+
+A newly picked File remains local to its open attachment dialog until the dialog's Save confirms it with the trusted host. Choosing another File replaces that local candidate. Cancel or the title-bar close discards only changes made since this dialog opened, preserving both the canonical attachment and any previously confirmed pending File/removal. A single contextual action can undo the local choice, restore the canonical selection or stage removal; those changes also require dialog Save. This confirmation does not upload, persist an answer or replace the main Save Draft, Submit or final Save Correction. A dispatched confirmation must settle before closing; timeout/retry retains the File and cannot imply rollback of a host-accepted choice. Recovery and public-link warnings remain visible, and selecting an oversized File cannot poison the previously accepted host selection.
+
+An unconfirmed dialog candidate also marks the current page dirty through a scoped, authenticated host message; it does not upload or replace confirmed pending state. Candidate, confirmed pending and canonical saved state remain distinct. Completion reports remaining candidates as pending work and cannot remount a saved Draft or Correction workspace over that dialog. App-controlled navigation uses explicit local discard or stay; discard never saves or deletes the Response. Browser refresh/close warnings remain best-effort, and navigation never settles or clears an original attachment checkpoint.
+
+A missing attachment checkpoint lookup is not proof that an earlier sender cannot start. Explicit recovery shares the existing Form/lease admission locks: it returns the original Operation if admitted, or atomically rotates the old lease UUID before reporting non-admission. The host retains the File and native edits, then uses normal capability renewal for a new user-triggered save; absence or elapsed time alone never permits resend.
+
+A recovered completion is evidence for the earlier snapshot, not acceptance of newly captured ordinary answers. Persisted checkpoints reconcile before editing opens; an own unresolved commit keeps the native editor read-only while bounded recovery stays usable. Recovery reads the original Operation before requesting a mutation capability, preserves its Draft/Submit action, and opens the latest canonical document before accepting new edits.
+
+Replacing or removing a Draft attachment remains pending until an explicit save; canceling the pending change restores the saved answer selection, not externally overwritten bytes. Legacy storage treats year and document-number changes as new original-byte uploads and preserves its published direct-link transport. Storage Template mode ignores year-only changes; a document-number change without a replacement reads the original through the public DCM file endpoint with shared service authentication, using the current canonical snapshot's trusted paired receipt. Exact size and the new-mode attempt's streamed SHA-256 must match before upload; missing or mismatched evidence stops without caching originals, fabricating a historical digest or requiring an automatic picker reselection. The digest remains operational ledger metadata, not answer JSON or workbook data. Unchanged files and metadata reuse their saved references without a new upload or service login. Internal row and project saves preserve canonical attachments without uploading.
+
+A table attachment belongs to one physical row and one published column binding. Its zero-based `row_index` is the row's position within the current trusted table body, not its position in a compact answer array. Empty gaps do not move files to neighboring answers. A row with ordinary input, a saved attachment (even a historical 0- or 1-byte file), or a valid new File is active and must satisfy every required column at Submit; a completely empty row is excluded.
+
+Supported append and existing delete-selected commands preserve file identity while updating current row positions. The original upload position remains audit evidence, not a permanent row identity. Internal row/project saves do not upload or delete ECM files. Pending Files and removals survive a remount only with verified old/new document and physical-row mapping; stale, ambiguous or loss-producing transitions stop without discarding selections. No per-row Tag or stable row ID is introduced.
+
+Every XLSX repeating-table row-action surface retains at least one physical body row, including ordinary tables without attachments and old Published PoC tables. Delete-selected is disabled at one row; trusted server admission and the native builder reject that deletion without clearing values, files, controls, pending state or the canonical revision. Each configured attachment column keeps a button in every editable body-row cell. This adds no clear-last-row action or row controls to Correction.
+
+Configured attachment cell values and hyperlinks are protected canonical projections, not ordinary editable answers or ownership evidence. Verified managed OLE controls remain independently selectable while their movement and resizing stay locked. Fill protection explicitly blocks native sorting/filter changes and structural gestures; table-attachment capture validates the protected surface and unchanged mapping evidence before external writes. Equal row counts alone never prove file identity. Ordinary input and old Published PoC text/URL fields retain their existing semantics.
+
+Editable document delivery strengthens protection for existing Response Drafts and Correction workspaces from their trusted Published Template and physical positions without rewriting canonical bytes, answers, receipts, references or revisions. Document kind comes from the owning Form, not a filename suffix: native artifact keys may end in a path segment such as `/xlsx`. A protection-generation native opening namespace isolates newly opened sessions from old cached workbooks. Already-open frames do not hot-upgrade; unsafe captures fail before attachment dispatch without forcing reload or discarding pending Files. Template Draft authoring and read-only/export projection remain separate.
+
+Cold Response initialization and trusted button rebuilds preserve hidden rows and columns as the same physical bindings with collapsed, zero-area previews, rather than failing the whole editor or projecting a button into a neighboring visible slot. Default-height rows remain visible; an explicitly hidden or zero-sized dimension is not a default-height signal. Selection still requires the existing saved-button, binding, physical-row, lease and ownership proofs; a collapsed preview neither removes its attachment slot nor makes a visible neighbor its target.
+
+Opening a verified attachment button restores native interaction locks without recording an answer edit. The ONLYOFFICE 9.4 history counter is suspended only during that synchronous restoration and rollback, then balanced in `finally`; ordinary edits remain tracked. Activation does not recalculate the workbook. A clean opening or automatic next round therefore must not become dirty merely because its buttons initialize.
+
+A canonical attachment reference records its snapshot's current physical row position, so attempts with identical receipt, name and size stay attached to the correct surviving row. Unknown legacy positions remain null rather than being guessed.
+
+Final Correction completion accepts only its captured snapshot. If a newer File or pending removal remains, the route keeps the same editor and browser state instead of navigating or remounting. The completed server operation has retired that workspace, so another Save is disabled; navigation and session guards remain active until an explicit discard-and-exit decision. The notice separates the saved Correction from the newer unsaved changes. Continuing with another Correction requires opening the current revision and selecting files again after that decision; this is not an automatic transfer or a promise that browser Files survive reload.
+
+Active XLSX answer saves freeze native editing before the pending-file guard. The host makes the editor inert, exposes a focusable live status and keeps saved-copy access outside that surface. Confirmed outcomes end loading; an acknowledged dispatch without a settled outcome becomes a persistent original-request/no-resend notice, not indefinite busy UI or permission to retry. An unsent command can be fenced locally; that is not cancellation of an external request.
+
+Completion accepts only its captured edit and pending generations. With no newer work, normal canonical remount remains valid. A captured Draft attachment save with later work can retain its live native session only after authenticated verification of the completed Operation, current canonical key, original native opening, actor/session and lease. Capabilities advance to the canonical key without treating arbitrary client native keys as authority. Internal geometry-changing saves cannot continue an old workbook over new row mapping; newer work instead remains preserved and blocked until explicit local discard.
+
+Before that retained editor becomes writable, its authenticated canonical attachment projections must replace the previous saved links at the verified scalar and physical table-row positions. The native command preserves ordinary answers and history, keeps worksheet/cell protection, and never treats projected URLs as ownership. The host waits for the exact current Operation/key acknowledgement within the existing command deadline. Failed continuation configuration retrieval or scope validation, or failed or late native synchronization, preserves later work in a known-commit blocked state; it cannot turn a saved snapshot into an unknown provider result or permit another Save.
+
+Old files become eligible for deletion only after the complete new snapshot commits and no Draft, immutable history, workspace or eligible Operation still references them. A failed or uncertain old-file cleanup does not undo the saved snapshot or prevent its use and export. Its persistent warning states that old public URLs may still work; later ordinary saves neither retry that deletion nor dismiss the warning. This differs from an unsettled canceled batch, which continues to block mutations.
+
+An Upload Attempt records one explicit request and its original receipt. A Provider File Identity is the proven service-account resource shared by matching token/link receipts, not a new independent byte version per attempt. The same destination may overwrite the current own unprotected Draft file, but another owner's file, immutable history, workspace and eligible in-flight work remain protected before dispatch. Shared identity is never deleted merely because an older attempt loses its Draft reference.
+
+Admin follow-up is expandable inside the existing Results page. Tracking records remain separate from live Responses, including after Response deletion, and do not restore deleted answer rows. Admin and Viewer can read trusted operation, slot and destination evidence with date-and-time timestamps; only a current enabled Admin can fence an original batch or initiate authorized cleanup.
+
+The destructive follow-up confirmation uses the platform's modal dialog. Cancel or Escape leaves the operation unchanged; native modality contains keyboard focus and restores the invoking control when the dialog closes. While dispatch is in progress, cancellation cannot imply that the external request was canceled.
+
+A sender fence prevents future dispatch and canonical commit for the canceled batch; it does not prove an already dispatched request has finished at ECM. Only the validated receipt from that original request establishes its known received outcome. A late receipt remains canceled work for cleanup, never a new answer. Admin may initiate the first deletion of a known received, unreferenced canceled file after rechecking its generation and sender fence. An unknown upload or a previously dispatched uncertain deletion remains held: elapsed time, restart, an empty search or an operator note is not settlement proof.
+
+Receiptless unknown uploads and uncertain dispatched deletions have no confirmed external settlement-proof contract. Real PM/ECM request-settlement and cleanup evidence is an external release prerequisite, not an available manual unlock. The original-receipt, sender-fence and verified first-DELETE paths remain the available trusted evidence chain; a note, checkbox, arbitrary token/URL or elapsed time cannot replace it.
+
+The picker, fill page and dashboard Response-deletion dialog retain actionable unknown-outcome instructions. A rejected action does not replace these instructions with an invitation to resend. When original-checkpoint recovery cannot open an editable document, the saved canonical Excel copy remains separately readable without clearing the checkpoint or uploading pending files.
+
+## Response Deletion Case
+
+A durable record of an authorized whole-Response deletion. It retains the original Response owner's identity and attachment reference evidence, not a restored answer. Deleting Response data and confirming deletion of unreferenced Folio files are separate outcomes. Pending cleanup may leave public URLs usable and prevents removing the owner's account until that cleanup is resolved.
+
+Owner discard applies only to that person's Draft when the Response has no Submission history, including an Admin's own Draft. It cannot replace the confirmed Admin deletion flow. Whole-Response deletion retires that Response's Draft, Submission, Correction, workspace and eligible Operation references together; references surviving elsewhere still protect their files. Archive preserves files and history.
+
+A verified serialization abort of the initial deletion transaction returns a conflict before any provider or object DELETE is dispatched; the Response and references remain unchanged. The caller must review the Response before explicitly requesting deletion again. This is not an automatic retry, a weaker isolation level, or a claim that postcommit cleanup and uncertain external deletion had no effect.
+
+The owner can still read a pending deletion warning after leaving Fill or reloading a page. Admin and Viewer find the case in existing Results tracking without restoring a normal Response row. Only an authorized Admin may perform the existing evidence-based first cleanup action; an uncertain dispatched DELETE cannot be resent or settled by a note.
+
+## Document Category
+
+An ECM-provided document classification, shown in authoring as **หมวดหมู่จัดเก็บเอกสาร**, whose identity is separate from its display name; it groups Storage Templates for selection rather than proving a physical DCM folder. Existing category-based Published Templates retain their saved category names, and Users cannot change the selected category or template.
+
+## Storage Template (แม่แบบจัดเก็บเอกสาร)
+
+An Admin-managed named document-storage choice belonging to one Document Category, unique within Folio's catalog and selected for an Attachment Field or table column rather than a Form's Template Draft or User answer. Its catalog entry may be added, edited or removed, while choices already fixed in Published Templates remain part of those immutable contracts.
+
+In storage mode `template`, every actual upload uses `<docs_number>-<template_name>.<original-extension>` without a generated counter, timestamp, row suffix or filename reservation. Preserve the original extension's case and literal template text; omit the dot when there is no extension. Same-name scalar/table/Response/revision uploads may proceed, but each snapshot uses the paired receipt from its own original request. A matching filename is not resource identity.
+
+An actual new template upload returning a surviving Submission/Correction's paired receipt fails as a history conflict; an own unprotected current Draft receipt fails as a distinct Draft conflict. History takes precedence. Partial or ambiguous aliases remain fail-closed without claiming an exact match. Persist original receipt evidence, hold shared identities and stop canonical commit without deleting the shared resource or clearing pending choices. Existing Operation error/result surfaces report a safe semantic reason and permitted Field/Tag/physical-row/reference details. Neither failure nor database rollback restores provider bytes. Unchanged reuse without POST, legacy UUID naming, old receipts and all ownership/lease/revision/unknown safeguards remain unchanged.
+
+## ECM Service Account
+
+The dedicated Folio-only server identity used to read categories and perform authorized document integration. It is independent of every person's Folio session and of Ongoing credentials. Shared PostgreSQL coordination governs its bounded login jobs and encrypted token generations; integration failure never signs a person out of Folio. Credentials and the token-encryption key remain server-managed secrets, never answer data or browser state.
+
+The shared HTTP listener does not impose Bun's default 128 MiB aggregate ceiling on attachment batches. The native request reader still counts actual streamed bytes against the trusted current slot budget, enforces 2 to 10,000,000 bytes per new File and retains the 262,144-byte canonical JSON limit. Other request readers retain their existing narrower limits, or the former 128 MiB transport bound where no narrower contract existed. This is not an unlimited multipart parser or a verified real-provider capacity guarantee.
 
 ## Result Filter Field
 
@@ -86,7 +164,9 @@ Dropdown helper ranges are internal workbook storage. Identical lists can share 
 
 ## Response
 
-A User's single attempt to fill a Form. A User can have at most one Response for a Form. A Response may hold a Draft and may produce one or more Submissions over time: submitting again after a Submission reopens the Response as a Draft seeded from that Submission's data and document, so the User can edit and submit again without starting a new Response.
+A User's single attempt to fill a Form. A User can have at most one Response for a Form. A Response may hold a Draft and produce multiple immutable Submissions over time. Reopening a DOCX Response seeds its prior Submission's document and data; an XLSX new round instead starts blank from Published Template, without copying old answers or files. Resuming an already saved XLSX Draft preserves its canonical document and attachments.
+
+The XLSX exception includes the prior round's `fiscal_year`, `docs_number`, attachment URLs and file references: none are seeded from a Submission or Correction into a new round. The normal fill page still automatically starts that round after Submit. Earlier immutable history remains readable; this is distinct from resuming a saved Draft.
 
 ## Draft
 
@@ -96,13 +176,29 @@ A manually saved, resumable Response state containing both the current document 
 
 A copy of the workbook open while filling an XLSX Form, including edits awaiting a Draft save. The fill page provides the copy as an Excel file or a PDF independently of Draft persistence.
 
+Declared attachments must be explicitly saved before downloading pending changes. Download itself never uploads. Ordinary unsaved native edits, including the active cell, still come from the open workbook; removing managed attachment controls affects only the derived download, not its editable source, protection or unrelated artwork.
+
 ## Submission
 
 An immutable completed result of a Response, recorded each time that Response is submitted. A Submission exists when its extracted field data and filled DOCX or XLSX were persisted successfully together. PDF exports are generated on demand from the saved document; PDF conversion failure does not remove a completed Submission. A Response accumulates its Submissions in order; each remains individually readable (receipt, export, Correction history) no matter how many times the Response has since been reopened and resubmitted.
 
 ## Correction
 
-An Admin-authored revision to a specific Submission. It records changed Field values, a reason, and a revised document while preserving the original Submission. A Correction can only be added while its Response is currently in the submitted state for that same Submission; once the User reopens the Response to submit again, new Corrections on the earlier Submission are blocked until it becomes submitted again, though its existing history remains viewable.
+An Admin-authored revision to a specific Submission. It records changed Field values, a reason, and a revised document while preserving the original Submission. An Admin can select a historical Submission even when the Response has a later Submission or an open Draft. A Correction belongs to that selected Submission and does not change the current Draft or other Submissions.
+
+For declared XLSX Attachment Fields, only final explicit Save Correction uploads selected replacements or new metadata versions. Internal project/workspace saves do not upload. Pending original Files and removals cross a workspace document change only with verified canonical scope and physical-row mapping; otherwise the current page must retain them. The Admin acts on the selected Submission through the Response's Correction lease, not through another User's Draft.
+
+Each Correction preserves its own document, canonical attachment receipts and file references. Removing or replacing a file in a later revision cannot delete a file still referenced by a Submission or older Correction. Read-only views and XLSX/PDF downloads derive URL-only copies from the selected revision, without upload controls or attachment tokens; editable canonical documents remain unchanged. A broken historical public URL is not replaced by the latest file.
+
+## Editor Opening
+
+One mounted editor instance, identified by a validated opening UUID. The application document key remains the canonical identity of a saved document, capability scope, attachment checkpoint and Operation; opening a saved Draft does not create another revision. Mutable editor configurations expose this identity as `bridge.documentKey`.
+
+For XLSX, ONLYOFFICE receives a separate opaque `documentServerKey`, bound to the canonical document, actor, Folio session and opening. Capability or lease renewal within the same opening retains that native key; a different opening receives another native cache identity. Signed capabilities and durable Operation metadata carry the native key, and callbacks must match both canonical and native identities before consuming their claim. Read-only XLSX viewers receive independent fresh native cache identities. DOCX retains its existing native document-key behavior.
+
+An unchanged-native response may reuse a failed capture only from the same native opening. A freshly opened editor reads the saved canonical document and must not revive unsaved ordinary input captured by another opening's failed action.
+
+An editor capability never changes an authenticated person's account, role or leased session. If a request supplies Folio bearer or cookie credentials, each credential is independently resolved through Folio's existing session validation and must match the capability's account, current role and session-bound lease proof. A conflicting or invalid supplied credential cannot fall back to a more privileged capability; Viewer sessions remain read-only. Credential-free native plugin requests retain their existing enabled-account, signed-capability and editor-lease checks. This editor-only inspection does not enable cookie-only access to ordinary APIs: `identityFor` and `requireIdentity` remain bearer-only, preserving ADR 0002.
 
 ## Operation
 

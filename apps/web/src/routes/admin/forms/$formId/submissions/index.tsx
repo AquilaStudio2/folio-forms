@@ -14,7 +14,7 @@ import { DocumentKindBadge } from "@/components/document-kind-badge";
 import { ListPagination } from "@/components/list-pagination";
 import { Badge, Button, Card, Notice, Spinner } from "@/components/ui";
 import { apiDelete, apiGet, ApiError, formatDate } from "@/lib/api";
-import type { Submission } from "@/lib/api";
+import type { ResponseAttachmentCleanup, Submission } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { paginateItems } from "@/lib/pagination";
 
@@ -28,6 +28,12 @@ const deleteErrorMessage = (error: unknown): string => {
     }
     if (error.code === "operation_in_progress") {
       return "ลบไม่ได้: กำลังมีการประมวลผลคำตอบนี้อยู่ กรุณาลองใหม่ภายหลัง";
+    }
+    if (error.code === "attachment_outcome_unresolved") {
+      return (
+        error.userMessage ??
+        "ยังยืนยันผลเกี่ยวกับไฟล์แนบไม่ได้ กรุณาติดต่อผู้ดูแล และอย่าส่งคำขอเดิมซ้ำ"
+      );
     }
   }
   return "ลบ Submission ไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
@@ -50,6 +56,7 @@ const SubmissionsRoute = () => {
   const [deleteTarget, setDeleteTarget] = useState<Submission | null>(null);
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [cleanupWarning, setCleanupWarning] = useState<string | null>(null);
   const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
   const deleteFeedbackRef = useRef<HTMLDivElement>(null);
 
@@ -82,7 +89,12 @@ const SubmissionsRoute = () => {
     setDeleting(true);
     setDeleteError(null);
     try {
-      await apiDelete(`/api/admin/submissions/${deleteTarget.id}`);
+      const outcome = await apiDelete<{
+        attachmentCleanup: ResponseAttachmentCleanup;
+      }>(`/api/admin/submissions/${deleteTarget.id}`);
+      if (outcome.attachmentCleanup.warning) {
+        setCleanupWarning(outcome.attachmentCleanup.warning);
+      }
       setRows((current) => current.filter((row) => row.id !== deleteTarget.id));
       setDeleteTarget(null);
       deleteTriggerRef.current = null;
@@ -266,6 +278,11 @@ const SubmissionsRoute = () => {
         title="Submissions"
         description="Every completed response for this form, with owner-protected downloads."
       />
+      {cleanupWarning ? (
+        <div className="mb-4" role="status">
+          <Notice tone="neutral">{cleanupWarning}</Notice>
+        </div>
+      ) : null}
       {error ? (
         submissionsContent
       ) : (

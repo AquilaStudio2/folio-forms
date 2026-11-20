@@ -8,6 +8,8 @@ import {
 } from "@onlyoffice/db";
 
 import { validateResponseDocument } from "../documents/native-eligibility";
+import { commitAttachmentBatch } from "../ecm/attachments";
+import { lockAttachmentLedger } from "../ecm/identity";
 import { fail, HttpError } from "../http/errors";
 import { jsonRecord } from "../http/input";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
@@ -17,6 +19,7 @@ import { jsonValue, changedResponseData } from "../responses/data";
 import { nativeResponseDocument } from "../responses/native-document";
 import type { putObject } from "../storage";
 import { readObject, DOCX_CONTENT_TYPE } from "../storage";
+import { requireCorrectionWorkspace } from "./correction-workspace";
 import { markOperationCompleted, updateOperationFailed } from "./lifecycle";
 import type { OperationMetadata, OperationCompletion } from "./model";
 import { operationMetadata } from "./model";
@@ -34,6 +37,7 @@ export async function completeDraftOperation(
   if (!metadata.responseId || !metadata.data) {
     fail(500, "invalid_operation", "Draft metadata is incomplete");
   }
+  const data = metadata.data;
   const response = await prisma.response.findUnique({
     where: { id: metadata.responseId },
   });
@@ -50,6 +54,9 @@ export async function completeDraftOperation(
   const nextDocumentKey = metadata.nextDocumentKey ?? documentKey;
   const result = {
     documentKey: nextDocumentKey,
+    ...(metadata.attachmentTransition
+      ? { attachmentTransition: metadata.attachmentTransition }
+      : {}),
     publicId: metadata.publicId,
     responseId: response.id,
   };
@@ -59,6 +66,13 @@ export async function completeDraftOperation(
   ];
   await prisma.$transaction(
     async (tx) => {
+      await commitAttachmentBatch(
+        tx,
+        operation,
+        data,
+        nextDocumentKey,
+        metadata.attachmentTransition
+      );
       const updated = await tx.response.updateMany({
         data: {
           draftData: jsonValue(metadata.data),
@@ -137,6 +151,7 @@ export async function completeSubmitOperation(
   ];
   await prisma.$transaction(
     async (tx) => {
+      await lockAttachmentLedger(tx);
       const claimed = await tx.operation.updateMany({
         data: { updatedAt: new Date() },
         where: { id: operation.id, status: OperationStatus.processing },
@@ -148,6 +163,7 @@ export async function completeSubmitOperation(
           "The submission operation is no longer active"
         );
       }
+      await commitAttachmentBatch(tx, operation, data, submissionDocumentKey);
       await tx.submission.create({
         data: {
           data: jsonValue(data),
@@ -259,70 +275,6 @@ export async function processNativeResponseOperation(
     );
   }
 }
-/** Accepted operations may finish after expiry, but never after actor or workspace replacement. */
-async function requireCorrectionWorkspace(
-  tx: Prisma.TransactionClient,
-  operation: Operation,
-  metadata: OperationMetadata
-) {
-  if (
-    !metadata.workspaceLeaseId ||
-    !metadata.workspaceDocumentKey ||
-    !metadata.workspaceObjectKey ||
-    operation.documentKey !== metadata.workspaceDocumentKey ||
-    !operation.actorId
-  ) {
-    fail(
-      409,
-      "stale_operation",
-      "The correction workspace is no longer current"
-    );
-  }
-  const [actor, workspace] = await Promise.all([
-    tx.user.findFirst({
-      where: { enabled: true, id: operation.actorId, role: "admin" },
-    }),
-    tx.editorLease.findFirst({
-      where: {
-        holderUserId: operation.actorId,
-        id: metadata.workspaceLeaseId,
-        targetId: metadata.responseId,
-        targetType: OperationTargetType.correction,
-        workspaceBaseDocumentKey: metadata.baseDocumentKey,
-        workspaceBaseRevision: metadata.baseRevision,
-        workspaceDocumentKey: metadata.workspaceDocumentKey,
-        workspaceObjectKey: metadata.workspaceObjectKey,
-      },
-    }),
-  ]);
-  if (!actor || !workspace) {
-    fail(
-      409,
-      "stale_operation",
-      "The correction workspace is no longer current"
-    );
-  }
-  if (metadata.pdmsCatalogSessionId) {
-    const catalog = await tx.pdmsProjectCatalogSession.findFirst({
-      where: {
-        actorId: actor.id,
-        documentKey: operation.documentKey,
-        formId: metadata.formId,
-        id: metadata.pdmsCatalogSessionId,
-        leaseId: workspace.id,
-        targetId: metadata.responseId,
-        targetType: "correction",
-        ...(metadata.action === "save-correction" || metadata.pdmsSelection
-          ? { status: "ready" }
-          : {}),
-      },
-    });
-    if (!catalog) {
-      fail(409, "pdms_session_stale", "รายการโครงการเปลี่ยนระหว่างบันทึก");
-    }
-  }
-  return workspace;
-}
 
 export async function completeCorrectionWorkspaceOperation(
   operation: Operation,
@@ -336,12 +288,14 @@ export async function completeCorrectionWorkspaceOperation(
   ) {
     fail(500, "invalid_operation", "Correction preview metadata is incomplete");
   }
+  const nextDocumentKey = metadata.nextDocumentKey;
   const cleanupObjectKeys = [
     metadata.stagedObjectKey,
     metadata.workspaceObjectKey,
   ].filter((key): key is string => Boolean(key));
   await prisma.$transaction(
     async (tx) => {
+      await lockAttachmentLedger(tx);
       await tx.$queryRaw(
         Prisma.sql`SELECT "id" FROM "responses" WHERE "id" = ${metadata.responseId}::uuid FOR UPDATE`
       );
@@ -351,6 +305,7 @@ export async function completeCorrectionWorkspaceOperation(
         metadata
       );
       const current = await tx.response.findUnique({
+        include: { prefillSnapshot: { select: { id: true } } },
         where: { id: metadata.responseId },
       });
       const submission = metadata.submissionId
@@ -364,6 +319,11 @@ export async function completeCorrectionWorkspaceOperation(
       const latest = submission?.corrections[0];
       if (
         !current ||
+        current.formId !== operation.formId ||
+        operation.submissionId !== submission?.id ||
+        (metadata.correctionStartSnapshotId !== undefined &&
+          metadata.correctionStartSnapshotId !==
+            (current.prefillSnapshot?.id ?? null)) ||
         !submission ||
         submission.responseId !== current.id ||
         (latest?.revision ?? 0) !== metadata.baseRevision ||
@@ -372,6 +332,13 @@ export async function completeCorrectionWorkspaceOperation(
       ) {
         fail(409, "stale_operation", "The Submission is no longer correctable");
       }
+      await commitAttachmentBatch(
+        tx,
+        operation,
+        metadata.data ?? {},
+        nextDocumentKey,
+        metadata.attachmentTransition
+      );
       const updated = await tx.editorLease.updateMany({
         data: {
           workspaceDocumentKey: metadata.nextDocumentKey,
@@ -402,6 +369,9 @@ export async function completeCorrectionWorkspaceOperation(
         operation.id,
         {
           documentKey: metadata.nextDocumentKey,
+          ...(metadata.attachmentTransition
+            ? { attachmentTransition: metadata.attachmentTransition }
+            : {}),
           responseId: current.id,
           submissionId: submission.id,
           workspaceSaved: true,
@@ -448,7 +418,7 @@ export async function completeCorrectionOperation(
     where: { id: responseId },
   });
   const submission = await prisma.submission.findUnique({
-    where: { id: submissionId },
+    where: { id: submissionId, responseId },
   });
   if (!response || !submission || submission.responseId !== responseId) {
     fail(409, "stale_operation", "The Submission is no longer correctable");
@@ -462,6 +432,7 @@ export async function completeCorrectionOperation(
   ].filter((key): key is string => Boolean(key));
   await prisma.$transaction(
     async (tx) => {
+      await lockAttachmentLedger(tx);
       const [lockedResponse] = await tx.$queryRaw<{ id: string }[]>(
         Prisma.sql`
           SELECT "id"
@@ -494,6 +465,8 @@ export async function completeCorrectionOperation(
         latest?.documentKey ?? currentSubmission?.documentKey;
       if (
         !current ||
+        current.formId !== operation.formId ||
+        operation.submissionId !== currentSubmission?.id ||
         !currentSubmission ||
         currentSubmission.responseId !== current.id ||
         currentRevision !== baseRevision ||
@@ -507,6 +480,7 @@ export async function completeCorrectionOperation(
         metadata
       );
       const previousData = jsonRecord(latest?.data ?? currentSubmission.data);
+      await commitAttachmentBatch(tx, operation, data, nextDocumentKey);
       const correction = await tx.correction.create({
         data: {
           actorId,

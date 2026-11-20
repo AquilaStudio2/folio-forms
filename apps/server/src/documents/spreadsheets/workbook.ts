@@ -1,8 +1,14 @@
 import {
+  canonicalAttachment,
+  canonicalTableAttachments,
+  attachmentSlotKey,
+} from "../../responses/attachment-data";
+import {
   readTemplateArchive,
   templateArchiveText,
   parseTemplateXml,
   templateAttribute,
+  templateOfficeRelationshipNamespaces,
 } from "../package";
 import { reconcileSpreadsheetColumns } from "./columns";
 import {
@@ -43,6 +49,7 @@ export interface SpreadsheetCell {
 }
 export interface SpreadsheetWorkbook {
   hyperlinks: SpreadsheetHyperlink[];
+  localHyperlinks: SpreadsheetRange[];
   archive: Record<string, Uint8Array>;
   sheet: string;
   sheetPath: string;
@@ -52,8 +59,10 @@ export interface SpreadsheetWorkbook {
   merges: SpreadsheetRange[];
 }
 
+// oxlint-disable-next-line complexity -- Parse and reject unsafe package content even when collecting repairable name defects.
 export const readSpreadsheetWorkbook = (
-  bytes: Uint8Array
+  bytes: Uint8Array,
+  rejectedNames?: Set<string>
 ): SpreadsheetWorkbook => {
   const archive = readTemplateArchive(bytes, () => true);
   const hyperlinks = validateSpreadsheetRelationships(archive);
@@ -89,7 +98,11 @@ export const readSpreadsheetWorkbook = (
       if (element.local === "definedName" && name !== null) {
         if (name.startsWith("folio_")) {
           if (rawNames.has(name)) {
-            throw new Error(`Duplicate binding: ${name}`);
+            if (rejectedNames) {
+              rejectedNames.add(name);
+            } else {
+              throw new Error(`Duplicate binding: ${name}`);
+            }
           }
           rawNames.set(name, reference.trim());
         }
@@ -120,7 +133,11 @@ export const readSpreadsheetWorkbook = (
           name?.startsWith("folio_") &&
           templateAttribute(element, "localSheetId") !== undefined
         ) {
-          throw new Error("Folio bindings must be workbook-scoped");
+          if (rejectedNames) {
+            rejectedNames.add(name);
+          } else {
+            throw new Error("Folio bindings must be workbook-scoped");
+          }
         }
       }
     },
@@ -199,26 +216,32 @@ export const readSpreadsheetWorkbook = (
     throw new Error("Worksheet is unavailable");
   }
   validateUploadPocEmbeddings(archive, sheetPath);
-  const names = new Map(
-    [...rawNames].map(([key, value]) => {
-      try {
-        return [key, parseSpreadsheetRange(value)] as const;
-      } catch (error) {
-        if (
-          key.startsWith("folio_column_") ||
-          key.startsWith("folio_columns_")
-        ) {
-          throw new Error(
-            "ตำแหน่งคอลัมน์ตารางถูกลบหรือไม่ถูกต้อง กรุณาย้อนการลบคอลัมน์ หรือลบคอลัมน์นั้นจากการตั้งค่าก่อนบันทึก",
-            { cause: error }
-          );
-        }
+  const names = new Map<string, SpreadsheetRange>();
+  for (const [key, value] of rawNames) {
+    if (rejectedNames?.has(key)) {
+      continue;
+    }
+    try {
+      const range = parseSpreadsheetRange(value);
+      if (range.sheet !== sheet.name) {
+        throw new Error("Binding references a missing worksheet");
+      }
+      names.set(key, range);
+    } catch (error) {
+      if (rejectedNames) {
+        rejectedNames.add(key);
+      } else if (
+        key.startsWith("folio_column_") ||
+        key.startsWith("folio_columns_")
+      ) {
+        throw new Error(
+          "ตำแหน่งคอลัมน์ตารางถูกลบหรือไม่ถูกต้อง กรุณาย้อนการลบคอลัมน์ หรือลบคอลัมน์นั้นจากการตั้งค่าก่อนบันทึก",
+          { cause: error }
+        );
+      } else {
         throw error;
       }
-    })
-  );
-  if ([...names.values()].some((range) => range.sheet !== sheet.name)) {
-    throw new Error("Binding references a missing worksheet");
+    }
   }
   const strings: string[] = [];
   if (archive["xl/sharedStrings.xml"]) {
@@ -250,6 +273,7 @@ export const readSpreadsheetWorkbook = (
   }
   const cells = new Map<string, SpreadsheetCell>();
   const merges: SpreadsheetRange[] = [];
+  const localHyperlinks: SpreadsheetRange[] = [];
   let cell: SpreadsheetCell | null = null;
   let cellValue = "";
   let formula = "";
@@ -298,6 +322,21 @@ export const readSpreadsheetWorkbook = (
       }
       if (element.local === "mergeCell") {
         merges.push(
+          parseSpreadsheetRange(
+            `'${sheet.name.replaceAll("'", "''")}'!${templateAttribute(element, "ref") ?? ""}`
+          )
+        );
+      }
+      if (
+        element.local === "hyperlink" &&
+        templateAttribute(element, "location") &&
+        !element.attributes.some(
+          (attribute) =>
+            attribute.local === "id" &&
+            templateOfficeRelationshipNamespaces.has(attribute.uri)
+        )
+      ) {
+        localHyperlinks.push(
           parseSpreadsheetRange(
             `'${sheet.name.replaceAll("'", "''")}'!${templateAttribute(element, "ref") ?? ""}`
           )
@@ -364,6 +403,7 @@ export const readSpreadsheetWorkbook = (
       ...link,
       range: { ...link.range, sheet: sheet.name },
     })),
+    localHyperlinks,
     merges,
     names,
     sheet: sheet.name,
@@ -373,7 +413,8 @@ export const readSpreadsheetWorkbook = (
 
 export const resolveSpreadsheetContract = (
   input: SpreadsheetBindings,
-  workbook: SpreadsheetWorkbook
+  workbook: SpreadsheetWorkbook,
+  draft = false
 ): SpreadsheetContract => {
   const bindings = reconcileSpreadsheetColumns(input, workbook.names);
   const locations: Record<string, SpreadsheetRange> = {};
@@ -417,7 +458,7 @@ export const resolveSpreadsheetContract = (
     ) {
       throw new Error("Merged cells cannot cross table body rows");
     }
-    if (!bindings.table.columns.some((column) => !column.computed)) {
+    if (!draft && !bindings.table.columns.some((column) => !column.computed)) {
       throw new Error("A table needs at least one input column");
     }
     if (
@@ -528,13 +569,17 @@ export const spreadsheetFieldValue = (
 export const extractSpreadsheetData = (
   workbook: SpreadsheetWorkbook,
   contract: SpreadsheetContract,
-  required: boolean
+  required: boolean,
+  attachments: Record<string, unknown> = {},
+  selectedSlots: ReadonlySet<string> = new Set()
 ): {
   data: Record<string, unknown>;
   errors: { address: string; message: string }[];
+  rowIndices: number[];
 } => {
   const data: Record<string, unknown> = {};
   const errors: { address: string; message: string }[] = [];
+  const rowIndices: number[] = [];
   const pictures = readSpreadsheetPictures(workbook, contract);
   const read = (
     address: string,
@@ -558,8 +603,24 @@ export const extractSpreadsheetData = (
       return null;
     }
   };
-  for (const field of contract.fields) {
+  const extractField = (field: SpreadsheetField): void => {
     const range = contract.locations[field.anchor] as SpreadsheetRange;
+    if (field.attachment) {
+      const attachment = canonicalAttachment(attachments[field.key]);
+      data[field.key] = attachment;
+      if (
+        required &&
+        field.required &&
+        attachment === null &&
+        !selectedSlots.has(attachmentSlotKey(field.id, null))
+      ) {
+        errors.push({
+          address: `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`,
+          message: `Required attachment: ${field.label}`,
+        });
+      }
+      return;
+    }
     if (field.type === "picture") {
       if (required && field.required && !pictures.has(field.id)) {
         errors.push({
@@ -567,20 +628,49 @@ export const extractSpreadsheetData = (
           message: `Required picture: ${field.label}`,
         });
       }
-      continue;
+      return;
     }
     data[field.key] = read(
       `${spreadsheetColumnName(range.firstColumn)}${range.firstRow + 1}`,
       field
     );
+  };
+  for (const field of contract.fields) {
+    extractField(field);
   }
   if (contract.table) {
     const { table } = contract;
     const range = contract.locations[table.anchor] as SpreadsheetRange;
     const rows = new Set<number>();
+    const attached = canonicalTableAttachments(
+      attachments,
+      table.key,
+      table.columns
+        .filter((column) => column.attachment)
+        .map((column) => column.key),
+      range.lastRow - range.firstRow + 1
+    );
+    for (const rowIndex of attached.keys()) {
+      rows.add(range.firstRow + rowIndex);
+    }
+    for (
+      let rowIndex = 0;
+      rowIndex <= range.lastRow - range.firstRow;
+      rowIndex += 1
+    ) {
+      if (
+        table.columns.some(
+          (column) =>
+            column.attachment &&
+            selectedSlots.has(attachmentSlotKey(column.id, rowIndex))
+        )
+      ) {
+        rows.add(range.firstRow + rowIndex);
+      }
+    }
     const inputColumns = new Set(
       table.columns
-        .filter((column) => !column.computed)
+        .filter((column) => !column.computed && !column.attachment)
         .map((column) => range.firstColumn + column.offset)
     );
     for (const cell of workbook.cells.values()) {
@@ -598,14 +688,30 @@ export const extractSpreadsheetData = (
       .toSorted((a, b) => a - b)
       .map((row) => {
         const values: Record<string, unknown> = {};
+        const rowIndex = row - range.firstRow;
+        rowIndices.push(rowIndex);
         for (const column of table.columns) {
-          values[column.key] = read(
-            `${spreadsheetColumnName(range.firstColumn + column.offset)}${row + 1}`,
-            column
-          );
+          const address = `${spreadsheetColumnName(range.firstColumn + column.offset)}${row + 1}`;
+          if (column.attachment) {
+            const attachment = attached.get(rowIndex)?.[column.key] ?? null;
+            values[column.key] = attachment;
+            if (
+              required &&
+              column.required &&
+              !attachment &&
+              !selectedSlots.has(attachmentSlotKey(column.id, rowIndex))
+            ) {
+              errors.push({
+                address,
+                message: `Required attachment: ${column.label} (แถว ${rowIndex + 1})`,
+              });
+            }
+          } else {
+            values[column.key] = read(address, column);
+          }
         }
         return values;
       });
   }
-  return { data, errors };
+  return { data, errors, rowIndices };
 };

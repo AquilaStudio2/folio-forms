@@ -39,7 +39,6 @@ import type {
 } from "@/features/onlyoffice/editor-protocol";
 import {
   ApiError,
-  apiDelete,
   apiGet,
   apiPost,
   downloadArtifact,
@@ -158,6 +157,8 @@ const FillRoute = () => {
     "save-draft"
   );
   const [saveRequest, setSaveRequest] = useState(0);
+  const [editorUnresolved, setEditorUnresolved] = useState(false);
+  const editorActionInFlightRef = useRef(false);
   const [exportAfterSave, setExportAfterSave] = useState<ExportFormat | null>(
     null
   );
@@ -173,8 +174,6 @@ const FillRoute = () => {
     controller: AbortController;
   } | null>(null);
   useEffect(() => () => workbookDownloadRef.current?.controller.abort(), []);
-  const [clearDirtyRequest, setClearDirtyRequest] = useState(0);
-  const [discardBusy, setDiscardBusy] = useState(false);
   const [submissionHistory, setSubmissionHistory] = useState<
     SubmissionHistoryEntry[]
   >([]);
@@ -187,6 +186,7 @@ const FillRoute = () => {
   const [submissionHistoryRequest, setSubmissionHistoryRequest] = useState(0);
   const [exportingSubmissions, setExportingSubmissions] = useState(false);
   const startErrorRef = useRef<HTMLDivElement>(null);
+  const exitDialogRef = useRef<HTMLDialogElement>(null);
   const exportSaveResolverRef = useRef<{
     reject: (reason?: unknown) => void;
     resolve: (value: boolean | PromiseLike<boolean>) => void;
@@ -198,11 +198,17 @@ const FillRoute = () => {
     proceed: () => void;
     reset: () => void;
   } | null>(null);
+  const hasUnsavedChanges =
+    dirty ||
+    nativeSaving ||
+    editorUnresolved ||
+    operation?.status === "pending" ||
+    operation?.status === "processing";
   const navigationBlocker = useBlocker({
-    disabled: !dirty,
-    enableBeforeUnload: dirty,
+    disabled: !hasUnsavedChanges,
+    enableBeforeUnload: hasUnsavedChanges,
     shouldBlockFn: () =>
-      shouldBlockDirtyNavigation(dirty, allowNavigationRef.current),
+      shouldBlockDirtyNavigation(hasUnsavedChanges, allowNavigationRef.current),
     withResolver: true,
   });
   useEffect(() => {
@@ -282,10 +288,15 @@ const FillRoute = () => {
       window.removeEventListener("folio:before-reauth", handleReauthentication);
   }, [activeResponseId, dirty]);
   useEffect(() => {
-    if (!exitIntent) {
+    const dialog = exitDialogRef.current;
+    if (!dialog) {
       return;
     }
-    document.querySelector<HTMLElement>("#unsaved-cancel")?.focus();
+    if (exitIntent && !dialog.open) {
+      dialog.showModal();
+    } else if (!exitIntent && dialog.open) {
+      dialog.close();
+    }
   }, [exitIntent]);
   useEffect(() => {
     if (error) {
@@ -449,12 +460,28 @@ const FillRoute = () => {
     if (message.type !== "operation") {
       return;
     }
+    const recoveredCheckpoint = message.requestedAction !== undefined;
+    if (recoveredCheckpoint) {
+      exportSaveResolverRef.current?.reject(new DraftSaveError());
+      exportSaveResolverRef.current = null;
+      setSaveBeforeExit(false);
+      setExportAfterSave(null);
+      if (exitIntent === "reauth") {
+        resolveReauthentication(false);
+      }
+      setExitIntent(null);
+      setSuccess(null);
+    }
     const { status } = message;
+    editorActionInFlightRef.current = status === "pending";
+    if (status !== "pending") {
+      setEditorUnresolved(message.attachmentCommitUnresolved === true);
+    }
     setOperation(
-      message.operationId
+      message.operationId || status === "pending"
         ? {
             error: message.error,
-            id: message.operationId,
+            id: message.operationId ?? "editor-action",
             status,
           }
         : null
@@ -484,8 +511,22 @@ const FillRoute = () => {
       return;
     }
 
-    setDirty(false);
-    if (message.action === "save-draft") {
+    const hasLaterChanges =
+      message.hasPendingAttachments === true ||
+      message.hasUnsavedDocumentChanges === true;
+    setDirty(hasLaterChanges);
+    if (message.action === "save-draft" && message.editorRemountSafe) {
+      setEditorRevision((value) => value + 1);
+    }
+    if (hasLaterChanges) {
+      setSaveBeforeExit(false);
+      setExportAfterSave(null);
+      setOperationError(
+        "บันทึกรอบก่อนสำเร็จแล้ว แต่มีไฟล์ที่เลือกใหม่ยังไม่อยู่ในรอบนั้น กรุณารักษาหน้านี้ไว้ก่อน"
+      );
+      return;
+    }
+    if (message.action === "save-draft" && !message.editorRemountSafe) {
       setEditorRevision((value) => value + 1);
     }
     if (message.action === "submit") {
@@ -494,7 +535,11 @@ const FillRoute = () => {
         await reopenOnlyOfficeResponseForNewEntry();
         setError(null);
         setOperationError(null);
-        setSuccess("ส่งแบบฟอร์มเรียบร้อยแล้ว คุณสามารถกรอกคำตอบใหม่ได้ทันที");
+        setSuccess(
+          recoveredCheckpoint
+            ? "ตรวจพบว่ารอบก่อนส่งแบบฟอร์มสำเร็จแล้ว คุณสามารถกรอกคำตอบใหม่ได้ทันที"
+            : "ส่งแบบฟอร์มเรียบร้อยแล้ว คุณสามารถกรอกคำตอบใหม่ได้ทันที"
+        );
         return;
       }
     }
@@ -507,12 +552,20 @@ const FillRoute = () => {
     }
     setError(null);
     setOperationError(null);
-    setSuccess(
-      message.action === "save-draft"
-        ? "บันทึกฉบับร่างคำตอบแล้ว"
-        : "ดำเนินการกับเอกสารเรียบร้อยแล้ว"
-    );
-    if (message.action === "save-draft" && saveBeforeExit) {
+    let successMessage = "ดำเนินการกับเอกสารเรียบร้อยแล้ว";
+    if (message.action === "save-draft") {
+      successMessage = "บันทึกฉบับร่างคำตอบแล้ว";
+    }
+    if (recoveredCheckpoint) {
+      successMessage =
+        "ตรวจผลการบันทึกฉบับร่างรอบก่อนสำเร็จแล้ว หากต้องการส่งคำตอบ กรุณากดส่งอีกครั้ง";
+    }
+    setSuccess(successMessage);
+    if (
+      message.action === "save-draft" &&
+      saveBeforeExit &&
+      !recoveredCheckpoint
+    ) {
       const intent = exitIntent;
       setSaveBeforeExit(false);
       if (intent === "reauth") {
@@ -653,8 +706,7 @@ const FillRoute = () => {
     operation?.status === "pending" ||
     operation?.status === "processing" ||
     Boolean(exportAfterSave) ||
-    saveBeforeExit ||
-    discardBusy;
+    saveBeforeExit;
 
   const saveNativeResponse = async (
     action: "save-draft" | "submit",
@@ -783,12 +835,15 @@ const FillRoute = () => {
   const downloadingWorkbook = workbookDownloadPhase !== null;
   const capturingWorkbook = workbookDownloadPhase === "capturing";
   const editorActionDisabled =
-    !editorCommandReady || saveFlowBusy || discardBusy || capturingWorkbook;
+    !editorCommandReady ||
+    saveFlowBusy ||
+    editorUnresolved ||
+    capturingWorkbook;
   const handleExit = async () => {
-    if (saveFlowBusy || discardBusy) {
+    if (saveFlowBusy) {
       return;
     }
-    if (!dirty) {
+    if (!dirty && !editorUnresolved) {
       workbookDownloadRef.current?.controller.abort();
       allowNavigationRef.current = true;
       await navigate({ to: "/dashboard" });
@@ -802,7 +857,6 @@ const FillRoute = () => {
     if (
       !activeResponseId ||
       saveFlowBusy ||
-      discardBusy ||
       workbookDownloadRef.current?.capturing
     ) {
       return;
@@ -823,12 +877,7 @@ const FillRoute = () => {
     setSaveRequest((value) => value + 1);
   };
   const saveAndExport = (format: ExportFormat) => {
-    if (
-      !activeResponseId ||
-      saveFlowBusy ||
-      discardBusy ||
-      exportSaveResolverRef.current
-    ) {
+    if (!activeResponseId || saveFlowBusy || exportSaveResolverRef.current) {
       return;
     }
     if (nativeConfig) {
@@ -940,12 +989,14 @@ const FillRoute = () => {
   };
   const runSpreadsheetAction = (action: "save-draft" | "submit") => {
     if (
+      editorActionInFlightRef.current ||
       editorActionDisabled ||
       !activeResponseId ||
       workbookDownloadRef.current?.capturing
     ) {
       return;
     }
+    editorActionInFlightRef.current = true;
     setOperationError(null);
     setSuccess(null);
     setOperation({ id: "editor-action", status: "pending" });
@@ -959,99 +1010,79 @@ const FillRoute = () => {
     setSaveBeforeExit(false);
     setExitIntent(null);
   };
-  const discardDraft = async () => {
-    if (
-      !activeResponseId ||
-      discardBusy ||
-      saveFlowBusy ||
-      workbookDownloadRef.current?.capturing
-    ) {
+  const discardAndExit = async () => {
+    if (saveFlowBusy || workbookDownloadRef.current?.capturing) {
       return;
     }
     workbookDownloadRef.current?.controller.abort();
-    setDiscardBusy(true);
-    setOperationError(null);
-    try {
-      await apiDelete(`/api/responses/${activeResponseId}`);
-      setDirty(false);
-      setClearDirtyRequest((value) => value + 1);
-      const intent = exitIntent;
-      if (intent === "reauth") {
-        resolveReauthentication(true);
-      } else if (intent === "dashboard") {
-        allowNavigationRef.current = true;
-        await navigate({ to: "/dashboard" });
-      } else {
-        allowNavigationRef.current = true;
-        navigationBlockerRef.current?.proceed();
-      }
-      setExitIntent(null);
-    } catch (caughtError) {
-      setOperationError(
-        formRequestError(caughtError, "ลบฉบับร่างไม่สำเร็จ กรุณาลองใหม่")
-      );
-    } finally {
-      setDiscardBusy(false);
+    allowNavigationRef.current = true;
+    if (exitIntent === "dashboard") {
+      await navigate({ to: "/dashboard" });
+    } else {
+      navigationBlockerRef.current?.proceed();
     }
+    setExitIntent(null);
   };
 
-  const exitPrompt = exitIntent ? (
-    <div
-      className="fixed inset-0 z-50 grid place-items-center bg-black/35 px-5"
-      role="presentation"
+  let exitDescription =
+    "ทิ้งเฉพาะไฟล์ การนำออก และการแก้ไขที่ยังไม่บันทึก โดยไม่ลบคำตอบที่บันทึกแล้ว การออกไม่ยกเลิกคำขอที่ส่งไปแล้ว และไม่กู้ไฟล์ที่ยังไม่บันทึกหลังเปิดใหม่";
+  if (exitIntent === "reauth") {
+    exitDescription = "บันทึกฉบับร่างก่อนเข้าสู่ระบบเดิม หรืออยู่ต่อเพื่อยกเลิก";
+  } else if (saveFlowBusy) {
+    exitDescription = "กำลังบันทึก กรุณารอผลก่อนออกจากหน้านี้";
+  }
+
+  const exitPrompt = (
+    <dialog
+      ref={exitDialogRef}
+      aria-labelledby="unsaved-title"
+      className="m-auto w-full max-w-lg rounded-[var(--radius)] border border-[var(--line)] bg-[var(--paper)] p-6 text-[var(--ink)] shadow-xl backdrop:bg-black/35"
+      onCancel={(event) => {
+        event.preventDefault();
+        cancelExit();
+      }}
     >
-      <div
-        className="w-full max-w-lg rounded-[var(--radius)] border border-[var(--line)] bg-[var(--paper)] p-6 shadow-xl"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="unsaved-title"
-      >
-        <h2 id="unsaved-title" className="text-lg font-semibold">
-          มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก
-        </h2>
-        <p className="mt-2 text-sm text-[var(--ink-soft)]">
-          {exitIntent === "reauth"
-            ? "บันทึกฉบับร่างก่อนเข้าสู่ระบบเดิม หรืออยู่ต่อเพื่อยกเลิก"
-            : "บันทึกฉบับร่างก่อนออกจากแบบฟอร์ม หรือทิ้งฉบับร่างนี้อย่างถาวร"}
-        </p>
-        {operationError ? (
-          <div className="mt-4">
-            <Notice tone="danger">{operationError}</Notice>
-          </div>
-        ) : null}
-        <div className="mt-6 flex flex-wrap justify-end gap-2">
-          {exitIntent === "reauth" ? null : (
-            <Button
-              variant="secondary"
-              type="button"
-              onClick={discardDraft}
-              disabled={discardBusy || saveFlowBusy || capturingWorkbook}
-            >
-              {discardBusy ? <Spinner /> : null}
-              {discardBusy ? "กำลังลบ…" : "ทิ้งฉบับร่าง"}
-            </Button>
-          )}
+      <h2 id="unsaved-title" className="text-lg font-semibold">
+        มีการเปลี่ยนแปลงที่ยังไม่ได้บันทึก
+      </h2>
+      <p className="mt-2 text-sm text-[var(--ink-soft)]">{exitDescription}</p>
+      {operationError ? (
+        <div className="mt-4">
+          <Notice tone="danger">{operationError}</Notice>
+        </div>
+      ) : null}
+      <div className="mt-6 flex flex-wrap justify-end gap-2">
+        <Button
+          id="unsaved-cancel"
+          autoFocus
+          variant="secondary"
+          type="button"
+          onClick={cancelExit}
+        >
+          อยู่หน้านี้ต่อ
+        </Button>
+        {exitIntent === "reauth" ? (
           <Button
             type="button"
             onClick={saveAndExit}
-            disabled={discardBusy || saveFlowBusy || capturingWorkbook}
+            disabled={saveFlowBusy || capturingWorkbook}
           >
             {saveBeforeExit ? <Spinner /> : null}
             {saveBeforeExit ? "กำลังบันทึก…" : "บันทึกแล้วออก"}
           </Button>
+        ) : (
           <Button
-            id="unsaved-cancel"
-            variant="ghost"
+            variant="danger"
             type="button"
-            onClick={cancelExit}
-            disabled={discardBusy || saveFlowBusy}
+            onClick={discardAndExit}
+            disabled={saveFlowBusy || capturingWorkbook}
           >
-            อยู่ต่อ
+            ทิ้งการเปลี่ยนแปลงและออก
           </Button>
-        </div>
+        )}
       </div>
-    </div>
-  ) : null;
+    </dialog>
+  );
 
   return (
     <div className="min-h-screen bg-[var(--canvas)]">
@@ -1063,7 +1094,7 @@ const FillRoute = () => {
             variant="ghost"
             size="sm"
             onClick={handleExit}
-            disabled={discardBusy || saveFlowBusy}
+            disabled={saveFlowBusy}
           >
             <ArrowLeft />
             ออกจากแบบฟอร์ม
@@ -1110,9 +1141,7 @@ const FillRoute = () => {
         ) : null}
         {operationError ? (
           <div className="mb-4">
-            <Notice tone="danger">
-              {operationError} คุณสามารถแก้ไขข้อมูลแล้วลองใหม่ได้
-            </Notice>
+            <Notice tone="danger">{operationError}</Notice>
           </div>
         ) : null}
         {workbookDownloadError ? (
@@ -1304,6 +1333,27 @@ const FillRoute = () => {
                   >
                     ส่งคำตอบ
                   </Button>
+                  {editorUnresolved ? (
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      disabled={!editorCommandReady || saveFlowBusy}
+                      onClick={() => {
+                        if (editorActionInFlightRef.current) {
+                          return;
+                        }
+                        editorActionInFlightRef.current = true;
+                        setOperation({
+                          id: "editor-action",
+                          status: "pending",
+                        });
+                        setEditorAction("save-draft");
+                        setSaveRequest((value) => value + 1);
+                      }}
+                    >
+                      ตรวจผลคำขอเดิม
+                    </Button>
+                  ) : null}
                 </>
               ) : null}
               <Button
@@ -1344,7 +1394,6 @@ const FillRoute = () => {
                 captureWorkbookRef={
                   form.documentKind === "xlsx" ? captureWorkbookRef : undefined
                 }
-                clearDirtyRequest={clearDirtyRequest}
                 configUrl={editorConfigUrl ?? undefined}
                 onBridgeMessage={handleBridgeMessage}
                 onDirtyChange={setDirty}

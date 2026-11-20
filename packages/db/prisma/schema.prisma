@@ -92,6 +92,15 @@ enum LegacyAccountLinkStatus {
   linked
 }
 
+model StorageTemplate {
+  id                   String @id @default(uuid()) @db.Uuid
+  template_name        String @unique @db.VarChar(255)
+  document_category_id Int
+
+  @@index([document_category_id])
+  @@map("storage_templates")
+}
+
 model User {
   id                 String   @id
   name               String
@@ -246,23 +255,29 @@ model TemplateDraft {
 }
 
 model DraftFieldRule {
-  id              String        @id @default(uuid()) @db.Uuid
-  templateDraftId String        @map("template_draft_id") @db.Uuid
-  tag             String
+  id                     String        @id @default(uuid()) @db.Uuid
+  templateDraftId        String        @map("template_draft_id") @db.Uuid
+  tag                    String
   /// XLSX display/type metadata; DOCX metadata continues to come from content controls.
-  label           String?
-  type            FieldType?
-  source          String?
-  options         Json?
-  position        Int?
+  label                  String?
+  type                   FieldType?
+  source                 String?
+  attachment             Boolean       @default(false)
+  attachmentCategory     String?       @map("attachment_category")
+  attachmentStorageMode  String        @default("legacy") @map("attachment_storage_mode")
+  attachmentCategoryId   Int?          @map("attachment_category_id")
+  attachmentTemplateId   String?       @map("attachment_template_id")
+  attachmentTemplateName String?       @map("attachment_template_name")
+  options                Json?
+  position               Int?
   /// ExcelBinding JSON: scalar, table or column placement; shared with ManifestField.binding.
   /// Types and validation: apps/server/src/forms/excel-binding.ts. DOCX uses null.
-  binding         Json?
-  required        Boolean       @default(false)
-  prefillPointer  String?       @map("prefill_pointer")
-  prefillPolicy   PrefillPolicy @default(editable) @map("prefill_policy")
-  createdAt       DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
-  updatedAt       DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+  binding                Json?
+  required               Boolean       @default(false)
+  prefillPointer         String?       @map("prefill_pointer")
+  prefillPolicy          PrefillPolicy @default(editable) @map("prefill_policy")
+  createdAt              DateTime      @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt              DateTime      @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
 
   templateDraft TemplateDraft @relation(fields: [templateDraftId], references: [id], onDelete: Cascade)
 
@@ -303,23 +318,29 @@ model FieldManifest {
 }
 
 model ManifestField {
-  id               String        @id @default(uuid()) @db.Uuid
-  manifestId       String        @map("manifest_id") @db.Uuid
-  tag              String
-  label            String
-  placeholder      String?
-  position         Int
-  type             FieldType
-  required         Boolean       @default(false)
-  prefillPolicy    PrefillPolicy @default(editable) @map("prefill_policy")
-  source           String?
-  options          Json?
+  id                     String        @id @default(uuid()) @db.Uuid
+  manifestId             String        @map("manifest_id") @db.Uuid
+  tag                    String
+  label                  String
+  placeholder            String?
+  position               Int
+  type                   FieldType
+  required               Boolean       @default(false)
+  prefillPolicy          PrefillPolicy @default(editable) @map("prefill_policy")
+  source                 String?
+  attachment             Boolean       @default(false)
+  attachmentCategory     String?       @map("attachment_category")
+  attachmentStorageMode  String        @default("legacy") @map("attachment_storage_mode")
+  attachmentCategoryId   Int?          @map("attachment_category_id")
+  attachmentTemplateId   String?       @map("attachment_template_id")
+  attachmentTemplateName String?       @map("attachment_template_name")
+  options                Json?
   /// ExcelBinding JSON: scalar, table or column placement; shared with DraftFieldRule.binding.
   /// Types and validation: apps/server/src/forms/excel-binding.ts. DOCX uses null.
-  binding          Json?
-  pictureMaxBytes  Int?          @map("picture_max_bytes")
-  pictureMaxWidth  Int?          @map("picture_max_width")
-  pictureMaxHeight Int?          @map("picture_max_height")
+  binding                Json?
+  pictureMaxBytes        Int?          @map("picture_max_bytes")
+  pictureMaxWidth        Int?          @map("picture_max_width")
+  pictureMaxHeight       Int?          @map("picture_max_height")
 
   manifest FieldManifest @relation(fields: [manifestId], references: [id], onDelete: Restrict)
 
@@ -622,33 +643,165 @@ model DeletionTombstone {
   responseLookupDigest    String       @unique @map("response_lookup_digest")
   externalReferenceDigest String?      @unique @map("external_reference_digest")
   actorId                 String?      @map("actor_id")
+  ownerUserId             String?      @map("owner_user_id")
+  attachmentContext       Json?        @map("attachment_context")
   outcome                 AuditOutcome
   createdAt               DateTime     @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@index([actorId, createdAt])
+  @@index([ownerUserId])
   @@map("deletion_tombstones")
 }
 
 /// An immutable successful catalog belongs to one authorized editor opening.
 model PdmsProjectCatalogSession {
-  id            String   @id @default(uuid()) @db.Uuid
-  openingId     String   @map("opening_id") @db.Uuid
-  leaseId       String   @map("lease_id") @db.Uuid
-  actorId       String   @map("actor_id")
-  authSessionId String   @map("auth_session_id")
-  formId        String   @map("form_id") @db.Uuid
-  targetType    String   @map("target_type")
-  targetId      String   @map("target_id") @db.Uuid
-  documentKey   String   @map("document_key")
-  status        String   @default("pending")
+  id            String    @id @default(uuid()) @db.Uuid
+  openingId     String    @map("opening_id") @db.Uuid
+  leaseId       String    @map("lease_id") @db.Uuid
+  actorId       String    @map("actor_id")
+  authSessionId String    @map("auth_session_id")
+  formId        String    @map("form_id") @db.Uuid
+  targetType    String    @map("target_type")
+  targetId      String    @map("target_id") @db.Uuid
+  documentKey   String    @map("document_key")
+  status        String    @default("pending")
   names         Json?
-  loadToken     String?  @map("load_token") @db.Uuid
+  loadToken     String?   @map("load_token") @db.Uuid
   loadExpiresAt DateTime? @map("load_expires_at") @db.Timestamptz(3)
-  expiresAt     DateTime @map("expires_at") @db.Timestamptz(3)
-  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
 
   @@unique([openingId, leaseId])
   @@index([expiresAt])
   @@index([targetId])
   @@map("pdms_project_catalog_sessions")
+}
+
+model EcmAuthState {
+  accountKey     String    @id @map("account_key")
+  generation     BigInt    @default(0)
+  status         String    @default("idle")
+  owner          String?   @db.Uuid
+  deadline       DateTime? @db.Timestamptz(3)
+  leaseUntil     DateTime? @map("lease_until") @db.Timestamptz(3)
+  encryptedToken String?   @map("encrypted_token")
+  expiresAt      DateTime? @map("expires_at") @db.Timestamptz(3)
+
+  @@map("ecm_auth_states")
+}
+
+model EcmCategoryCatalog {
+  scopeKey  String   @id @map("scope_key")
+  names     Json
+  expiresAt DateTime @map("expires_at") @db.Timestamptz(3)
+
+  @@map("ecm_category_catalogs")
+}
+
+/// No cascading relations: external write evidence must survive Response deletion.
+model EcmAttachmentBatch {
+  operationId   String   @id @map("operation_id") @db.Uuid
+  checkpoint    String   @map("checkpoint") @db.Uuid
+  responseId    String   @map("response_id") @db.Uuid
+  actorId       String   @map("actor_id")
+  leaseId       String   @map("lease_id") @db.Uuid
+  authSessionId String   @map("auth_session_id")
+  formId        String   @map("form_id") @db.Uuid
+  documentKey   String   @map("document_key")
+  state         String   @default("prepared")
+  generation    Int      @default(0)
+  createdAt     DateTime @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@unique([responseId, actorId, checkpoint])
+  @@index([responseId, state])
+  @@map("ecm_attachment_batches")
+}
+
+/// Canonical proven provider resource; upload attempts remain separate immutable evidence.
+model EcmAttachmentIdentity {
+  id         String @id @default(uuid()) @db.Uuid
+  accountKey String @map("account_key")
+  fileToken  String @map("file_token")
+  fileLink   String @map("file_link")
+  state      String @default("active")
+  versions   EcmAttachmentVersion[]
+
+  @@unique([accountKey, fileToken])
+  @@unique([accountKey, fileLink])
+  @@map("ecm_attachment_identities")
+}
+
+model EcmAttachmentVersion {
+  id               String    @id @db.Uuid
+  operationId      String    @map("operation_id") @db.Uuid
+  responseId       String    @map("response_id") @db.Uuid
+  accountKey       String    @map("account_key")
+  bindingId        String    @map("binding_id")
+  tag              String
+  rowIndex         Int?      @map("row_index")
+  filename         String
+  originalName     String    @map("original_name")
+  sizeBytes        Int       @map("size_bytes")
+  originalSha256   String?   @map("original_sha256") @db.Char(64)
+  fiscalYear       String?   @map("fiscal_year")
+  documentNumber   String    @map("document_number")
+  category         String
+  state            String    @default("prepared")
+  fileLink         String?   @map("file_link")
+  fileToken        String?   @map("file_token")
+  identityId       String?   @map("identity_id") @db.Uuid
+  identity         EcmAttachmentIdentity? @relation(fields: [identityId], references: [id], onDelete: Restrict)
+  overwriteIdentityIds String[] @default([]) @map("overwrite_identity_ids") @db.Uuid
+  storageMode      String    @default("legacy") @map("storage_mode")
+  templateName     String?   @map("template_name")
+  storageTemplateId String?  @map("storage_template_id") @db.Uuid
+  documentCategoryId Int?    @map("document_category_id")
+  sentAt           DateTime? @map("sent_at") @db.Timestamptz(3)
+  receivedAt       DateTime? @map("received_at") @db.Timestamptz(3)
+  requestSettledAt DateTime? @map("request_settled_at") @db.Timestamptz(3)
+  generation       Int       @default(0)
+  updatedAt        DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@index([operationId, state])
+  @@index([responseId])
+  @@index([identityId])
+  @@index([accountKey, filename])
+  @@index([fileToken])
+  @@map("ecm_attachment_versions")
+}
+
+model EcmAttachmentReference {
+  versionId  String @map("version_id") @db.Uuid
+  snapshotId String @map("snapshot_id")
+  responseId String @map("response_id") @db.Uuid
+  /// Current physical table position in this snapshot; null also preserves unknown legacy mappings.
+  rowIndex   Int?   @map("row_index")
+
+  @@id([versionId, snapshotId])
+  @@index([responseId])
+  @@map("ecm_attachment_references")
+}
+
+/// One initial cleanup attempt belongs to the explicit operation that retired the reference.
+model EcmAttachmentCleanup {
+  operationId    String    @map("operation_id") @db.Uuid
+  versionId      String    @map("version_id") @db.Uuid
+  responseId     String    @map("response_id") @db.Uuid
+  formId         String?   @map("form_id") @db.Uuid
+  deletionCaseId String?   @map("deletion_case_id") @db.Uuid
+  state          String    @default("pending")
+  attemptedAt    DateTime? @map("attempted_at") @db.Timestamptz(3)
+  generation     Int       @default(0)
+  confirmedBy    String?   @map("confirmed_by")
+  confirmedAt    DateTime? @map("confirmed_at") @db.Timestamptz(3)
+  evidence       Json?
+  createdAt      DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt      DateTime  @default(now()) @updatedAt @map("updated_at") @db.Timestamptz(3)
+
+  @@id([operationId, versionId])
+  @@index([responseId, state])
+  @@index([versionId, state])
+  @@index([deletionCaseId, state])
+  @@map("ecm_attachment_cleanups")
 }

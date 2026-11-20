@@ -3,6 +3,15 @@ const cloneValue = (value) => JSON.parse(JSON.stringify(value));
 const parsedNativeState = (value) =>
   typeof value === "string" ? JSON.parse(value) : value;
 const fieldValue = (field, scalar) => ({
+  attachment: field.attachment
+    ? {
+        category: field.attachment.category ?? null,
+        document_category_id: field.attachment.document_category_id ?? null,
+        mode: field.attachment.mode ?? "legacy",
+        storage_template_id: field.attachment.storage_template_id ?? null,
+        template_name: field.attachment.template_name ?? null,
+      }
+    : null,
   computed: field.computed ?? false,
   id: field.id,
   key: field.key,
@@ -58,6 +67,14 @@ export const spreadsheetBindingAttempt = ({
   }
   if (change.kind === "table") {
     expected.table = change.action === "delete" ? null : change.value;
+    if (expected.table?.columns && !previous.table) {
+      const columnIds = new Set(
+        expected.table.columns.map((column) => column.id)
+      );
+      expected.fields = expected.fields.filter(
+        (field) => !field.attachment || !columnIds.has(field.id)
+      );
+    }
   } else {
     const property =
       change.kind === "field" ? expected.fields : expected.table.columns;

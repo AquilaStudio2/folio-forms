@@ -5,6 +5,10 @@ import { useEffect, useRef, useState } from "react";
 
 import { PageHeader } from "@/components/app-shell";
 import {
+  isResponseDeleteConflict,
+  ResponseDeleteConflictNotice,
+} from "@/components/response-delete-conflict";
+import {
   SubmissionResultViewer,
   SubmissionRevisionHistory,
 } from "@/components/submission-result-viewer";
@@ -20,6 +24,7 @@ import type {
   AdminResultDetail,
   ReceiptField,
   ResponseRevisionsResponse,
+  ResponseDeletionOutcome,
 } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 
@@ -75,6 +80,11 @@ const RevisionSelector = ({
       onChange={(event) => setViewRevision(Number(event.currentTarget.value))}
       value={viewRevision}
     >
+      {history.some((revision) => revision.revision === viewRevision) ? null : (
+        <option value={viewRevision} disabled>
+          {historyLoading ? "กำลังโหลด Revision…" : "ไม่พบ Revision ที่เลือก"}
+        </option>
+      )}
       {history.map((revision) => (
         <option key={revision.revision} value={revision.revision}>
           {revision.revision === 0
@@ -98,11 +108,10 @@ const deletionErrorMessage = (caughtError: unknown) => {
   }
   return "ลบคำตอบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
 };
-// oxlint-disable-next-line complexity -- The detail route owns read, history, export, and deletion states.
-const AdminResultDetailRoute = () => {
+// oxlint-disable-next-line complexity -- The detail owns read, history, export, and deletion states.
+const AdminResultDetailPage = ({ responseId }: { responseId: string }) => {
   const { user } = useAuth();
   const canManage = user?.role === "admin";
-  const { responseId } = useParams({ from: "/admin/results/$responseId/" });
   const [result, setResult] = useState<AdminResultDetail | null>(null);
   const [viewRevision, setViewRevision] = useState<number | null>(null);
   const [history, setHistory] = useState<
@@ -121,8 +130,16 @@ const AdminResultDetailRoute = () => {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [deleteSuccess, setDeleteSuccess] = useState(false);
+  const [deleteCleanupWarning, setDeleteCleanupWarning] = useState<
+    string | null
+  >(null);
+  const [deleteReload, setDeleteReload] = useState<{
+    responseId: string;
+  } | null>(null);
+  const deleteWarningRef = useRef<HTMLDivElement | null>(null);
   const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
   const deleteFeedbackRef = useRef<HTMLDivElement | null>(null);
+  const selectedRevision = viewRevision ?? result?.revision ?? 0;
   useEffect(() => {
     let cancelled = false;
     const loadResult = async () => {
@@ -151,12 +168,13 @@ const AdminResultDetailRoute = () => {
     return () => {
       cancelled = true;
     };
-  }, [responseId]);
+  }, [responseId, deleteReload]);
 
   useEffect(() => {
     if (!result || result.state !== "submitted" || !result.submissionId) {
       return;
     }
+    const { submissionId, revision } = result;
     let cancelled = false;
     setHistoryLoading(true);
     setHistoryError(null);
@@ -164,11 +182,14 @@ const AdminResultDetailRoute = () => {
     const loadHistory = async () => {
       try {
         const historyResult = await apiGet<ResponseRevisionsResponse>(
-          `/api/responses/${responseId}/corrections`
+          `/api/submissions/${submissionId}/corrections`
         );
         if (!cancelled) {
-          setHistory(historyResult.revisions);
-          setViewRevision(historyResult.latestRevision);
+          setHistory(
+            historyResult.revisions.filter(
+              (entry) => entry.revision <= (revision ?? 0)
+            )
+          );
         }
       } catch {
         if (!cancelled) {
@@ -185,12 +206,11 @@ const AdminResultDetailRoute = () => {
     return () => {
       cancelled = true;
     };
-  }, [responseId, result]);
+  }, [result]);
   useEffect(() => {
     if (!result || result.state !== "submitted" || !result.submissionId) {
       return;
     }
-    const selectedRevision = viewRevision ?? result.latestCorrectionNumber ?? 0;
     let cancelled = false;
     setFields([]);
     setFieldsRevision(null);
@@ -214,7 +234,7 @@ const AdminResultDetailRoute = () => {
     return () => {
       cancelled = true;
     };
-  }, [result, viewRevision]);
+  }, [result, selectedRevision]);
   useEffect(() => {
     if (deleteConfirmation) {
       document
@@ -228,6 +248,11 @@ const AdminResultDetailRoute = () => {
       deleteFeedbackRef.current?.focus();
     }
   }, [deleteError, deleteSuccess]);
+  useEffect(() => {
+    if (deleteReload?.responseId === responseId) {
+      deleteWarningRef.current?.focus();
+    }
+  }, [deleteReload, responseId]);
 
   const requestDelete = (trigger: HTMLButtonElement) => {
     deleteTriggerRef.current = trigger;
@@ -252,12 +277,29 @@ const AdminResultDetailRoute = () => {
     setDeleting(true);
     setDeleteError(null);
     try {
-      await apiDelete(`/api/admin/responses/${responseId}`, { confirm: true });
+      const outcome = await apiDelete<ResponseDeletionOutcome>(
+        `/api/admin/responses/${responseId}`,
+        { confirm: true }
+      );
+      setDeleteCleanupWarning(outcome.attachmentCleanup.warning);
       setDeleteConfirmation(false);
       setResult(null);
       setDeleteSuccess(true);
     } catch (caughtError) {
-      setDeleteError(deletionErrorMessage(caughtError));
+      if (isResponseDeleteConflict(caughtError)) {
+        deleteTriggerRef.current = null;
+        setDeleteConfirmation(false);
+        setResult(null);
+        setHistory([]);
+        setHistoryError(null);
+        setViewRevision(null);
+        setFieldsRevision(null);
+        setLoading(true);
+        setError(null);
+        setDeleteReload({ responseId });
+      } else {
+        setDeleteError(deletionErrorMessage(caughtError));
+      }
     } finally {
       setDeleting(false);
     }
@@ -292,10 +334,14 @@ const AdminResultDetailRoute = () => {
         role="status"
         tabIndex={-1}
       >
-        <Notice tone="success">
+        <Notice tone={deleteCleanupWarning ? "neutral" : "success"}>
           <strong>ลบข้อมูลคำตอบถาวรแล้ว</strong>
-          <div>ระบบลบข้อมูลส่วนบุคคล เอกสาร และข้อมูล Prefill ที่เกี่ยวข้องแล้ว</div>
+          <div>
+            ข้อมูลคำตอบ เอกสารหลัก และข้อมูล Prefill ถูกลบแล้ว
+            สถานะไฟล์แนบแยกจากผลลบข้อมูล
+          </div>
         </Notice>
+        {deleteCleanupWarning ? <Notice>{deleteCleanupWarning}</Notice> : null}
         <Link search={{ form: undefined }} to="/admin/results">
           <Button variant="secondary">กลับไปรายการผลลัพธ์</Button>
         </Link>
@@ -303,10 +349,31 @@ const AdminResultDetailRoute = () => {
     );
   }
 
+  const recoveringDeletion = deleteReload?.responseId === responseId;
+  const waitingForRevision =
+    recoveringDeletion && result?.state === "submitted" && history.length === 0;
+  const deleteWarning =
+    recoveringDeletion && !deleteConfirmation ? (
+      <ResponseDeleteConflictNotice
+        action="ลบ"
+        failed={Boolean(error || historyError || (!loading && !result))}
+        loading={loading || waitingForRevision}
+        ref={deleteWarningRef}
+        subject="คำตอบ"
+      />
+    ) : null;
   if (loading) {
-    return <Spinner />;
+    return (
+      <>
+        {deleteWarning}
+        <Spinner />
+      </>
+    );
   }
   if (error || !result) {
+    if (deleteWarning) {
+      return <>{deleteWarning}</>;
+    }
     return (
       <Notice tone="danger">
         <strong>เปิดผลลัพธ์ไม่สำเร็จ</strong>
@@ -316,17 +383,15 @@ const AdminResultDetailRoute = () => {
   }
   const isSubmitted = result.state === "submitted";
   const isDraft = !isSubmitted;
-  const latestRevision =
-    history.at(-1)?.revision ?? result.latestCorrectionNumber ?? 0;
-  const selectedRevision = viewRevision ?? latestRevision;
   const selectedRevisionRecord = history.find(
     (revision) => revision.revision === selectedRevision
   );
   let viewerConfigUrl: string | undefined;
-  if (isSubmitted && selectedRevisionRecord) {
-    viewerConfigUrl = `/api/admin/results/${responseId}/viewer-config?revision=${selectedRevision}`;
+  const viewerPath = `/api/admin/results/${responseId}/viewer-config`;
+  if (isSubmitted && result.submissionId && selectedRevisionRecord) {
+    viewerConfigUrl = `${viewerPath}?submissionId=${result.submissionId}&revision=${selectedRevision}`;
   } else if (isDraft && result.document.available) {
-    viewerConfigUrl = `/api/admin/results/${responseId}/viewer-config`;
+    viewerConfigUrl = `${viewerPath}?draftUpdatedAt=${encodeURIComponent(result.updatedAt)}`;
   }
   let submittedDataLabel = "ข้อมูลต้นฉบับของ Submission";
   if (selectedRevision > 0) {
@@ -351,6 +416,7 @@ const AdminResultDetailRoute = () => {
   }
   return (
     <>
+      {deleteWarning}
       {canManage && deleteConfirmation ? (
         <div
           className="fixed inset-0 z-50 grid place-items-center bg-black/35 px-5"
@@ -466,7 +532,9 @@ const AdminResultDetailRoute = () => {
                 type="button"
                 variant="danger"
                 onClick={(event) => requestDelete(event.currentTarget)}
-                disabled={deleting || downloading !== null}
+                disabled={
+                  deleting || downloading !== null || waitingForRevision
+                }
               >
                 <Trash2 size={16} />
                 ลบคำตอบถาวร
@@ -529,6 +597,11 @@ const AdminResultDetailRoute = () => {
       </div>
     </>
   );
+};
+
+const AdminResultDetailRoute = () => {
+  const { responseId } = useParams({ from: "/admin/results/$responseId/" });
+  return <AdminResultDetailPage key={responseId} responseId={responseId} />;
 };
 
 export const Route = createFileRoute("/admin/results/$responseId/")({

@@ -44,7 +44,6 @@ const native = enabled
   : null;
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   pdmsProjects: upstream
     ? { baseUrl: upstream.url.origin, secret: "synthetic-popup-provider" }
     : null,
@@ -190,6 +189,7 @@ nativeTest(
     const opening = crypto.randomUUID();
     interface Config {
       bridge: {
+        documentKey: string;
         id: string;
         capabilities: Record<string, string>;
         pdmsProjectPopup: { channelId: string; documentKey: string };
@@ -215,7 +215,7 @@ nativeTest(
     };
     let editor = await getConfig();
     expect(editor.bridge.pdmsProjectPopup).toMatchObject({
-      documentKey: editor.config.document.key,
+      documentKey: editor.bridge.documentKey,
       channelId: expect.any(String),
     });
     const popupGuid = editor.config.editorConfig.plugins.autostart.find(
@@ -229,7 +229,7 @@ nativeTest(
     }
     expect(editor.config.editorConfig.plugins.options[popupGuid]).toEqual({
       bridgeId: editor.bridge.id,
-      documentKey: editor.config.document.key,
+      documentKey: editor.bridge.documentKey,
       parentOrigin: expect.any(String),
       pdmsPopupChannelId: editor.bridge.pdmsProjectPopup.channelId,
     });
@@ -258,7 +258,7 @@ nativeTest(
         `/api/forms/${publicId}/draft`,
         editor.bridge.capabilities["save-draft"],
         {
-          documentKey: editor.config.document.key,
+          documentKey: editor.bridge.documentKey,
           responseId: response.id,
           fillMethod: "onlyoffice",
           data: {},
@@ -269,7 +269,7 @@ nativeTest(
             sessionId: editor.pdmsProjectCatalog.sessionId,
             ...(index === undefined
               ? {}
-              : { row: { index, documentKey: editor.config.document.key } }),
+              : { row: { index, documentKey: editor.bridge.documentKey } }),
           },
         }
       );
@@ -302,7 +302,7 @@ nativeTest(
       editor = await getConfig();
       expect(editor.pdmsProjectCatalog).toEqual(firstCatalog);
       expect(editor.bridge.pdmsProjectPopup.documentKey).toBe(
-        editor.config.document.key
+        editor.bridge.documentKey
       );
     };
     await choose("folio_project", "โครงการ ก");
@@ -381,6 +381,7 @@ nativeTest.each([200, 503])(
     interface Config {
       pdmsProjectCatalog?: { sessionId: string; names: string[] };
       bridge: {
+        documentKey: string;
         capabilities: Record<string, string>;
         pdmsProjectPopup?: unknown;
       };
@@ -399,17 +400,6 @@ nativeTest.each([200, 503])(
       source: "pdms-project-name",
       options: [],
     };
-    const mapped = await request(
-      `/api/admin/forms/${publicId}/spreadsheet-bindings`,
-      initial.bridge.capabilities["configure-fields"],
-      {
-        documentKey,
-        revision: 1,
-        change: { action: "upsert", kind: "field", value: field },
-      },
-      "PATCH"
-    );
-    expect(mapped.status).toBe(200);
     // The actual button's native flush supplies the new anchor and all ordinary unsaved edits.
     const names = { folio_created: "'Form'!$A$1:$B$1" };
     snapshot = fixtureWorkbook({
@@ -417,16 +407,19 @@ nativeTest.each([200, 503])(
       merges: ["A1:B1"],
       cells: [{ address: "D1", value: "unsaved template note" }],
     });
-    const renewedResponse = await request(path);
-    expect(renewedResponse.status).toBe(200);
-    const renewed = (await renewedResponse.json()) as Config;
-    expect(renewed.pdmsProjectCatalog?.names).toEqual(
-      status === 200 ? ["โครงการ ก", "00123"] : []
-    );
     const saved = await request(
       `/api/admin/forms/${publicId}/save`,
-      renewed.bridge.capabilities["save-template"],
-      { documentKey, spreadsheetAnchors: Object.entries(names) }
+      initial.bridge.capabilities["save-template"],
+      {
+        documentKey,
+        spreadsheetAnchors: Object.entries(names),
+        xlsxDraft: {
+          bindings: { fields: [field], table: null, version: 1 },
+          checkpoint: crypto.randomUUID(),
+          revision: 1,
+          version: 1,
+        },
+      }
     );
     expect(saved.status).toBe(202);
     const job = (await saved.json()) as {
@@ -452,8 +445,10 @@ nativeTest.each([200, 503])(
     const reopened = await request(path);
     expect(reopened.status).toBe(200);
     const current = (await reopened.json()) as Config;
-    expect(current.config.document.key).not.toBe(documentKey);
-    expect(current.pdmsProjectCatalog).toEqual(renewed.pdmsProjectCatalog);
+    expect(current.bridge.documentKey).not.toBe(documentKey);
+    expect(current.pdmsProjectCatalog?.names).toEqual(
+      status === 200 ? ["โครงการ ก", "00123"] : []
+    );
     expect(current.bridge.pdmsProjectPopup).toBeDefined();
     expect(providerRequests - before).toBe(1);
     const downloaded = await request(

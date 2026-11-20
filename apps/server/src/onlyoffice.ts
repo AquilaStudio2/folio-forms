@@ -3,13 +3,17 @@ import { createHmac, randomUUID, timingSafeEqual } from "node:crypto";
 import { isDeepStrictEqual } from "node:util";
 
 import { env } from "@onlyoffice/env/server";
+import { z } from "zod";
 
+import type { XlsxDraftIssue } from "./documents/spreadsheets/draft-diagnosis";
 import { uploadPocGuid } from "./documents/spreadsheets/upload-poc-preview";
 import { fail } from "./http/errors";
 import type { PdmsProjectCatalog } from "./pdms/catalog";
 
 export const pluginGuid = "asc.{E0B14962-3B9D-4E82-923E-89A93E8A1A51}";
 export const pdmsPopupGuid = "asc.{1ABF6AE1-DB72-42D2-A8EC-9056A50EFB94}";
+export const attachmentCategoryPopupGuid =
+  "asc.{0C8FD452-D078-4A2E-A973-83F927C76CE3}";
 
 const tokenLifetimeSeconds = 5 * 60;
 const operationCapabilityLifetimeSeconds = tokenLifetimeSeconds + 60;
@@ -79,6 +83,7 @@ export interface EditorCapabilityClaims {
   action: EditorCapabilityAction;
   actorId: string;
   documentKey: string;
+  documentServerKey?: string;
   expiresAt: number;
   formId: string;
   issuedAt: number;
@@ -98,6 +103,7 @@ export interface EditorCapabilityInput {
   action: EditorCapabilityAction;
   actorId: string;
   documentKey: string;
+  documentServerKey?: string;
   expiresAt?: number;
   formId: string;
   isSso?: boolean;
@@ -113,6 +119,7 @@ export interface EditorCapabilityInput {
 
 export interface CallbackClaim {
   documentKey: string;
+  documentServerKey: string;
   expiresAt: number;
   kind: "onlyoffice-callback";
   operationId: string;
@@ -121,6 +128,7 @@ export interface CallbackClaim {
 
 export interface CallbackClaimInput {
   documentKey: string;
+  documentServerKey: string;
   expiresAt?: number;
   operationId: string;
   operationType: string;
@@ -129,6 +137,12 @@ export interface CallbackClaimInput {
 export interface EditorOptions {
   documentKind?: "docx" | "xlsx";
   spreadsheetBindings?: unknown;
+  xlsxDraftProtocol?: 1;
+  xlsxDraftRevision?: number;
+  xlsxDraftIssues?: XlsxDraftIssue[];
+  attachmentSavedData?: unknown;
+  attachmentCleanupWarning?: string | null;
+  attachmentMutationNotice?: string | null;
   pdmsProjectCatalog?: PdmsProjectCatalog;
   pdmsProjectEnabled?: boolean;
   uploadPocSavedButtons?: {
@@ -146,6 +160,8 @@ export interface EditorOptions {
     renewUrl: string;
   };
   documentKey: string;
+  templateDraftObjectKey?: string;
+  documentServerKey?: string;
   operationId?: string;
   prefill?: {
     data: Record<string, unknown>;
@@ -155,6 +171,41 @@ export interface EditorOptions {
   responseId?: string;
   submissionId?: string;
   tagAliases?: Record<string, string>;
+}
+
+const documentServerKeyPattern = /^folio-xlsx-[a-f0-9]{64}$/u;
+
+export function isDocumentServerKey(value: unknown): value is string {
+  return typeof value === "string" && documentServerKeyPattern.test(value);
+}
+
+/** One opening survives capability/lease refresh, never a closed native cache reuse. */
+export function xlsxEditorOpening(
+  documentKey: string,
+  ownerScope: string,
+  requestedOpeningId?: unknown
+): { documentServerKey: string; openingId: string } {
+  const opening = z.uuid().safeParse(requestedOpeningId ?? randomUUID());
+  if (!opening.success) {
+    fail(400, "invalid_editor_opening", "Editor opening identity is invalid");
+  }
+  return {
+    documentServerKey: `folio-xlsx-${createHmac(
+      "sha256",
+      env.EDITOR_CAPABILITY_SECRET
+    )
+      // Rotate pre-guard native caches without changing canonical document identity.
+      .update(
+        JSON.stringify([
+          "protected-physical-rows",
+          documentKey,
+          ownerScope,
+          opening.data,
+        ])
+      )
+      .digest("hex")}`,
+    openingId: opening.data,
+  };
 }
 
 interface ConverterResponse {
@@ -306,7 +357,11 @@ function validPdmsCatalogScope(claims: JsonRecord): boolean {
 }
 
 function validOperationScope(claims: JsonRecord): boolean {
-  if (!validPdmsCatalogScope(claims)) {
+  if (
+    !validPdmsCatalogScope(claims) ||
+    (claims.documentServerKey !== undefined &&
+      !isDocumentServerKey(claims.documentServerKey))
+  ) {
     return false;
   }
   if (claims.action === "poll-operation") {
@@ -402,10 +457,49 @@ export function verifyDocumentAccessToken(
   );
 }
 
+export function verifyEditableSpreadsheetToken(
+  token: string,
+  documentKey: string
+): string | null {
+  const claims = verifiedTokenPayload(token, env.ONLYOFFICE_JWT_SECRET);
+  return claims?.kind === "onlyoffice-editable-spreadsheet" &&
+    claims.documentKey === documentKey &&
+    liveExpiry(claims.expiresAt) &&
+    typeof claims.objectKey === "string"
+    ? claims.objectKey
+    : null;
+}
+
+interface SavedSpreadsheetSnapshot {
+  objectKey: string;
+  publishedTemplateId: string;
+}
+
+export function verifySavedSpreadsheetToken(
+  token: string,
+  documentKey: string
+): SavedSpreadsheetSnapshot | null {
+  const claims = verifiedTokenPayload(token, env.ONLYOFFICE_JWT_SECRET);
+  if (
+    claims?.kind !== "onlyoffice-saved-spreadsheet" ||
+    claims.documentKey !== documentKey ||
+    !liveExpiry(claims.expiresAt) ||
+    typeof claims.objectKey !== "string" ||
+    typeof claims.publishedTemplateId !== "string"
+  ) {
+    return null;
+  }
+  return {
+    objectKey: claims.objectKey,
+    publishedTemplateId: claims.publishedTemplateId,
+  };
+}
+
 export function createCallbackUserdata(input: CallbackClaimInput): string {
   return signToken(
     {
       documentKey: input.documentKey,
+      documentServerKey: input.documentServerKey,
       expiresAt: input.expiresAt ?? expiresIn(tokenLifetimeSeconds),
       kind: "onlyoffice-callback",
       operationId: input.operationId,
@@ -426,6 +520,7 @@ export function callbackClaim(value: unknown): CallbackClaim | null {
     typeof claims.operationId !== "string" ||
     !uuidPattern.test(claims.operationId) ||
     typeof claims.operationType !== "string" ||
+    typeof claims.documentServerKey !== "string" ||
     !liveExpiry(claims.expiresAt)
   ) {
     return null;
@@ -484,9 +579,47 @@ export function verifyOnlyOfficeAuthorization(
   );
 }
 
+function documentUrlFor(
+  documentKey: string,
+  baseUrl: string,
+  pdfOnly = false,
+  snapshot?: SavedSpreadsheetSnapshot
+): string {
+  const token = snapshot
+    ? signToken(
+        {
+          ...snapshot,
+          documentKey,
+          expiresAt: expiresIn(tokenLifetimeSeconds),
+          kind: "onlyoffice-saved-spreadsheet",
+        },
+        env.ONLYOFFICE_JWT_SECRET
+      )
+    : createDocumentAccessToken(documentKey);
+  const exportMode = pdfOnly ? "&pdf=1" : "";
+  const mode = snapshot ? "&readonly=1" : exportMode;
+  return `${trimOrigin(baseUrl)}/onlyoffice/document/${encodeURIComponent(documentKey)}?token=${encodeURIComponent(token)}${mode}`;
+}
+
 export function documentUrl(documentKey: string): string {
-  const token = createDocumentAccessToken(documentKey);
-  return `${trimOrigin(env.ONLYOFFICE_DOCUMENT_BASE_URL)}/onlyoffice/document/${encodeURIComponent(documentKey)}?token=${encodeURIComponent(token)}`;
+  return documentUrlFor(documentKey, env.ONLYOFFICE_DOCUMENT_BASE_URL);
+}
+
+function editableSpreadsheetDocumentUrl(
+  documentKey: string,
+  objectKey: string
+): string {
+  const token = signToken(
+    {
+      documentKey,
+      expiresAt: expiresIn(tokenLifetimeSeconds),
+      kind: "onlyoffice-editable-spreadsheet",
+      objectKey,
+    },
+    env.ONLYOFFICE_JWT_SECRET
+  );
+  const base = trimOrigin(env.ONLYOFFICE_DOCUMENT_BASE_URL);
+  return `${base}/onlyoffice/document/${encodeURIComponent(documentKey)}?token=${encodeURIComponent(token)}&editable=1`;
 }
 
 // oxlint-disable-next-line complexity -- Compose the existing plugin capabilities and optional source popup in one signed editor config.
@@ -498,10 +631,27 @@ export function editorConfig(
   const wordFileType = options.action === "template-edit" ? "docx" : "docxf";
   const documentFileType =
     options.documentKind === "xlsx" ? "xlsx" : wordFileType;
-  const { capabilities, lease, ...pluginOptions } = options;
+  const { capabilities, documentServerKey, lease, ...pluginOptions } = options;
+  const nativeKey =
+    options.documentKind === "xlsx" ? documentServerKey : options.documentKey;
+  if (
+    !nativeKey ||
+    (options.documentKind === "xlsx" &&
+      !documentServerKeyPattern.test(nativeKey))
+  ) {
+    fail(
+      500,
+      "invalid_editor_identity",
+      "The native editor identity is unavailable"
+    );
+  }
   const officeServerOrigin = trimOrigin(env.ONLYOFFICE_DOCUMENT_BASE_URL);
   const browserServerOrigin = trimOrigin(env.API_BASE);
   const bridgeId = crypto.randomUUID();
+  const attachmentCategoryPopup =
+    options.documentKind === "xlsx" && options.action === "template-edit"
+      ? { channelId: randomUUID(), documentKey: options.documentKey }
+      : undefined;
   const pdmsProjectPopup =
     options.documentKind === "xlsx" && options.pdmsProjectCatalog
       ? { channelId: randomUUID(), documentKey: options.documentKey }
@@ -511,12 +661,18 @@ export function editorConfig(
       ? {
           action: options.action,
           bridgeId,
+          cleanupWarning: options.attachmentCleanupWarning ?? null,
           documentKey: options.documentKey,
+          mutationNotice: options.attachmentMutationNotice ?? null,
           parentOrigin: exactOrigin(env.CORS_ORIGIN),
+          publicId: options.publicId,
+          responseId: options.responseId,
+          savedData: options.attachmentSavedData,
           scopeIdentity: JSON.stringify([
             user.id,
             options.publicId,
             options.responseId ?? "template",
+            ...(options.action === "correction" ? ["correction"] : []),
           ]),
           spreadsheetBindings: options.spreadsheetBindings,
           ...(options.action === "template-edit"
@@ -527,7 +683,7 @@ export function editorConfig(
   const config = {
     document: {
       fileType: documentFileType,
-      key: options.documentKey,
+      key: nativeKey,
       permissions: {
         comment: false,
         download: false,
@@ -540,7 +696,12 @@ export function editorConfig(
         review: false,
       },
       title: `${options.action}-${options.publicId}.${documentFileType}`,
-      url: documentUrl(options.documentKey),
+      url: options.templateDraftObjectKey
+        ? editableSpreadsheetDocumentUrl(
+            options.documentKey,
+            options.templateDraftObjectKey
+          )
+        : documentUrl(options.documentKey),
     },
     documentType: options.documentKind === "xlsx" ? "cell" : "word",
     editorConfig: {
@@ -555,9 +716,24 @@ export function editorConfig(
       callbackUrl: `${officeServerOrigin}/onlyoffice/callback`,
       mode: "edit",
       plugins: {
-        autostart: [pluginGuid, ...(pdmsProjectPopup ? [pdmsPopupGuid] : [])],
+        autostart: [
+          pluginGuid,
+          ...(pdmsProjectPopup ? [pdmsPopupGuid] : []),
+          ...(attachmentCategoryPopup ? [attachmentCategoryPopupGuid] : []),
+        ],
         disable: ["asc.{9DC93CDB-B576-4F0C-B55E-FCC9C48DD007}"],
         options: {
+          ...(attachmentCategoryPopup
+            ? {
+                [attachmentCategoryPopupGuid]: {
+                  attachmentCategoryPopupChannelId:
+                    attachmentCategoryPopup.channelId,
+                  bridgeId,
+                  documentKey: options.documentKey,
+                  parentOrigin: exactOrigin(env.CORS_ORIGIN),
+                },
+              }
+            : {}),
           ...(pdmsProjectPopup
             ? {
                 [pdmsPopupGuid]: {
@@ -571,6 +747,15 @@ export function editorConfig(
           ...(uploadPocOptions ? { [uploadPocGuid]: uploadPocOptions } : {}),
           [pluginGuid]: {
             ...pluginOptions,
+            ...(options.xlsxDraftProtocol === 1
+              ? { xlsxDraftLeaseId: options.lease.id, xlsxDraftProtocol: 1 }
+              : {}),
+            ...(attachmentCategoryPopup
+              ? {
+                  attachmentCategoryPopupChannelId:
+                    attachmentCategoryPopup.channelId,
+                }
+              : {}),
             ...(pdmsProjectPopup
               ? { pdmsPopupChannelId: pdmsProjectPopup.channelId }
               : {}),
@@ -584,6 +769,11 @@ export function editorConfig(
         },
         pluginsData: [
           `${browserServerOrigin}/onlyoffice-plugin/config.json`,
+          ...(attachmentCategoryPopup
+            ? [
+                `${browserServerOrigin}/onlyoffice-plugin/attachment-category/config.json`,
+              ]
+            : []),
           ...(pdmsProjectPopup
             ? [
                 `${browserServerOrigin}/onlyoffice-plugin/pdms-project/config.json`,
@@ -611,10 +801,12 @@ export function editorConfig(
     apiUrl: trimOrigin(env.ONLYOFFICE_URL),
     bridge: {
       capabilities,
+      documentKey: options.documentKey,
       id: bridgeId,
       lease,
       pluginOrigin: exactOrigin(env.API_BASE),
       ...(pdmsProjectPopup ? { pdmsProjectPopup } : {}),
+      ...(attachmentCategoryPopup ? { attachmentCategoryPopup } : {}),
       ...(uploadPocOptions ? { uploadPoc: uploadPocOptions } : {}),
     },
     config: { ...config, token: signToken(config, env.ONLYOFFICE_JWT_SECRET) },
@@ -625,12 +817,16 @@ export function readOnlyViewerConfig(
   documentKey: string,
   publicId: string,
   user: { id: string; name: string },
-  documentKind: "docx" | "xlsx" = "docx"
+  documentKind: "docx" | "xlsx",
+  snapshot: SavedSpreadsheetSnapshot
 ): Record<string, unknown> {
   const config = {
     document: {
       fileType: documentKind,
-      key: documentKey,
+      key:
+        documentKind === "xlsx"
+          ? xlsxEditorOpening(documentKey, "read-only").documentServerKey
+          : documentKey,
       permissions: {
         comment: false,
         download: false,
@@ -639,7 +835,12 @@ export function readOnlyViewerConfig(
         review: false,
       },
       title: `submission-${publicId}.${documentKind}`,
-      url: documentUrl(documentKey),
+      url: documentUrlFor(
+        documentKey,
+        env.ONLYOFFICE_DOCUMENT_BASE_URL,
+        false,
+        documentKind === "xlsx" ? snapshot : undefined
+      ),
     },
     documentType: documentKind === "xlsx" ? "cell" : "word",
     editorConfig: {
@@ -658,7 +859,7 @@ export function readOnlyViewerConfig(
 
 export interface OnlyOfficeClient {
   forceSave: (
-    documentKey: string,
+    documentServerKey: string,
     userdata: string
   ) => Promise<boolean | { url: string }>;
   convertDocxToPdf: (
@@ -667,7 +868,7 @@ export interface OnlyOfficeClient {
     documentKind?: "docx" | "xlsx"
   ) => Promise<Uint8Array>;
   downloadEditorWorkbook: (input: {
-    documentKey: string;
+    documentServerKey: string;
     signal: AbortSignal;
     snapshotUrl: string;
   }) => Promise<Uint8Array>;
@@ -678,16 +879,6 @@ export interface OnlyOfficeClientOptions {
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
   internalUrl?: string;
   maxDownloadBytes?: number;
-}
-
-function documentUrlFor(
-  documentKey: string,
-  baseUrl: string,
-  pdfOnly = false
-): string {
-  const token = createDocumentAccessToken(documentKey);
-  const pdfParameter = pdfOnly ? "&pdf=1" : "";
-  return `${trimOrigin(baseUrl)}/onlyoffice/document/${encodeURIComponent(documentKey)}?token=${encodeURIComponent(token)}${pdfParameter}`;
 }
 
 function converterResponseError(payload: unknown): string | null {
@@ -765,10 +956,10 @@ const workbookCacheParameters = new Set([
 ]);
 
 // oxlint-disable-next-line complexity -- Validate the pinned editor's signed cache URL before making an upstream request.
-function workbookCachePath(value: string, documentKey: string): string {
+function workbookCachePath(value: string, documentServerKey: string): string {
   const publicOffice = new URL(env.ONLYOFFICE_URL);
   const publicPrefix = trimOrigin(publicOffice.pathname);
-  const expectedPrefix = `${publicPrefix}/cache/files/data/${documentKey}_`;
+  const expectedPrefix = `${publicPrefix}/cache/files/data/${documentServerKey}_`;
   const url = URL.canParse(value) ? new URL(value) : null;
   if (
     !url ||
@@ -796,7 +987,7 @@ function workbookCachePath(value: string, documentKey: string): string {
     !cacheSignature.test(searchParams.get("md5") ?? "") ||
     !cacheExpiration.test(expiration) ||
     Number(expiration) <= Math.floor(Date.now() / 1000) ||
-    shardKey !== documentKey
+    shardKey !== documentServerKey
   ) {
     fail(
       400,
@@ -875,8 +1066,8 @@ export function createOnlyOfficeClient(
       return boundedResponseBytes(pdfResponse, maximumDownloadBytes);
     },
 
-    async downloadEditorWorkbook({ documentKey, signal, snapshotUrl }) {
-      const path = workbookCachePath(snapshotUrl, documentKey);
+    async downloadEditorWorkbook({ documentServerKey, signal, snapshotUrl }) {
+      const path = workbookCachePath(snapshotUrl, documentServerKey);
       try {
         const response = await request(`${trimOrigin(internalUrl)}${path}`, {
           redirect: "error",
@@ -897,9 +1088,12 @@ export function createOnlyOfficeClient(
       }
     },
 
-    async forceSave(documentKey, userdata): Promise<boolean | { url: string }> {
-      const endpoint = `${trimOrigin(internalUrl)}/command?shardkey=${encodeURIComponent(documentKey)}`;
-      const command = { c: "forcesave", key: documentKey, userdata };
+    async forceSave(
+      documentServerKey,
+      userdata
+    ): Promise<boolean | { url: string }> {
+      const endpoint = `${trimOrigin(internalUrl)}/command?shardkey=${encodeURIComponent(documentServerKey)}`;
+      const command = { c: "forcesave", key: documentServerKey, userdata };
       const response = await request(endpoint, {
         body: JSON.stringify(command),
         headers: {

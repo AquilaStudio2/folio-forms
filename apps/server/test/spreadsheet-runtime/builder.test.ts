@@ -116,7 +116,7 @@ describe.skipIf(process.env.RUN_SPREADSHEET_RUNTIME !== "1")(
       }, 120_000);
     }
 
-    test("deletes the first row, then clears the final row without deleting template geometry", async () => {
+    test("deletes two rows to one, then rejects deleting the final row without changing its workbook", async () => {
       await runtime.runJob("rows-base.xlsx", {
         outputName: "one-row.xlsx",
         rowChange: {
@@ -132,21 +132,23 @@ describe.skipIf(process.env.RUN_SPREADSHEET_RUNTIME !== "1")(
       expect(one.cell("C4").formula).toBe("A4*B4+$E$1");
       expect(normalized(one.names.folio_agency)).toBe("Form!$A$7:$C$7");
       expect(one.cell("C5").value).toBe("21");
-      await runtime.runJob("one-row.xlsx", {
-        outputName: "empty-row.xlsx",
-        rowChange: {
-          action: "delete",
-          bodyName: "folio_body",
-          index: 0,
-          inputColumns: [0, 1],
-        },
-      });
-      const empty = workbookXml(await runtime.read("empty-row.xlsx"));
-      expect(normalized(empty.names.folio_body)).toBe("Form!$A$4:$C$4");
-      expect(empty.cell("A4").value).toBeUndefined();
-      expect(empty.cell("C4").formula).toBe("A4*B4+$E$1");
-      expect(normalized(empty.names.folio_agency)).toBe("Form!$A$7:$C$7");
-      expect(empty.cell("C5").value).toBe("1");
+      const before = await runtime.read("one-row.xlsx");
+      await expect(
+        runtime
+          .runJob("one-row.xlsx", {
+            clearRanges: ["A4:B4"],
+            outputName: "forbidden-empty-row.xlsx",
+            rowChange: {
+              action: "delete",
+              bodyName: "folio_body",
+              index: 0,
+              inputColumns: [0, 1],
+            },
+            values: [{ address: "A4", value: "must not be written" }],
+          })
+          .then(() => runtime.read("forbidden-empty-row.xlsx"))
+      ).rejects.toThrow();
+      expect(await runtime.read("one-row.xlsx")).toEqual(before);
     }, 120_000);
 
     test("copies an offset table starting at D and expands its absolute reference correctly", async () => {

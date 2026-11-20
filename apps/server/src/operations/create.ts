@@ -1,4 +1,5 @@
 import type {
+  DocumentKind,
   FillMethod,
   OperationTargetType,
   OperationType,
@@ -6,19 +7,23 @@ import type {
 import { prisma, Prisma, OperationStatus } from "@onlyoffice/db";
 
 import { databaseErrorCode } from "../db-errors";
+import { requireAttachmentMutationReady } from "../ecm/attachments";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type {
   ActionEditorAuthorization,
   EditorCapabilityScope,
 } from "../editor/authorization";
+import { requireDocumentServerKey } from "../editor/authorization";
 import { lockActiveEditorLease } from "../editor/leases";
 import { fail } from "../http/errors";
 import type { Operation } from "../model-types";
 import { jsonValue } from "../responses/data";
 import type { OperationMetadata } from "./model";
+import { objectCleanupIntentGraceMs } from "./object-cleanup";
 
 export async function createOperation(input: {
   actorId: string;
+  attachmentCheckpoint?: string;
   authorization: ActionEditorAuthorization;
   capabilityScope: Omit<EditorCapabilityScope, "action" | "operationId">;
   documentKey: string;
@@ -38,11 +43,12 @@ export async function createOperation(input: {
       const [lockedForm] = await tx.$queryRaw<
         {
           fillMethod: FillMethod;
+          documentKind: DocumentKind;
           id: string;
         }[]
       >(
         Prisma.sql`
-          SELECT "id", "fill_method" AS "fillMethod"
+          SELECT "id", "document_kind" AS "documentKind", "fill_method" AS "fillMethod"
           FROM "forms"
           WHERE "id" = ${input.formId}::uuid
           FOR UPDATE
@@ -62,6 +68,60 @@ export async function createOperation(input: {
         input.authorization,
         input.capabilityScope
       );
+      const candidate = input.metadata.xlsxDraft;
+      if (candidate) {
+        const draft = await tx.templateDraft.findFirst({
+          where: {
+            bindingRevision: candidate.revision,
+            documentKey: input.documentKey,
+            form: { publishedTemplate: null, status: { not: "published" } },
+            formId: input.formId,
+            id: input.targetId,
+          },
+        });
+        if (!draft) {
+          fail(
+            409,
+            "stale_document",
+            "The saved Excel draft changed; reopen before saving"
+          );
+        }
+        if (
+          await tx.operation.findFirst({
+            select: { id: true },
+            where: {
+              formId: input.formId,
+              metadata: {
+                equals: candidate.checkpoint,
+                path: ["xlsxDraft", "checkpoint"],
+              },
+            },
+          })
+        ) {
+          fail(
+            409,
+            "checkpoint_reused",
+            "This Excel save checkpoint was already admitted"
+          );
+        }
+        candidate.baseObjectKey = draft.objectKey;
+        candidate.baseContentHash = draft.contentHash;
+        candidate.leaseId = input.authorization.capability.leaseId;
+        const lease = await tx.editorLease.findUniqueOrThrow({
+          select: { holderSessionId: true },
+          where: { id: candidate.leaseId },
+        });
+        candidate.sessionId = lease.holderSessionId;
+        input.metadata.bindingRevision = draft.bindingRevision;
+        await tx.objectCleanupIntent.createMany({
+          data: [input.stagingObjectKey, input.metadata.finalObjectKey].map(
+            (objectKey) => ({
+              cleanupAfter: new Date(Date.now() + objectCleanupIntentGraceMs),
+              objectKey,
+            })
+          ),
+        });
+      }
       if (
         input.metadata.action === "save-correction" ||
         input.metadata.action === "save-correction-workspace"
@@ -83,6 +143,7 @@ export async function createOperation(input: {
             },
           }),
           tx.response.findUnique({
+            include: { prefillSnapshot: { select: { id: true } } },
             where: { id: input.responseId },
           }),
           input.submissionId
@@ -90,7 +151,7 @@ export async function createOperation(input: {
                 include: {
                   corrections: { orderBy: { revision: "desc" }, take: 1 },
                 },
-                where: { id: input.submissionId },
+                where: { id: input.submissionId, responseId: input.responseId },
               })
             : null,
         ]);
@@ -101,6 +162,14 @@ export async function createOperation(input: {
           !workspace ||
           !response ||
           response.formId !== input.formId ||
+          input.targetId !== response.id ||
+          input.metadata.responseId !== response.id ||
+          input.metadata.formId !== response.formId ||
+          input.metadata.workspaceDocumentKey !== input.documentKey ||
+          input.metadata.submissionId !== input.submissionId ||
+          (input.metadata.correctionStartSnapshotId !== undefined &&
+            input.metadata.correctionStartSnapshotId !==
+              (response.prefillSnapshot?.id ?? null)) ||
           !submission ||
           submission.responseId !== response.id ||
           (latest?.revision ?? 0) !== input.metadata.baseRevision ||
@@ -144,13 +213,27 @@ export async function createOperation(input: {
           "Another document operation is already in progress"
         );
       }
-      return tx.operation.create({
+      if (input.responseId) {
+        await requireAttachmentMutationReady(input.responseId, tx);
+      }
+      const metadata = {
+        ...input.metadata,
+        documentKind: lockedForm.documentKind,
+        documentServerKey:
+          lockedForm.documentKind === "xlsx"
+            ? requireDocumentServerKey(input.authorization)
+            : undefined,
+        ...(lockedForm.documentKind === "xlsx" && !input.attachmentCheckpoint
+          ? { nativeCaptureLeaseId: input.authorization.capability.leaseId }
+          : {}),
+      };
+      const operation = await tx.operation.create({
         data: {
           actorId: input.actorId,
           documentKey: input.documentKey,
           errorCode: null,
           formId: input.formId,
-          metadata: jsonValue(input.metadata),
+          metadata: jsonValue(metadata),
           ownerUserId: input.ownerUserId,
           responseId: input.responseId,
           stagingObjectKey: input.stagingObjectKey,
@@ -161,6 +244,48 @@ export async function createOperation(input: {
           type: input.type,
         },
       });
+      if (input.attachmentCheckpoint && input.responseId) {
+        const response = await tx.response.findUnique({
+          where: { id: input.responseId },
+        });
+        const lease = await tx.editorLease.findUnique({
+          where: {
+            targetType_targetId: {
+              targetId: input.responseId,
+              targetType: input.targetType,
+            },
+          },
+        });
+        if (
+          !response ||
+          (input.targetType !== "correction" &&
+            (response.userId !== input.actorId ||
+              response.status !== "draft" ||
+              response.draftDocumentKey !== input.documentKey)) ||
+          !lease
+        ) {
+          fail(409, "stale_response", "คำตอบหรือสิทธิ์ตัวแก้ไขเปลี่ยนแล้ว");
+        }
+        await tx.ecmAttachmentBatch.create({
+          data: {
+            actorId: input.actorId,
+            authSessionId: lease.holderSessionId,
+            checkpoint: input.attachmentCheckpoint,
+            documentKey: input.documentKey,
+            formId: input.formId,
+            leaseId: lease.id,
+            operationId: operation.id,
+            responseId: input.responseId,
+          },
+        });
+        if (input.metadata.action === "submit") {
+          await tx.response.update({
+            data: { status: "submitting" },
+            where: { id: input.responseId },
+          });
+        }
+      }
+      return operation;
     });
   } catch (error) {
     if (databaseErrorCode(error) === "P2002") {

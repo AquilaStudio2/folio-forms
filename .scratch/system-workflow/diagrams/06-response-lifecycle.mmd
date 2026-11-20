@@ -29,6 +29,7 @@ flowchart TD
     current -->|"submitted"| reopen --> kind
     kind -->|"docx"| docx --> config
     kind -->|"xlsx"| xlsx --> config
+    xlsx -.-> owned["จอง object key และบันทึก cleanup intent ก่อนเขียน workbook"]
     config --> method
     method -->|"onlyoffice"| office
     office -->|"ดาวน์โหลดในหน้ากรอก XLSX"| capture --> file

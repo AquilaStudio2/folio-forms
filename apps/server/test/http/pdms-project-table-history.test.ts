@@ -50,7 +50,6 @@ const native = enabled
   : null;
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   pdmsProjects: upstream
     ? { baseUrl: upstream.url.origin, secret: "table-history-fixture-secret" }
     : null,
@@ -133,7 +132,7 @@ const names = {
 };
 interface Editor {
   config: { document: { key: string } };
-  bridge: { capabilities: Record<string, string> };
+  bridge: { documentKey: string; capabilities: Record<string, string> };
   pdmsProjectCatalog: { sessionId: string; status: string; names: string[] };
   openingId: string;
 }
@@ -317,7 +316,7 @@ const createFixture = async () => {
       `/api/forms/${publicId}/${submit ? "submit" : "draft"}`,
       editor.bridge.capabilities[submit ? "submit" : "save-draft"] as string,
       {
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         responseId: response.id,
         fillMethod: "onlyoffice",
         data: {},
@@ -342,7 +341,7 @@ const createFixture = async () => {
           name,
           ...(index === undefined
             ? {}
-            : { row: { index, documentKey: editor.config.document.key } }),
+            : { row: { index, documentKey: editor.bridge.documentKey } }),
         },
       })
     );
@@ -501,7 +500,7 @@ historyTest(
         sessionId: editor.pdmsProjectCatalog.sessionId,
         bindingId: "folio_project",
         name: oldName,
-        row: { index: 1, documentKey: editor.config.document.key },
+        row: { index: 1, documentKey: editor.bridge.documentKey },
       },
     });
     expect(rejected.status).toBe(422);
@@ -546,7 +545,7 @@ historyTest(
     const expected = await fixture.data();
     projectNames = [currentName];
     editor = await fixture.open();
-    const unchangedKey = editor.config.document.key;
+    const unchangedKey = editor.bridge.documentKey;
     const rejectedSnapshots = [
       // Copy to an empty physical row or another managed Field.
       callbackBytes(baseline, { A4: oldName, C4: "copied record A" }),
@@ -574,7 +573,7 @@ historyTest(
       expect(await fixture.bytes()).toEqual(baseline);
       expect(await fixture.data()).toEqual(expected);
       const retained = await fixture.open(editor.openingId);
-      expect(retained.config.document.key).toBe(unchangedKey);
+      expect(retained.bridge.documentKey).toBe(unchangedKey);
       expect(retained.pdmsProjectCatalog).toEqual(editor.pdmsProjectCatalog);
     }
     // A canonical worker failure must not commit ordinary inputs before the
@@ -589,7 +588,7 @@ historyTest(
     expect(invalidRow.errorMessage).toBeString();
     expect(await fixture.bytes()).toEqual(baseline);
     expect(await fixture.data()).toEqual(expected);
-    expect((await fixture.open(editor.openingId)).config.document.key).toBe(
+    expect((await fixture.open(editor.openingId)).bridge.documentKey).toBe(
       unchangedKey
     );
     // Supplying the same text as a picker choice does not confer history.
@@ -635,7 +634,7 @@ historyTest(
 );
 
 historyTest(
-  "deleting the sole record clears its history and fences delayed choices, callback replays and native undo from the reused cell",
+  "ordinary tables reject sole-row deletion without clearing data, then append and delete preserve history fences",
   async () => {
     const oldName = "ชื่อประวัติที่ต้องไม่กลับมา";
     const currentName = "ชื่อสำหรับระเบียนใหม่";
@@ -656,10 +655,57 @@ historyTest(
       ).toBe("completed");
       editor = await fixture.open(editor.openingId);
     }
+    // Minimum counts physical body rows, not active answer objects or buttons.
+    const emptyRow = await fixture.bytes();
+    const emptyData = await fixture.data();
+    snapshot = emptyRow;
+    const emptyDelete = await waitFor(
+      await fixture.action(editor, {
+        rowChange: { action: "delete", index: 0 },
+      })
+    );
+    expect(emptyDelete.status).toBe("failed");
+    expect(await fixture.bytes()).toEqual(emptyRow);
+    expect(await fixture.data()).toEqual(emptyData);
+    expect((await fixture.open(editor.openingId)).bridge.documentKey).toBe(
+      editor.bridge.documentKey
+    );
     editor = await fixture.pick(editor, oldName, 0, {
       C4: "deleted record note",
       D1: "unrelated scalar note",
     });
+    const soleRecord = await fixture.bytes();
+    const soleData = await fixture.data();
+    snapshot = soleRecord;
+    for (let attempt = 0; attempt < 2; attempt += 1) {
+      const rejected = await waitFor(
+        await fixture.action(editor, {
+          rowChange: { action: "delete", index: 0 },
+        })
+      );
+      expect(rejected.status).toBe("failed");
+      expect(await fixture.bytes()).toEqual(soleRecord);
+      expect(await fixture.data()).toEqual(soleData);
+      expect((await fixture.open(editor.openingId)).bridge.documentKey).toBe(
+        editor.bridge.documentKey
+      );
+    }
+    const racingDeletes = await Promise.all([
+      fixture.action(editor, { rowChange: { action: "delete", index: 0 } }),
+      fixture.action(editor, { rowChange: { action: "delete", index: 0 } }),
+    ]);
+    for (const accepted of racingDeletes) {
+      expect([202, 409]).toContain(accepted.status);
+      if (accepted.status === 202) {
+        const rejected = await waitFor(accepted);
+        expect(rejected.status).toBe("failed");
+      }
+    }
+    expect(await fixture.bytes()).toEqual(soleRecord);
+    expect(await fixture.data()).toEqual(soleData);
+    expect((await fixture.open(editor.openingId)).bridge.documentKey).toBe(
+      editor.bridge.documentKey
+    );
     // Appending copies a nonempty prototype's formatting, never its source or
     // ordinary values; its new historical baseline must still be blank.
     snapshot = await fixture.bytes();
@@ -690,6 +736,19 @@ historyTest(
         await waitFor(
           await fixture.action(editor, {
             rowChange: { action: "delete", index: 1 },
+          })
+        )
+      ).status
+    ).toBe("completed");
+    editor = await fixture.open(editor.openingId);
+    // Delete a real record only after appending a blank survivor. A rejected
+    // last-row command must never stand in for this explicit two-to-one action.
+    snapshot = await fixture.bytes();
+    expect(
+      (
+        await waitFor(
+          await fixture.action(editor, {
+            rowChange: { action: "insert", index: 1 },
           })
         )
       ).status
@@ -729,8 +788,8 @@ historyTest(
       projects: [],
     };
     expect(await fixture.data()).toEqual(expected);
-    const currentKey = editor.config.document.key;
-    expect(currentKey).not.toBe(deletedEditor.config.document.key);
+    const currentKey = editor.bridge.documentKey;
+    expect(currentKey).not.toBe(deletedEditor.bridge.documentKey);
     // The old action capability fails, even though physical row 4 exists again.
     expect((await fixture.action(deletedEditor)).status).toBe(409);
     expect(
@@ -740,7 +799,7 @@ historyTest(
             sessionId: editor.pdmsProjectCatalog.sessionId,
             bindingId: "folio_project",
             name: currentName,
-            row: { index: 0, documentKey: deletedEditor.config.document.key },
+            row: { index: 0, documentKey: deletedEditor.bridge.documentKey },
           },
         })
       ).status
@@ -770,7 +829,7 @@ historyTest(
     expect(await replay.json()).toEqual({ error: 0 });
     expect(await fixture.bytes()).toEqual(cleared);
     expect(await fixture.data()).toEqual(expected);
-    expect((await fixture.open(editor.openingId)).config.document.key).toBe(
+    expect((await fixture.open(editor.openingId)).bridge.documentKey).toBe(
       currentKey
     );
     // Native undo of the cleared row is an untrusted callback change.
@@ -789,7 +848,7 @@ historyTest(
             sessionId: editor.pdmsProjectCatalog.sessionId,
             bindingId: "folio_project",
             name: oldName,
-            row: { index: 0, documentKey: editor.config.document.key },
+            row: { index: 0, documentKey: editor.bridge.documentKey },
           },
         })
       ).status
@@ -824,7 +883,7 @@ historyTest(
             sessionId: editor.pdmsProjectCatalog.sessionId,
             bindingId: "folio_project",
             name: currentName,
-            row: { index: 0, documentKey: clearedEditor.config.document.key },
+            row: { index: 0, documentKey: clearedEditor.bridge.documentKey },
           },
         })
       ).status

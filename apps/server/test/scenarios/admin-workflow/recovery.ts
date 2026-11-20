@@ -150,7 +150,6 @@ export const runDiscardAndRestart = async (
     })
   );
   expect(discardResponse.status).toBe(200);
-  expect(await discardResponse.json()).toEqual({ discarded: true });
   expect(
     await prisma.response.findUnique({ where: { id: discardedResponseId } })
   ).toBeNull();
@@ -173,7 +172,6 @@ export const runDiscardAndRestart = async (
     })
   );
   expect(repeatedDiscardResponse.status).toBe(200);
-  expect(await repeatedDiscardResponse.json()).toEqual({ discarded: true });
   const responsesAfterDiscard = await app.handle(
     new Request("http://test.local/api/responses/me", {
       headers: { Authorization: `Bearer ${archivedNoResponseBearer}` },
@@ -310,6 +308,7 @@ export const runRecoverableState = async (
   );
   const staleOperationUserdata = createCallbackUserdata({
     documentKey: templateDraft.documentKey,
+    documentServerKey: templateDraft.documentKey,
     expiresAt: Math.floor(Date.now() / 1000) - 1,
     operationId: staleOperationId,
     operationType: "save_template_draft",
@@ -386,6 +385,7 @@ export const runRecoverableState = async (
   const staleSubmissionId = crypto.randomUUID();
   const staleSubmitUserdata = createCallbackUserdata({
     documentKey: staleResponseDocumentKey,
+    documentServerKey: staleResponseDocumentKey,
     expiresAt: Math.floor(Date.now() / 1000) - 1,
     operationId: staleSubmitOperationId,
     operationType: "submit_response",

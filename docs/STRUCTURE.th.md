@@ -24,12 +24,10 @@ folio-forms/
 │   │   │   ├── accounts/       การจัดการและ review บัญชี
 │   │   │   ├── legacy-sso/     การเชื่อมบัญชีและ login legacy
 │   │   │   ├── audit/          เขียนและอ่านประวัติการกระทำ
-│   │   │   ├── ai-authoring/   agent, generation และ types
 │   │   │   ├── onlyoffice.ts   token, editor config, force-save และ conversion
 │   │   │   └── storage.ts      อ่าน/เขียน object ใน RustFS
 │   │   ├── test/              HTTP, fixtures, scenarios, unit และ runtime
-│   │   ├── dev.ts             ตัวควบคุม server ระหว่างพัฒนา
-│   │   └── worker-image/      image ของ isolated document worker
+│   │   └── dev.ts             ตัวควบคุม server ระหว่างพัฒนา
 │   ├── web/
 │   │   ├── src/routes/        หน้าตาม URL ของ TanStack Router
 │   │   ├── src/features/      UI และ logic ตาม feature
@@ -57,7 +55,7 @@ folio-forms/
 └── CONTEXT.md                 คำศัพท์และกติกา domain
 ```
 
-ผังนี้แสดงจุดหลัก ไม่ใช่รายการทุกไฟล์ ส่วน `ai-authoring.ts`, `document-worker.ts` และ `document-worker-server.ts` ยังอยู่ใน `server/src/` ตาม entrypoint และหน้าที่เดิม
+ผังนี้แสดงจุดหลัก ไม่ใช่รายการทุกไฟล์ AI Authoring และ isolated document worker ถูกถอดออกแล้ว การสร้าง DOCX/XLSX และการแก้ Template Draft ปกติยังใช้ routes และ document processing เดิม
 
 ## เลือกตำแหน่งตามหน้าที่
 

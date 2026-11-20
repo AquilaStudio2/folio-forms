@@ -24,16 +24,9 @@ Each Form keeps its selected document kind as its canonical template and output.
 
 - Admin prepares a Template Draft, then publishes it for new Responses.
 - A User's Response can hold a Draft and produce one or more Submissions over time: submitting reopens the Response as a Draft seeded from that Submission, so the User can fill in and submit again without starting a new Response.
-- An Admin uploads a PDF into the AI chat or describes a Form in text, iterates on the result in the same chat, and previews a generated DOCX read-only. The source PDF remains available to the agent throughout the active session, including later edit requests. The final DOCX contains static text and tagged content controls; the Admin downloads it, uploads it through the existing Form flow, and finishes editing it in ONLYOFFICE.
 
 ## Capabilities and Constraints
 
-- The server calls OmniRoute as the sole model gateway; provider and model selection stay there. Keep the endpoint and API key server-side.
-- Pi manages AI sessions and tool orchestration. AI authoring is Admin-only.
-- Send the original PDF to the model through OmniRoute; Folio performs no OCR. The configured route must support PDF input and tool calls.
-- Personal Codex credentials through OmniRoute are for the account owner's local, single-user tests only. Keep shared AI unavailable until a permitted service credential is configured.
-- Before the first external send, tell Admin that PDF and chat data go to OmniRoute and its configured provider. Upstream retention follows their policies; Folio deletes only its own copies.
-- Allow model-generated Python only in an isolated, ephemeral document worker. Restrict files to the active session; deny shell and network access; enforce resource and time limits. Model instructions are not a security boundary.
 - Admin selects one filling method per DOCX Form. Method changes affect existing and new Responses; all Field types and Prefill rules remain available. DOCX stays canonical; XLSX uses ONLYOFFICE.
 - The native web form shows all Fields from the published DOCX in document order on one scrollable page. It displays the Field Title/Alias and Placeholder, not the DOCX's static text, headings, or layout.
 - Use content-control Title/Alias as the display label, Tag as stable Field identity and fallback label, and Placeholder as entry guidance.
@@ -49,8 +42,6 @@ Each Form keeps its selected document kind as its canonical template and output.
 - Let Admins copy temporary passwords after user creation and password reset.
 - Serve the SPA with `joseluisq/static-web-server` on internal port 80 and preserve the SPA fallback.
 - Breaking changes are acceptable during development.
-- AI preview shows the generated DOCX read-only.
-- Keep PDF, chat, and generated files only for the active AI authoring session. Refreshing the page preserves it; explicit end, logout, or two hours of inactivity ends it and deletes Folio's copies. Do not promise upstream deletion.
 
 ## Legacy Login
 

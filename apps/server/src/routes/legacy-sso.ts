@@ -15,12 +15,9 @@ import type { RouteDependencies } from "./dependencies";
 
 export function registerLegacySsoRoutes(
   app: Elysia,
-  dependencies: Pick<
-    RouteDependencies,
-    "handoffClock" | "legacySso" | "aiAuthoring"
-  >
+  dependencies: Pick<RouteDependencies, "handoffClock" | "legacySso">
 ): void {
-  const { handoffClock, legacySso, aiAuthoring } = dependencies;
+  const { handoffClock, legacySso } = dependencies;
   app
     .get("/api/legacy-sso/status", () =>
       Response.json(
@@ -46,7 +43,7 @@ export function registerLegacySsoRoutes(
       "/api/legacy-sso/callback",
       ({ request }) =>
         legacySso
-          ? completeLegacySso(request, legacySso, handoffClock, aiAuthoring)
+          ? completeLegacySso(request, legacySso, handoffClock)
           : legacySsoFailureResponse(),
       { parse: "none" }
     )
@@ -58,25 +55,13 @@ export function registerLegacySsoRoutes(
     .post(
       "/api/legacy-sso/switch/confirm",
       ({ request }) =>
-        consumeLegacySsoSwitch(
-          request,
-          handoffClock,
-          legacySso,
-          true,
-          aiAuthoring
-        ),
+        consumeLegacySsoSwitch(request, handoffClock, legacySso, true),
       { parse: "none" }
     )
     .post(
       "/api/legacy-sso/switch/cancel",
       ({ request }) =>
-        consumeLegacySsoSwitch(
-          request,
-          handoffClock,
-          legacySso,
-          false,
-          aiAuthoring
-        ),
+        consumeLegacySsoSwitch(request, handoffClock, legacySso, false),
       { parse: "none" }
     )
     .post(

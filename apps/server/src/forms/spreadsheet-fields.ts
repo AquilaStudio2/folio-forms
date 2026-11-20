@@ -38,6 +38,51 @@ export const storedSpreadsheetBindings = (
 export const validateSpreadsheetPublication = (
   bindings: SpreadsheetBindings
 ): void => {
+  if (
+    bindings.fields.some((field) => field.unbound) ||
+    bindings.table?.unbound
+  ) {
+    fail(422, "invalid_template", "กรุณาผูกตำแหน่งช่อง Excel ให้ครบก่อนเผยแพร่");
+  }
+  const attachments = [
+    ...bindings.fields,
+    ...(bindings.table?.columns ?? []),
+  ].filter((field) => field.attachment);
+  const missingCategories = attachments.filter(
+    (field) =>
+      field.attachment?.mode !== "template" ||
+      field.attachment.document_category_id === null ||
+      !field.attachment.storage_template_id ||
+      !field.attachment.template_name
+  );
+  const missingMetadata = attachments.length
+    ? ["docs_number"].filter(
+        (key) =>
+          bindings.fields.filter(
+            (field) => field.key === key && !field.attachment && !field.computed
+          ).length !== 1
+      )
+    : [];
+  if (missingCategories.length || missingMetadata.length) {
+    const problems: string[] = [];
+    if (missingCategories.length) {
+      problems.push(
+        `ยังไม่ได้เลือกแม่แบบจัดเก็บเอกสารให้ช่อง ${missingCategories.map((field) => `${field.label} (Tag: ${field.key})`).join(", ")}`
+      );
+    }
+    if (missingMetadata.length) {
+      problems.push(
+        `ยังไม่มีช่องกรอกเดี่ยวที่ใช้ได้สำหรับ Tag ${missingMetadata.join(" และ ")}`
+      );
+    }
+    fail(
+      422,
+      missingCategories.length
+        ? "attachment_category_required"
+        : "attachment_metadata_required",
+      `ไม่สามารถเผยแพร่ได้ เนื่องจาก${problems.join(" และ")}`
+    );
+  }
   if (bindings.fields.length === 0 && !bindings.table) {
     fail(
       422,
@@ -59,6 +104,12 @@ export const validateSpreadsheetPublication = (
 
 interface SpreadsheetStoredField {
   binding: unknown;
+  attachment?: boolean;
+  attachmentCategory?: string | null;
+  attachmentStorageMode?: string;
+  attachmentCategoryId?: number | null;
+  attachmentTemplateId?: string | null;
+  attachmentTemplateName?: string | null;
   label: string | null;
   options: unknown;
   position: number | null;
@@ -138,6 +189,20 @@ export const spreadsheetBindingsFromFields = (
       continue;
     }
     const base = {
+      ...(row.attachment
+        ? {
+            attachment:
+              row.attachmentStorageMode === "template"
+                ? {
+                    category: null,
+                    document_category_id: row.attachmentCategoryId ?? null,
+                    mode: "template",
+                    storage_template_id: row.attachmentTemplateId ?? null,
+                    template_name: row.attachmentTemplateName ?? null,
+                  }
+                : { category: row.attachmentCategory ?? null, mode: "legacy" },
+          }
+        : {}),
       key: row.tag,
       label: row.label,
       options:
@@ -194,6 +259,19 @@ export const spreadsheetBindingsFromFields = (
 
 const sharedType = (type: string): FieldType =>
   type === "boolean" ? FieldType.checkbox : (type as FieldType);
+const attachmentStorageData = (
+  attachment: SpreadsheetBindings["fields"][number]["attachment"]
+) => ({
+  attachment: Boolean(attachment),
+  attachmentCategory: attachment?.category ?? null,
+  attachmentCategoryId:
+    attachment?.mode === "template" ? attachment.document_category_id : null,
+  attachmentStorageMode: attachment?.mode ?? "legacy",
+  attachmentTemplateId:
+    attachment?.mode === "template" ? attachment.storage_template_id : null,
+  attachmentTemplateName:
+    attachment?.mode === "template" ? attachment.template_name : null,
+});
 const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
   const bindings = spreadsheetBindingSchema.parse(input);
   if (
@@ -204,11 +282,13 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
     throw new Error("Options are only supported for spreadsheet dropdowns");
   }
   const rows = bindings.fields.map((field) => ({
+    ...attachmentStorageData(field.attachment),
     binding: excelBindingSchema.parse({
       anchor: field.anchor,
       computed: field.computed,
       id: field.id,
       placeholder: field.placeholder,
+      ...(field.unbound ? { unbound: true } : {}),
     } satisfies ExcelScalarBinding),
     label: field.label,
     options:
@@ -224,9 +304,16 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
   }));
   if (bindings.table) {
     rows.push({
+      attachment: false,
+      attachmentCategory: null,
+      attachmentCategoryId: null,
+      attachmentStorageMode: "legacy",
+      attachmentTemplateId: null,
+      attachmentTemplateName: null,
       binding: excelBindingSchema.parse({
         anchor: bindings.table.anchor,
         id: bindings.table.id,
+        ...(bindings.table.unbound ? { unbound: true } : {}),
       } satisfies ExcelTableBinding),
       label: bindings.table.label,
       options: Prisma.DbNull,
@@ -239,6 +326,7 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
     });
     for (const column of bindings.table.columns) {
       rows.push({
+        ...attachmentStorageData(column.attachment),
         binding: excelBindingSchema.parse({
           computed: column.computed,
           id: column.id,

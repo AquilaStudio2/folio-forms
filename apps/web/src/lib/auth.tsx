@@ -220,16 +220,7 @@ export const AuthProvider = ({ children }: { children: React.ReactNode }) => {
 
   const signOut = async ({ preserveReturnTo = false } = {}) => {
     setError(null);
-    try {
-      await requestSignOut();
-    } catch (caughtError) {
-      if (caughtError instanceof ApiError && caughtError.sessionRevoked) {
-        setError(caughtError.code);
-        setSignedOut(!preserveReturnTo);
-        clearSession();
-      }
-      throw caughtError;
-    }
+    await requestSignOut();
     setSignedOut(!preserveReturnTo);
     clearSession();
   };

@@ -1,0 +1,453 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "f4f4f17cb3353c7e03dfdb72c2ec24a21ec1b0cb",
+  "runtime": {
+    "browser": "Chrome/150.0.7871.24",
+    "browserRevision": "791ba97058eb8c1e257ea50380b0d8c6bb9b8f64",
+    "onlyOfficeAsset": "9.4.0-c124711d558e760a8cbbf173a42d2f92",
+    "topology": "shared loopback gateway; one observed Chromium renderer",
+    "realDcm": false
+  },
+  "method": {
+    "nativeInput": "trusted pointer events on actual Controls, no event replay or app state mutation",
+    "trace": "Chromium DevTools SchedulePostMessage/HandlePostMessage and non-pausing source logpoints; microseconds relative to each capture",
+    "heldRequest": "CDP Fetch paused only the real second Correction POST after multipart snapshot; continued original once"
+  },
+  "browserCaptures": {
+    "candidate": {
+      "installed": [
+        "host-receive",
+        "attachment-snapshot",
+        "workbook-capture-start",
+        "candidate-send",
+        "host-handle",
+        "holder-remove",
+        "workbook-capture-return",
+        "remove-send",
+        "guard-block",
+        "operation-completed"
+      ],
+      "missing": [],
+      "timeline": [
+        {
+          "atUs": 0,
+          "pid": 84559,
+          "label": "candidate-send:dirty"
+        },
+        {
+          "atUs": 181,
+          "pid": 84559,
+          "phase": "SchedulePostMessage",
+          "traceId": "8699951239791641204"
+        },
+        {
+          "atUs": 2075,
+          "pid": 84559,
+          "phase": "HandlePostMessage",
+          "traceId": "8699951239791641204"
+        },
+        {
+          "atUs": 3012,
+          "pid": 84559,
+          "label": "host-receive:pending-file-candidate:picker-candidate:true"
+        },
+        {
+          "atUs": 38338,
+          "pid": 84559,
+          "phase": "SchedulePostMessage",
+          "traceId": "8699951239791640767"
+        },
+        {
+          "atUs": 38593,
+          "pid": 84559,
+          "phase": "HandlePostMessage",
+          "traceId": "8699951239791640767"
+        },
+        {
+          "atUs": 38756,
+          "pid": 84559,
+          "label": "host-receive:pending-file-check:pending-check-2:undefined"
+        },
+        {
+          "atUs": 39537,
+          "pid": 84559,
+          "label": "guard-block:pending-check-2"
+        }
+      ],
+      "correctionPosts": [],
+      "callbackCompleted": true,
+      "result": {
+        "nativeCandidateBlocked": true,
+        "stayedInCorrection": true
+      }
+    },
+    "rapidConfirmationAndSave": {
+      "installed": [
+        "host-receive",
+        "attachment-snapshot",
+        "workbook-capture-start",
+        "candidate-send",
+        "host-handle",
+        "holder-remove",
+        "workbook-capture-return",
+        "remove-send",
+        "guard-block",
+        "operation-completed"
+      ],
+      "missing": [],
+      "timeline": [
+        {
+          "atUs": 0,
+          "pid": 84559,
+          "label": "candidate-send:dirty"
+        },
+        {
+          "atUs": 48,
+          "pid": 84559,
+          "phase": "SchedulePostMessage",
+          "traceId": "8699951239791703251"
+        },
+        {
+          "atUs": 9755,
+          "pid": 84559,
+          "phase": "HandlePostMessage",
+          "traceId": "8699951239791703251"
+        },
+        {
+          "atUs": 10717,
+          "pid": 84559,
+          "label": "host-receive:pending-file-candidate:picker-candidate:true"
+        },
+        {
+          "atUs": 11363,
+          "pid": 84559,
+          "label": "remove-send:picker-2"
+        },
+        {
+          "atUs": 11412,
+          "pid": 84559,
+          "phase": "SchedulePostMessage",
+          "traceId": "8699951239791705082"
+        },
+        {
+          "atUs": 13857,
+          "pid": 84559,
+          "phase": "HandlePostMessage",
+          "traceId": "8699951239791705082"
+        },
+        {
+          "atUs": 14050,
+          "pid": 84559,
+          "label": "host-receive:pending-file-remove:picker-2:undefined"
+        },
+        {
+          "atUs": 14799,
+          "pid": 84559,
+          "label": "host-handle:pending-file-remove:picker-2"
+        },
+        {
+          "atUs": 15296,
+          "pid": 84559,
+          "label": "holder-remove:picker-2:0"
+        },
+        {
+          "atUs": 18324,
+          "pid": 84559,
+          "phase": "SchedulePostMessage",
+          "traceId": "8699951239791704842"
+        },
+        {
+          "atUs": 18536,
+          "pid": 84559,
+          "phase": "HandlePostMessage",
+          "traceId": "8699951239791704842"
+        },
+        {
+          "atUs": 18669,
+          "pid": 84559,
+          "label": "host-receive:pending-file-check:pending-check-2:undefined"
+        },
+        {
+          "atUs": 18744,
+          "pid": 84559,
+          "label": "guard-block:pending-check-2"
+        },
+        {
+          "atUs": 24612,
+          "pid": 84559,
+          "label": "candidate-send:clean"
+        },
+        {
+          "atUs": 24637,
+          "pid": 84559,
+          "phase": "SchedulePostMessage",
+          "traceId": "8699951239791704720"
+        },
+        {
+          "atUs": 27320,
+          "pid": 84559,
+          "phase": "HandlePostMessage",
+          "traceId": "8699951239791704720"
+        },
+        {
+          "atUs": 27550,
+          "pid": 84559,
+          "label": "host-receive:pending-file-candidate:picker-candidate:false"
+        }
+      ],
+      "correctionPosts": [],
+      "callbackCompleted": true,
+      "result": {
+        "realPointerBurst": true,
+        "nativeCandidateBlocked": true,
+        "movedToResult": false
+      }
+    },
+    "saveAfterRealConfirmation": {
+      "installed": [
+        "host-receive",
+        "attachment-snapshot",
+        "workbook-capture-start",
+        "host-handle",
+        "holder-remove",
+        "workbook-capture-return",
+        "guard-block",
+        "operation-completed"
+      ],
+      "missing": [],
+      "timeline": [
+        {
+          "atUs": 0,
+          "pid": 84559,
+          "phase": "SchedulePostMessage",
+          "traceId": "8699951239791705568"
+        },
+        {
+          "atUs": 204,
+          "pid": 84559,
+          "phase": "HandlePostMessage",
+          "traceId": "8699951239791705568"
+        },
+        {
+          "atUs": 442,
+          "pid": 84559,
+          "label": "host-receive:pending-file-check:pending-check-3:undefined"
+        },
+        {
+          "atUs": 554,
+          "pid": 84559,
+          "label": "host-handle:pending-file-check:pending-check-3"
+        },
+        {
+          "atUs": 110151,
+          "pid": 84559,
+          "label": "workbook-capture-start:"
+        },
+        {
+          "atUs": 204669,
+          "pid": 84559,
+          "label": "workbook-capture-return:"
+        },
+        {
+          "atUs": 204790,
+          "pid": 84559,
+          "phase": "SchedulePostMessage",
+          "traceId": "8699951239791698890"
+        },
+        {
+          "atUs": 204823,
+          "pid": 84559,
+          "phase": "HandlePostMessage",
+          "traceId": "8699951239791698890"
+        },
+        {
+          "atUs": 205003,
+          "pid": 84559,
+          "label": "host-receive:pending-file-save:attachment-save-1:undefined"
+        },
+        {
+          "atUs": 205096,
+          "pid": 84559,
+          "label": "host-handle:pending-file-save:attachment-save-1"
+        },
+        {
+          "atUs": 210942,
+          "pid": 84559,
+          "label": "attachment-snapshot:1"
+        },
+        {
+          "atUs": 1277054,
+          "pid": 84559,
+          "label": "operation-completed:"
+        }
+      ],
+      "correctionPosts": [
+        {
+          "atUs": 211608,
+          "multipartObserved": true,
+          "removalRows": [0],
+          "fileParts": 0,
+          "responseStatus": 202
+        }
+      ],
+      "callbackCompleted": true,
+      "result": {
+        "confirmedRemovalSaved": true,
+        "movedToResult": true
+      }
+    },
+    "physicalInputWhileOriginalPostHeld": {
+      "installed": [
+        "host-receive",
+        "attachment-snapshot",
+        "workbook-capture-start",
+        "candidate-send",
+        "host-handle",
+        "holder-remove",
+        "workbook-capture-return",
+        "remove-send",
+        "guard-block",
+        "operation-completed"
+      ],
+      "missing": [],
+      "timeline": [
+        {
+          "atUs": 0,
+          "pid": 84559,
+          "phase": "SchedulePostMessage",
+          "traceId": "8699951239791683877"
+        },
+        {
+          "atUs": 350,
+          "pid": 84559,
+          "phase": "HandlePostMessage",
+          "traceId": "8699951239791683877"
+        },
+        {
+          "atUs": 1222,
+          "pid": 84559,
+          "label": "host-receive:pending-file-check:pending-check-2:undefined"
+        },
+        {
+          "atUs": 1967,
+          "pid": 84559,
+          "label": "host-handle:pending-file-check:pending-check-2"
+        },
+        {
+          "atUs": 87498,
+          "pid": 84559,
+          "label": "workbook-capture-start:"
+        },
+        {
+          "atUs": 198545,
+          "pid": 84559,
+          "label": "workbook-capture-return:"
+        },
+        {
+          "atUs": 198755,
+          "pid": 84559,
+          "phase": "SchedulePostMessage",
+          "traceId": "8699951239791685383"
+        },
+        {
+          "atUs": 198800,
+          "pid": 84559,
+          "phase": "HandlePostMessage",
+          "traceId": "8699951239791685383"
+        },
+        {
+          "atUs": 199016,
+          "pid": 84559,
+          "label": "host-receive:pending-file-save:attachment-save-1:undefined"
+        },
+        {
+          "atUs": 199123,
+          "pid": 84559,
+          "label": "host-handle:pending-file-save:attachment-save-1"
+        },
+        {
+          "atUs": 205887,
+          "pid": 84559,
+          "label": "attachment-snapshot:0"
+        },
+        {
+          "atUs": 211903,
+          "pid": 84559,
+          "label": "physical-attempt:remove-inert"
+        },
+        {
+          "atUs": 215677,
+          "pid": 84559,
+          "label": "physical-attempt:footer-inert"
+        },
+        {
+          "atUs": 1277756,
+          "pid": 84559,
+          "label": "operation-completed:"
+        }
+      ],
+      "correctionPosts": [
+        {
+          "atUs": 206221,
+          "multipartObserved": true,
+          "removalRows": [],
+          "fileParts": 0,
+          "responseStatus": 202
+        }
+      ],
+      "callbackCompleted": true,
+      "result": {
+        "clickedNativePositionsWhileInert": true,
+        "movedToResult": true
+      }
+    }
+  },
+  "assertions": {
+    "allSameObservedRenderer": true,
+    "nativeGuardNoPost": true,
+    "rapidHandledBeforeGuard": true,
+    "nativeRemovalOnlyInNextAcceptedPost": true,
+    "heldSnapshotPrecedesBlockedPointerAttempts": true
+  },
+  "completion": {
+    "fixtureWithRemoval": {
+      "submissions": 1,
+      "corrections": 1,
+      "completedOperations": 1,
+      "references": 1,
+      "versions": 1,
+      "submissionWorkbookSha256BeforeAndAfter": "52413bb7e0d3ab98f5741f3a563f7dad7bb27abfd024cb5e61283f399742d13c",
+      "submissionJSONSha256BeforeAndAfter": "49b186438a6a7897af402d7f53855316c1a641a0fd45be313daab833c9ccf1b5",
+      "rowZeroReceipt": {
+        "submission": true,
+        "correction": false
+      },
+      "rowZeroCellAndLinkMatchedEachRevision": true,
+      "ordinaryRowsPreserved": true
+    },
+    "fixtureWithPostHeld": {
+      "submissions": 1,
+      "corrections": 1,
+      "completedOperations": 1,
+      "references": 2,
+      "versions": 1,
+      "sameSavedAnswerJSONForBoth": "3693618bb6fe713207f85c3a04796ed66773bebf8cd5e4bf00848c72159448db",
+      "rowZeroReceipt": {
+        "submission": true,
+        "correction": true
+      },
+      "rowZeroCellAndLinkMatchedEachRevision": true,
+      "ordinaryRowsPreserved": true
+    },
+    "loopbackProvider": {
+      "onlySetupUploads": 2,
+      "deletes": 0,
+      "readBackStatus": 200,
+      "readBackSHA256MatchesSyntheticOriginal": "962045b4c67e44b022dcad63f42d80315e17167e3f406c8e7e066d370edb1086"
+    }
+  },
+  "supplement": {
+    "webFixtureTests": 35,
+    "unmatchedBrowserTopology": "Not tested: different renderer/gateway integrations, real DCM, or Production."
+  }
+}

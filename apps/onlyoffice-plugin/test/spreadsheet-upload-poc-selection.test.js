@@ -68,39 +68,48 @@ const object = (item, row, col, rowIndex = null, changes = {}) => ({
     }),
 });
 const setup = async (drawings, { failSave = false, saveFailures = 0 } = {}) => {
-  const state = structuredClone(bindings);
   let revision = 0;
-  let remainingSaveFailures = failSave ? Infinity : saveFailures;
+  let draft;
+  let remainingSaveFailures = saveFailures;
   const response = (url, init) => {
-    if (String(url).includes("/operations/")) {
-      return {
-        operation: {
-          result: { documentKey: "document-key", editorSessionPreserved: true },
-          status: "completed",
-        },
-      };
-    }
-    if (init.method === "POST") {
-      if (remainingSaveFailures > 0) {
-        remainingSaveFailures -= 1;
-        return { body: { error: "save failed" }, httpStatus: 503 };
+    if (String(url).endsWith("/save")) {
+      draft = JSON.parse(init.body).xlsxDraft;
+      if (failSave) {
+        return {
+          body: { error: "save acknowledgement lost" },
+          httpStatus: 503,
+        };
       }
       return { operationCapability: "save-cap", operationId: "save-op" };
     }
-    if (init.method === "PATCH") {
-      const { change } = JSON.parse(init.body);
-      if (change.kind === "field") {
-        state.fields = state.fields.filter((item) => item.id !== change.id);
-      } else if (change.kind === "table") {
-        state.table = null;
-      } else {
-        state.table.columns = state.table.columns.filter(
-          (item) => item.id !== change.id
-        );
-      }
-      revision += 1;
+    if (String(url).endsWith("/xlsx-draft/recover")) {
+      expect(JSON.parse(init.body)).toEqual({
+        checkpoint: draft.checkpoint,
+        leaseId: "test-editor-lease",
+      });
+      return {
+        action: "save-template",
+        operationCapability: "save-cap",
+        operationId: "save-op",
+      };
     }
-    return { bindings: state, documentKey: "document-key", revision };
+    expect(String(url)).toContain("/operations/");
+    if (remainingSaveFailures > 0) {
+      remainingSaveFailures -= 1;
+      return { operation: { status: "failed" } };
+    }
+    revision += 1;
+    return {
+      operation: {
+        result: {
+          bindingRevision: revision,
+          bindings: draft.bindings,
+          documentKey: "document-key",
+          editorSessionPreserved: true,
+        },
+        status: "completed",
+      },
+    };
   };
   const selected = {
     address: "H18",
@@ -119,13 +128,38 @@ const setup = async (drawings, { failSave = false, saveFailures = 0 } = {}) => {
     capabilityResponses: Array.from({ length: 30 }, () => "cap"),
     documentKind: "xlsx",
     responses: Array.from({ length: 30 }, () => response),
+    scopeIdentity: "selection-template",
     serializeCommands: true,
     spreadsheetBindings: bindings,
     spreadsheetSelection: selected,
   });
+  const post = harness.parentWindow.postMessage;
+  harness.parentWindow.postMessage = (message, origin) => {
+    post(message, origin);
+    if (message.type === "pending-file-check") {
+      harness.dispatch({
+        data: {
+          ...message,
+          allowed: true,
+          source: "folio-upload-poc-host",
+          type: "pending-file-result",
+        },
+        origin: harness.parentOrigin,
+        source: harness.parentWindow,
+      });
+    }
+  };
   acknowledgeBridge(harness);
   await flushPlugin();
-  return { harness, selected, state: () => state };
+  return {
+    harness,
+    selected,
+    working: async () => {
+      const { bindings: candidate } =
+        await harness.window.FormBridge.getSpreadsheetBindings(false);
+      return candidate;
+    },
+  };
 };
 const refresh = async (harness) => {
   harness.emitEditorEvent("onTargetPositionChanged");
@@ -177,26 +211,28 @@ test.each([false, true])(
   "delete selected POC field/column removes only its binding and marker then saves: column %s",
   async (column) => {
     const target = column ? proof : second;
-    const { harness, state } = await setup([
+    const { harness, working } = await setup([
       column ? object(proof, 8, 1, 2) : object(second, 12, 3),
     ]);
     await remove(harness);
-    expect(harness.requests.map((request) => request.method)).toEqual([
-      "GET",
-      "PATCH",
+    expect(harness.requests.map(({ method }) => method)).toEqual([
       "POST",
       "GET",
     ]);
-    expect(JSON.parse(harness.requests[2].body)).toMatchObject({
+    const save = JSON.parse(harness.requests[0].body);
+    expect(save).toMatchObject({
       deletedUploadPocBindingIds: [target.id],
       preserveEditorSession: true,
       preserveEditorSessionPurpose: "delete",
+      xlsxDraft: { revision: 0, version: 1 },
     });
-    expect(JSON.parse(harness.requests[1].body).change).toMatchObject({
-      action: "delete",
-      id: target.id,
-      kind: column ? "column" : "field",
-    });
+    expect(save.xlsxDraft.bindings.fields).toEqual(
+      column ? [first, second] : [first]
+    );
+    expect(save.xlsxDraft.bindings.table.columns).toEqual(
+      column ? [] : [proof]
+    );
+    expect(save.spreadsheetUploadPocSnapshot).toHaveLength(column ? 2 : 4);
     expect(harness.spreadsheetNames.has(`_folio_upload_poc_${target.id}`)).toBe(
       false
     );
@@ -204,30 +240,31 @@ test.each([false, true])(
     expect(harness.spreadsheetNames.has("_folio_upload_poc_folio_first")).toBe(
       true
     );
-    expect(state().fields.find((item) => item.id === first.id)).toEqual(first);
-    expect(harness.statusElement.textContent).toContain(
-      "ลบช่องและปุ่ม POC พร้อมบันทึกต้นแบบแล้ว"
-    );
+    expect(await working()).toMatchObject({
+      fields: column ? [first, second] : [first],
+    });
   }
 );
 
-test("failed save after committed deletion has actionable ordinary save retry without another binding delete", async () => {
-  const { harness, state } = await setup([object(second, 12, 3)], {
+test("lost deletion save acknowledgement locks editing and recovers the original checkpoint without replay", async () => {
+  const { harness, working } = await setup([object(second, 12, 3)], {
     failSave: true,
   });
   await remove(harness);
-  expect(state().fields.some((item) => item.id === second.id)).toBe(false);
-  expect(harness.statusElement.textContent).toContain(
-    "ลบการตั้งค่าปุ่มแล้ว แต่ยังบันทึกต้นแบบไม่สำเร็จ"
-  );
+  expect(await working()).toMatchObject({ fields: [first] });
   expect(harness.statusElement.textContent).toContain("บันทึกแบบร่าง");
-  await harness.window.FormBridge.runAction("save-template");
-  expect(
-    harness.requests.filter((request) => request.method === "PATCH")
-  ).toHaveLength(1);
-  expect(
-    harness.requests.filter((request) => request.method === "POST")
-  ).toHaveLength(2);
+  expect(harness.editorRestriction).toBe("readOnly");
+  expect(harness.requests.map(({ url }) => url.split("/").at(-1))).toEqual([
+    "save",
+  ]);
+  const result = await harness.window.FormBridge.runAction("save-template");
+  expect(result).toMatchObject({ ok: true, operationId: "save-op" });
+  expect(harness.requests.map(({ url }) => url.split("/").at(-1))).toEqual([
+    "save",
+    "recover",
+    "save-op",
+  ]);
+  expect(harness.editorRestriction).toBe("readOnly");
 });
 
 test("selection polling stops on unload and never changes document dirty state", async () => {
@@ -262,12 +299,12 @@ test("pure OLE resolver refuses deleted identity rather than resolving a neighbo
   ).toThrow("ปัจจุบัน");
 });
 
-test("postcommit deletion removes native objects before save and manual retry preserves foreign objects without repeating metadata deletion", async () => {
-  const { harness, selected, state } = await setup([object(second, 12, 3)], {
+test("definitive save failure retries deletion without touching foreign objects", async () => {
+  const { harness, selected, working } = await setup([object(second, 12, 3)], {
     saveFailures: 1,
   });
   await remove(harness);
-  expect(state().fields.some((item) => item.id === second.id)).toBe(false);
+  expect(await working()).toMatchObject({ fields: [first] });
   expect(
     selected.oleObjects.find((item) => item.GetData().includes(second.id))
       .Drawing.removed
@@ -276,17 +313,17 @@ test("postcommit deletion removes native objects before save and manual retry pr
     selected.oleObjects.filter((item) => !item.Drawing.removed)
   ).toHaveLength(4);
   expect(control(harness, "Title · ชื่อช่อง").disabled).toBe(true);
-  const patchCount = harness.requests.filter(
-    (request) => request.method === "PATCH"
-  ).length;
   const firstSave = JSON.parse(
     harness.requests.find((request) => request.method === "POST").body
   );
   const result = await harness.window.FormBridge.runAction("save-template");
   expect(result.ok).toBe(true);
-  expect(
-    harness.requests.filter((request) => request.method === "PATCH")
-  ).toHaveLength(patchCount);
+  expect(harness.requests.map(({ method }) => method)).toEqual([
+    "POST",
+    "GET",
+    "POST",
+    "GET",
+  ]);
   const secondSave = JSON.parse(
     harness.requests.findLast((request) => request.method === "POST").body
   );
@@ -297,6 +334,14 @@ test("postcommit deletion removes native objects before save and manual retry pr
     deletedUploadPocBindingIds: [second.id],
     preserveEditorSessionPurpose: "delete",
   });
+  expect(secondSave.xlsxDraft.checkpoint).not.toBe(
+    firstSave.xlsxDraft.checkpoint
+  );
+  expect(secondSave.xlsxDraft.bindings).toEqual(firstSave.xlsxDraft.bindings);
+  expect(secondSave.xlsxDraft.revision).toBe(0);
+  expect(secondSave.spreadsheetUploadPocSnapshot).toEqual(
+    firstSave.spreadsheetUploadPocSnapshot
+  );
   expect(secondSave.spreadsheetUploadPocSnapshot).toHaveLength(4);
   expect(control(harness, "Title · ชื่อช่อง").disabled).toBe(false);
   expect(
@@ -306,8 +351,8 @@ test("postcommit deletion removes native objects before save and manual retry pr
   ).toHaveLength(1);
 });
 
-test("native cleanup failure stays retryable after metadata commit and blocks new authoring until manual save succeeds", async () => {
-  const { harness, selected, state } = await setup([object(second, 12, 3)]);
+test("native cleanup failure stays retryable after local Apply and blocks new authoring until manual save succeeds", async () => {
+  const { harness, selected, working } = await setup([object(second, 12, 3)]);
   const target = selected.oleObjects.find((item) =>
     item.GetData().includes(second.id)
   );
@@ -316,7 +361,7 @@ test("native cleanup failure stays retryable after metadata commit and blocks ne
     throw new Error("native delete unavailable");
   };
   await remove(harness);
-  expect(state().fields.some((item) => item.id === second.id)).toBe(false);
+  expect(await working()).toMatchObject({ fields: [first] });
   expect(target.Drawing.removed).not.toBe(true);
   expect(
     harness.requests.filter((request) => request.method === "POST")
@@ -328,9 +373,7 @@ test("native cleanup failure stays retryable after metadata commit and blocks ne
   const retry = await harness.window.FormBridge.runAction("save-template");
   expect(retry.ok).toBe(true);
   expect(target.Drawing.removed).toBe(true);
-  expect(
-    harness.requests.filter((request) => request.method === "PATCH")
-  ).toHaveLength(1);
+  expect(harness.requests.map(({ method }) => method)).toEqual(["POST", "GET"]);
 });
 
 test("Undo resurrecting a deleted POC marker fails closed before a later save instead of persisting it", async () => {
@@ -366,12 +409,12 @@ const selectWholeTable = async (harness, selected) => {
 };
 
 test("deleting a whole managed table removes every native column button and saves retained scalar slots", async () => {
-  const { harness, selected, state } = await setup([]);
+  const { harness, selected, working } = await setup([]);
   selected.values = { A2: 42, H18: "Unrelated value" };
   selected.formulas = { A3: "=A2*2" };
   await selectWholeTable(harness, selected);
   await remove(harness);
-  expect(state().table).toBe(null);
+  expect(await working()).toMatchObject({ table: null });
   const remaining = selected.oleObjects.filter((item) => !item.Drawing.removed);
   expect(remaining.map((item) => JSON.parse(item.GetData()).bindingId)).toEqual(
     [first.id, second.id]
@@ -382,14 +425,18 @@ test("deleting a whole managed table removes every native column button and save
   expect(save).toMatchObject({
     deletedUploadPocBindingIds: [proof.id],
     preserveEditorSessionPurpose: "delete",
+    xlsxDraft: {
+      bindings: { fields: [first, second], table: null },
+      revision: 0,
+    },
   });
   expect(save.spreadsheetUploadPocSnapshot).toHaveLength(2);
   expect(selected.values).toEqual({ A2: 42, H18: "Unrelated value" });
   expect(selected.formulas).toEqual({ A3: "=A2*2" });
 });
 
-test("partial native table cleanup failure retries only remaining captured objects after the confirmed metadata delete", async () => {
-  const { harness, selected, state } = await setup([]);
+test("partial native table cleanup failure retries only remaining captured objects after local Apply", async () => {
+  const { harness, selected, working } = await setup([]);
   const targets = selected.oleObjects.filter(
     (item) => JSON.parse(item.GetData()).bindingId === proof.id
   );
@@ -404,7 +451,7 @@ test("partial native table cleanup failure retries only remaining captured objec
   };
   await selectWholeTable(harness, selected);
   await remove(harness);
-  expect(state().table).toBe(null);
+  expect(await working()).toMatchObject({ table: null });
   expect(targets.map((item) => Boolean(item.Drawing.removed))).toEqual([
     true,
     false,
@@ -416,9 +463,7 @@ test("partial native table cleanup failure retries only remaining captured objec
   const retry = await harness.window.FormBridge.runAction("save-template");
   expect(retry.ok).toBe(true);
   expect(targets.every((item) => item.Drawing.removed)).toBe(true);
-  expect(
-    harness.requests.filter((request) => request.method === "PATCH")
-  ).toHaveLength(1);
+  expect(harness.requests.map(({ method }) => method)).toEqual(["POST", "GET"]);
   expect(
     selected.oleObjects.filter((item) => !item.Drawing.removed)
   ).toHaveLength(2);

@@ -16,6 +16,9 @@ import { waitForOperation } from "@/lib/api";
 import { requestEditorSave } from "@/lib/form-lifecycle";
 import { Route } from "@/routes/admin/forms/$formId/index";
 
+vi.mock("@/lib/auth", () => ({
+  useAuth: () => ({ user: { id: "original-admin", role: "admin" } }),
+}));
 vi.mock("@tanstack/react-router", async (original) => ({
   ...(await original<typeof RouterModule>()),
   Link: ({ children }: { children: React.ReactNode }) => (

@@ -232,7 +232,6 @@ const inputMatches = (bytes: Uint8Array) => {
 };
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   onlyOffice: {
     ...office,
     forceSave: async (key) => {

@@ -22,10 +22,135 @@ flowchart TD
     author --> select --> settings --> native --> patch --> known
     known -->|"ได้"| rules
     known -->|"ไม่ได้"| block --> recover --> known
-    rules --> publish --> fill --> source
+    rules --> attachment["ช่องแนบ: category ID และ Storage Template ต่อ scalar หรือ column"]
+    rules -->|"ตารางใหม่ครอบช่องแนบเดิม"| promote["ย้าย binding เดิมเป็นคอลัมน์"]
+    promote --> rows["วางปุ่มครบแถวข้อมูลและบันทึกต้นแบบ"]
+    rows --> attachment
+    attachment --> complete{"current mapping ครบ และมี root docs_number หนึ่งช่อง"}
+    complete -->|"ครบ"| publish
+    complete -->|"ไม่ครบ"| draftOnly["บันทึก Template Draft ได้ แต่เผยแพร่ไม่ได้"]
+    rules -->|"ordinary Fields ไม่มีปุ่มแนบ"| publish
+    oldPublished["Published PoC เดิม: ordinary text/URL และประวัติ"] --> oldNotice["ปุ่มเก่าอธิบายข้อจำกัด ไม่มี choose/retry"]
+    oldPublished --> duplicate["Admin Duplicate: เฉพาะ template/config ไม่มีคำตอบหรือไฟล์ User"]
+    duplicate --> select
+    oldProof{"แปลงช่องข้อความเดิม: saved marker/binding/Tag/placement พิสูจน์ได้"}
+    oldProof -->|"ได้"| configuredExisting["PATCH attachment/category ด้วย id และ rules เดิม"]
+    configuredExisting --> saveConfigured["บันทึกต้นแบบอีกครั้งใน editor เดิม"] --> attachment
+    oldProof -->|"ไม่ได้"| unproved["หยุดโดยไม่แปลงช่อง ให้บันทึก/แก้ mapping ก่อน"]
+    publish --> fill --> source
     source -->|"ไม่มี"| operation
     source -->|"มี"| catalog
     catalog -.-> ongoing
     ongoing -.-> snapshot
     snapshot --> picker --> target --> operation
     operation --> extract --> result
+    settings -->|"เพิ่มช่องแนบไฟล์ / เปลี่ยนหมวด"| categoryDialog["แผงหลักเริ่มคำเลือกและโหลดหมวด"]
+    categoryDialog --> categoryRelay["Parent: ตรวจ origin/frame และ bridge/channel/document/request"]
+    categoryRelay --> categoryPopup["Background popup นอก sidebar: ShowInputHelper แบบ PDMS"]
+    categoryDialog --> ecmAdmin
+    categoryPopup -->|"ยกเลิกระหว่างโหลด / Escape"| unchanged
+    subgraph ecmFlow ["ECM: หมวดเอกสารและ shared authentication"]
+        ecmAdmin["แผงหลักโหลดหมวดใหม่ทุกครั้งที่เปิดหรือ Retry"] --> ecmScope["ตรวจ Admin capability / lease / XLSX Draft"]
+        ecmScope --> ecmConfigured{"มี Folio-only ECM config และ encryption key"}
+        ecmConfigured -->|"ไม่มี"| ecmUnavailable["integration error เท่านั้น Folio session คงเดิม"]
+        ecmConfigured -->|"มี"| ecmCache["อ่าน PostgreSQL token generation"]
+        ecmCache --> ecmValid{"token cache เหลือเกิน 12 ชม. และพอสำหรับ request + skew"}
+        ecmValid -->|"ใช่"| ecmCategory["GET category ครั้งเดียว ไม่ resend หลัง 401"]
+        ecmValid -->|"ไม่"| ecmShared["claim shared auth job; waiters ร่วม generation"]
+        ecmShared --> ecmLogin["POST login: สูงสุด 3 ครั้งรวมแรก / 15s ต่อครั้ง / 30s รวม"]
+        ecmLogin --> ecmExpiry["ตรวจ expire: ISO offset หรือ DCM UTC+7 ที่ยืนยัน"]
+        ecmExpiry --> ecmEncrypted["เข้ารหัส AES-GCM และ persist ด้วย owner/generation fence"]
+        ecmExpiry -->|"วันที่ผิด / หมดอายุ / อายุไม่พอ"| ecmUnavailable
+        ecmLogin -->|"permanent error หรือหมด deadline"| ecmUnavailable
+        ecmEncrypted --> ecmCategory
+        ecmCategory --> ecmCategoryRows["ตรวจ root array ของ id/type"]
+        ecmCategoryRows --> ecmSelected["คืนเฉพาะ category names และเก็บ scoped list"]
+        ecmCategoryRows -->|"รูปแบบผิด"| ecmUnavailable
+        ecmCategory -->|"401"| ecmInvalidate["invalidate เฉพาะ generation ที่ใช้ คืน integration error"]
+    end
+    ecmSelected --> categoryRelay
+    categoryRelay --> availableCategories{"Popup มีรายการหมวดให้เลือก"}
+    availableCategories -->|"มี"| categoryConfirm{"ส่งคำเลือกให้แผงหลักตรวจ whitelist และ target อีกครั้ง"}
+    availableCategories -->|"ไม่มี"| retryCategory
+    categoryConfirm -->|"ช่องใหม่"| native
+    categoryConfirm -->|"แปลงช่องข้อความเดิม"| proveExisting["วางปุ่มและบันทึกต้นแบบก่อนแปลง"] --> oldProof
+    categoryConfirm -->|"เปลี่ยนหมวดช่องแนบเดิม"| keepButton["คงปุ่ม/id/Tag เปลี่ยนหมวดและบันทึกต้นแบบ"] --> attachment
+    categoryConfirm -->|"ยกเลิก / Escape"| unchanged["ไม่สร้างหรือเปลี่ยน Field/ปุ่ม/หมวด"]
+    ecmUnavailable --> retryCategory["ลองใหม่ หรือ ยกเลิก"]
+    ecmInvalidate --> retryCategory
+    retryCategory -->|"ลองใหม่"| ecmAdmin
+    retryCategory -->|"ยกเลิก"| unchanged
+    subgraph scalarFiles ["Scalar และ physical table attachment: lifecycle เดียว"]
+        scalarOpen["เปิด User Draft / Admin Correction: trusted Published contract"]
+        scalarOpen --> scalarCold{"User Draft ยังต้อง cold initialize หรือไม่"}
+        scalarCold -->|"ใช่"| scalarGeometry["สร้างปุ่มตาม physical binding เดิม; hidden/zero-area preview คง 0×0"]
+        scalarCold -->|"ไม่ / Correction workspace"| scalarDelivery
+        scalarGeometry --> scalarDelivery["authenticated editable delivery: reproject protection โดยไม่เขียน canonical; opening-generation cache namespace"]
+        scalarDelivery --> scalarPick
+        scalarPick["กล่องแนบไฟล์: PDF, DOCX, XLSX, PNG, TXT ขนาด 2–10,000,000 bytes"] --> scalarConfirm{"ยืนยันการเลือกหรือไม่"}
+        scalarConfirm -->|"ยกเลิก / X ก่อนยืนยัน"| scalarDiscard["ทิ้งเฉพาะการเลือกในหน้าต่าง คงสถานะก่อนเปิด"]
+        scalarDiscard -->|"เปิดใหม่"| scalarPick
+        scalarConfirm -->|"บันทึกการเปลี่ยน + trusted host ack"| scalarPending["File/removal อยู่ใน host memory; เตือนก่อนออกหรือ reload"]
+        scalarPending -->|"explicit Save Draft / Submit เท่านั้น"| scalarCapture["GetFileToDownload: snapshot native ที่ freeze"]
+        scalarPending -->|"Download ขณะมี pending"| scalarBlocked["หยุด export ไม่ upload"]
+        scalarCapture --> scalarValidate["ตรวจ owner / lease / revision / button / native metadata และ table protection/mapping proof ที่เกี่ยวข้อง"]
+        scalarValidate --> scalarReuse{"ไม่มี File/removal ใหม่ และ metadata เดิม"}
+        scalarReuse -->|"ใช่: ไม่ login/upload"| scalarCommit
+        scalarReuse -->|"metadata เปลี่ยน ไม่มี replacement/removal"| scalarOriginal["legacy: owned direct original; template เปลี่ยนเลข: public authenticated GET ด้วย paired receipt token"]
+        scalarOriginal -->|"ครบทุก plan จึงส่ง"| scalarIntent
+        scalarOriginal -->|"อ่านไม่ได้ / size ไม่ตรง"| scalarOriginalFail["ไม่เริ่ม upload; canonical เดิมและ pending choice คงอยู่"]
+        scalarPick --> scalarRemove["คืนไฟล์เดิม / นำออก เป็นการเลือกเฉพาะในหน้าต่าง"]
+        scalarRemove --> scalarConfirm
+        scalarReuse -->|"File/removal ใหม่"| scalarIntent["transaction สั้น: Operation + scoped batch"]
+        scalarIntent --> scalarNames["ทุก scalar/table slot ใช้ base name เดิม; ไม่เติม counter/time/row suffix หรือจองชื่อ"]
+        scalarNames --> scalarLedger["shared admission: account / scope / lease / revision / uncertain attempt; ชื่อซ้ำอย่างเดียวไม่ใช่ resource conflict"]
+        scalarLedger --> scalarPlanned{"มีแผนส่งไฟล์ใหม่ที่ปลอดภัย"}
+        scalarPlanned -->|"มี"| scalarUpload["original bytes: template=1 สอง field; legacy=0 policy เดิม; ไม่ resend"]
+        scalarPlanned -->|"ไม่มี: removal"| scalarCommit
+        scalarUpload --> scalarReceipt{"receipt URL/token ถูกต้อง"}
+        scalarReceipt -->|"ใช่: object หรือหนึ่งรายการ array"| scalarDurable["persist original receipt/settlement; reconcile canonical provider identity แยกจาก attempt"]
+        scalarDurable --> scalarReceiptIdentity{"actual new template receipt ชน identity เดิมหรือไม่"}
+        scalarReceiptIdentity -->|"distinct valid receipt"| scalarCommit["recheck + atomic document / canonical JSON / references / Operation result"]
+        scalarReceiptIdentity -->|"paired history / own unprotected Draft / ambiguous alias"| scalarConflict["เหตุผลจำแนก; persist evidence + hold identity; ไม่ commit/DELETE shared resource; คง pending"]
+        scalarReceipt -->|"ไม่ทราบผล"| scalarHold["durable hold; canonical คำตอบเดิมอ่านได้ แต่ URL อาจถูกเขียนทับแล้ว"]
+        scalarHold --> scalarAdmin["ห้าม Save / Submit / Response delete; ติดต่อ Admin"]
+        scalarDurable -->|"known failure / stale / JSON เกิน limit"| scalarCancel["cancel ทั้ง batch; cleanup เฉพาะ new unreferenced Folio files"]
+        scalarCancel -->|"cleanup ไม่ยืนยัน"| scalarHold
+        scalarCommit --> scalarResume["เปิด Draft กลับเห็น saved URL; clear เฉพาะ File snapshot ที่รับ"]
+        scalarCommit --> scalarOld["commit cleanup intent ของรอบนี้ พร้อม new references; retire เฉพาะ obsolete Draft refs"]
+        scalarOld --> scalarFence{"identity aliases / destination / global references fence"}
+        scalarFence -->|"history / workspace / eligible operation ยังใช้"| scalarResume
+        scalarFence -->|"ไม่มี refs: claim ก่อน dispatch"| scalarDelete["DELETE canonical token ครั้งเดียว เฉพาะ initiating operation"]
+        scalarDelete -->|"ยืนยันแล้ว"| scalarResume
+        scalarDelete -->|"failed / unknown"| scalarWarning["ข้อมูลใหม่ saved ใช้และ export ได้; durable warning ว่า URL เก่าอาจยังเปิดได้"]
+        scalarWarning -->|"reopen / ordinary Save ไม่ retry หรือ clear"| scalarResume
+        scalarInternal["implicit Add row / project / workspace save"]
+        scalarRefs["reconcile canonical references ใน transaction; ไม่ upload/delete"]
+        scalarInternal --> rowMinimum{"delete จะทำให้ body เหลือศูนย์แถวหรือไม่"}
+        rowMinimum -->|"ใช่: หยุดก่อน mutation"| rowStop
+        rowMinimum -->|"ไม่"| rowProof["ตรวจ trusted before/after workbook: document keys และ physical row mapping"]
+        rowProof -->|"พิสูจน์ได้"| rowKeep["ปรับ canonical row_index; คง immutable version และ original pending File/removal"]
+        rowProof -->|"stale / ambiguous / สูญเสีย pending"| rowStop["หยุดก่อนเปลี่ยนหน้า ไม่ discard หรือ force reload"]
+        rowKeep --> scalarRefs
+        scalarRefs --> scalarResume
+        scalarBoot["ก่อนเปิดแก้:ตรวจ checkpoint เดิมด้วย bounded poll พร้อม renew lease"] --> scalarCanonical["เปิด canonical ล่าสุดก่อนรับ ordinary edits ใหม่; ไม่อ้าง receipt เก่าว่าบันทึก snapshot ใหม่"]
+        scalarCanonical --> scalarPick
+        scalarCapture --> scalarFreeze["own commit ยังไม่ยุติ:คง native readOnly; ปุ่มตรวจผลเดิมยังใช้ได้"]
+        scalarFreeze --> scalarLookup
+        scalarCapture -->|"Folio response หาย"| scalarLookup["ตรวจ checkpoint เดิม; ไม่ส่ง bytes ซ้ำ"]
+        scalarLookup -->|"พบ"| scalarPoll["poll Operation เดิม"]
+        scalarLookup -->|"404 ยังไม่ใช่ข้อยุติ"| scalarAdmission["explicit recover: form→lease lock เดียวกับ admission"]
+        scalarAdmission -->|"พบ batch แล้ว"| scalarPoll
+        scalarAdmission -->|"ไม่พบและไม่มี active mutation"| scalarLease["rotate lease UUID; old sender เริ่มไม่ได้; คง File และ native edits"]
+        scalarLease -->|"renew capability แล้วผู้ใช้กดบันทึกใหม่"| scalarCapture
+        scalarPoll -->|"completed"| scalarResume
+        scalarAdmin --> followUp["Results เดิม:ขยาย trusted operation/version/slot/destination/time"]
+        followUp --> senderFence["Admin ที่มีสิทธิ์:หยุด dispatch/commit ของ batch เดิมด้วย generation fence"]
+        senderFence --> remoteUnknown{"คำขอเดิมมี validated receipt หรือไม่"}
+        remoteUnknown -->|"ไม่มี: restart/timeout/empty search ไม่ใช่ proof"| scalarHold
+        remoteUnknown -->|"late receipt จาก request เดิม"| canceledReceipt["persist received/request-settled ของ intent เดิม; ห้าม adopt"]
+        canceledReceipt --> firstDelete{"Admin + generation ปัจจุบัน + ไม่มี refs + ไม่เคยส่ง DELETE"}
+        firstDelete -->|"ครบ"| operatorDelete["เริ่ม DELETE ครั้งแรก; บันทึก actor และ trusted evidence"]
+        operatorDelete -->|"verified response และ canceled files ครบ"| settled["batch canceled; ผู้ใช้เริ่มใหม่ด้วย identities ใหม่"]
+        operatorDelete -->|"ผลไม่ชัด"| scalarHold
+    end

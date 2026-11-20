@@ -9,14 +9,21 @@ import {
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Elysia } from "elysia";
 
+import { requireIdentity } from "../auth/identity";
 import { databaseErrorCode } from "../db-errors";
 import { validateResponseDocument } from "../documents/native-eligibility";
 import { callbackFieldMetadata } from "../documents/office-values";
 import {
+  readSpreadsheetWorkbook,
+  resolveSpreadsheetContract,
+} from "../documents/spreadsheets/workbook";
+import {
   requireActionEditorAuthorization,
+  requireDocumentServerKey,
   requireEditorScope,
   operationEditorCapability,
 } from "../editor/authorization";
+import type { ActionEditorAuthorization } from "../editor/authorization";
 import {
   lockActiveEditorLease,
   requireActiveEditorLease,
@@ -27,7 +34,12 @@ import {
 } from "../forms/query";
 import { spreadsheetBindingsForTemplate } from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
-import { requiredString } from "../http/input";
+import {
+  legacyJsonBodyMaximumBytes,
+  readJsonRecord,
+  requiredString,
+  validateId,
+} from "../http/input";
 import type { Operation } from "../model-types";
 import { createOperation } from "../operations/create";
 import { launchForceSave } from "../operations/force-save";
@@ -39,6 +51,13 @@ import type { OperationMetadata } from "../operations/model";
 import { operationTypeForAction } from "../operations/model";
 import { processNativeResponseOperation } from "../operations/response-completion";
 import { pdmsOperationContext } from "../pdms/catalog";
+import { hasSpreadsheetAttachments } from "../responses/attachment-data";
+import {
+  attachmentOperationAction,
+  replayAttachmentOperation,
+  recoverAttachmentAdmission,
+  startAttachmentOperation,
+} from "../responses/attachment-operation";
 import {
   normalizeResponseData,
   jsonValue,
@@ -50,15 +69,102 @@ import { findOwnedResponse } from "../responses/query";
 import { DOCX_CONTENT_TYPE, readObject, objectKey } from "../storage";
 import type { RouteDependencies } from "./dependencies";
 
+const responseAttachmentBindings = async (
+  publishedTemplateId: string,
+  formId: string,
+  authorization: ActionEditorAuthorization
+) => {
+  const bindings = await spreadsheetBindingsForTemplate(publishedTemplateId);
+  if (!bindings.table?.columns.some((column) => column.attachment)) {
+    return bindings;
+  }
+  const response = await prisma.response.findFirst({
+    where: {
+      draftDocumentKey: authorization.capability.documentKey,
+      formId,
+      id: authorization.capability.targetId,
+      publishedTemplateId,
+      userId: authorization.actor.id,
+    },
+  });
+  if (!response?.draftObjectKey) {
+    fail(409, "stale_response", "ไม่พบเอกสารตารางปัจจุบันของคำตอบนี้");
+  }
+  return resolveSpreadsheetContract(
+    bindings,
+    readSpreadsheetWorkbook(await readObject(response.draftObjectKey))
+  );
+};
+
 export function registerResponseActionRoutes(
   app: Elysia,
   dependencies: Pick<
     RouteDependencies,
-    "onlyOffice" | "storeObject" | "allowedCallbackOrigins"
+    "onlyOffice" | "storeObject" | "allowedCallbackOrigins" | "ecm"
   >
 ): void {
   const { onlyOffice, storeObject, allowedCallbackOrigins } = dependencies;
   app
+    .get(
+      "/api/responses/:id/attachment-operations/:checkpoint",
+      async ({ request, params }) => {
+        const identity = await requireIdentity(request);
+        const responseId = validateId(params.id, "Response");
+        const checkpoint = validateId(params.checkpoint, "Checkpoint");
+        const batch = await prisma.ecmAttachmentBatch.findUnique({
+          where: {
+            responseId_actorId_checkpoint: {
+              actorId: identity.id,
+              checkpoint,
+              responseId,
+            },
+          },
+        });
+        if (!batch) {
+          fail(
+            404,
+            "not_found",
+            "ยังไม่พบผลรอบบันทึกเดิม กรุณาเก็บหน้านี้ไว้และตรวจผลเดิมอีกครั้ง ห้ามส่งไฟล์ซ้ำ"
+          );
+        }
+        const operation = await prisma.operation.findUniqueOrThrow({
+          where: { id: batch.operationId },
+        });
+        return {
+          action: attachmentOperationAction(operation),
+          batchState: batch.state,
+          operationCapability: operationEditorCapability(
+            identity,
+            {
+              documentKey: batch.documentKey,
+              formId: batch.formId,
+              targetId: responseId,
+              targetType:
+                operation.targetType === "correction"
+                  ? "correction"
+                  : "response",
+            },
+            operation.id
+          ),
+          operationId: operation.id,
+          responseId,
+          status: operation.status,
+        };
+      }
+    )
+    .post(
+      "/api/responses/:id/attachment-operations/:checkpoint/recover",
+      async ({ request, params }) => {
+        const authorization = await requireActionEditorAuthorization(request);
+        return recoverAttachmentAdmission(
+          authorization,
+          validateId(params.id, "Response"),
+          validateId(params.checkpoint, "Checkpoint"),
+          await readJsonRecord(request, legacyJsonBodyMaximumBytes)
+        );
+      },
+      { parse: "none" }
+    )
     .post(
       "/api/forms/:publicId/draft",
       async ({ request, params, set }) => {
@@ -69,9 +175,18 @@ export function registerResponseActionRoutes(
           form.fillMethod === FillMethod.native && form.publishedTemplate
             ? await nativePictureManifestFields(form.publishedTemplate.id)
             : [];
+        const attachmentBindings =
+          form.documentKind === "xlsx" && form.publishedTemplate
+            ? await responseAttachmentBindings(
+                form.publishedTemplate.id,
+                form.id,
+                authorization
+              )
+            : undefined;
         const nativeRequest = await nativeResponseRequest(
           request,
-          pictureFields
+          pictureFields,
+          attachmentBindings
         );
         const input = nativeRequest.input;
         requireCurrentFillMethod(form, input);
@@ -82,6 +197,19 @@ export function registerResponseActionRoutes(
           form.id,
           identity.id
         );
+        if (hasSpreadsheetAttachments(attachmentBindings)) {
+          const replay = await replayAttachmentOperation(
+            authorization,
+            input,
+            form.id,
+            response.id,
+            "save-draft"
+          );
+          if (replay) {
+            set.status = 202;
+            return replay;
+          }
+        }
         if (
           response.status !== ResponseStatus.draft ||
           response.draftDocumentKey !== documentKey ||
@@ -114,6 +242,26 @@ export function registerResponseActionRoutes(
                 sessionId: input.pdmsCatalogSessionId,
               })
             : {};
+        if (
+          hasSpreadsheetAttachments(attachmentBindings) &&
+          input.rowChange === undefined &&
+          input.pdmsSelection === undefined
+        ) {
+          const accepted = await startAttachmentOperation({
+            action: "save-draft",
+            authorization,
+            bindings: attachmentBindings,
+            ecm: dependencies.ecm,
+            files: nativeRequest.attachments,
+            form,
+            input,
+            onlyOffice,
+            pdmsContext,
+            responseId,
+          });
+          set.status = 202;
+          return accepted;
+        }
         const data =
           form.documentKind === "xlsx"
             ? {}
@@ -247,9 +395,18 @@ export function registerResponseActionRoutes(
           form.fillMethod === FillMethod.native && form.publishedTemplate
             ? await nativePictureManifestFields(form.publishedTemplate.id)
             : [];
+        const attachmentBindings =
+          form.documentKind === "xlsx" && form.publishedTemplate
+            ? await responseAttachmentBindings(
+                form.publishedTemplate.id,
+                form.id,
+                authorization
+              )
+            : undefined;
         const nativeRequest = await nativeResponseRequest(
           request,
-          pictureFields
+          pictureFields,
+          attachmentBindings
         );
         const input = nativeRequest.input;
         requireCurrentFillMethod(form, input);
@@ -260,6 +417,19 @@ export function registerResponseActionRoutes(
           form.id,
           identity.id
         );
+        if (hasSpreadsheetAttachments(attachmentBindings)) {
+          const replay = await replayAttachmentOperation(
+            authorization,
+            input,
+            form.id,
+            response.id,
+            "submit"
+          );
+          if (replay) {
+            set.status = 202;
+            return replay;
+          }
+        }
         if (
           response.status !== ResponseStatus.draft ||
           response.draftDocumentKey !== documentKey ||
@@ -291,6 +461,22 @@ export function registerResponseActionRoutes(
                 sessionId: input.pdmsCatalogSessionId,
               })
             : {};
+        if (hasSpreadsheetAttachments(attachmentBindings)) {
+          const accepted = await startAttachmentOperation({
+            action: "submit",
+            authorization,
+            bindings: attachmentBindings,
+            ecm: dependencies.ecm,
+            files: nativeRequest.attachments,
+            form,
+            input,
+            onlyOffice,
+            pdmsContext,
+            responseId,
+          });
+          set.status = 202;
+          return accepted;
+        }
         const data =
           form.documentKind === "xlsx"
             ? {}
@@ -348,6 +534,12 @@ export function registerResponseActionRoutes(
           action: "submit",
           data,
           documentKind: form.documentKind,
+          ...(form.documentKind === "xlsx"
+            ? {
+                documentServerKey: requireDocumentServerKey(authorization),
+                nativeCaptureLeaseId: authorization.capability.leaseId,
+              }
+            : {}),
           finalObjectKey: objectKey(
             "submissions",
             submissionId,

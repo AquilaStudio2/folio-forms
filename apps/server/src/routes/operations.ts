@@ -70,6 +70,8 @@ export function registerOperationRoutes(
     await cleanupTerminalOperationObjects(operation);
     const result = operation.result as Record<string, unknown> | null;
     const errorMessages: Record<string, string> = {
+      attachment_template_stale:
+        "แม่แบบจัดเก็บเอกสารเปลี่ยนแล้ว กรุณาเลือกใหม่ ข้อมูลร่างเดิมยังคงอยู่",
       callback_processing_failed:
         "ประมวลผลเอกสารไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาลองอีกครั้ง",
       force_save_failed: "บันทึกเอกสารไม่สำเร็จ ข้อมูลเดิมยังอยู่ กรุณาลองอีกครั้ง",

@@ -5,6 +5,7 @@ import type { Elysia } from "elysia";
 import { createResponseAudit } from "../audit/events";
 import { requireAdmin, requireIdentity } from "../auth/identity";
 import { responsePicturePresence } from "../documents/pictures";
+import { withSpreadsheetExportSnapshot } from "../documents/spreadsheets/export-snapshot";
 import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
 import { receiptField } from "../forms/query";
 import {
@@ -24,6 +25,7 @@ import {
   correctionRevisionSummary,
 } from "../responses/query";
 import type { CorrectionRevisionSummary } from "../responses/query";
+import { responseSpreadsheetExport } from "../responses/spreadsheet-document";
 import {
   DOCX_CONTENT_TYPE,
   deleteObject,
@@ -35,9 +37,12 @@ import type { RouteDependencies } from "./dependencies";
 
 export function registerSubmissionRoutes(
   app: Elysia,
-  dependencies: Pick<RouteDependencies, "onlyOffice" | "prefillReturnUrl">
+  dependencies: Pick<
+    RouteDependencies,
+    "ecm" | "onlyOffice" | "prefillReturnUrl"
+  >
 ): void {
-  const { onlyOffice, prefillReturnUrl } = dependencies;
+  const { ecm, onlyOffice, prefillReturnUrl } = dependencies;
   app
     .get("/api/submissions/:id/data", async ({ request, params, query }) => {
       const identity = await requireIdentity(request);
@@ -243,7 +248,7 @@ export function registerSubmissionRoutes(
       }
       const identity = await requireIdentity(request);
       validateId(params.id, "Submission");
-      const submission = await findSubmissionWithRevisions(params.id);
+      const submission = await findSubmissionWithRevisions(params.id, true);
       if (!submission) {
         fail(404, "not_found", "Submission was not found");
       }
@@ -272,22 +277,30 @@ export function registerSubmissionRoutes(
       });
       const suffix =
         selected.revision === 0 ? "" : `-revision-${selected.revision}`;
-      return new Response(streamObject(selected.objectKey), {
-        headers: {
-          "Content-Disposition": `attachment; filename="submission-${submission.id}${suffix}.${submission.form.documentKind}"`,
-          "Content-Type":
-            submission.form.documentKind === "xlsx"
-              ? XLSX_CONTENT_TYPE
-              : DOCX_CONTENT_TYPE,
-        },
-      });
+      return new Response(
+        submission.form.documentKind === "xlsx"
+          ? await responseSpreadsheetExport(
+              await readObject(selected.objectKey),
+              submission.response.publishedTemplateId
+            )
+          : streamObject(selected.objectKey),
+        {
+          headers: {
+            "Content-Disposition": `attachment; filename="submission-${submission.id}${suffix}.${submission.form.documentKind}"`,
+            "Content-Type":
+              submission.form.documentKind === "xlsx"
+                ? XLSX_CONTENT_TYPE
+                : DOCX_CONTENT_TYPE,
+          },
+        }
+      );
     })
     .get(
       "/api/submissions/:id/pdf",
       async ({ request, params, query, set }) => {
         const identity = await requireIdentity(request);
         validateId(params.id, "Submission");
-        const submission = await findSubmissionWithRevisions(params.id);
+        const submission = await findSubmissionWithRevisions(params.id, true);
         if (!submission) {
           fail(404, "not_found", "Submission was not found");
         }
@@ -298,11 +311,21 @@ export function registerSubmissionRoutes(
         );
         let pdf: Uint8Array;
         try {
-          pdf = await onlyOffice.convertDocxToPdf(
-            selected.documentKey,
-            true,
-            submission.form.documentKind
-          );
+          pdf =
+            submission.form.documentKind === "xlsx"
+              ? await withSpreadsheetExportSnapshot(
+                  await responseSpreadsheetExport(
+                    await readObject(selected.objectKey),
+                    submission.response.publishedTemplateId
+                  ),
+                  (key) => onlyOffice.convertDocxToPdf(key, true, "xlsx"),
+                  request.signal
+                )
+              : await onlyOffice.convertDocxToPdf(
+                  selected.documentKey,
+                  true,
+                  submission.form.documentKind
+                );
         } catch (error) {
           await createResponseAudit({
             action: selected.correction
@@ -347,6 +370,7 @@ export function registerSubmissionRoutes(
       validateId(params.id, "Submission");
       return deleteSubmissionData({
         actor: identity,
+        ecm,
         removeObject: deleteObject,
         submissionId: params.id,
       });

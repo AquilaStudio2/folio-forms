@@ -3,10 +3,12 @@ import { expect, test } from "bun:test";
 
 import { prisma } from "@onlyoffice/db";
 import { strToU8, unzipSync, zipSync } from "fflate";
+import { z } from "zod";
 
 import { createApp } from "../../src/app";
 import { blankSpreadsheet } from "../../src/documents/spreadsheets/blank";
 import { spreadsheetManifestFieldData } from "../../src/forms/spreadsheet-fields";
+import { createOnlyOfficeAuthorization } from "../../src/onlyoffice";
 import { operationMetadata } from "../../src/operations/model";
 import { completeCorrectionOperation } from "../../src/operations/response-completion";
 import { putObject, readObject } from "../../src/storage";
@@ -209,9 +211,48 @@ for (const kind of ["docx", "xlsx"] as const) {
         submissionId: second.id,
       },
     });
-    expect(await (await get(`${base}/viewer-config`)).json()).toMatchObject({
-      config: { document: { key: second.documentKey } },
+    const viewerSchema = z.object({
+      config: z.object({
+        document: z.object({ key: z.string(), url: z.string() }),
+      }),
     });
+    const readViewer = async () => {
+      const result = await get(`${base}/viewer-config`);
+      expect(result.status).toBe(200);
+      return viewerSchema.parse(await result.json());
+    };
+    const viewer = await readViewer();
+    const reopenedViewer = await readViewer();
+    if (kind === "xlsx") {
+      expect(viewer.config.document.key).not.toBe(second.documentKey);
+      expect(viewer.config.document.key).not.toBe(
+        oldEditor.config.document.key
+      );
+      expect(reopenedViewer.config.document.key).not.toBe(
+        viewer.config.document.key
+      );
+    } else {
+      expect(viewer.config.document.key).toBe(second.documentKey);
+      expect(reopenedViewer.config.document.key).toBe(second.documentKey);
+    }
+    expect(new URL(viewer.config.document.url).pathname).toBe(
+      `/onlyoffice/document/${second.documentKey}`
+    );
+    const selectedDocument = await app.handle(
+      new Request(viewer.config.document.url, {
+        headers: {
+          Authorization: createOnlyOfficeAuthorization({
+            url: viewer.config.document.url,
+          }),
+        },
+      })
+    );
+    expect(selectedDocument.status).toBe(200);
+    const selectedBytes: Uint8Array = await readObject(second.objectKey);
+    const downloadedBytes: Uint8Array = new Uint8Array(
+      await selectedDocument.arrayBuffer()
+    );
+    expect(downloadedBytes).toEqual(selectedBytes);
     expect((await get(`${base}?revision=1`)).status).toBe(404);
     expect((await get(`${base}/viewer-config?revision=1`)).status).toBe(404);
     expect(
@@ -243,23 +284,26 @@ for (const kind of ["docx", "xlsx"] as const) {
       mine.responses.find((row) => row.id === response.id)
         ?.latestCorrectionNumber
     ).toBeNull();
-    const save = (editor: EditorConfigBody) =>
+    const save = (editor: EditorConfigBody, selectedSubmissionId?: string) =>
       app.handle(
-        new Request(`http://test.local${base}/correction`, {
-          body: JSON.stringify({
-            data: { name: "corrected second" },
-            documentKey: editor.config.document.key,
-            reason: "Second correction",
-          }),
-          headers: {
-            ...headers,
-            ...jsonHeaders,
-            "X-Editor-Capability": editor.bridge.capabilities[
-              "save-correction"
-            ] as string,
-          },
-          method: "POST",
-        })
+        new Request(
+          `http://test.local${base}/correction${selectedSubmissionId ? `?submissionId=${selectedSubmissionId}` : ""}`,
+          {
+            body: JSON.stringify({
+              data: { name: "corrected second" },
+              documentKey: editor.bridge.documentKey,
+              reason: "Second correction",
+            }),
+            headers: {
+              ...headers,
+              ...jsonHeaders,
+              "X-Editor-Capability": editor.bridge.capabilities[
+                "save-correction"
+              ] as string,
+            },
+            method: "POST",
+          }
+        )
       );
     expect((await save(oldEditor)).status).toBe(409);
     const editorResponse = await get(`${base}/correction/editor-config`);
@@ -393,6 +437,70 @@ for (const kind of ["docx", "xlsx"] as const) {
     });
     expect(await (await get(base)).json()).toMatchObject({
       result: { data: { name: "third" }, revision: 0, submissionId: third.id },
+    });
+
+    const ownerDraft = await prisma.response.update({
+      data: {
+        draftData: { name: "in progress" },
+        draftDocumentKey: crypto.randomUUID(),
+        draftObjectKey: await artifact("in progress"),
+        status: "draft",
+      },
+      where: { id: response.id },
+    });
+    const historicalConfig = await get(
+      `${base}/correction/editor-config?submissionId=${first.id}`
+    );
+    expect(historicalConfig.status).toBe(200);
+    const historicalEditor =
+      (await historicalConfig.json()) as EditorConfigBody;
+    const historicalReady = Promise.withResolvers<boolean>();
+    forceSaveWaiters.set(historicalEditor.config.document.key, () => {
+      historicalReady.resolve(true);
+    });
+    const historicalSave = await save(historicalEditor, first.id);
+    expect(historicalSave.status).toBe(202);
+    const { operationId: historicalId } = (await historicalSave.json()) as {
+      operationId: string;
+    };
+    await historicalReady.promise;
+    forceSaveWaiters.delete(historicalEditor.config.document.key);
+    const historicalOperation = await prisma.operation.findUniqueOrThrow({
+      where: { id: historicalId },
+    });
+    const historicalMetadata = operationMetadata(historicalOperation.metadata);
+    expect(historicalMetadata).toMatchObject({
+      baseDocumentKey: firstCorrection.documentKey,
+      submissionId: first.id,
+    });
+    const historicalBytes = documentFixture(kind, "historical correction");
+    await putObject(historicalMetadata.finalObjectKey, historicalBytes);
+    await completeCorrectionOperation(
+      historicalOperation,
+      { ...historicalMetadata, data: { name: "historical correction" } },
+      historicalBytes
+    );
+    expect(
+      await (await get(`/api/submissions/${first.id}/data`)).json()
+    ).toMatchObject({
+      data: { name: "historical correction" },
+      revision: 4,
+    });
+    expect(
+      await (await get(`/api/submissions/${third.id}/data`)).json()
+    ).toMatchObject({
+      data: { name: "third" },
+      revision: 0,
+    });
+    expect(
+      await prisma.response.findUnique({
+        where: { id: response.id },
+      })
+    ).toMatchObject({
+      draftData: ownerDraft.draftData,
+      draftDocumentKey: ownerDraft.draftDocumentKey,
+      draftObjectKey: ownerDraft.draftObjectKey,
+      status: "draft",
     });
     // Filter by the current submission before taking a page, including revision 0.
     // Put more than one batch of nonmatches before the 26 uncorrected results.

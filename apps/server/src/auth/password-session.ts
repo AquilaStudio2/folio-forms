@@ -5,10 +5,8 @@ import { auth } from "@onlyoffice/auth";
 import { prisma } from "@onlyoffice/db";
 import { env } from "@onlyoffice/env/server";
 
-import type { AiAuthoringSessions } from "../ai-authoring";
 import type { JsonRecord } from "../model-types";
-import type { Identity } from "./identity";
-import { identityFor, normalizeEmail } from "./identity";
+import { normalizeEmail } from "./identity";
 
 const loginFailureLimit = 5;
 const loginFailureWindowMs = 15 * 60_000;
@@ -95,70 +93,10 @@ function loginError(
   );
 }
 
-async function withAiAuthoringSessionsEnding<T>(
-  aiAuthoring: AiAuthoringSessions,
-  ownerSessionIds: readonly string[],
-  revokeOwnerSessions: () => Promise<T>
-): Promise<T> {
-  const uniqueSessionIds = [...new Set(ownerSessionIds)];
-  if (uniqueSessionIds.length === 0) {
-    return await revokeOwnerSessions();
-  }
-  let revocation: Promise<T> | undefined;
-  const revokeDeferred = async (): Promise<T> => {
-    await Promise.resolve();
-    return await revokeOwnerSessions();
-  };
-  const revokeOnce = (): Promise<T> => (revocation ??= revokeDeferred());
-  const endings = await Promise.allSettled(
-    uniqueSessionIds.map((sessionId) =>
-      aiAuthoring.endForSession(sessionId, revokeOnce)
-    )
-  );
-  const errors = [
-    ...new Set(
-      endings.flatMap((ending) =>
-        ending.status === "rejected" ? [ending.reason] : []
-      )
-    ),
-  ];
-  if (errors.length === 1) {
-    throw errors[0];
-  }
-  if (errors.length > 1) {
-    throw new AggregateError(errors, "AI authoring session cleanup failed");
-  }
-  return await (revocation ?? revokeOnce());
-}
-
-export async function endAiAuthoringSessions(
-  aiAuthoring: AiAuthoringSessions,
-  ownerSessionIds: readonly string[]
-): Promise<void> {
-  await withAiAuthoringSessionsEnding(aiAuthoring, ownerSessionIds, () =>
-    Promise.resolve()
-  );
-}
-
-export async function isAuthoringOwnerSessionCurrent(
-  request: Request,
-  owner: Identity
-): Promise<boolean> {
-  const currentIdentity = await identityFor(request);
-  return (
-    currentIdentity !== null &&
-    currentIdentity.id === owner.id &&
-    currentIdentity.sessionId === owner.sessionId &&
-    currentIdentity.role === "admin" &&
-    (!currentIdentity.mustChangePassword || currentIdentity.isSso)
-  );
-}
-
 export async function handleEmailSignIn(
   request: Request,
   body: unknown,
-  sourceIp: string,
-  aiAuthoring: AiAuthoringSessions
+  sourceIp: string
 ): Promise<globalThis.Response> {
   if (!body || typeof body !== "object" || Array.isArray(body)) {
     return loginError(401, "invalid_credentials");
@@ -195,15 +133,7 @@ export async function handleEmailSignIn(
   const user = await prisma.user.findUnique({ where: { email } });
   if (!user?.enabled) {
     if (user) {
-      const sessions = await prisma.session.findMany({
-        select: { id: true },
-        where: { userId: user.id },
-      });
-      await withAiAuthoringSessionsEnding(
-        aiAuthoring,
-        sessions.map(({ id }) => id),
-        () => prisma.session.deleteMany({ where: { userId: user.id } })
-      );
+      await prisma.session.deleteMany({ where: { userId: user.id } });
     }
     return loginError(401, "invalid_credentials");
   }

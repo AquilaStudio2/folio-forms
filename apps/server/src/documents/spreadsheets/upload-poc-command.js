@@ -9,7 +9,7 @@ export function spreadsheetUploadPocCommand(supplied) {
       !input.preview ||
       !input.guid
     ) {
-      throw new Error("Invalid upload POC projection");
+      throw new Error("Invalid attachment button projection");
     }
     var count = 0;
     for (var target of input.targets) {
@@ -17,12 +17,12 @@ export function spreadsheetUploadPocCommand(supplied) {
         !/^folio_[A-Za-z0-9_]+$/u.test(target.bindingId) ||
         !["field", "column"].includes(target.kind)
       ) {
-        throw new Error("Invalid upload POC binding");
+        throw new Error("Invalid attachment button binding");
       }
       var source = Api.GetDefName(target.bodyAnchor || target.anchor);
       var range = source && source.GetRefersToRange();
       if (!range || range.GetWorksheet().GetName() !== target.sheet) {
-        throw new Error("Upload POC position is unavailable");
+        throw new Error("Attachment button position is unavailable");
       }
       var sheet = range.GetWorksheet();
       var firstRow = range.GetRow() - 1;
@@ -57,7 +57,7 @@ export function spreadsheetUploadPocCommand(supplied) {
         if (existingMarker) {
           existingMarker.SetRefersTo(reference);
         } else if (!Api.AddDefName(marker, reference, false)) {
-          throw new Error("Could not mark upload POC position");
+          throw new Error("Could not mark attachment button position");
         }
       }
       var existing = sheet.GetAllOleObjects().filter((object) => {
@@ -76,37 +76,55 @@ export function spreadsheetUploadPocCommand(supplied) {
         }
       });
       if (existing.length > rows) {
-        throw new Error("Upload POC positions need a saved rebuild");
+        throw new Error("Attachment button positions need a saved rebuild");
       }
       for (var index = 0; index < rows; index += 1) {
         var cell =
           target.kind === "column"
             ? sheet.GetRangeByNumber(firstRow + index, firstColumn)
             : range;
-        // ONLYOFFICE 9.4 reports Height=0 for rows with the default height.
-        // Height/GetRowHeight are points; GetRowHeight is nullable for default rows.
-        var heightPoints = cell.Height;
-        if (!Number.isFinite(heightPoints) || heightPoints <= 0) {
-          heightPoints = 0;
-          for (
-            var heightRow = 0;
-            heightRow < cell.GetRowsCount();
-            heightRow += 1
+        // Height=0 also represents a default-height row in ONLYOFFICE 9.4.
+        // GetRowHeight=null distinguishes that default from an explicit zero;
+        // GetHidden is meaningful only on a whole-row range, not on the cell.
+        var heightPoints = 0;
+        for (
+          var heightRow = 0;
+          heightRow < cell.GetRowsCount();
+          heightRow += 1
+        ) {
+          var physicalRow = firstRow + index + heightRow;
+          var rowHeight = sheet
+            .GetRangeByNumber(physicalRow, firstColumn)
+            .GetRowHeight();
+          if (rowHeight === null) {
+            rowHeight = 14.25;
+          }
+          if (!Number.isFinite(rowHeight) || rowHeight < 0) {
+            throw new Error("Attachment button cell has invalid row height");
+          }
+          if (
+            !sheet.GetRange(`${physicalRow + 1}:${physicalRow + 1}`).GetHidden()
           ) {
-            var rowHeight = sheet
-              .GetRangeByNumber(firstRow + index + heightRow, firstColumn)
-              .GetRowHeight();
-            heightPoints +=
-              Number.isFinite(rowHeight) && rowHeight > 0 ? rowHeight : 14.25;
+            heightPoints += rowHeight;
           }
         }
-        // Natural preview is 110 x 24 pixels. Fit inside the mapped cell without stretching.
-        var scale = Math.min(1, cell.Width / 110, (heightPoints * 4) / 3 / 24);
-        if (!Number.isFinite(scale) || scale <= 0) {
-          throw new Error("Upload POC cell has no visible space");
+        // Natural preview is 110 x 24 pixels. A collapsed physical dimension
+        // keeps its binding without spilling into an adjacent visible target.
+        var cellWidth = cell.Width;
+        if (!Number.isFinite(cellWidth) || cellWidth < 0) {
+          throw new Error("Attachment button cell has invalid column width");
         }
-        var width = Math.max(1, Math.round(110 * scale * 9525));
-        var height = Math.max(1, Math.round(24 * scale * 9525));
+        var collapsed = cellWidth === 0 || heightPoints === 0;
+        var scale = Math.min(1, cellWidth / 110, (heightPoints * 4) / 3 / 24);
+        if (
+          !Number.isFinite(scale) ||
+          scale < 0 ||
+          (scale === 0 && !collapsed)
+        ) {
+          throw new Error("Attachment button cell has no visible space");
+        }
+        var width = collapsed ? 0 : Math.max(1, Math.round(110 * scale * 9525));
+        var height = collapsed ? 0 : Math.max(1, Math.round(24 * scale * 9525));
         var data = JSON.stringify({
           bindingId: target.bindingId,
           kind: "folio-upload-poc",
@@ -133,7 +151,7 @@ export function spreadsheetUploadPocCommand(supplied) {
           );
         }
         if (!object) {
-          throw new Error("Could not place upload POC button");
+          throw new Error("Could not place attachment button");
         }
         object.SetName(`folio_upload_poc_${target.bindingId}_${index}`);
         object.SetLockValue("noSelect", false);
@@ -145,7 +163,7 @@ export function spreadsheetUploadPocCommand(supplied) {
     return JSON.stringify({ count, ok: true });
   } catch (error) {
     return JSON.stringify({
-      error: error.message || "Could not display upload POC button",
+      error: error.message || "Could not display attachment button",
       ok: false,
     });
   }

@@ -1,6 +1,9 @@
 import { describe, expect, test } from "bun:test";
 
-import { applySpreadsheetValidation } from "../../src/documents/spreadsheets/validation";
+import {
+  applySpreadsheetValidation,
+  mismatchedSpreadsheetDraftValidations,
+} from "../../src/documents/spreadsheets/validation";
 import { readSpreadsheetWorkbook } from "../../src/documents/spreadsheets/workbook";
 import {
   descendants,
@@ -98,6 +101,51 @@ describe("authoritative spreadsheet validation", () => {
       )
     ).toBeUndefined();
   });
+  test("rebuilding a date leaves a foreign custom formula on unchanged plain text", () => {
+    const bindings = fixtureBindings();
+    const custom =
+      '<dataValidation sqref="A1:B1" type="custom"><formula1>LEN(A1)&lt;50</formula1></dataValidation>';
+    const bytes = mutatePart(
+      fixtureWorkbook(),
+      "xl/worksheets/sheet1.xml",
+      (xml) =>
+        xml.replace(
+          "</worksheet>",
+          `<dataValidations count="1">${custom}</dataValidations></worksheet>`
+        )
+    );
+    const saved = applySpreadsheetValidation(bytes, bindings);
+    const workbook = readSpreadsheetWorkbook(saved);
+    const rules = descendants(workbookXml(saved).sheet, "dataValidation");
+    const textRule = rules.find((rule) => rule.attributes.sqref === "A1:B1");
+    expect(textRule?.attributes.type).toBe("custom");
+    expect(textRule && descendants(textRule, "formula1")[0]?.text).toBe(
+      "LEN(A1)<50"
+    );
+    expect(mismatchedSpreadsheetDraftValidations(workbook, bindings)).toEqual(
+      []
+    );
+  });
+
+  test("diagnosis rejects the inverted date operator and a bound from the wrong date system", () => {
+    const bindings = fixtureBindings();
+    const canonical = applySpreadsheetValidation(fixtureWorkbook(), bindings);
+    for (const [before, after] of [
+      ['operator="between"', 'operator="notBetween"'],
+      ["2958465", "2957003"],
+    ] as const) {
+      const bytes = mutatePart(canonical, "xl/worksheets/sheet1.xml", (xml) =>
+        xml.replace(before, after)
+      );
+      expect(
+        mismatchedSpreadsheetDraftValidations(
+          readSpreadsheetWorkbook(bytes),
+          bindings
+        )
+      ).toEqual(["folio_date"]);
+    }
+  });
+
   test("only accepts the internal helper as a hidden standard worksheet", () => {
     const bytes = applySpreadsheetValidation(
       fixtureWorkbook(),

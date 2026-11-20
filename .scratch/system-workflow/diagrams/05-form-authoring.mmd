@@ -1,15 +1,17 @@
 flowchart TD
     list(["/admin"])
-    create["New form หรือ AI DOCX"]
+    create["New form"]
     kind{"ชนิดเอกสาร"}
     docx["DOCX เปล่าหรืออัปโหลด"]
     xlsx["XLSX workbook เปล่า"]
     draft["สร้าง Form และ TemplateDraft"]
     lease["เปิด editor พร้อม lease"]
     design["จัดหน้าและตั้งค่าฟิลด์"]
+    working["XLSX Apply: กฎและ workbook ที่ยังอยู่ใน editor"]
     save["Save Template ผ่าน Operation"]
-    saved["บันทึกต้นแบบที่เปิดต่อได้"]
+    saved["ฉบับบันทึก: กฎและ workbook ของ XLSX commit พร้อมกัน"]
     publish["Publish ผ่าน Operation"]
+    recover["ตรวจ checkpoint เดิมโดยไม่ส่งซ้ำ"]
     validate["ตรวจเอกสารและ field contract"]
     immutable["สร้าง PublishedTemplate และ Manifest"]
     share["คัดลอก share link"]
@@ -23,9 +25,15 @@ flowchart TD
     kind -->|"docx"| docx --> draft
     kind -->|"xlsx"| xlsx --> draft
     draft --> lease --> design
-    design --> save --> saved
-    saved --> design
-    design --> publish --> validate --> immutable --> share
+    design -->|"XLSX"| working
+    design -->|"DOCX"| save
+    working --> save
+    save --> saved --> design
+    design -->|"DOCX"| publish
+    working --> publish
+    publish --> validate --> immutable --> share
+    save -.->|"ไม่ได้คำตอบที่ยืนยันผล"| recover
+    publish -.->|"ไม่ได้คำตอบที่ยืนยันผล"| recover
     immutable --> metadata
     immutable --> method
     immutable -->|"เปลี่ยนโครงสร้าง"| duplicate --> draft

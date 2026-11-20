@@ -5,6 +5,10 @@ import { prisma } from "@onlyoffice/db";
 
 import { createApp } from "../../src/app";
 import {
+  spreadsheetColumnAnchor,
+  spreadsheetTableColumnsAnchor,
+} from "../../src/documents/spreadsheets/columns";
+import {
   spreadsheetBindingSchema,
   spreadsheetColumnName,
 } from "../../src/documents/spreadsheets/contract";
@@ -48,7 +52,6 @@ const native = enabled
   : null;
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   pdmsProjects: upstream
     ? { baseUrl: upstream.url.origin, secret: "synthetic-table-secret" }
     : null,
@@ -123,6 +126,10 @@ const names = {
   folio_scalar: "'Form'!$A$1:$B$1",
   folio_note: "'Form'!$D$1",
   folio_body: "'Form'!$A$4:$C$6",
+  [spreadsheetTableColumnsAnchor("folio_table")]: "'Form'!$A$4:$C$6",
+  [spreadsheetColumnAnchor("folio_column_1")]: "'Form'!$A$4:$A$6",
+  [spreadsheetColumnAnchor("folio_column_2")]: "'Form'!$B$4:$B$6",
+  [spreadsheetColumnAnchor("folio_note_column")]: "'Form'!$C$4:$C$6",
 };
 const request = (
   path: string,
@@ -176,7 +183,7 @@ const waitFor = async (response: Response) => {
 };
 interface Config {
   config: { document: { key: string } };
-  bridge: { capabilities: Record<string, string> };
+  bridge: { documentKey: string; capabilities: Record<string, string> };
   pdmsProjectCatalog: { sessionId: string; status: string; names: string[] };
 }
 
@@ -282,8 +289,9 @@ const openTable = async () => {
       },
     },
   });
+  const authorPath = `/api/admin/forms/${publicId}/editor-config?pdmsOpeningId=${crypto.randomUUID()}`;
   const author = (await (
-    await request(`/api/admin/forms/${publicId}/editor-config`, adminToken)
+    await request(authorPath, adminToken)
   ).json()) as Config;
   const sourceColumn = (
     column: typeof bindings.table extends null
@@ -295,31 +303,43 @@ const openTable = async () => {
     type: "dropdown",
     options: [],
   });
-  for (let index = 0; index < 2; index += 1) {
-    const column = bindings.table?.columns[index];
-    if (!column) {
-      throw new Error("Table fixture column is missing");
-    }
-    const changed = await request(
-      `/api/admin/forms/${publicId}/spreadsheet-bindings`,
-      author.bridge.capabilities["configure-fields"] as string,
-      {
-        documentKey: `template-${id}`,
-        revision: index + 1,
-        change: {
-          action: "upsert",
-          kind: "column",
-          value: sourceColumn(column),
-        },
-      },
-      true,
-      "PATCH"
-    );
-    expect(changed.status).toBe(200);
+  if (!bindings.table) {
+    throw new Error("Table fixture is missing");
   }
+  const candidate = {
+    ...bindings,
+    table: {
+      ...bindings.table,
+      columns: bindings.table.columns.map((column, index) =>
+        index < 2 ? sourceColumn(column) : column
+      ),
+    },
+  };
+  expect(
+    await waitFor(
+      await request(
+        `/api/admin/forms/${publicId}/save`,
+        author.bridge.capabilities["save-template"] as string,
+        {
+          documentKey: author.bridge.documentKey,
+          spreadsheetAnchors: Object.entries(names),
+          xlsxDraft: {
+            bindings: candidate,
+            checkpoint: crypto.randomUUID(),
+            revision: 1,
+            version: 1,
+          },
+        },
+        true
+      )
+    )
+  ).toMatchObject({ status: "completed" });
+  const saved = (await (
+    await request(authorPath, adminToken)
+  ).json()) as Config;
   const reopened = await request(
     `/api/admin/forms/${publicId}/spreadsheet-bindings`,
-    author.bridge.capabilities["configure-fields"] as string,
+    saved.bridge.capabilities["configure-fields"] as string,
     undefined,
     true
   );
@@ -350,10 +370,16 @@ const openTable = async () => {
   const published = await waitFor(
     await request(
       `/api/admin/forms/${publicId}/publish`,
-      author.bridge.capabilities.publish as string,
+      saved.bridge.capabilities.publish as string,
       {
-        documentKey: `template-${id}`,
+        documentKey: saved.bridge.documentKey,
         spreadsheetAnchors: Object.entries(names),
+        xlsxDraft: {
+          bindings: candidate,
+          checkpoint: crypto.randomUUID(),
+          revision: 2,
+          version: 1,
+        },
       },
       true
     )
@@ -393,7 +419,7 @@ const openTable = async () => {
       `/api/forms/${publicId}/${submit ? "submit" : "draft"}`,
       current.bridge.capabilities[submit ? "submit" : "save-draft"] as string,
       {
-        documentKey: current.config.document.key,
+        documentKey: current.bridge.documentKey,
         responseId: response.id,
         fillMethod: "onlyoffice",
         data: {},
@@ -427,7 +453,7 @@ workflowTest(
         sessionId: workflow.editor.pdmsProjectCatalog.sessionId,
         bindingId: "folio_column_1",
         name: "00123",
-        row: { index: 1, documentKey: workflow.editor.config.document.key },
+        row: { index: 1, documentKey: workflow.editor.bridge.documentKey },
       },
     });
     expect(selected.status).toBe(202);
@@ -467,7 +493,7 @@ workflowTest(
             name,
             ...(index === undefined
               ? {}
-              : { row: { index, documentKey: editor.config.document.key } }),
+              : { row: { index, documentKey: editor.bridge.documentKey } }),
           },
         })
       );
@@ -489,7 +515,7 @@ workflowTest(
         { column_1: "00123", column_2: null, note: "row two note" },
       ],
     });
-    const oldKey = editor.config.document.key;
+    const oldKey = editor.bridge.documentKey;
     snapshot = await workflow.getBytes();
     expect(
       (
@@ -570,7 +596,7 @@ workflowTest(
       sessionId: editor.pdmsProjectCatalog.sessionId,
       bindingId: "folio_column_1",
       name: "Project B",
-      row: { index: 1, documentKey: editor.config.document.key },
+      row: { index: 1, documentKey: editor.bridge.documentKey },
     };
     snapshot = await workflow.getBytes();
     const unchanged = snapshot;
@@ -628,7 +654,7 @@ workflowTest(
     expect(await workflow.getBytes()).toEqual(new Uint8Array(unchanged));
     expect(await workflow.getData()).toEqual({});
     const retained = await workflow.getConfig();
-    expect(retained.config.document.key).toBe(editor.config.document.key);
+    expect(retained.bridge.documentKey).toBe(editor.bridge.documentKey);
     expect(retained.pdmsProjectCatalog).toEqual(editor.pdmsProjectCatalog);
     // Failure retains the exact revision so a genuine picker action can retry.
     snapshot = callbackBytes(unchanged, { C5: "ordinary unsaved text" });

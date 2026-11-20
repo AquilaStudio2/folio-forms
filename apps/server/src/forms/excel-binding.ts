@@ -26,9 +26,16 @@ export const excelBindingSchemas = {
       computed: z.boolean(),
       id: identity,
       placeholder: bindingPlaceholder,
+      unbound: z.literal(true).optional(),
     })
     .strict(),
-  table: z.object({ anchor: identity, id: identity }).strict(),
+  table: z
+    .object({
+      anchor: identity,
+      id: identity,
+      unbound: z.literal(true).optional(),
+    })
+    .strict(),
 };
 
 export const excelBindingSchema = z.union([

@@ -198,7 +198,7 @@ export function safeLegacyFormReturnPath(
     returnUrl.pathname === "/dashboard" && !returnUrl.search;
   const uuid = "[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12}";
   const isAdminPath = new RegExp(
-    `^/admin(?:/(?:users|audit|ai-authoring|forms/new|forms/[0-9a-f]{32}(?:/submissions(?:/${uuid})?)?|results(?:/${uuid}(?:/correction)?)?))?/?$`,
+    `^/admin(?:/(?:users|storage-templates|audit|forms/new|forms/[0-9a-f]{32}(?:/submissions(?:/${uuid})?)?|results(?:/${uuid}(?:/correction)?)?))?/?$`,
     "u"
   ).test(returnUrl.pathname);
   if (

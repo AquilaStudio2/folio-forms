@@ -14,7 +14,7 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-const app = createApp({ legacySso: null, omniRoute: null });
+const app = createApp({ legacySso: null });
 let adminBearer = "";
 let adminId = "";
 

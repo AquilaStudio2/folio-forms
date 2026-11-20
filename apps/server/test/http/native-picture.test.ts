@@ -93,7 +93,7 @@ test("Ticket 08 native Picture uploads survive response workflows", async () => 
   const fieldRuleResponse = await app.handle(
     new Request(`http://test.local/api/admin/forms/${publicId}/field-rules`, {
       body: JSON.stringify({
-        documentKey: adminEditor.config.document.key,
+        documentKey: adminEditor.bridge.documentKey,
         prefillPointer: null,
         prefillPolicy: "editable",
         previousTag: null,
@@ -122,7 +122,7 @@ test("Ticket 08 native Picture uploads survive response workflows", async () => 
   const publishResponse = await app.handle(
     new Request(`http://test.local/api/admin/forms/${publicId}/publish`, {
       body: JSON.stringify({
-        documentKey: publishEditor.config.document.key,
+        documentKey: publishEditor.bridge.documentKey,
       }),
       headers: {
         ...jsonHeaders,

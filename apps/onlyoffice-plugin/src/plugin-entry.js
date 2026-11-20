@@ -92,12 +92,21 @@ function normalizeRuntimeOptions() {
     documentKind: options.documentKind === "xlsx" ? "xlsx" : "docx",
     pdmsProjectEnabled: options.pdmsProjectEnabled === true,
     pdmsPopupChannelId: firstString(options.pdmsPopupChannelId),
+    attachmentCategoryPopupChannelId: firstString(
+      options.attachmentCategoryPopupChannelId
+    ),
     pdmsProjectCatalog: isRecord(options.pdmsProjectCatalog)
       ? options.pdmsProjectCatalog
       : null,
     spreadsheetBindings: isRecord(options.spreadsheetBindings)
       ? options.spreadsheetBindings
       : {},
+    xlsxDraftIssues: Array.isArray(options.xlsxDraftIssues)
+      ? options.xlsxDraftIssues
+      : [],
+    xlsxDraftProtocol: options.xlsxDraftProtocol,
+    xlsxDraftLeaseId: firstString(options.xlsxDraftLeaseId),
+    xlsxDraftRevision: options.xlsxDraftRevision,
     spreadsheetPictureFrames: Array.isArray(options.spreadsheetPictureFrames)
       ? options.spreadsheetPictureFrames
       : [],

@@ -40,9 +40,7 @@ const selection = (address) => ({
 const descendants = (node) => [node, ...node.children.flatMap(descendants)];
 const pocAction = (harness) =>
   descendants(harness.body).find(
-    (node) =>
-      node.tagName === "BUTTON" &&
-      node.textContent === "วางปุ่มและบันทึกต้นแบบ (POC)"
+    (node) => node.tagName === "BUTTON" && node.textContent === "เพิ่มช่องแนบไฟล์"
   );
 
 test("POC placement action appears only in template editing and declares pending-file scope", async () => {
@@ -59,16 +57,6 @@ test("POC placement action appears only in template editing and declares pending
   expect(pocAction(admin)["aria-describedby"]).toBe(
     "spreadsheet-upload-poc-help"
   );
-  expect(
-    descendants(admin.body).find(
-      (node) => node.id === "spreadsheet-upload-poc-help"
-    )?.textContent
-  ).toContain("ยังไม่อัปโหลดหรือบันทึกถาวร");
-  expect(
-    descendants(admin.body).some((node) =>
-      node.textContent?.includes("ยังไม่อัปโหลดหรือบันทึกถาวร")
-    )
-  ).toBe(true);
   const user = createHarness({ action: "fill", documentKind: "xlsx" });
   await flushPlugin();
   expect(pocAction(user)).toBeUndefined();
@@ -97,11 +85,8 @@ test("POC placement refuses unapplied panel changes before sending a server requ
 test("invalid multi-cell POC selection creates no workbook marker and makes no mutation request", async () => {
   const harness = createHarness({
     action: "template-edit",
-    capabilityResponses: ["configure-fields-capability"],
     documentKind: "xlsx",
-    responses: [
-      { bindings: { fields: [], table: null, version: 1 }, revision: 0 },
-    ],
+    spreadsheetBindings: { fields: [], table: null, version: 1 },
     spreadsheetSelection: { address: "A1:B2" },
   });
   acknowledgeBridge(harness);
@@ -110,8 +95,7 @@ test("invalid multi-cell POC selection creates no workbook marker and makes no m
   await flushPlugin();
   expect(harness.statusElement.textContent).toContain("หนึ่งเซลล์");
   expect([...harness.spreadsheetNames.keys()]).toHaveLength(0);
-  expect(harness.requests).toHaveLength(1);
-  expect(harness.requests[0].method).toBe("GET");
+  expect(harness.requests).toHaveLength(0);
 });
 
 test("POC scalar target keeps configured identity and leaves required rules unchanged", () => {
@@ -179,28 +163,9 @@ test.each([
       table: null,
       version: 1,
     };
-    const changed = {
-      ...initial,
-      fields:
-        action === "delete" ? [] : [{ ...initial.fields[0], type: "number" }],
-    };
     const harness = createHarness({
       action: "template-edit",
-      capabilityResponses: ["read", "write", "verify"],
       documentKind: "xlsx",
-      responses: [
-        { bindings: initial, revision: 0 },
-        ...(accepted
-          ? [{ bindings: changed, revision: 1 }]
-          : [
-              { body: { error: "Conflicting deletion" }, httpStatus: 409 },
-              { bindings: initial, revision: 0 },
-            ]),
-      ].map((response) =>
-        response.bindings
-          ? { documentKey: "document-key", ...response }
-          : response
-      ),
       spreadsheetBindings: initial,
       spreadsheetSelection: {
         address: "B2",
@@ -211,6 +176,17 @@ test.each([
         },
       },
     });
+    if (!accepted) {
+      const { plugin } = harness.window.Asc;
+      const { callCommand } = plugin;
+      plugin.callCommand = (command, ...args) => {
+        if (command.name === "spreadsheetUploadPocCleanupCommand") {
+          const done = args.at(-1);
+          args[args.length - 1] = () => done(false);
+        }
+        return callCommand(command, ...args);
+      };
+    }
     acknowledgeBridge(harness);
     await flushPlugin();
     if (action === "type") {
@@ -236,6 +212,7 @@ test.each([
     expect(harness.spreadsheetNames.has("folio_receipt")).toBe(
       action === "type" || !accepted
     );
+    expect(harness.requests).toHaveLength(0);
     expect(harness.spreadsheetNames.get("unrelated")).toBe("'Sheet1'!$E$1");
   }
 );

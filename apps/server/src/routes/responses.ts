@@ -23,8 +23,14 @@ import {
   XLSX_CONTENT_TYPE,
 } from "../documents/spreadsheets/workbook";
 import {
+  attachmentCleanupWarning,
+  attachmentMutationNotice,
+  attachmentRoutingPending,
+} from "../ecm/attachments";
+import {
   requireActionEditorAuthorization,
   requireEditorScope,
+  requireDocumentServerKey,
 } from "../editor/authorization";
 import { editorLeaseProof, requireActiveEditorLease } from "../editor/leases";
 import { spreadsheetPicturePresence } from "../forms/spreadsheet-fields";
@@ -37,10 +43,15 @@ import {
   jsonRecord,
   requiredString,
 } from "../http/input";
+import { readOnlyViewerConfig } from "../onlyoffice";
 import { activeOperationForResponse } from "../operations/lifecycle";
-import { deleteResponseData } from "../responses/deletion";
+import {
+  deleteResponseData,
+  responseDeletionWarnings,
+} from "../responses/deletion";
 import { responseSummary, correctionRevisionSummary } from "../responses/query";
 import type { CorrectionRevisionSummary } from "../responses/query";
+import { responseSpreadsheetExport } from "../responses/spreadsheet-document";
 import {
   DOCX_CONTENT_TYPE,
   objectExists,
@@ -51,13 +62,40 @@ import type { RouteDependencies } from "./dependencies";
 
 export function registerResponseRoutes(
   app: Elysia,
-  dependencies: Pick<
-    RouteDependencies,
-    "onlyOffice" | "removeObject" | "aiAuthoring"
-  >
+  dependencies: Pick<RouteDependencies, "onlyOffice" | "removeObject" | "ecm">
 ): void {
-  const { onlyOffice, removeObject, aiAuthoring } = dependencies;
+  const { onlyOffice, removeObject, ecm } = dependencies;
   app
+    .get("/api/responses/deletion-status", async ({ request }) => {
+      const identity = await requireIdentity(request);
+      return { warnings: await responseDeletionWarnings(identity.id) };
+    })
+    .get(
+      "/api/responses/:id/attachment-status",
+      async ({ request, params }) => {
+        const identity = await requireIdentity(request);
+        validateId(params.id, "Response");
+        const response = await prisma.response.findUnique({
+          select: { id: true, userId: true },
+          where: { id: params.id },
+        });
+        if (!response) {
+          fail(404, "not_found", "Response was not found");
+        }
+        if (
+          identity.role !== "admin" &&
+          identity.role !== "viewer" &&
+          response.userId !== identity.id
+        ) {
+          fail(403, "forbidden", "You may only access your own Response");
+        }
+        return {
+          attachmentRoutingPending: await attachmentRoutingPending(response.id),
+          cleanupWarning: await attachmentCleanupWarning(response.id),
+          mutationNotice: await attachmentMutationNotice(response.id),
+        };
+      }
+    )
     .get("/api/responses/me", async ({ request }) => {
       const identity = await requireIdentity(request);
       const responses = await prisma.response.findMany({
@@ -253,6 +291,7 @@ export function registerResponseRoutes(
             draftDocumentKey: true,
             form: { select: { documentKind: true, version: true } },
             formId: true,
+            publishedTemplateId: true,
             publishedVersion: true,
             status: true,
             userId: true,
@@ -296,8 +335,8 @@ export function registerResponseRoutes(
         if (Object.keys(input).length !== 1) {
           fail(400, "invalid_request", "Only snapshotUrl is accepted");
         }
-        const workbook = await onlyOffice.downloadEditorWorkbook({
-          documentKey,
+        let workbook = await onlyOffice.downloadEditorWorkbook({
+          documentServerKey: requireDocumentServerKey(authorization),
           signal: request.signal,
           snapshotUrl: requiredString(input, "snapshotUrl"),
         });
@@ -311,6 +350,10 @@ export function registerResponseRoutes(
             "The workbook snapshot is not a supported Excel document"
           );
         }
+        workbook = await responseSpreadsheetExport(
+          workbook,
+          response.publishedTemplateId
+        );
         const headers = {
           "Cache-Control": "no-store",
           "Content-Disposition": `attachment; filename="response-${responseId}.${format}"`,
@@ -332,6 +375,49 @@ export function registerResponseRoutes(
         }
       },
       { parse: "none" }
+    )
+    .get(
+      "/api/responses/:id/draft/viewer-config",
+      async ({ request, params }) => {
+        const identity = await requireIdentity(request);
+        validateId(params.id, "Response");
+        const response = await prisma.response.findUnique({
+          include: { form: { select: { documentKind: true, publicId: true } } },
+          where: { id: params.id },
+        });
+        if (!response) {
+          fail(404, "not_found", "Response was not found");
+        }
+        if (
+          response.userId !== identity.id &&
+          identity.role !== "admin" &&
+          identity.role !== "viewer"
+        ) {
+          fail(403, "forbidden", "You may only inspect your own saved Draft");
+        }
+        if (
+          !["draft", "submitting"].includes(response.status) ||
+          !response.draftDocumentKey ||
+          !response.draftObjectKey ||
+          !(await objectExists(response.draftObjectKey))
+        ) {
+          fail(
+            404,
+            "document_unavailable",
+            "Saved Draft document was not found"
+          );
+        }
+        return readOnlyViewerConfig(
+          response.draftDocumentKey,
+          response.form.publicId,
+          { id: identity.id, name: identity.name },
+          response.form.documentKind,
+          {
+            objectKey: response.draftObjectKey,
+            publishedTemplateId: response.publishedTemplateId,
+          }
+        );
+      }
     )
     .get(
       "/api/responses/:id/draft/:format",
@@ -380,21 +466,39 @@ export function registerResponseRoutes(
           if (params.format !== response.form.documentKind) {
             fail(404, "not_found", "This document format is unavailable");
           }
-          return new Response(streamObject(response.draftObjectKey), {
-            headers: {
-              "Content-Disposition": `attachment; filename="response-${response.id}.${response.form.documentKind}"`,
-              "Content-Type":
-                response.form.documentKind === "xlsx"
-                  ? XLSX_CONTENT_TYPE
-                  : DOCX_CONTENT_TYPE,
-            },
-          });
+          return new Response(
+            response.form.documentKind === "xlsx"
+              ? await responseSpreadsheetExport(
+                  await readObject(response.draftObjectKey),
+                  response.publishedTemplateId
+                )
+              : streamObject(response.draftObjectKey),
+            {
+              headers: {
+                "Content-Disposition": `attachment; filename="response-${response.id}.${response.form.documentKind}"`,
+                "Content-Type":
+                  response.form.documentKind === "xlsx"
+                    ? XLSX_CONTENT_TYPE
+                    : DOCX_CONTENT_TYPE,
+              },
+            }
+          );
         }
-        const pdf = await onlyOffice.convertDocxToPdf(
-          response.draftDocumentKey,
-          true,
-          response.form.documentKind
-        );
+        const pdf =
+          response.form.documentKind === "xlsx"
+            ? await withSpreadsheetExportSnapshot(
+                await responseSpreadsheetExport(
+                  await readObject(response.draftObjectKey),
+                  response.publishedTemplateId
+                ),
+                (key) => onlyOffice.convertDocxToPdf(key, true, "xlsx"),
+                request.signal
+              )
+            : await onlyOffice.convertDocxToPdf(
+                response.draftDocumentKey,
+                true,
+                response.form.documentKind
+              );
         set.headers["Content-Disposition"] =
           `attachment; filename="response-${response.id}.pdf"`;
         set.headers["Content-Type"] = "application/pdf";
@@ -414,12 +518,10 @@ export function registerResponseRoutes(
           }
           const result = await deleteResponseData({
             actor: identity,
-            aiAuthoring,
-            allowActiveLease: false,
-            missingOk: false,
+            ecm,
+            intent: "confirmed-admin-delete",
             removeObject,
             responseId,
-            revokeOwnerSessions: true,
           });
           if (result.alreadyDeleted) {
             await createResponseDeletionAudit({
@@ -428,7 +530,7 @@ export function registerResponseRoutes(
               targetId: responseId,
             });
           }
-          return { deleted: true };
+          return { attachmentCleanup: result.attachmentCleanup, deleted: true };
         } catch (error) {
           try {
             await createResponseDeletionAudit({
@@ -450,16 +552,14 @@ export function registerResponseRoutes(
       requireResponseWriter(identity);
       const responseId = validateId(params.id, "Response");
       try {
-        await deleteResponseData({
+        const result = await deleteResponseData({
           actor: identity,
-          aiAuthoring,
-          allowActiveLease: true,
-          missingOk: true,
+          ecm,
+          intent: "discard-own-draft",
           removeObject,
           responseId,
-          revokeOwnerSessions: false,
         });
-        return { discarded: true };
+        return { attachmentCleanup: result.attachmentCleanup, discarded: true };
       } catch (error) {
         try {
           await createResponseDeletionAudit({

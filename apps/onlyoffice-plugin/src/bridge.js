@@ -37,6 +37,13 @@ export function createBridge(options, office, callbacks) {
   let bridgeReadySent = false;
   let capabilityRequestSequence = 0;
   const pendingCapabilityRequests = new Map();
+  let retainedCompletion;
+
+  function retainCompletedEditor(operationId, documentKey, resume) {
+    retainedCompletion = operationId
+      ? { operationId, documentKey, resume }
+      : undefined;
+  }
 
   function parentWindow() {
     const target = window.top;
@@ -134,7 +141,7 @@ export function createBridge(options, office, callbacks) {
     }
   }
 
-  function requestActionCapability(action) {
+  function requestActionCapability(action, draftCheckpoint) {
     if (
       !CAPABILITY_ACTIONS.includes(action) ||
       !isActionAllowedInMode(action)
@@ -178,6 +185,7 @@ export function createBridge(options, office, callbacks) {
         );
         postBridgeMessage({
           action,
+          ...(draftCheckpoint ? { draftCheckpoint } : {}),
           requestId,
           source: BRIDGE_MESSAGE_SOURCE,
           type: CAPABILITY_REQUEST_TYPE,
@@ -289,7 +297,15 @@ export function createBridge(options, office, callbacks) {
     );
   }
 
-  function notifyParent(action, status, operationId, payload, error) {
+  function notifyParent(
+    action,
+    status,
+    operationId,
+    payload,
+    error,
+    requestedAction,
+    attachmentCommitUnresolved
+  ) {
     if (!bridgeAcknowledged) {
       return;
     }
@@ -300,6 +316,10 @@ export function createBridge(options, office, callbacks) {
         error: error || undefined,
         operation: isRecord(payload?.operation) ? payload.operation : undefined,
         operationId: operationId || undefined,
+        ...(requestedAction ? { requestedAction } : {}),
+        ...(typeof attachmentCommitUnresolved === "boolean"
+          ? { attachmentCommitUnresolved }
+          : {}),
         source: BRIDGE_MESSAGE_SOURCE,
         status,
         type: OPERATION_MESSAGE_TYPE,
@@ -348,6 +368,8 @@ export function createBridge(options, office, callbacks) {
       (message.type !== BRIDGE_ACK_TYPE &&
         message.type !== CAPABILITY_RESPONSE_TYPE &&
         message.type !== RUN_ACTION_TYPE &&
+        message.type !== "retain-completed-editor" &&
+        message.type !== "hold-editor" &&
         message.type !== "capture-workbook" &&
         message.type !== CLEAR_DIRTY_TYPE &&
         message.type !== EDITOR_SAVE_RESPONSE_TYPE)
@@ -357,6 +379,7 @@ export function createBridge(options, office, callbacks) {
     if (message.type === BRIDGE_ACK_TYPE) {
       bridgeAcknowledged = true;
       editorSaveSupported = message.editorSaveSupported === true;
+      callbacks.onReady?.();
       if (pendingFieldSelection) {
         const pending = pendingFieldSelection;
         pendingFieldSelection = undefined;
@@ -376,6 +399,42 @@ export function createBridge(options, office, callbacks) {
       return;
     }
 
+    if (message.type === "hold-editor") {
+      void office.freezeEditor().catch(() => {
+        setStatus("ไม่สามารถยืนยันการล็อกตัวแก้ไขได้ กรุณารักษาหน้านี้ไว้", "error");
+      });
+      return;
+    }
+    if (message.type === "retain-completed-editor") {
+      if (
+        typeof message.operationId === "string" &&
+        retainedCompletion?.operationId === message.operationId &&
+        retainedCompletion.documentKey === message.documentKey
+      ) {
+        const completion = retainedCompletion;
+        retainedCompletion = undefined;
+        void (async () => {
+          let ok = false;
+          try {
+            ok = (await completion.resume(message)) === true;
+          } catch {
+            // Keep native editing frozen when the saved projection cannot be restored.
+          }
+          try {
+            postBridgeMessage({
+              documentKey: message.documentKey,
+              ok,
+              operationId: message.operationId,
+              source: BRIDGE_MESSAGE_SOURCE,
+              type: "retained-editor-result",
+            });
+          } catch {
+            // The host may close while the native projection is being restored.
+          }
+        })();
+      }
+      return;
+    }
     if (message.type === "capture-workbook") {
       if (
         options.documentKind === "xlsx" &&
@@ -485,6 +544,7 @@ export function createBridge(options, office, callbacks) {
   return {
     flushEditorChanges,
     notifyParent,
+    retainCompletedEditor,
     postBridgeMessage,
     requestActionCapability,
     sendFieldSelection,

@@ -1,7 +1,5 @@
 import { expect } from "bun:test";
 import { createHash } from "node:crypto";
-import { readdir } from "node:fs/promises";
-import { tmpdir } from "node:os";
 
 import { auth } from "@onlyoffice/auth";
 import { prisma } from "@onlyoffice/db";
@@ -21,11 +19,6 @@ export const onlyOfficeSaveCapabilityFor = (config: {
     throw new Error("The ONLYOFFICE save capability is missing");
   }
   return capability;
-};
-
-export const temporaryDirectories = async () => {
-  const entries = await readdir(tmpdir());
-  return entries.filter((entry) => entry.startsWith("folio-authoring-"));
 };
 
 export const editorCapabilityHeaders = (capability: string) => ({
@@ -101,6 +94,7 @@ export interface CallbackOperationFixture {
 export interface EditorConfigBody {
   apiUrl: string;
   bridge: {
+    documentKey: string;
     capabilities: Partial<Record<EditorCapabilityAction, string>>;
     id: string;
     lease: {

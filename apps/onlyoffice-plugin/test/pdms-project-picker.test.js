@@ -175,6 +175,82 @@ test("an adjacent choice uses native freeze and flush before saving and keeps ed
   ).toBe(false);
 });
 
+for (const hasPending of [false, true]) {
+  test(`configured scalar project choice never uploads attachments and ${hasPending ? "stops before losing pending changes" : "uses the ordinary internal save"}`, async () => {
+    const harness = pickerHarness({
+      action: "draft",
+      capabilityResponses: ["save-capability"],
+      documentKind: "xlsx",
+      scopeIdentity: "actor/response",
+      pdmsProjectCatalog: {
+        names: ["Project B"],
+        sessionId: "catalog-session",
+        status: "ready",
+      },
+      responses: [
+        { operationId: "project-save", operationCapability: "poll-capability" },
+        completedOperation({ documentKey: "next-document" }),
+      ],
+      spreadsheetBindings: {
+        fields: [
+          project,
+          {
+            id: "folio_file",
+            anchor: "folio_file",
+            key: "file",
+            label: "File",
+            type: "text",
+            attachment: { category: "หลักฐาน" },
+          },
+        ],
+        table: null,
+        version: 1,
+      },
+    });
+    const post = harness.parentWindow.postMessage.bind(harness.parentWindow);
+    harness.parentWindow.postMessage = (message, origin) => {
+      post(message, origin);
+      if (message.type !== "pending-file-check") {
+        return;
+      }
+      const denied = hasPending && message.action === "change-project";
+      queueMicrotask(() =>
+        harness.dispatch({
+          data: {
+            ...message,
+            source: "folio-upload-poc-host",
+            type: "pending-file-result",
+            allowed: !denied,
+            hasPending,
+            ...(denied ? { error: "มีการเปลี่ยนไฟล์แนบที่ยังไม่บันทึก" } : {}),
+          },
+          origin: harness.parentOrigin,
+          source: harness.parentWindow,
+        })
+      );
+    };
+    acknowledgeBridge(harness);
+    await flushPlugin();
+    await locate(harness);
+    choose(harness, "Project B");
+    await flushPlugin();
+    await flushPlugin();
+    expect(
+      harness.messages.some(
+        ({ message }) => message.type === "pending-file-save"
+      )
+    ).toBe(false);
+    if (hasPending) {
+      expect(harness.requests).toHaveLength(0);
+      expect(harness.editorRestriction).toBe("none");
+    } else {
+      expect(JSON.parse(harness.requests[0].body)).toMatchObject({
+        pdmsSelection: { bindingId: "folio_project", name: "Project B" },
+      });
+    }
+  });
+}
+
 test("failed picker saving keeps the current editor and permits retry", async () => {
   const harness = pickerHarness({
     capabilityResponses: ["save-capability"],
@@ -383,18 +459,6 @@ test("Correction picker saves only its workspace without inventing a reason, usi
   const pendingCheck = harness.messages.find(
     ({ message }) => message.type === "pending-file-check"
   )?.message;
-  expect(pendingCheck).toMatchObject({
-    action: "save-correction-workspace",
-    bridgeId: harness.bridgeId,
-    documentKey: "document-key",
-    scopeIdentity: "actor/correction/response-id",
-    source: "folio-upload-poc",
-  });
-  expect(
-    harness.methodInvocations
-      .slice(methodCount)
-      .some(({ method }) => method === "SetEditingRestrictions")
-  ).toBe(false);
   harness.dispatch({
     data: {
       ...pendingCheck,

@@ -15,3 +15,7 @@ await Bun.write(
   path.join(pluginDirectory, "dist/pdms-popup.js"),
   await buildPlugin(pluginDirectory, "pdms-popup-entry.js")
 );
+await Bun.write(
+  path.join(pluginDirectory, "dist/attachment-category-popup.js"),
+  await buildPlugin(pluginDirectory, "attachment-category-popup-entry.js")
+);

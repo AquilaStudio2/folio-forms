@@ -50,16 +50,18 @@ export function createOffice(options) {
     });
   }
   async function captureWorkbook() {
-    // The pinned spreadsheet SDK confirms active input without starting a save.
-    // The Folio gateway serves the plugin and its editor parent on one origin.
-    const editor = window.parent.Asc?.editor;
-    const editing = editor?.asc_getCellEditMode?.();
-    if (
-      editing !== false &&
-      (editing !== true ||
-        editor.asc_closeCellEditor?.() !== true ||
-        editor.asc_getCellEditMode() !== false)
-    ) {
+    // Native SDK runs in the editor realm; plugin parent access fails on separate gateway origins.
+    const confirmed = await callCommandResult(() => {
+      const editor = Api.GetActiveSheet()?.worksheet?.workbook?.oApi;
+      const editing = editor?.asc_getCellEditMode?.();
+      return (
+        editing === false ||
+        (editing === true &&
+          editor.asc_closeCellEditor?.() === true &&
+          editor.asc_getCellEditMode() === false)
+      );
+    });
+    if (confirmed !== true) {
       throw new Error("The active cell edit could not be confirmed");
     }
     const snapshotUrl = await executeMethodResult("GetFileToDownload", [

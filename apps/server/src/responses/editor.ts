@@ -15,6 +15,11 @@ import {
   readSpreadsheetWorkbook,
   XLSX_CONTENT_TYPE,
 } from "../documents/spreadsheets/workbook";
+import {
+  attachmentCleanupWarning,
+  attachmentMutationNotice,
+  attachmentRoutingPending,
+} from "../ecm/attachments";
 import { actionEditorCapability } from "../editor/authorization";
 import type {
   EditorLeaseGrant,
@@ -36,7 +41,7 @@ import { spreadsheetPictureFramesForTemplate } from "../forms/spreadsheet-pictur
 import { fail } from "../http/errors";
 import { validateId, jsonRecord } from "../http/input";
 import type { FormWithDocuments } from "../model-types";
-import { editorConfig } from "../onlyoffice";
+import { editorConfig, xlsxEditorOpening } from "../onlyoffice";
 import { operationTimeoutMs } from "../operations/lifecycle";
 import { deleteObjectUnlessCanonical } from "../operations/object-cleanup";
 import { openPdmsProjectCatalog } from "../pdms/catalog";
@@ -57,12 +62,12 @@ import { initializeSpreadsheetResponse } from "./spreadsheet-document";
 export async function correctionEditorConfig(
   responseId: string,
   identity: Identity,
-  pdmsOpeningId?: string,
+  pdmsOpeningId?: unknown,
   pdmsProjects: PdmsProjectsConfiguration | null = null,
   submissionId?: string
 ): Promise<Record<string, unknown>> {
   validateId(responseId, "Response");
-  if (submissionId) {
+  if (submissionId !== undefined) {
     validateId(submissionId, "Submission");
   }
   const response = await prisma.response.findUnique({
@@ -72,14 +77,19 @@ export async function correctionEditorConfig(
   const submission = submissionId
     ? await prisma.submission.findUnique({
         include: { corrections: { orderBy: { revision: "desc" }, take: 1 } },
-        where: { id: submissionId },
+        where: { id: submissionId, responseId },
       })
     : await prisma.submission.findFirst({
         include: { corrections: { orderBy: { revision: "desc" }, take: 1 } },
         orderBy: [{ createdAt: "desc" }, { id: "desc" }],
         where: { responseId },
       });
-  if (!response || !submission || submission.responseId !== responseId) {
+  if (
+    !response ||
+    (!submissionId && response.status !== ResponseStatus.submitted) ||
+    !submission ||
+    submission.responseId !== responseId
+  ) {
     fail(404, "not_found", "Submitted Response was not found");
   }
   const form = await prisma.form.findUnique({
@@ -220,7 +230,7 @@ export async function correctionEditorConfig(
       id: true,
       objectKey: true,
     },
-    where: { id: submission.id },
+    where: { id: submission.id, responseId },
   });
   const currentLatest = currentSubmission?.corrections[0];
   const currentBaseRevision = currentLatest?.revision ?? 0;
@@ -259,6 +269,14 @@ export async function correctionEditorConfig(
     targetId: response.id,
     targetType: "correction",
   } as const;
+  const opening =
+    form.documentKind === "xlsx"
+      ? xlsxEditorOpening(
+          capabilityScope.documentKey,
+          JSON.stringify([identity.id, identity.sessionId]),
+          pdmsOpeningId
+        )
+      : null;
   const pdmsProjectCatalog =
     form.documentKind === "xlsx"
       ? await openPdmsProjectCatalog({
@@ -268,12 +286,13 @@ export async function correctionEditorConfig(
           configuration: pdmsProjects,
           identity,
           lease,
-          openingId: pdmsOpeningId,
+          openingId: opening?.openingId,
           scope: capabilityScope,
         })
       : null;
   const catalogScope = {
     ...capabilityScope,
+    ...(opening ? { documentServerKey: opening.documentServerKey } : {}),
     ...(pdmsProjectCatalog
       ? { pdmsCatalogSessionId: pdmsProjectCatalog.sessionId }
       : {}),
@@ -283,8 +302,18 @@ export async function correctionEditorConfig(
     ...editorConfig(
       {
         action: "correction",
+        attachmentCleanupWarning:
+          form.documentKind === "xlsx"
+            ? await attachmentCleanupWarning(response.id)
+            : null,
+        attachmentMutationNotice:
+          form.documentKind === "xlsx"
+            ? await attachmentMutationNotice(response.id)
+            : null,
+        attachmentSavedData: jsonRecord(latest?.data ?? submission.data),
         ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
         documentKind: form.documentKind,
+        ...(opening ? { documentServerKey: opening.documentServerKey } : {}),
         ...(form.documentKind === "xlsx"
           ? {
               spreadsheetBindings: await spreadsheetContractForTemplate(
@@ -336,8 +365,9 @@ export async function userEditorConfig(
   identity: Identity,
   responseId: string | undefined,
   requestedAction?: string,
-  pdmsOpeningId?: string,
-  pdmsProjects: PdmsProjectsConfiguration | null = null
+  pdmsOpeningId?: unknown,
+  pdmsProjects: PdmsProjectsConfiguration | null = null,
+  continuation?: { operationId?: unknown; nativeSessionDocumentKey?: unknown }
 ): Promise<Record<string, unknown>> {
   requireResponseWriter(identity);
   const publishedTemplate = form.publishedTemplate;
@@ -424,6 +454,71 @@ export async function userEditorConfig(
       responseId: response.id,
     };
   }
+  let opening =
+    form.documentKind === "xlsx"
+      ? xlsxEditorOpening(
+          response.draftDocumentKey,
+          JSON.stringify([identity.id, identity.sessionId]),
+          pdmsOpeningId
+        )
+      : null;
+  if (
+    continuation?.operationId !== undefined ||
+    continuation?.nativeSessionDocumentKey !== undefined
+  ) {
+    if (
+      !opening ||
+      typeof continuation.operationId !== "string" ||
+      typeof continuation.nativeSessionDocumentKey !== "string" ||
+      typeof pdmsOpeningId !== "string"
+    ) {
+      fail(
+        409,
+        "stale_editor_continuation",
+        "The original native editor cannot be continued"
+      );
+    }
+    validateId(continuation.operationId, "Operation");
+    const operation = await prisma.operation.findUnique({
+      where: { id: continuation.operationId },
+    });
+    const batch = await prisma.ecmAttachmentBatch.findUnique({
+      where: { operationId: continuation.operationId },
+    });
+    const originalOpening = xlsxEditorOpening(
+      continuation.nativeSessionDocumentKey,
+      JSON.stringify([identity.id, identity.sessionId]),
+      pdmsOpeningId
+    );
+    // Only persisted completion evidence can bind a live native cache to the new canonical revision.
+    if (
+      !operation ||
+      operation.type !== "save_draft" ||
+      operation.status !== "completed" ||
+      operation.actorId !== identity.id ||
+      operation.formId !== form.id ||
+      operation.responseId !== response.id ||
+      operation.targetType !== "response" ||
+      operation.targetId !== response.id ||
+      jsonRecord(operation.result).documentKey !== response.draftDocumentKey ||
+      jsonRecord(operation.metadata).documentServerKey !==
+        originalOpening.documentServerKey ||
+      !batch ||
+      batch.state !== "committed" ||
+      batch.leaseId !== lease.id ||
+      batch.authSessionId !== identity.sessionId ||
+      batch.actorId !== identity.id ||
+      batch.responseId !== response.id ||
+      batch.formId !== form.id
+    ) {
+      fail(
+        409,
+        "stale_editor_continuation",
+        "The original native editor cannot be continued"
+      );
+    }
+    opening = originalOpening;
+  }
   const pdmsProjectCatalog =
     form.documentKind === "xlsx"
       ? await openPdmsProjectCatalog({
@@ -433,19 +528,28 @@ export async function userEditorConfig(
           configuration: pdmsProjects,
           identity,
           lease,
-          openingId: pdmsOpeningId,
+          openingId: opening?.openingId,
           scope: { ...capabilityScope, documentKey: response.draftDocumentKey },
         })
       : null;
   const catalogScope = {
     ...capabilityScope,
     documentKey: response.draftDocumentKey,
+    ...(opening ? { documentServerKey: opening.documentServerKey } : {}),
     ...(pdmsProjectCatalog
       ? { pdmsCatalogSessionId: pdmsProjectCatalog.sessionId }
       : {}),
   };
+  const attachmentNotice =
+    form.documentKind === "xlsx"
+      ? await attachmentMutationNotice(response.id)
+      : null;
   return {
     ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
+    attachmentNotice,
+    attachmentRoutingPending:
+      form.documentKind === "xlsx" &&
+      (await attachmentRoutingPending(response.id)),
     ...editorConfig(
       {
         ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
@@ -455,6 +559,12 @@ export async function userEditorConfig(
             : requestedAction === "fill"
               ? "fill"
               : "draft",
+        attachmentCleanupWarning:
+          form.documentKind === "xlsx"
+            ? await attachmentCleanupWarning(response.id)
+            : null,
+        attachmentMutationNotice: attachmentNotice,
+        attachmentSavedData: response.draftData,
         capabilities: {
           ...(form.documentKind === "xlsx" && requestedAction !== "submit"
             ? {
@@ -481,6 +591,7 @@ export async function userEditorConfig(
         },
         documentKey: response.draftDocumentKey as string,
         documentKind: form.documentKind,
+        ...(opening ? { documentServerKey: opening.documentServerKey } : {}),
         ...(form.documentKind === "xlsx"
           ? {
               spreadsheetBindings: await spreadsheetContractForTemplate(

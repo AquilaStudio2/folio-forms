@@ -1,0 +1,569 @@
+{
+  "schemaVersion": 1,
+  "asOf": "2026-11-19T07:54:52.621Z",
+  "head": "1071d3c7c50293f8706597e850036e4a5f50e28b",
+  "branch": "feat/ecm-attachment-safety-implementation",
+  "sourceSha256": {
+    "apps/server/src/app.ts": "9539114e41d6bd805b10807d1dd8b622cbb8fb014a83157157940dae4932ed47",
+    "apps/server/src/ecm/client.ts": "c846eed2af0fe72db46b160a88e7c433cb73ad4f3dc9734657915c4e11adabe5",
+    "apps/server/src/responses/attachment-operation.ts": "8e7c787cfe0afe6c64c1f469973b1e26a2b64f6bab3394f1490d18322ea44f67",
+    "apps/web/src/components/onlyoffice-editor.tsx": "6b86459fb1d42ce622435c5ac695734c17e4423606b46ea239eabf4020f7b40c",
+    "apps/onlyoffice-plugin/src/upload-poc-picker.js": "6c21c4099de7705c4ca0be24255501738cb11034b641d423fde5058215bfa3f2"
+  },
+  "scope": {
+    "project": "กทอ.67-00-0001",
+    "destination": "DMS/ShareFiles/2567/กทอ.67-00-0001/2. มติและการก่อหนี้",
+    "filename": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).pdf",
+    "artifactCustodian": "pyw1tt",
+    "providerRevision": null,
+    "originalFailedRequestResent": false,
+    "deleteAuthorized": false
+  },
+  "runtime": {
+    "browser": "Chrome/150.0.7871.24",
+    "onlyOffice": "9.4.0-129",
+    "bun": "1.4.4",
+    "sharedAuthCoordinator": true
+  },
+  "retryCapTotal": 3,
+  "sandbox": {
+    "gatePassed": true,
+    "controlCases": [
+      {
+        "id": "sandbox-pdf-scalar",
+        "attempt": 1,
+        "bytes": 639,
+        "picker": {
+          "bindingId": "folio_scalar",
+          "kind": "folio-upload-poc",
+          "rowIndex": null,
+          "tag": "scalar",
+          "version": 1
+        },
+        "selection": {
+          "bytes": null,
+          "visibleName": "sandbox-pdf-scalar.pdf"
+        },
+        "arm": {
+          "status": 200,
+          "body": {
+            "armed": "sandbox-pdf-scalar"
+          }
+        },
+        "save": {
+          "admission": 202,
+          "status": "completed",
+          "error": null,
+          "responseId": "32d807b2-d1b4-42c8-aaf0-29c4c5cbfd9c",
+          "operationId": "7eef9fe8-85d4-4996-a5e3-4c667a6ef36a"
+        },
+        "canonical": {
+          "docsNumber": "กทอ.67-00-0001",
+          "physicalRow": null,
+          "bytes": 639,
+          "originalName": "sandbox-pdf-scalar.pdf",
+          "matchedCommittedReference": true,
+          "projectedUrlMatches": true,
+          "otherSlotUnchanged": true
+        },
+        "reopenAttempts": [
+          {
+            "attempt": 1,
+            "outcome": "Native Edit object did not appear after initial calibrated pointer/Shift+F10; no Save retry"
+          },
+          {
+            "attempt": 2,
+            "outcome": "Verified saved original name, size and exact receipt after Tab from visible neighboring control"
+          }
+        ],
+        "reopen": {
+          "bindingId": "folio_scalar",
+          "rowIndex": null,
+          "visibleOriginalName": "sandbox-pdf-scalar.pdf",
+          "linkedReceiptMatched": true,
+          "visibleSize": true
+        },
+        "access": {
+          "status": 200,
+          "mediaType": "application/pdf",
+          "bodyReadable": true
+        }
+      },
+      {
+        "id": "sandbox-pdf-table",
+        "attempt": 1,
+        "bytes": 638,
+        "picker": {
+          "bindingId": "folio_proof",
+          "kind": "folio-upload-poc",
+          "rowIndex": 0,
+          "tag": "rows.proof",
+          "version": 1
+        },
+        "selection": {
+          "bytes": null,
+          "visibleName": "sandbox-pdf-table.pdf"
+        },
+        "arm": {
+          "status": 200,
+          "body": {
+            "armed": "sandbox-pdf-table"
+          }
+        },
+        "save": {
+          "admission": 202,
+          "status": "completed",
+          "error": null,
+          "responseId": "c8520ac7-4573-4f6c-856f-349f76388df7",
+          "operationId": "dda3050f-842e-4f87-b50b-830c83c66448"
+        },
+        "canonical": {
+          "docsNumber": "กทอ.67-00-0001",
+          "physicalRow": 0,
+          "bytes": 638,
+          "originalName": "sandbox-pdf-table.pdf",
+          "matchedCommittedReference": true,
+          "projectedUrlMatches": true,
+          "otherSlotUnchanged": true
+        },
+        "reopenAttempts": [
+          {
+            "attempt": 1,
+            "outcome": "Neighbor scalar graphic not yet selectable immediately after remount; no Save retry"
+          },
+          {
+            "attempt": 2,
+            "outcome": "Visible scalar selected after native pane settled; Tab to exact table row and saved link verified"
+          }
+        ],
+        "reopen": {
+          "bindingId": "folio_proof",
+          "rowIndex": 0,
+          "visibleOriginalName": "sandbox-pdf-table.pdf",
+          "linkedReceiptMatched": true,
+          "visibleSize": true
+        },
+        "access": {
+          "status": 200,
+          "mediaType": "application/pdf",
+          "bodyReadable": true
+        }
+      }
+    ],
+    "transport": {
+      "externalCalls": 0,
+      "events": [
+        {
+          "id": "sandbox-pdf-scalar",
+          "encoding": "gzip",
+          "noStaleEncoding": true,
+          "decodedReceiptBytes": 136,
+          "postedSize": 639
+        },
+        {
+          "id": "sandbox-pdf-table",
+          "encoding": "gzip",
+          "noStaleEncoding": true,
+          "decodedReceiptBytes": 134,
+          "postedSize": 638
+        }
+      ],
+      "armed": null,
+      "completed": ["sandbox-pdf-scalar", "sandbox-pdf-table"]
+    },
+    "authenticNative": true
+  },
+  "live": {
+    "cases": [
+      {
+        "id": "live-pdf-table",
+        "slot": "table",
+        "attempt": 1,
+        "bytes": 635,
+        "picker": {
+          "bindingId": "folio_proof",
+          "kind": "folio-upload-poc",
+          "rowIndex": 0,
+          "tag": "rows.proof",
+          "version": 1
+        },
+        "selection": {
+          "bytes": null,
+          "visibleName": "live-pdf-table.pdf"
+        },
+        "arm": {
+          "status": 200,
+          "body": {
+            "armed": "live-pdf-table",
+            "knownPairCount": 7
+          }
+        },
+        "save": {
+          "admission": 202,
+          "status": "completed",
+          "error": null,
+          "responseId": "f2655096-bdf2-45c6-aaa9-ed4d99f5be2b",
+          "operationId": "eea230c0-9708-4109-ab3f-102e1d22d1a9"
+        },
+        "canonical": {
+          "docsNumber": "กทอ.67-00-0001",
+          "physicalRow": 0,
+          "bytes": 635,
+          "originalName": "live-pdf-table.pdf",
+          "matchedCommittedReference": true,
+          "projectedUrlMatches": true,
+          "otherSlotUnchanged": true
+        },
+        "reopen": {
+          "bindingId": "folio_proof",
+          "rowIndex": 0,
+          "visibleOriginalName": "live-pdf-table.pdf",
+          "linkedReceiptMatched": true,
+          "visibleSize": true
+        },
+        "access": {
+          "status": 200,
+          "mediaType": "application/pdf",
+          "bodyReadable": true,
+          "bodyEmpty": false
+        },
+        "result": "passed_named_live_cell"
+      },
+      {
+        "id": "live-maximum-scalar",
+        "slot": "scalar",
+        "attempt": 1,
+        "bytes": 10000000,
+        "picker": {
+          "bindingId": "folio_scalar",
+          "kind": "folio-upload-poc",
+          "rowIndex": null,
+          "tag": "scalar",
+          "version": 1
+        },
+        "selection": {
+          "bytes": null,
+          "visibleName": "live-maximum-scalar.pdf"
+        },
+        "arm": {
+          "status": 200,
+          "body": {
+            "armed": "live-maximum-scalar",
+            "knownPairCount": 8
+          }
+        },
+        "save": {
+          "admission": 202,
+          "status": "completed",
+          "error": null,
+          "responseId": "a1b5a385-81b3-47be-a500-03093cd7f85a",
+          "operationId": "db1e6e07-6051-4ed1-bec4-f44b25c22366"
+        },
+        "canonical": {
+          "docsNumber": "กทอ.67-00-0001",
+          "physicalRow": null,
+          "bytes": 10000000,
+          "originalName": "live-maximum-scalar.pdf",
+          "matchedCommittedReference": true,
+          "projectedUrlMatches": true,
+          "otherSlotUnchanged": true
+        },
+        "reopen": {
+          "bindingId": "folio_scalar",
+          "rowIndex": null,
+          "visibleOriginalName": "live-maximum-scalar.pdf",
+          "linkedReceiptMatched": true,
+          "visibleSize": true
+        },
+        "access": {
+          "status": 200,
+          "mediaType": "application/pdf",
+          "bodyReadable": true,
+          "bodyEmpty": false
+        },
+        "result": "passed_named_live_cell"
+      },
+      {
+        "id": "live-maximum-table",
+        "slot": "table",
+        "attempt": 1,
+        "bytes": 10000000,
+        "picker": {
+          "bindingId": "folio_proof",
+          "kind": "folio-upload-poc",
+          "rowIndex": 0,
+          "tag": "rows.proof",
+          "version": 1
+        },
+        "selection": {
+          "bytes": null,
+          "visibleName": "live-maximum-table.pdf"
+        },
+        "arm": {
+          "status": 200,
+          "body": {
+            "armed": "live-maximum-table",
+            "knownPairCount": 9
+          }
+        },
+        "save": {
+          "admission": 202,
+          "status": "completed",
+          "error": null,
+          "responseId": "4fc5a33a-9e98-4482-bfb8-723a453ae427",
+          "operationId": "c74c1268-f1c7-4dd0-9377-0cfeb10c9065"
+        },
+        "canonical": {
+          "docsNumber": "กทอ.67-00-0001",
+          "physicalRow": 0,
+          "bytes": 10000000,
+          "originalName": "live-maximum-table.pdf",
+          "matchedCommittedReference": true,
+          "projectedUrlMatches": true,
+          "otherSlotUnchanged": true
+        },
+        "reopen": {
+          "bindingId": "folio_proof",
+          "rowIndex": 0,
+          "visibleOriginalName": "live-maximum-table.pdf",
+          "linkedReceiptMatched": true,
+          "visibleSize": true
+        },
+        "access": {
+          "status": 200,
+          "mediaType": "application/pdf",
+          "bodyReadable": true,
+          "bodyEmpty": false
+        },
+        "result": "passed_named_live_cell"
+      },
+      {
+        "id": "live-empty-scalar",
+        "slot": "scalar",
+        "attempt": 1,
+        "bytes": 0,
+        "picker": {
+          "bindingId": "folio_scalar",
+          "kind": "folio-upload-poc",
+          "rowIndex": null,
+          "tag": "scalar",
+          "version": 1
+        },
+        "selection": {
+          "bytes": null,
+          "visibleName": "live-empty-scalar.pdf"
+        },
+        "arm": {
+          "status": 200,
+          "body": {
+            "armed": "live-empty-scalar",
+            "knownPairCount": 10
+          }
+        },
+        "save": {
+          "admission": 202,
+          "status": "failed",
+          "error": "document_save_failed",
+          "responseId": "3cf9d3e6-d6a1-4007-9d32-31fc97495732",
+          "operationId": "7cec49f1-acbf-4a8f-988e-63033c2e23f0"
+        },
+        "error": "authoritative_folio_save_not_completed: document_save_failed",
+        "terminal": {
+          "status": "failed",
+          "errorCode": "document_save_failed",
+          "reason": "ecm_rejected",
+          "batch": "cleanup-pending",
+          "hasCanonicalAttachment": false,
+          "canonicalReferences": 0,
+          "versions": [
+            {
+              "state": "unknown",
+              "sent": true,
+              "hasPair": false,
+              "requestSettlementRecorded": false
+            }
+          ]
+        },
+        "result": "failed_safe_stop_after_upstream_422"
+      }
+    ],
+    "transport": {
+      "counts": {
+        "login": 0,
+        "search": 4,
+        "upload": 4,
+        "access": 3,
+        "delete": 0
+      },
+      "events": [
+        {
+          "kind": "search",
+          "at": "2026-11-19T07:52:46.080Z",
+          "ordinal": 1,
+          "caseId": null,
+          "status": 200
+        },
+        {
+          "kind": "upload",
+          "at": "2026-11-19T07:52:46.695Z",
+          "ordinal": 1,
+          "caseId": "live-pdf-table",
+          "status": 200,
+          "providerDate": "Thu, 19 Nov 2026 07:52:47 GMT",
+          "incomingContentEncoding": "gzip",
+          "forwardedContentEncoding": null,
+          "decodedReceiptBytes": 725
+        },
+        {
+          "kind": "access",
+          "at": "2026-11-19T07:52:59.088Z",
+          "ordinal": 1,
+          "caseId": null,
+          "status": 200
+        },
+        {
+          "kind": "search",
+          "at": "2026-11-19T07:53:11.277Z",
+          "ordinal": 2,
+          "caseId": null,
+          "status": 200
+        },
+        {
+          "kind": "upload",
+          "at": "2026-11-19T07:53:11.951Z",
+          "ordinal": 2,
+          "caseId": "live-maximum-scalar",
+          "status": 200,
+          "providerDate": "Thu, 19 Nov 2026 07:53:13 GMT",
+          "incomingContentEncoding": "gzip",
+          "forwardedContentEncoding": null,
+          "decodedReceiptBytes": 723
+        },
+        {
+          "kind": "access",
+          "at": "2026-11-19T07:53:16.309Z",
+          "ordinal": 2,
+          "caseId": null,
+          "status": 200
+        },
+        {
+          "kind": "search",
+          "at": "2026-11-19T07:53:28.476Z",
+          "ordinal": 3,
+          "caseId": null,
+          "status": 200
+        },
+        {
+          "kind": "upload",
+          "at": "2026-11-19T07:53:29.128Z",
+          "ordinal": 3,
+          "caseId": "live-maximum-table",
+          "status": 200,
+          "providerDate": "Thu, 19 Nov 2026 07:53:30 GMT",
+          "incomingContentEncoding": "gzip",
+          "forwardedContentEncoding": null,
+          "decodedReceiptBytes": 723
+        },
+        {
+          "kind": "access",
+          "at": "2026-11-19T07:53:33.430Z",
+          "ordinal": 3,
+          "caseId": null,
+          "status": 200
+        },
+        {
+          "kind": "search",
+          "at": "2026-11-19T07:53:48.526Z",
+          "ordinal": 4,
+          "caseId": null,
+          "status": 200
+        },
+        {
+          "kind": "upload",
+          "at": "2026-11-19T07:53:49.020Z",
+          "ordinal": 4,
+          "caseId": "live-empty-scalar",
+          "status": 422,
+          "providerDate": "Thu, 19 Nov 2026 07:53:49 GMT"
+        },
+        {
+          "kind": "file-probe",
+          "reason": "ecm_rejected",
+          "halted": true,
+          "caseId": "live-empty-scalar",
+          "fileAlreadyDispatched": true,
+          "at": "2026-11-19T07:53:49.132Z"
+        }
+      ],
+      "halted": true,
+      "armed": "live-empty-scalar",
+      "rosterCount": 10,
+      "cases": [
+        {
+          "id": "live-pdf-table",
+          "created": "2026-11-19 14:52:46",
+          "reportedSize": "635 bytes",
+          "businessStatus": 200,
+          "directReceiptDistinct": true,
+          "access": {
+            "status": 200,
+            "mediaType": "application/pdf",
+            "bodyReadable": true,
+            "bodyEmpty": false
+          }
+        },
+        {
+          "id": "live-maximum-scalar",
+          "created": "2026-11-19 14:53:12",
+          "reportedSize": "9.54 MB",
+          "businessStatus": 200,
+          "directReceiptDistinct": true,
+          "access": {
+            "status": 200,
+            "mediaType": "application/pdf",
+            "bodyReadable": true,
+            "bodyEmpty": false
+          }
+        },
+        {
+          "id": "live-maximum-table",
+          "created": "2026-11-19 14:53:30",
+          "reportedSize": "9.54 MB",
+          "businessStatus": 200,
+          "directReceiptDistinct": true,
+          "access": {
+            "status": 200,
+            "mediaType": "application/pdf",
+            "bodyReadable": true,
+            "bodyEmpty": false
+          }
+        }
+      ]
+    },
+    "positiveAccess": "Exact paired-receipt original GET read the first body chunk; no full-byte comparison against upload for this 08 matrix.",
+    "priorKnownFileRoster": "Seven exact same-name metadata pairs at first preflight, including exact prior 628/631-byte custody locators. Rechecked all current prior pairs/creation/edit/size metadata before each new write; not a byte integrity audit.",
+    "zero422": {
+      "providerDetail": "No response body captured; cannot identify which validator rejected or guarantee absence of side effect.",
+      "result": "Folio did not commit; no trusted receipt or provider settlement. No resend, no zero-byte table dispatch."
+    }
+  },
+  "remaining": [
+    "zero-byte scalar failed after DCM HTTP 422; zero-byte table unrun",
+    "representative PDF scalar previously failed in original relay; new maximum scalar cell passed",
+    "non-PDF families and routing unverified",
+    "number-change outside exact project stays isolated",
+    "10,000,001-byte rejection retains prior local proof; no live dispatch",
+    "human/provider acceptance incomplete; no DELETE isolation or old-request settlement claim"
+  ],
+  "cleanup": {
+    "removedOwnedObjects": 13,
+    "bucketDeleted": 204,
+    "bucketAbsent": 404,
+    "dbRemaining": 0,
+    "tempRemoved": true,
+    "privateChromeClosed": true,
+    "temporaryScreenshotsRemoved": 3,
+    "ownedPorts": [18859, 18860, 15260, 18260, 19260],
+    "realDcmDeleteCount": 0
+  }
+}

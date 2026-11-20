@@ -6,7 +6,6 @@ import { prisma } from "@onlyoffice/db";
 import { startLegacySsoMock } from "prefill-mock/mock";
 import type { LegacySsoMockServer } from "prefill-mock/mock";
 
-import * as passwordSession from "../../src/auth/password-session";
 import { editorAuthorization } from "../../src/editor/authorization";
 import { verifyEditorCapability } from "../../src/onlyoffice";
 import {
@@ -708,26 +707,13 @@ test("SSO Admin editor capabilities authorize editing and fail after a mapped de
   });
 });
 
-test("postcommit authoring cleanup failure preserves the completed role sync and usable transferred session", async () => {
+test("completed role sync revokes old sessions and preserves the usable transferred session", async () => {
   const f = await fixture({ roles: ["admin (กปม.)"] });
-  const cleanup = spyOn(
-    passwordSession,
-    "endAiAuthoringSessions"
-  ).mockRejectedValueOnce(new Error("Isolated cleanup failure"));
-  const log = spyOn(console, "error").mockImplementation(() => {});
-  try {
-    const { bearer } = await login(f);
-    expect((await readUser(f)).role).toBe("admin");
-    expect((await readAccount(f)).lastMappedRole).toBe("admin");
-    expect((await readSession(f, f.localBearer)).status).toBe(401);
-    expect((await readSession(f, bearer)).status).toBe(200);
-    expect(log).toHaveBeenCalledWith(
-      "Could not finish authoring cleanup after SSO role change"
-    );
-  } finally {
-    cleanup.mockRestore();
-    log.mockRestore();
-  }
+  const { bearer } = await login(f);
+  expect((await readUser(f)).role).toBe("admin");
+  expect((await readAccount(f)).lastMappedRole).toBe("admin");
+  expect((await readSession(f, f.localBearer)).status).toBe(401);
+  expect((await readSession(f, bearer)).status).toBe(200);
 });
 
 test("officer transition replaces the Admin baseline, revokes sessions and preserves later manual override", async () => {

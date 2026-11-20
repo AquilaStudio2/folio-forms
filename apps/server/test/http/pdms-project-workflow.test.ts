@@ -35,7 +35,6 @@ const native = enabled
   : null;
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   pdmsProjects: upstream
     ? { baseUrl: upstream.url.origin, secret: "workflow-fixture-secret" }
     : null,
@@ -180,13 +179,32 @@ workflowTest(
     });
     const config = (await (
       await request(`/api/admin/forms/${publicId}/editor-config`, adminToken)
-    ).json()) as { bridge: { capabilities: Record<string, string> } };
+    ).json()) as {
+      bridge: {
+        capabilities: Record<string, string>;
+        documentKey: string;
+      };
+    };
+    const rules = await request(
+      `/api/admin/forms/${publicId}/spreadsheet-bindings`,
+      config.bridge.capabilities["configure-fields"] as string,
+      undefined,
+      true
+    );
+    expect(rules.status).toBe(200);
+    const { revision } = (await rules.json()) as { revision: number };
     const published = await request(
       `/api/admin/forms/${publicId}/publish`,
       config.bridge.capabilities.publish as string,
       {
-        documentKey: `template-${fixtureId}`,
+        documentKey: config.bridge.documentKey,
         spreadsheetAnchors: Object.entries(names),
+        xlsxDraft: {
+          bindings,
+          checkpoint: crypto.randomUUID(),
+          revision,
+          version: 1,
+        },
       },
       true
     );
@@ -215,7 +233,7 @@ workflowTest(
       );
     interface Config {
       config: { document: { key: string } };
-      bridge: { capabilities: Record<string, string> };
+      bridge: { documentKey: string; capabilities: Record<string, string> };
       pdmsProjectCatalog: {
         sessionId: string;
         status: string;
@@ -242,7 +260,7 @@ workflowTest(
       `/api/forms/${publicId}/draft`,
       editor.bridge.capabilities["save-draft"] as string,
       {
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         responseId,
         fillMethod: "onlyoffice",
         data: {},
@@ -295,7 +313,7 @@ workflowTest(
       `/api/forms/${publicId}/draft`,
       editor.bridge.capabilities["save-draft"] as string,
       {
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         responseId,
         fillMethod: "onlyoffice",
         data: {},
@@ -321,7 +339,7 @@ workflowTest(
       second_project: null,
     });
     const preserved = (await (await getConfig()).json()) as Config;
-    expect(preserved.config.document.key).toBe(editor.config.document.key);
+    expect(preserved.bridge.documentKey).toBe(editor.bridge.documentKey);
     expect(preserved.pdmsProjectCatalog).toEqual(firstCatalog);
 
     editor = (await (await getConfig()).json()) as Config;
@@ -331,7 +349,7 @@ workflowTest(
       `/api/forms/${publicId}/draft`,
       editor.bridge.capabilities["save-draft"] as string,
       {
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         responseId,
         fillMethod: "onlyoffice",
         data: {},
@@ -371,7 +389,7 @@ workflowTest(
       `/api/forms/${publicId}/submit`,
       editor.bridge.capabilities.submit as string,
       {
-        documentKey: editor.config.document.key,
+        documentKey: editor.bridge.documentKey,
         responseId,
         fillMethod: "onlyoffice",
         data: {},
@@ -417,7 +435,7 @@ workflowTest(
     expect(nextEditor.pdmsProjectCatalog.sessionId).not.toBe(
       firstCatalog.sessionId
     );
-    expect(nextEditor.config.document.key).not.toBe(editor.config.document.key);
+    expect(nextEditor.bridge.documentKey).not.toBe(editor.bridge.documentKey);
     const stillSaved = await request(
       `/api/forms/${publicId}/my-submissions/export`,
       userToken

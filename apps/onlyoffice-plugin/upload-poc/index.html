@@ -3,6 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>แนบไฟล์</title>
     <style>
       body {
         box-sizing: border-box;
@@ -10,23 +11,28 @@
           13px/1.5 system-ui,
           sans-serif;
         color: #242424;
-        padding: 36px 16px 16px;
+        padding: 16px;
         margin: 0;
-      }
-      h1 {
-        font-size: 16px;
-        line-height: 1.4;
-        margin: 0 0 8px;
       }
       p {
         margin: 8px 0;
       }
-      label {
-        display: block;
-        margin: 14px 0 6px;
+      button {
+        font: inherit;
+        cursor: pointer;
+        min-height: 32px;
+        padding: 4px 12px;
       }
-      input {
-        max-width: 100%;
+      button:disabled {
+        cursor: default;
+      }
+      button:focus-visible,
+      a:focus-visible {
+        outline: 2px solid #4473b9;
+        outline-offset: 3px;
+      }
+      #remove {
+        margin-top: 8px;
       }
       .notice {
         background: #fff7dc !important;
@@ -36,33 +42,95 @@
         line-height: 1.4;
         padding: 8px;
       }
-      #filename {
+      [hidden] {
+        display: none !important;
+      }
+      #filename,
+      #saved-link,
+      #status {
         overflow-wrap: anywhere;
       }
+      #status {
+        white-space: pre-line;
+      }
+      #selection-hint {
+        font-size: 12px;
+      }
       [data-error="true"] {
-        color: #9b1c1c;
+        color: #9b1c1c !important;
+        background: #fff1f0 !important;
+        border: 1px solid #f2b8b5;
+        padding: 8px;
+      }
+      @media (prefers-color-scheme: dark) {
+        body {
+          color: #f0f0f0;
+          background: #242424;
+        }
+        a {
+          color: #9cc6ff;
+        }
+        button {
+          color: #f0f0f0;
+          background: #383838;
+          border: 1px solid #8a8a8a;
+          border-radius: 3px;
+        }
       }
     </style>
     <script src="__ONLYOFFICE_PLUGIN_SDK_URL__"></script>
     <script defer src="./picker.js"></script>
   </head>
   <body>
-    <h1>เลือกไฟล์แนบ (POC)</h1>
-    <p class="notice">
-      ไฟล์อยู่ในหน่วยความจำของหน้านี้เท่านั้น ยังไม่อัปโหลดและยังไม่บันทึกถาวร
-      การรีเฟรชหรือปิดหน้าจะทำให้ไฟล์ที่เลือกหายไป
-    </p>
-    <label for="attachment"
-      >เลือกไฟล์หนึ่งไฟล์ หรือเลือกใหม่เพื่อเปลี่ยนไฟล์</label
-    >
-    <input id="attachment" type="file" disabled />
-    <p>
-      ไฟล์ที่เลือก: <strong id="filename">ยังไม่ได้เลือกไฟล์</strong>
-      <span id="filesize"></span>
-    </p>
+    <div id="selection">
+      <p id="selection-hint" class="notice">
+        ยืนยันไฟล์ที่นี่ แล้วบันทึกร่าง/ส่งคำตอบที่หน้าหลักเพื่ออัปโหลด
+        ไฟล์ที่ยังไม่บันทึกจะหายเมื่อปิดหน้าเว็บหรือรีเฟรช
+      </p>
+      <p id="saved-file" hidden>
+        ไฟล์ที่บันทึกแล้ว:
+        <a id="saved-link" target="_blank" rel="noopener noreferrer"
+          >เปิดไฟล์ที่บันทึกแล้ว</a
+        >
+        <span id="saved-size"></span>
+      </p>
+      <p>ลิงก์สาธารณะ ผู้มีลิงก์อาจเปิดได้โดยไม่เข้าสู่ระบบ</p>
+      <p id="file-limit">
+        1 ไฟล์ · รองรับการอัปโหลดไฟล์ที่มีขนาดมากกว่า 1 bytes และไม่เกิน 10 MB ·
+        รองรับเฉพาะไฟล์ PDF, DOCX, XLSX, PNG และ TXT
+      </p>
+      <input
+        id="attachment"
+        type="file"
+        accept=".pdf,.docx,.xlsx,.png,.txt"
+        aria-label="เลือกไฟล์แนบ"
+        aria-describedby="file-limit status cleanup-warning"
+        hidden
+        disabled
+      />
+      <button
+        id="choose"
+        type="button"
+        aria-describedby="file-limit status cleanup-warning"
+        disabled
+      >
+        เลือกไฟล์
+      </button>
+      <p id="selected-file">
+        <strong id="filename">ยังไม่ได้เลือกไฟล์</strong>
+        <span id="filesize"></span>
+      </p>
+      <p id="removal" hidden>
+        รอนำไฟล์ออกเมื่อบันทึกฉบับร่าง / ส่ง / บันทึก Correction
+      </p>
+      <button id="remove" type="button" hidden disabled>
+        นำไฟล์ที่บันทึกแล้วออก
+      </button>
+      <p id="cleanup-warning" class="notice" role="status" hidden></p>
+    </div>
     <p id="status" role="status" aria-live="polite">
       กำลังเปิดหน้าต่างเลือกไฟล์…
     </p>
-    <button id="retry" type="button" hidden>ลองยืนยันไฟล์อีกครั้ง</button>
+    <button id="retry" type="button" hidden>ลองอีกครั้ง</button>
   </body>
 </html>

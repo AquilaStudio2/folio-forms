@@ -9,12 +9,17 @@ import {
   unprotectSpreadsheet,
 } from "../documents/spreadsheets/protection";
 import {
+  stripSpreadsheetUploadPoc,
+  spreadsheetUploadPocTargets,
+} from "../documents/spreadsheets/upload-poc";
+import {
   readSpreadsheetWorkbook,
   resolveSpreadsheetContract,
   XLSX_CONTENT_TYPE,
 } from "../documents/spreadsheets/workbook";
 import {
   spreadsheetContractForTemplate,
+  spreadsheetBindingsFromFields,
   storedSpreadsheetBindings,
 } from "../forms/spreadsheet-fields";
 import type { ResponseWithSnapshot } from "../model-types";
@@ -23,6 +28,44 @@ import {
   objectCleanupIntentGraceMs,
 } from "../operations/object-cleanup";
 import { readObject, putObject, objectKey } from "../storage";
+import { hasSpreadsheetAttachments } from "./attachment-data";
+
+/** Read-only copies remove only declared attachment controls; editable and legacy artifacts stay intact. */
+export const responseSpreadsheetExport = async (
+  bytes: Uint8Array,
+  publishedTemplateId: string
+): Promise<Uint8Array> => {
+  const manifest = await prisma.fieldManifest.findUnique({
+    include: {
+      fields: { orderBy: { position: "asc" } },
+      publishedTemplate: {
+        include: { prefillConfiguration: { include: { fields: true } } },
+      },
+    },
+    where: { publishedTemplateId },
+  });
+  if (!manifest) {
+    return bytes;
+  }
+  const bindings = spreadsheetBindingsFromFields(
+    manifest.fields,
+    manifest.publishedTemplate.prefillConfiguration?.fields
+  );
+  if (!hasSpreadsheetAttachments(bindings)) {
+    return bytes;
+  }
+  const declared = new Set(
+    [...bindings.fields, ...(bindings.table?.columns ?? [])]
+      .filter((field) => field.attachment)
+      .map((field) => field.id)
+  );
+  const retained = new Set(
+    spreadsheetUploadPocTargets(bytes, bindings)
+      .filter((target) => !declared.has(target.bindingId))
+      .map((target) => target.bindingId)
+  );
+  return stripSpreadsheetUploadPoc(bytes, retained);
+};
 
 interface SpreadsheetInitializationDependencies {
   processSpreadsheet?: typeof processSpreadsheet;

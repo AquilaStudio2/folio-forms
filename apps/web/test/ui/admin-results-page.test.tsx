@@ -16,7 +16,12 @@ import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import { API_ORIGIN, SESSION_KEY } from "@/lib/api";
-import type { AdminResult, Role } from "@/lib/api";
+import type {
+  AdminResult,
+  AttachmentFollowUp,
+  Role,
+  ResponseAttachmentCleanup,
+} from "@/lib/api";
 import { routeTree } from "@/routeTree.gen";
 
 const result = (id = "11111111-1111-4111-8111-111111111111"): AdminResult => ({
@@ -37,8 +42,14 @@ const result = (id = "11111111-1111-4111-8111-111111111111"): AdminResult => ({
 });
 
 const fetchMock = vi.fn<typeof fetch>();
+const deleteRequests = () =>
+  fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE");
 let sessionRole: Role;
 let listResponse: () => Response | Promise<Response>;
+let detailOverride: Promise<Response> | null;
+let deleteOverride: (() => Response) | null;
+let attachmentFollowUps: AttachmentFollowUp[];
+let deletionOutcome: ResponseAttachmentCleanup;
 
 let requestedPage = 1;
 const resultsPayload = (results: AdminResult[], total = results.length) => ({
@@ -71,8 +82,7 @@ const flush = async () => {
     await Promise.resolve();
   });
 };
-const mount = async () => {
-  const path = "/admin/results";
+const mount = async (path = "/admin/results") => {
   window.history.replaceState(null, "", path);
   const router = createRouter({
     history: createMemoryHistory({ initialEntries: [path] }),
@@ -80,16 +90,22 @@ const mount = async () => {
   });
   await router.load();
   render(<RouterProvider router={router} />);
-  await screen.findByRole("heading", { name: "ตรวจทานคำตอบ" });
+  await screen.findByRole("heading", {
+    name: path === "/admin/results" ? "ตรวจทานคำตอบ" : result().formTitle,
+  });
   await flush();
 };
 
 beforeEach(() => {
   sessionRole = "admin";
   listResponse = () => Response.json(resultsPayload([result()]));
+  detailOverride = null;
+  deleteOverride = null;
+  attachmentFollowUps = [];
+  deletionOutcome = { caseReference: null, state: "complete", warning: null };
   localStorage.setItem(SESSION_KEY, "results-reader-test-token");
   fetchMock.mockReset();
-  fetchMock.mockImplementation(async (input) => {
+  fetchMock.mockImplementation(async (input, init) => {
     const { pathname } = new URL(String(input));
     if (pathname === "/api/session") {
       return Response.json({
@@ -101,6 +117,39 @@ beforeEach(() => {
           role: sessionRole,
         },
       });
+    }
+    if (pathname === "/api/responses/deletion-status") {
+      return Response.json({ warnings: [] });
+    }
+    if (
+      pathname === `/api/admin/responses/${result().id}` &&
+      init?.method === "DELETE"
+    ) {
+      if (deleteOverride) {
+        return deleteOverride();
+      }
+      return Response.json({
+        attachmentCleanup: deletionOutcome,
+        deleted: true,
+      });
+    }
+    if (pathname === `/api/admin/results/${result().id}`) {
+      if (detailOverride) {
+        return detailOverride;
+      }
+      return Response.json({
+        result: {
+          ...result(),
+          correction: null,
+          data: {},
+          document: { available: false, state: "draft" },
+          fields: [],
+          revision: null,
+        },
+      });
+    }
+    if (pathname === "/api/admin/results/attachment-follow-up") {
+      return Response.json({ followUps: attachmentFollowUps });
     }
     if (pathname === "/api/admin/results") {
       requestedPage = Number(
@@ -839,4 +888,298 @@ describe("Fiscal year results search", () => {
       screen.queryByText("ไม่สามารถโหลดผลลัพธ์ได้ กรุณาลองใหม่อีกครั้ง")
     ).not.toBeInTheDocument();
   });
+});
+
+it.each([
+  ["admin", "legacy"],
+  ["viewer", "legacy"],
+  ["admin", "template"],
+  ["viewer", "template"],
+] as const)(
+  "%s can expand retained %s attachment tracking without reviving a deleted Response",
+  async (role, storageMode) => {
+    sessionRole = role;
+    listResponse = () => Response.json(resultsPayload([]));
+    attachmentFollowUps = [
+      {
+        actorId: "original-owner",
+        canFence: false,
+        caseReference: "66666666-6666-4666-8666-666666666666",
+        checkpoint: "55555555-5555-4555-8555-555555555555",
+        createdAt: "2026-11-14T03:00:00.000Z",
+        documentKey: "original-canonical",
+        formId: "44444444-4444-4444-8444-444444444444",
+        formPublicId: "0123456789abcdef0123456789abcdef",
+        formTitle: "Retained file tracking",
+        generation: 1,
+        mutationHeld: true,
+        nextAction: "Admin เริ่มลบได้เฉพาะ receipt ที่ยืนยันแล้วและยังไม่เคยส่ง DELETE",
+        operationId: "22222222-2222-4222-8222-222222222222",
+        reason: "ยังไม่ได้บันทึกคำตอบใหม่ ต้องจัดการไฟล์รอบที่ยกเลิกให้ครบ",
+        responseDeleted: true,
+        responseId: "33333333-3333-4333-8333-333333333333",
+        state: "cleanup-pending",
+        versions: [
+          {
+            bindingId: "folio_attachment",
+            canDelete: true,
+            category: storageMode === "legacy" ? "หลักฐาน" : "",
+            cleanupState: "pending",
+            confirmedAt: null,
+            confirmedBy: null,
+            deleteAttemptedAt: null,
+            documentCategoryId: null,
+            documentNumber: "DOC",
+            evidence: null,
+            filename: "DOC-unique-หลักฐาน.TXT",
+            fiscalYear: storageMode === "legacy" ? "2570" : null,
+            generation: 2,
+            id: "66666666-6666-4666-8666-666666666666",
+            identityId: "66666666-6666-4666-8666-666666666666",
+            originalName: "original.TXT",
+            overwriteIdentityIds: [],
+            receivedAt: "2026-11-14T03:00:01.000Z",
+            referenced: false,
+            requestSettledAt: "2026-11-14T03:00:01.000Z",
+            rowIndex: 2,
+            sentAt: "2026-11-14T03:00:00.000Z",
+            sizeBytes: 49,
+            state: "received",
+            storageMode,
+            storageTemplateId: null,
+            tag: "items.proof",
+            templateName: storageMode === "template" ? "ก่อหนี้-4_ขยาย(45)" : null,
+          },
+        ],
+      },
+    ];
+    const user = userEvent.setup();
+    await mount();
+    // JSDOM has no native modality; real-browser acceptance covers focus containment and restoration.
+    const nativeDialog = document.querySelector("dialog");
+    if (nativeDialog) {
+      nativeDialog.showModal = () => {
+        nativeDialog.open = true;
+      };
+      nativeDialog.close = () => {
+        nativeDialog.open = false;
+      };
+    }
+    const caseSearch = screen.getByRole("textbox", {
+      name: "รหัสติดตามการลบหรือ Operation",
+    });
+    await user.type(caseSearch, "66666666-6666-4666-8666-666666666666");
+    await user.click(await screen.findByText(/Retained file tracking —/u));
+    expect(screen.getByText(/ลบคำตอบแล้ว \(หลักฐานติดตามเท่านั้น\)/u)).toBeVisible();
+    expect(
+      screen.getByRole("heading", { name: "items.proof / แถว 3 (index 2)" })
+    ).toBeVisible();
+    expect(
+      screen.getByText(
+        storageMode === "template"
+          ? /เลข: DOC \/ ปี: - \/ แม่แบบ: ก่อหนี้-4_ขยาย\(45\)/u
+          : /เลข: DOC \/ ปี: 2570 \/ หมวด: หลักฐาน/u
+      )
+    ).toBeVisible();
+    expect(screen.getByText(/^เริ่มส่ง:/u)).toHaveTextContent(
+      /เริ่มส่ง:.*\d{1,2}:\d{2}.*receipt:.*\d{1,2}:\d{2}/u
+    );
+    expect(
+      screen.queryByRole("link", { name: "เปิดอ่านคำตอบที่บันทึกไว้" })
+    ).not.toBeInTheDocument();
+    expect(
+      screen.queryByRole("link", { exact: true, name: "เปิดอ่าน" })
+    ).not.toBeInTheDocument();
+    if (role === "admin") {
+      const deleteTrigger = screen.getByRole("button", {
+        name: "เริ่มลบไฟล์ค้างครั้งแรก",
+      });
+      await user.click(deleteTrigger);
+      const confirmation = screen.getByRole("dialog", {
+        name: "ยืนยันการลบไฟล์ค้างครั้งแรก",
+      });
+      expect(confirmation).toBeVisible();
+      fireEvent(confirmation, new Event("cancel", { cancelable: true }));
+      await waitFor(() =>
+        expect(screen.queryByRole("dialog")).not.toBeInTheDocument()
+      );
+      expect(
+        fetchMock.mock.calls.filter(([input]) =>
+          new URL(String(input)).pathname.endsWith("/settle")
+        )
+      ).toHaveLength(0);
+      await user.click(deleteTrigger);
+      expect(screen.getByText(/ไฟล์ลบแล้วกู้คืนไม่ได้/u)).toBeVisible();
+      await user.click(screen.getByRole("button", { name: "ยกเลิก" }));
+    } else {
+      expect(
+        screen.queryByRole("button", { name: "เริ่มลบไฟล์ค้างครั้งแรก" })
+      ).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole("button", { name: "หยุดรอบเดิมและติดตามผล" })
+      ).not.toBeInTheDocument();
+    }
+    await user.clear(caseSearch);
+    await user.type(caseSearch, "not-this-case");
+    expect(
+      screen.queryByText(/Retained file tracking —/u)
+    ).not.toBeInTheDocument();
+    expect(screen.getByText("ไม่มีรายการติดตาม")).toBeVisible();
+  }
+);
+
+it("requires confirmation and retains the incomplete file outcome after Admin deletes Response data", async () => {
+  deletionOutcome = {
+    caseReference: "66666666-6666-4666-8666-666666666666",
+    state: "pending",
+    warning:
+      "ลบข้อมูลคำตอบแล้ว แต่ URL อาจยังเปิดได้ รหัสติดตาม 66666666-6666-4666-8666-666666666666",
+  };
+  await mount(`/admin/results/${result().id}`);
+  await userEvent.click(screen.getByRole("button", { name: "ลบคำตอบถาวร" }));
+  expect(
+    screen.getByRole("dialog", { name: "ยืนยันการลบคำตอบถาวร" })
+  ).toBeVisible();
+  expect(
+    fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE")
+  ).toHaveLength(0);
+  await userEvent.click(screen.getByRole("button", { name: "ยืนยันการลบถาวร" }));
+  expect(await screen.findByText("ลบข้อมูลคำตอบถาวรแล้ว")).toBeVisible();
+  expect(screen.getByText(deletionOutcome.warning ?? "")).toBeVisible();
+  expect(
+    fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE")
+  ).toEqual([
+    [
+      `${API_ORIGIN}/api/admin/responses/${result().id}`,
+      expect.objectContaining({ body: JSON.stringify({ confirm: true }) }),
+    ],
+  ]);
+  expect(screen.getByRole("link", { name: "กลับไปรายการผลลัพธ์" })).toBeVisible();
+});
+
+it.each([true, false])(
+  "closes stale permanent delete confirmation and requires fresh detail (%s)",
+  async (refreshSucceeds) => {
+    await mount(`/admin/results/${result().id}`);
+    const refresh = Promise.withResolvers<Response>();
+    detailOverride = refresh.promise;
+    deleteOverride = () =>
+      Response.json({ error: "operation_in_progress" }, { status: 409 });
+    await userEvent.click(screen.getByRole("button", { name: "ลบคำตอบถาวร" }));
+    await userEvent.click(
+      screen.getByRole("button", { name: "ยืนยันการลบถาวร" })
+    );
+    const warning = await screen.findByRole("alert");
+    expect(warning).toHaveFocus();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const stale = screen.queryByRole("button", { name: "ลบคำตอบถาวร" });
+    if (stale) {
+      expect(stale).toBeDisabled();
+    }
+    expect(deleteRequests()).toHaveLength(1);
+
+    refresh.resolve(
+      refreshSucceeds
+        ? Response.json({
+            result: {
+              ...result(),
+              correction: null,
+              data: {},
+              document: { available: false, state: "draft" },
+              fields: [],
+              formTitle: "Refreshed provincial report",
+              revision: null,
+            },
+          })
+        : Response.json({ error: "refresh_failed" }, { status: 500 })
+    );
+    if (!refreshSucceeds) {
+      expect(await screen.findByText(/โหลดข้อมูลล่าสุดไม่สำเร็จ/u)).toBeVisible();
+      const blocked = screen.queryByRole("button", { name: "ลบคำตอบถาวร" });
+      if (blocked) {
+        expect(blocked).toBeDisabled();
+      }
+      expect(deleteRequests()).toHaveLength(1);
+      return;
+    }
+    expect(
+      await screen.findByRole("heading", {
+        name: "Refreshed provincial report",
+      })
+    ).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(/ตรวจสอบข้อมูลล่าสุด/u);
+    expect(deleteRequests()).toHaveLength(1);
+    deleteOverride = null;
+    await userEvent.click(screen.getByRole("button", { name: "ลบคำตอบถาวร" }));
+    const dialog = screen.getByRole("dialog");
+    expect(within(dialog).getByRole("button", { name: "ยกเลิก" })).toHaveFocus();
+    expect(deleteRequests()).toHaveLength(1);
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "ยืนยันการลบถาวร" })
+    );
+    expect(await screen.findByText("ลบข้อมูลคำตอบถาวรแล้ว")).toBeVisible();
+    expect(deleteRequests()).toHaveLength(2);
+  }
+);
+
+it("requires the current Submission revision before reconfirming a conflicted delete", async () => {
+  await mount(`/admin/results/${result().id}`);
+  const revision = Promise.withResolvers<Response>();
+  const originalFetch = fetchMock.getMockImplementation();
+  fetchMock.mockImplementation(async (input, init) => {
+    if (
+      new URL(String(input)).pathname ===
+      "/api/submissions/submission/corrections"
+    ) {
+      return revision.promise;
+    }
+    if (!originalFetch) {
+      throw new Error("Missing result HTTP fixture");
+    }
+    return originalFetch(input, init);
+  });
+  detailOverride = Promise.resolve(
+    Response.json({
+      result: {
+        ...result(),
+        correction: null,
+        data: {},
+        document: { available: false, state: "submission" },
+        fields: [],
+        formTitle: "Newly submitted report",
+        latestCorrectionNumber: 0,
+        revision: 0,
+        state: "submitted",
+        submissionId: "submission",
+      },
+    })
+  );
+  deleteOverride = () =>
+    Response.json({ error: "operation_in_progress" }, { status: 409 });
+  await userEvent.click(screen.getByRole("button", { name: "ลบคำตอบถาวร" }));
+  await userEvent.click(screen.getByRole("button", { name: "ยืนยันการลบถาวร" }));
+  expect(
+    await screen.findByRole("heading", { name: "Newly submitted report" })
+  ).toBeVisible();
+  expect(screen.getByRole("button", { name: "ลบคำตอบถาวร" })).toBeDisabled();
+  expect(deleteRequests()).toHaveLength(1);
+  revision.resolve(
+    Response.json({
+      latestRevision: 0,
+      revisions: [
+        {
+          createdAt: "2026-10-27T00:00:00.000Z",
+          data: {},
+          document: { available: false, state: "submission" },
+          reason: null,
+          revision: 0,
+        },
+      ],
+    })
+  );
+  await waitFor(() =>
+    expect(screen.getByRole("button", { name: "ลบคำตอบถาวร" })).toBeEnabled()
+  );
+  expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+  expect(deleteRequests()).toHaveLength(1);
 });

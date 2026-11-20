@@ -1,0 +1,27 @@
+flowchart TD
+    exit(["จะออกจากหน้า fill"])
+    busy{"กำลัง Save หรือ mutation ที่ต้องรอ"}
+    wait["รอผลก่อนออก ไม่อ้างว่ายกเลิกคำขอเดิม"]
+    dirty{"มี ordinary edits / candidate / pending ที่ยังไม่บันทึก"}
+    leave["ไป Dashboard หรือหน้าปลายทาง"]
+    prompt["native dialog งานยังไม่บันทึก"]
+    choice{"อยู่ต่อหรือทิ้งงาน local"}
+    stay["อยู่หน้านี้ต่อ; Cancel/Escape คงงาน"]
+    discard["ทิ้งเฉพาะ unsaved local changes"]
+    canonical["คง saved Response / history / checkpoint; ไม่ Save หรือ DELETE"]
+    reauth["ขอ login ใหม่หรือสลับ PDMS"]
+    saved["explicit Save ก่อนเปลี่ยน session หรือยกเลิก"]
+    expired["หมด session แล้ว"]
+    login["เข้าสู่ระบบอีกครั้ง"]
+    reopen["เปิด saved canonical; ตรวจ original Operation ก่อน mutation ใหม่"]
+    exit --> busy
+    busy -->|"ใช่"| wait
+    busy -->|"ไม่"| dirty
+    dirty -->|"ไม่มี"| leave
+    dirty -->|"มี"| prompt --> choice
+    choice -->|"อยู่ต่อ / Escape"| stay
+    choice -->|"explicit discard"| discard --> canonical --> leave
+    reauth -->|"มีงานค้าง"| saved
+    saved -->|"Save สำเร็จ"| login
+    saved -->|"ยกเลิก"| stay
+    expired --> login --> reopen

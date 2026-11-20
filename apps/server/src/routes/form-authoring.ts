@@ -12,11 +12,13 @@ import { z } from "zod";
 import { createFormFailureAudit, createFormAudit } from "../audit/events";
 import { requireIdentity, requireAdmin } from "../auth/identity";
 import { databaseErrorCode } from "../db-errors";
+import { diagnoseXlsxDraft } from "../documents/spreadsheets/draft-diagnosis";
 import { spreadsheetEditorSaveOptions } from "../documents/spreadsheets/editor-save-proof";
 import { spreadsheetAnchorSnapshotSchema } from "../documents/spreadsheets/save-snapshot";
-import { savedSpreadsheetUploadPocButtons } from "../documents/spreadsheets/upload-poc";
+import { validateAttachmentStorageMappings } from "../ecm/categories";
 import {
   actionEditorCapability,
+  editorAuthorization,
   requireActionEditorAuthorization,
   requireEditorScope,
   operationEditorCapability,
@@ -41,19 +43,20 @@ import {
   spreadsheetDraftBindings,
   validateSpreadsheetPublication,
 } from "../forms/spreadsheet-fields";
-import { fail } from "../http/errors";
+import { fail, HttpError } from "../http/errors";
 import {
   readJsonRecord,
   publicIdPattern,
   readDocumentKeyInput,
 } from "../http/input";
 import type { JsonRecord, DraftFieldRule } from "../model-types";
-import { editorConfig } from "../onlyoffice";
+import { editorConfig, xlsxEditorOpening } from "../onlyoffice";
 import { createOperation } from "../operations/create";
 import { launchForceSave } from "../operations/force-save";
 import { activeOperationForForm } from "../operations/lifecycle";
 import type { OperationMetadata } from "../operations/model";
-import { operationTypeForAction } from "../operations/model";
+import { operationMetadata, operationTypeForAction } from "../operations/model";
+import { xlsxDraftCandidateSchema } from "../operations/xlsx-draft";
 import {
   openPdmsProjectCatalog,
   requirePdmsCatalogSession,
@@ -62,6 +65,9 @@ import { pdmsProjectSourceEnabled } from "../pdms/projects";
 import { submissionSummary } from "../responses/query";
 import { objectExists, objectKey, readObject } from "../storage";
 import type { RouteDependencies } from "./dependencies";
+
+// Legacy binding edits allowed 256 KiB each. Atomic authoring carries all Rules and anchoring evidence.
+const xlsxAuthoringMaximumBytes = 16 * 1024 * 1024;
 
 const readTemplateActionInput = async (
   request: Request,
@@ -75,6 +81,7 @@ const readTemplateActionInput = async (
     .object({
       documentKey: z.string().trim().min(1),
       spreadsheetAnchors: spreadsheetAnchorSnapshotSchema,
+      xlsxDraft: xlsxDraftCandidateSchema.optional(),
       ...(allowPreserveEditorSession
         ? {
             deletedUploadPocBindingIds: z.unknown().optional(),
@@ -87,8 +94,34 @@ const readTemplateActionInput = async (
         : {}),
     })
     .strict()
-    .safeParse(await readJsonRecord(request, 256 * 1024));
+    .safeParse(await readJsonRecord(request, xlsxAuthoringMaximumBytes));
+  if (input.success && !input.data.xlsxDraft) {
+    fail(
+      409,
+      "xlsx_draft_upgrade_required",
+      "กรุณาเปิดตัวแก้ไข Excel รุ่นล่าสุดแล้วลองอีกครั้ง"
+    );
+  }
   if (!input.success) {
+    const duplicateTag = input.error.issues.find(
+      (issue) =>
+        issue.code === "custom" &&
+        issue.params?.folioCode === "duplicate_field_tag"
+    );
+    if (duplicateTag) {
+      fail(409, "duplicate_field_tag", duplicateTag.message);
+    }
+    if (
+      input.error.issues.some(
+        (issue) => issue.path[0] === "xlsxDraft" && issue.path[1] === "bindings"
+      )
+    ) {
+      fail(
+        400,
+        "invalid_field_config",
+        "การตั้งค่าช่องไม่ถูกต้อง กรุณาตรวจสอบชื่อช่อง tag ชนิดข้อมูล และตัวเลือก แล้วลองอีกครั้ง"
+      );
+    }
     fail(
       400,
       "invalid_request",
@@ -98,6 +131,7 @@ const readTemplateActionInput = async (
   const result = {
     documentKey: input.data.documentKey,
     spreadsheetAnchors: input.data.spreadsheetAnchors,
+    xlsxDraft: input.data.xlsxDraft,
   };
   try {
     return { ...result, ...spreadsheetEditorSaveOptions(input.data) };
@@ -155,31 +189,66 @@ export function registerFormAuthoringRoutes(
           capabilityScope.targetId,
           form.id
         );
-        const bindings =
+        const opening =
           form.documentKind === "xlsx"
-            ? await spreadsheetDraftBindings(templateDraft.id)
+            ? xlsxEditorOpening(
+                templateDraft.documentKey,
+                JSON.stringify([identity.id, identity.sessionId]),
+                query.pdmsOpeningId
+              )
+            : null;
+        const savedDraft =
+          form.documentKind === "xlsx"
+            ? await prisma.$transaction(
+                async (tx) => {
+                  const current = await tx.templateDraft.findUnique({
+                    include: { form: { include: { publishedTemplate: true } } },
+                    where: { id: templateDraft.id },
+                  });
+                  if (
+                    !current ||
+                    current.documentKey !== templateDraft.documentKey ||
+                    current.bindingRevision !== templateDraft.bindingRevision ||
+                    current.form.status === "published" ||
+                    current.form.publishedTemplate
+                  ) {
+                    fail(
+                      409,
+                      "stale_document",
+                      "The saved Excel draft changed; reopen the editor"
+                    );
+                  }
+                  const rules = await spreadsheetDraftBindings(current.id, tx);
+                  return {
+                    bindings: rules,
+                    contentHash: current.contentHash,
+                    objectKey: current.objectKey,
+                  };
+                },
+                { isolationLevel: "RepeatableRead" }
+              )
             : undefined;
-        const savedButtons = bindings
-          ? savedSpreadsheetUploadPocButtons(
-              await readObject(templateDraft.objectKey),
-              bindings
+        const bindings = savedDraft?.bindings;
+        const { issues, savedButtons } = savedDraft
+          ? diagnoseXlsxDraft(
+              await readObject(savedDraft.objectKey),
+              savedDraft.bindings,
+              savedDraft.contentHash
             )
-          : undefined;
+          : {};
         const pdmsProjectCatalog = bindings
           ? await openPdmsProjectCatalog({
               bindings,
               configuration: dependencies.pdmsProjects,
               identity,
               lease,
-              openingId:
-                typeof query.pdmsOpeningId === "string"
-                  ? query.pdmsOpeningId
-                  : undefined,
+              openingId: opening?.openingId,
               scope: capabilityScope,
             })
           : null;
         const catalogScope = {
           ...capabilityScope,
+          ...(opening ? { documentServerKey: opening.documentServerKey } : {}),
           ...(pdmsProjectCatalog
             ? { pdmsCatalogSessionId: pdmsProjectCatalog.sessionId }
             : {}),
@@ -190,10 +259,17 @@ export function registerFormAuthoringRoutes(
             pdmsProjectEnabled: pdmsProjectSourceEnabled(),
             ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
             documentKind: form.documentKind,
+            ...(opening
+              ? { documentServerKey: opening.documentServerKey }
+              : {}),
             ...(form.documentKind === "xlsx"
               ? {
                   spreadsheetBindings: bindings,
+                  templateDraftObjectKey: savedDraft?.objectKey,
                   uploadPocSavedButtons: savedButtons,
+                  xlsxDraftIssues: issues,
+                  xlsxDraftProtocol: 1 as const,
+                  xlsxDraftRevision: templateDraft.bindingRevision,
                 }
               : {}),
             capabilities: {
@@ -223,6 +299,156 @@ export function registerFormAuthoringRoutes(
           identity
         );
       }
+    )
+    .post(
+      "/api/admin/forms/:publicId/xlsx-draft/recover",
+      async ({ request, params }) => {
+        const { actor, capability } = await editorAuthorization(request);
+        requireAdmin(actor);
+        const form = await findFormByPublicId(params.publicId);
+        const targetId = form.templateDraft?.id;
+        if (
+          form.documentKind !== "xlsx" ||
+          !targetId ||
+          (capability &&
+            (capability.targetType !== "template-draft" ||
+              capability.formId !== form.id ||
+              capability.targetId !== targetId ||
+              !capability.leaseId ||
+              !["save-template", "publish"].includes(capability.action)))
+        ) {
+          fail(
+            403,
+            "editor_capability_scope_mismatch",
+            "This checkpoint does not belong to this editor"
+          );
+        }
+        const input = z
+          .object({
+            checkpoint: z.uuidv4(),
+            leaseId: z.uuid(),
+          })
+          .strict()
+          .safeParse(await readJsonRecord(request, 4096));
+        if (!input.success) {
+          fail(400, "invalid_request", "Invalid Excel save checkpoint");
+        }
+        return await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT id FROM forms WHERE id = ${form.id}::uuid FOR UPDATE`;
+          const lease = capability
+            ? await tx.editorLease.findFirst({
+                where: {
+                  holderUserId: actor.id,
+                  id: capability.leaseId,
+                  targetId,
+                  targetType: "template_draft",
+                },
+              })
+            : null;
+          const original = await tx.operation.findFirst({
+            where: {
+              actorId: actor.id,
+              formId: form.id,
+              metadata: {
+                equals: input.data.checkpoint,
+                path: ["xlsxDraft", "checkpoint"],
+              },
+              targetId,
+              targetType: "template_draft",
+            },
+          });
+          if (original) {
+            const metadata = operationMetadata(original.metadata);
+            if (
+              metadata.xlsxDraft?.leaseId !== input.data.leaseId ||
+              !original.documentKey ||
+              !["save-template", "publish"].includes(metadata.action)
+            ) {
+              fail(404, "checkpoint_not_found", "Excel checkpoint not found");
+            }
+            const scope = {
+              documentKey: original.documentKey,
+              formId: form.id,
+              targetId,
+              targetType: "template-draft",
+            } as const;
+            const sameLease =
+              lease?.id === input.data.leaseId &&
+              metadata.xlsxDraft.sessionId === lease.holderSessionId;
+            // Reauthentication proves only the current lease, never ownership of the old editor session.
+            if (capability && !sameLease) {
+              await lockActiveEditorLease(tx, { actor, capability }, scope);
+            }
+            const current = await tx.templateDraft.findUnique({
+              select: {
+                bindingRevision: true,
+                contentHash: true,
+                documentKey: true,
+              },
+              where: { id: targetId },
+            });
+            return {
+              action: metadata.action,
+              current,
+              ...(capability && sameLease
+                ? {
+                    operationCapability: operationEditorCapability(
+                      actor,
+                      scope,
+                      original.id
+                    ),
+                  }
+                : {}),
+              operationId: original.id,
+              result:
+                original.status === "completed" ? original.result : undefined,
+              status: original.status,
+            };
+          }
+          if (!capability) {
+            fail(404, "checkpoint_not_found", "Excel checkpoint not found");
+          }
+          const originalLease =
+            lease?.id === input.data.leaseId
+              ? lease
+              : await tx.editorLease.findUnique({
+                  where: { id: input.data.leaseId },
+                });
+          if (
+            !originalLease &&
+            (lease || capability.leaseId === input.data.leaseId)
+          ) {
+            // Lease IDs never return after replacement, so a previously fenced retry is settled.
+            return { status: "not-admitted" };
+          }
+          if (!lease || originalLease?.id !== lease.id) {
+            fail(
+              409,
+              "checkpoint_unresolved",
+              "The original Excel admission lease could not be verified"
+            );
+          }
+          if (
+            await tx.operation.findFirst({
+              select: { id: true },
+              where: {
+                status: { in: ["pending", "processing"] },
+                targetId: capability.targetId,
+                targetType: "template_draft",
+              },
+            })
+          ) {
+            fail(
+              409,
+              "checkpoint_unresolved",
+              "Another Excel operation is active on this lease"
+            );
+          }
+          await tx.editorLease.deleteMany({ where: { id: lease.id } });
+          return { status: "not-admitted" };
+        });
+      },
+      { parse: "none" }
     )
     .get(
       "/api/admin/forms/:publicId/schema",
@@ -447,8 +673,10 @@ export function registerFormAuthoringRoutes(
         const { actor: identity } = authorization;
         requireAdmin(identity);
         const publicId = params.publicId;
+        let xlsxPreAdmission = false;
         try {
           const form = await findFormByPublicId(publicId);
+          xlsxPreAdmission = form.documentKind === "xlsx";
           if (form.status === FormStatus.published || form.publishedTemplate) {
             fail(
               409,
@@ -532,6 +760,7 @@ export function registerFormAuthoringRoutes(
             result: { documentKey: nextDocumentKey },
             stagedObjectKey,
           };
+          xlsxPreAdmission = false;
           const operation = await createOperation({
             actorId: identity.id,
             authorization,
@@ -567,6 +796,14 @@ export function registerFormAuthoringRoutes(
           } catch {
             // Preserve the route error if the failure audit cannot be persisted.
           }
+          if (xlsxPreAdmission && error instanceof HttpError) {
+            set.status = error.httpStatus;
+            return {
+              error: error.code,
+              message: error.message,
+              preAdmission: true,
+            };
+          }
           throw error;
         }
       },
@@ -578,8 +815,10 @@ export function registerFormAuthoringRoutes(
         const authorization = await requireActionEditorAuthorization(request);
         const { actor: identity } = authorization;
         requireAdmin(identity);
+        let xlsxPreAdmission = false;
         try {
           const form = await findFormByPublicId(params.publicId);
+          xlsxPreAdmission = form.documentKind === "xlsx";
           if (form.status === FormStatus.published || form.publishedTemplate) {
             fail(
               409,
@@ -620,9 +859,11 @@ export function registerFormAuthoringRoutes(
               "A publish operation is already in progress"
             );
           }
-          if (form.documentKind === "xlsx") {
-            validateSpreadsheetPublication(
-              await spreadsheetDraftBindings(templateDraft.id)
+          if ("xlsxDraft" in snapshot && snapshot.xlsxDraft) {
+            const { bindings } = snapshot.xlsxDraft;
+            validateSpreadsheetPublication(bindings);
+            await prisma.$transaction((tx) =>
+              validateAttachmentStorageMappings(tx, bindings)
             );
           }
           const operationId = crypto.randomUUID();
@@ -654,6 +895,7 @@ export function registerFormAuthoringRoutes(
             publishedVersion: version,
             stagedObjectKey,
           };
+          xlsxPreAdmission = false;
           const operation = await createOperation({
             actorId: identity.id,
             authorization,
@@ -690,6 +932,14 @@ export function registerFormAuthoringRoutes(
             });
           } catch {
             // Preserve the route error if the failure audit cannot be persisted.
+          }
+          if (xlsxPreAdmission && error instanceof HttpError) {
+            set.status = error.httpStatus;
+            return {
+              error: error.code,
+              message: error.message,
+              preAdmission: true,
+            };
           }
           throw error;
         }

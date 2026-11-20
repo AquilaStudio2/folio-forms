@@ -10,6 +10,44 @@ import type {
   SpreadsheetResultContract,
 } from "@/lib/api";
 
+const attachmentLink = (value: unknown) => {
+  if (value === null || value === undefined) {
+    return "—";
+  }
+  if (
+    typeof value !== "object" ||
+    Array.isArray(value) ||
+    !("file_link" in value) ||
+    typeof value.file_link !== "string" ||
+    !URL.canParse(value.file_link)
+  ) {
+    return "ลิงก์ของฉบับนี้ไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล";
+  }
+  const url = new URL(value.file_link);
+  if (
+    url.username ||
+    url.password ||
+    url.hash ||
+    !(
+      url.protocol === "https:" ||
+      (url.protocol === "http:" &&
+        ["localhost", "127.0.0.1", "[::1]"].includes(url.hostname))
+    )
+  ) {
+    return "ลิงก์ของฉบับนี้ไม่พร้อมใช้งาน กรุณาติดต่อผู้ดูแล";
+  }
+  return (
+    <a
+      className="underline break-all"
+      href={value.file_link}
+      target="_blank"
+      rel="noopener noreferrer"
+    >
+      {value.file_link}
+    </a>
+  );
+};
+
 const fieldValue = (
   field: ReceiptField,
   value: unknown,
@@ -94,7 +132,9 @@ export const SpreadsheetTable = ({
                       className="border p-3 whitespace-pre-wrap"
                       key={column.id}
                     >
-                      {spreadsheetDisplayValue(row?.[column.key])}
+                      {column.attachment
+                        ? attachmentLink(row?.[column.key])
+                        : spreadsheetDisplayValue(row?.[column.key])}
                     </td>
                   ))}
                 </tr>
@@ -140,6 +180,16 @@ export const SubmissionFields = ({
 }) => (
   <>
     <h2 className="mb-4 font-semibold">{title}</h2>
+    {spreadsheetContract &&
+    (spreadsheetContract.fields.some((field) => field.attachment) ||
+      spreadsheetContract.table?.columns.some(
+        (column) => column.attachment
+      )) ? (
+      <Notice>
+        ลิงก์ไฟล์แนบเป็น URL สาธารณะและไม่หมดอายุ ผู้ที่ได้รับ URL อาจเปิดได้โดยไม่เข้าสู่ระบบ
+        Folio
+      </Notice>
+    ) : null}
     <dl className="space-y-3">
       {fields.map((field) => (
         <div
@@ -148,7 +198,11 @@ export const SubmissionFields = ({
         >
           <dt className="font-semibold">{field.label}</dt>
           <dd className="mt-2 whitespace-pre-wrap break-words text-[var(--ink-soft)]">
-            {fieldValue(field, data[field.tag], pictures?.[field.tag])}
+            {spreadsheetContract?.fields.some(
+              (binding) => binding.key === field.tag && binding.attachment
+            )
+              ? attachmentLink(data[field.tag])
+              : fieldValue(field, data[field.tag], pictures?.[field.tag])}
           </dd>
         </div>
       ))}

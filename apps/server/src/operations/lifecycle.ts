@@ -9,6 +9,7 @@ import type { Prisma } from "@onlyoffice/db";
 
 import { createFormAudit, formAuditErrorCodeFromCode } from "../audit/events";
 import { tokenDigest } from "../digests";
+import { fenceAttachmentBatch, lockBatch } from "../ecm/attachments";
 import { fail } from "../http/errors";
 import { publicIdPattern } from "../http/input";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
@@ -70,10 +71,12 @@ export async function updateOperationFailed(
   updatedBefore?: Date,
   details?: {
     errorMessage: string;
+    attachmentErrorReason?: string;
     validationErrors?: { address: string; message: string }[];
   }
 ): Promise<boolean> {
   const operation = await prisma.$transaction(async (tx) => {
+    await lockBatch(tx, operationId);
     const current = await tx.operation.findUnique({
       select: {
         actorId: true,
@@ -106,6 +109,7 @@ export async function updateOperationFailed(
     if (failed.count !== 1) {
       return null;
     }
+    await fenceAttachmentBatch(tx, operationId);
     if (metadata.action === "save-template" || metadata.action === "publish") {
       let targetId =
         typeof metadata.publicId === "string" &&
@@ -215,7 +219,7 @@ export async function operationDocumentKey(
 ): Promise<string | null> {
   const pending = await prisma.operation.findMany({
     orderBy: { updatedAt: "desc" },
-    select: { metadata: true },
+    select: { id: true, metadata: true },
     take: 10,
     where: {
       documentKey,
@@ -223,6 +227,13 @@ export async function operationDocumentKey(
     },
   });
   for (const operation of pending) {
+    if (
+      await prisma.ecmAttachmentBatch.findUnique({
+        where: { operationId: operation.id },
+      })
+    ) {
+      continue;
+    }
     const metadata = operationMetadata(operation.metadata);
     if (await objectExists(metadata.stagedObjectKey)) {
       return metadata.stagedObjectKey;

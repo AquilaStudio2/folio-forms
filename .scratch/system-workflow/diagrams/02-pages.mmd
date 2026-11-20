@@ -13,8 +13,8 @@ flowchart LR
     detail["/admin/results/:responseId"]
     correction[".../:responseId/correction"]
     users["/admin/users"]
+    storageTemplates["ตั้งค่าระบบ<br/>/admin/storage-templates"]
     audit["/admin/audit"]
-    ai["/admin/ai-authoring"]
     dashboard["/dashboard"]
     fill["/forms/:publicId/fill"]
     ownHistory["/forms/:publicId/submissions"]
@@ -31,8 +31,8 @@ flowchart LR
     form --> submissions --> submission
     admin --> results --> detail -->|"Admin เท่านั้น"| correction
     admin --> users
+    admin --> storageTemplates
     admin --> audit
-    admin --> ai -->|"นำ DOCX ไปสร้าง Form"| form
     dashboard --> fill
     dashboard --> receipt
     dashboard -->|"เคยส่งแล้ว"| ownHistory --> receipt

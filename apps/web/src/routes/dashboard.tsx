@@ -5,9 +5,13 @@ import { useEffect, useRef, useState } from "react";
 import { AppShell, PageHeader } from "@/components/app-shell";
 import { DocumentKindBadge } from "@/components/document-kind-badge";
 import { ListPagination } from "@/components/list-pagination";
+import {
+  isResponseDeleteConflict,
+  ResponseDeleteConflictNotice,
+} from "@/components/response-delete-conflict";
 import { Badge, Button, Card, Notice, Spinner } from "@/components/ui";
 import { ApiError, apiDelete, apiGet, formatDate } from "@/lib/api";
-import type { Submission } from "@/lib/api";
+import type { Submission, ResponseDeletionOutcome } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { paginateItems } from "@/lib/pagination";
 
@@ -38,6 +42,13 @@ const Centered = ({ message }: { message: string }) => (
   </div>
 );
 
+const draftHasHistoryMessage =
+  "ไม่สามารถทิ้งฉบับร่างที่มีประวัติการส่ง เพื่อเก็บคำตอบที่ส่งแล้วและฉบับแก้ไขไว้";
+const canConfirmDiscard = (
+  discardingId: string | null,
+  discardError: string | null
+) => discardingId === null && discardError !== draftHasHistoryMessage;
+
 const DashboardRoute = () => {
   const { user, loading: authLoading, signedOut } = useAuth();
   const [rows, setRows] = useState<Submission[]>([]);
@@ -54,6 +65,9 @@ const DashboardRoute = () => {
   const [discardingId, setDiscardingId] = useState<string | null>(null);
   const [discardError, setDiscardError] = useState<string | null>(null);
   const [discardSuccess, setDiscardSuccess] = useState<string | null>(null);
+  const [discardCleanupPending, setDiscardCleanupPending] = useState(false);
+  const [discardReload, setDiscardReload] = useState(0);
+  const discardWarningRef = useRef<HTMLDivElement | null>(null);
   const discardTriggerRef = useRef<HTMLButtonElement | null>(null);
   const discardStatusRef = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
@@ -66,6 +80,11 @@ const DashboardRoute = () => {
       discardStatusRef.current?.focus();
     }
   }, [discardSuccess]);
+  useEffect(() => {
+    if (discardReload) {
+      discardWarningRef.current?.focus();
+    }
+  }, [discardReload]);
   useEffect(() => {
     if (!user) {
       setLoading(false);
@@ -99,7 +118,7 @@ const DashboardRoute = () => {
     return () => {
       cancelled = true;
     };
-  }, [user]);
+  }, [user, discardReload]);
   const requestDiscard = (id: string, trigger: HTMLButtonElement) => {
     discardTriggerRef.current = trigger;
     setDiscardCandidateId(id);
@@ -120,23 +139,46 @@ const DashboardRoute = () => {
     restoreDiscardFocus();
   };
   const discardDraft = async () => {
-    if (!discardCandidateId || discardingId) {
+    if (!discardCandidateId || !canConfirmDiscard(discardingId, discardError)) {
       return;
     }
     const id = discardCandidateId;
     setDiscardingId(id);
     setDiscardError(null);
     try {
-      await apiDelete(`/api/responses/${id}`);
+      const outcome = await apiDelete<ResponseDeletionOutcome>(
+        `/api/responses/${id}`
+      );
       setRows((currentRows) => currentRows.filter((row) => row.id !== id));
       setDiscardCandidateId(null);
-      setDiscardSuccess("ทิ้งฉบับร่างแล้ว");
+      setDiscardCleanupPending(outcome.attachmentCleanup.state === "pending");
+      setDiscardSuccess(outcome.attachmentCleanup.warning ?? "ทิ้งฉบับร่างแล้ว");
     } catch (caughtError) {
-      setDiscardError(
-        caughtError instanceof ApiError && caughtError.status === 401
-          ? "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่"
-          : "ทิ้งฉบับร่างไม่สำเร็จ กรุณาลองใหม่"
-      );
+      if (isResponseDeleteConflict(caughtError)) {
+        discardTriggerRef.current = null;
+        setDiscardCandidateId(null);
+        setLoading(true);
+        setDiscardReload((reload) => reload + 1);
+      } else if (
+        caughtError instanceof ApiError &&
+        caughtError.code === "draft_has_history"
+      ) {
+        setDiscardError(draftHasHistoryMessage);
+      } else if (
+        caughtError instanceof ApiError &&
+        caughtError.code === "attachment_outcome_unresolved"
+      ) {
+        setDiscardError(
+          caughtError.userMessage ||
+            "ผลการอัปโหลดไฟล์ยังไม่ชัดเจน กรุณาติดต่อผู้ดูแลระบบก่อนดำเนินการต่อ และอย่าส่งไฟล์ซ้ำ"
+        );
+      } else {
+        setDiscardError(
+          caughtError instanceof ApiError && caughtError.status === 401
+            ? "เซสชันหมดอายุ กรุณาเข้าสู่ระบบใหม่"
+            : "ทิ้งฉบับร่างไม่สำเร็จ กรุณาลองใหม่"
+        );
+      }
     } finally {
       setDiscardingId(null);
     }
@@ -157,7 +199,9 @@ const DashboardRoute = () => {
 
   let responseContent: React.ReactNode;
   if (error) {
-    responseContent = <Notice tone="danger">{error}</Notice>;
+    responseContent = discardReload ? null : (
+      <Notice tone="danger">{error}</Notice>
+    );
   } else if (loading) {
     responseContent = <Centered message="กำลังโหลดคำตอบ…" />;
   } else if (rows.length === 0) {
@@ -233,7 +277,7 @@ const DashboardRoute = () => {
                     ดูประวัติการส่งทั้งหมด
                   </Link>
                 ) : null}
-                {submitted ? null : (
+                {submitted || hasSubmissionHistory ? null : (
                   <Button
                     type="button"
                     variant="ghost"
@@ -256,6 +300,32 @@ const DashboardRoute = () => {
   }
 
   const discardCandidate = rows.find((row) => row.id === discardCandidateId);
+  let discardFeedback: React.ReactNode = null;
+  if (discardSuccess) {
+    discardFeedback = (
+      <div
+        ref={discardStatusRef}
+        className="mb-4"
+        role="status"
+        aria-live="polite"
+        tabIndex={-1}
+      >
+        <Notice tone={discardCleanupPending ? "neutral" : "success"}>
+          {discardSuccess}
+        </Notice>
+      </div>
+    );
+  } else if (discardReload && !discardCandidate) {
+    discardFeedback = (
+      <ResponseDeleteConflictNotice
+        action="ทิ้ง"
+        failed={error !== null}
+        loading={loading}
+        ref={discardWarningRef}
+        subject="ฉบับร่าง"
+      />
+    );
+  }
   return (
     <AppShell>
       {discardCandidate ? (
@@ -277,7 +347,7 @@ const DashboardRoute = () => {
               พร้อมเอกสารที่บันทึกไว้และไม่สามารถกู้คืนได้
             </p>
             {discardError ? (
-              <div className="mt-4">
+              <div className="mt-4" role="alert">
                 <Notice tone="danger">{discardError}</Notice>
               </div>
             ) : null}
@@ -295,7 +365,7 @@ const DashboardRoute = () => {
                 type="button"
                 variant="danger"
                 onClick={discardDraft}
-                disabled={discardingId !== null}
+                disabled={!canConfirmDiscard(discardingId, discardError)}
               >
                 {discardingId ? <Spinner /> : null}
                 {discardingId ? "กำลังลบ…" : "ยืนยันการทิ้ง"}
@@ -304,17 +374,7 @@ const DashboardRoute = () => {
           </div>
         </div>
       ) : null}
-      {discardSuccess ? (
-        <div
-          ref={discardStatusRef}
-          className="mb-4"
-          role="status"
-          aria-live="polite"
-          tabIndex={-1}
-        >
-          <Notice tone="success">{discardSuccess}</Notice>
-        </div>
-      ) : null}
+      {discardFeedback}
       <PageHeader
         title="แดชบอร์ด"
         description="กลับไปกรอกฉบับร่างที่บันทึกไว้ หรือดูคำตอบที่ส่งแล้ว"

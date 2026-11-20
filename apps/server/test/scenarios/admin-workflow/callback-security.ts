@@ -179,6 +179,7 @@ export const runCallbackSecurity = async (
         );
         const userdata = createCallbackUserdata({
           documentKey: callbackTemplateDraft.documentKey,
+          documentServerKey: callbackTemplateDraft.documentKey,
           operationId: id,
           operationType: "save_template_draft",
         });
@@ -277,6 +278,7 @@ export const runCallbackSecurity = async (
       ...trustedPayload,
       userdata: createCallbackUserdata({
         documentKey: trustOperation.documentKey,
+        documentServerKey: trustOperation.documentKey,
         operationId: crypto.randomUUID(),
         operationType: "save_template_draft",
       }),
@@ -287,6 +289,7 @@ export const runCallbackSecurity = async (
       ...trustedPayload,
       userdata: createCallbackUserdata({
         documentKey: trustOperation.documentKey,
+        documentServerKey: trustOperation.documentKey,
         operationId: trustOperation.id,
         operationType: "submit_response",
       }),
@@ -299,6 +302,7 @@ export const runCallbackSecurity = async (
       ...trustedPayload,
       userdata: createCallbackUserdata({
         documentKey: trustOperation.documentKey,
+        documentServerKey: trustOperation.documentKey,
         expiresAt: Math.floor(Date.now() / 1000) - 1,
         operationId: trustOperation.id,
         operationType: "save_template_draft",
@@ -435,6 +439,7 @@ export const runCallbackSecurity = async (
     );
     const externalResponseUserdata = createCallbackUserdata({
       documentKey: externalResponseDocumentKey,
+      documentServerKey: externalResponseDocumentKey,
       operationId: externalResponseOperationId,
       operationType: "save_draft",
     });

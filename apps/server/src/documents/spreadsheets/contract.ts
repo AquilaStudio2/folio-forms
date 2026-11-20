@@ -11,6 +11,31 @@ const keySchema = z
   );
 const fieldSchema = z
   .object({
+    attachment: z
+      .union([
+        z
+          .object({
+            category: z.string().min(1).max(255).nullable(),
+            mode: z.literal("legacy").default("legacy"),
+          })
+          .strict(),
+        z
+          .object({
+            category: z.null().default(null),
+            document_category_id: z
+              .number()
+              .int()
+              .min(-2_147_483_648)
+              .max(2_147_483_647)
+              .nullable()
+              .default(null),
+            mode: z.literal("template"),
+            storage_template_id: z.string().uuid().nullable().default(null),
+            template_name: z.string().min(1).max(255).nullable().default(null),
+          })
+          .strict(),
+      ])
+      .optional(),
     computed: z.boolean().default(false),
     id: z.string().regex(/^folio_[A-Za-z0-9_]+$/u),
     key: keySchema,
@@ -41,6 +66,7 @@ export const spreadsheetBindingSchema = z
             "boolean",
             "picture",
           ]),
+          unbound: z.literal(true).optional(),
         })
         .strict()
     ),
@@ -57,6 +83,7 @@ export const spreadsheetBindingSchema = z
         id: z.string().regex(/^folio_[A-Za-z0-9_]+$/u),
         key: keySchema,
         label: z.string().trim().min(1).max(200),
+        unbound: z.literal(true).optional(),
       })
       .strict()
       .nullable(),
@@ -118,6 +145,22 @@ export const spreadsheetBindingSchema = z
       ...bindings.fields,
       ...(bindings.table?.columns ?? []),
     ]) {
+      if (
+        field.attachment &&
+        (field.type !== "text" ||
+          field.source ||
+          field.computed ||
+          field.options.length > 0 ||
+          ("prefillPointer" in field &&
+            (field.prefillPointer !== null ||
+              field.prefillPolicy !== "editable")))
+      ) {
+        context.addIssue({
+          code: "custom",
+          message:
+            "Attachment fields cannot use formulas, choices, sources or Prefill",
+        });
+      }
       if (
         field.source &&
         (field.type !== "dropdown" ||

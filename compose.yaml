@@ -85,32 +85,6 @@ services:
       - onlyoffice-logs:/var/log/onlyoffice
       - onlyoffice-cache:/var/lib/onlyoffice
 
-  document-worker-daemon:
-    image: docker:29-dind
-    privileged: true
-    cgroup: host
-    restart: unless-stopped
-    entrypoint: ["dockerd", "-H", "unix:///var/run/worker/docker.sock"]
-    networks: [document-worker-daemon]
-    volumes:
-      - document-worker-socket:/var/run/worker
-      - document-worker-workspaces:/workspaces
-      - document-worker-docker:/var/lib/docker
-
-  document-worker:
-    build:
-      context: .
-      dockerfile: apps/server/Dockerfile.document-worker
-    restart: unless-stopped
-    depends_on: [document-worker-daemon]
-    environment:
-      DOCKER_HOST: unix:///var/run/worker/docker.sock
-      WORKER_IMAGE_CONTEXT: /app/worker-image
-    networks: [document-worker-api, document-worker-daemon]
-    volumes:
-      - document-worker-socket:/var/run/worker
-      - document-worker-workspaces:/workspaces
-
   server:
     build:
       context: .
@@ -118,7 +92,6 @@ services:
     restart: unless-stopped
     platform: linux/amd64
     image: ratanon0191/pdms-folio-server
-    networks: [default, document-worker-api]
     init: true
     depends_on:
       postgres:
@@ -154,18 +127,18 @@ services:
       LEGACY_SSO_CLIENT_SECRET: ${LEGACY_SSO_CLIENT_SECRET:-}
       LEGACY_SSO_EXCHANGE_URL: ${LEGACY_SSO_EXCHANGE_URL:-}
       LEGACY_SSO_PROVIDER_ID: ${LEGACY_SSO_PROVIDER_ID:-}
-      OMNIROUTE_BASE_URL: ${OMNIROUTE_BASE_URL:-}
-      OMNIROUTE_API_KEY: ${OMNIROUTE_API_KEY:-}
-      OMNIROUTE_MODEL: ${OMNIROUTE_MODEL:-}
       ONGOING_API_URL: ${ONGOING_API_URL:-}
       X_ONGOING_SECRET: ${X_ONGOING_SECRET:-}
       PDMS_PROJECT_NAME_SOURCE_ENABLED: ${PDMS_PROJECT_NAME_SOURCE_ENABLED:-false}
+      ECM_API_URL: ${ECM_API_URL:-}
+      ECM_USERNAME: ${ECM_USERNAME:-}
+      ECM_PASSWORD: ${ECM_PASSWORD:-}
+      ECM_TOKEN_ENCRYPTION_KEY: ${ECM_TOKEN_ENCRYPTION_KEY:-}
       RUSTFS_ENDPOINT: http://rustfs:9000
       RUSTFS_ACCESS_KEY_ID: ${RUSTFS_ACCESS_KEY_ID:?set RUSTFS_ACCESS_KEY_ID}
       RUSTFS_SECRET_ACCESS_KEY: ${RUSTFS_SECRET_ACCESS_KEY:?set RUSTFS_SECRET_ACCESS_KEY}
       RUSTFS_BUCKET: ${RUSTFS_BUCKET:?set RUSTFS_BUCKET}
       RUSTFS_REGION: ${RUSTFS_REGION:-us-east-1}
-      DOCUMENT_WORKER_URL: http://document-worker:3010
       TEMPLATE_PATH: /app/onlyoffice-templates/template.docx
     command:
       [
@@ -257,18 +230,9 @@ services:
     volumes:
       - .:/workspace:ro
 
-networks:
-  document-worker-api:
-    internal: true
-  document-worker-daemon:
-
 volumes:
   postgres-data-v18:
   onlyoffice-data:
   onlyoffice-logs:
   onlyoffice-cache:
   rustfs-data:
-
-  document-worker-socket:
-  document-worker-workspaces:
-  document-worker-docker:

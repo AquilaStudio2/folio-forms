@@ -12,11 +12,11 @@ export const maxTemplateUploadBytes = 25 * 1024 * 1024;
 export const maxTemplateMultipartOverheadBytes = 64 * 1024;
 const maxTemplateMultipartBodyBytes =
   maxTemplateUploadBytes + maxTemplateMultipartOverheadBytes;
-const maxAuthoringPdfBytes = 10 * 1024 * 1024;
-const maxAuthoringMultipartBodyBytes = 11 * 1024 * 1024;
 const correctionReasonMaximumLength = 2000;
 export const accountBodyMaximumBytes = 64 * 1024;
 export const documentActionBodyMaximumBytes = 8 * 1024;
+// Preserve Bun's former transport bound for JSON routes without a narrower contract.
+export const legacyJsonBodyMaximumBytes = 128 * 1024 * 1024;
 export const accountEmailMaximumLength = 254;
 export type FormSource = "blank" | "upload";
 
@@ -79,92 +79,6 @@ export async function readJsonRecord(
   } catch {
     fail(400, "invalid_request", "Request body must be valid JSON");
   }
-}
-
-export async function readAuthoringPromptInput(
-  request: Request
-): Promise<{ consent: unknown; prompt: string }> {
-  const input = await readJsonRecord(request, accountBodyMaximumBytes);
-  if (
-    Object.keys(input).length !== 2 ||
-    !Object.hasOwn(input, "consent") ||
-    !Object.hasOwn(input, "prompt") ||
-    typeof input.prompt !== "string"
-  ) {
-    fail(400, "invalid_request", "Only consent and prompt are accepted");
-  }
-  return { consent: input.consent, prompt: input.prompt };
-}
-
-export async function readAuthoringCreationInput(
-  request: Request
-): Promise<{ consent: unknown; pdfBytes?: Uint8Array; prompt: string }> {
-  const contentType = request.headers.get("content-type");
-  if (!contentType || !/^multipart\/form-data(?:\s*;|$)/iu.test(contentType)) {
-    return await readAuthoringPromptInput(request);
-  }
-
-  const requestBytes = await readRequestBytes(
-    request,
-    maxAuthoringMultipartBodyBytes,
-    "Multipart form data is required"
-  );
-  const multipartRequest = new Request(request.url, {
-    body: requestBytes,
-    headers: { "content-type": contentType },
-    method: "POST",
-  });
-  const formData = await multipartRequest.formData().catch(() => {
-    fail(400, "invalid_request", "Multipart form data is invalid");
-  });
-  const entries = new Map<string, unknown>();
-  for (const [key, value] of formData.entries()) {
-    if (key !== "prompt" && key !== "consent" && key !== "pdf") {
-      fail(
-        400,
-        "invalid_request",
-        "Only prompt, consent, and pdf are accepted"
-      );
-    }
-    if (entries.has(key)) {
-      fail(400, "invalid_request", `${key} must be provided once`);
-    }
-    entries.set(key, value);
-  }
-  const prompt = entries.get("prompt");
-  const consent = entries.get("consent");
-  const pdf = entries.get("pdf");
-  if (
-    typeof prompt !== "string" ||
-    (consent !== undefined && typeof consent !== "string")
-  ) {
-    fail(400, "invalid_request", "prompt and consent must be text");
-  }
-  if (!(pdf instanceof File)) {
-    fail(400, "invalid_request", "pdf is required");
-  }
-  const normalizedType = pdf.type.trim().toLowerCase();
-  if (
-    normalizedType !== "" &&
-    normalizedType !== "application/octet-stream" &&
-    normalizedType !== "application/pdf"
-  ) {
-    fail(415, "invalid_file_type", "Source must be a PDF file");
-  }
-  if (pdf.size > maxAuthoringPdfBytes) {
-    fail(413, "payload_too_large", "Source PDF is too large");
-  }
-  const pdfBytes = new Uint8Array(await pdf.arrayBuffer());
-  if (
-    pdfBytes[0] !== 0x25 ||
-    pdfBytes[1] !== 0x50 ||
-    pdfBytes[2] !== 0x44 ||
-    pdfBytes[3] !== 0x46 ||
-    pdfBytes[4] !== 0x2d
-  ) {
-    fail(415, "invalid_file_type", "Source must be a PDF file");
-  }
-  return { consent: consent === "true", pdfBytes, prompt };
 }
 
 interface TemplateCreationInput {
@@ -315,7 +229,8 @@ interface CorrectionInput {
 
 export function correctionInput(
   body: unknown,
-  workspaceOnly = false
+  workspaceOnly = false,
+  attachments = false
 ): CorrectionInput {
   const input = asRecord(body);
   const allowed = new Set([
@@ -323,6 +238,9 @@ export function correctionInput(
     "documentKey",
     "pdmsCatalogSessionId",
     ...(workspaceOnly ? ["pdmsSelection"] : ["reason"]),
+    ...(attachments
+      ? ["checkpoint", "snapshotUrl", "responseId", "attachmentRemovals"]
+      : []),
   ]);
   if (
     Object.keys(input).some((key) => !allowed.has(key)) ||

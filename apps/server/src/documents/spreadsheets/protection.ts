@@ -1,5 +1,6 @@
 import { strToU8, zipSync } from "fflate";
 
+import { spreadsheetAttachmentSlots } from "../../responses/attachment-data";
 import {
   maxTemplateArchiveExpandedBytes,
   templateArchiveText,
@@ -34,6 +35,7 @@ export const spreadsheetInputRanges = (
       (field) =>
         !field.computed &&
         !field.source &&
+        !field.attachment &&
         field.type !== "picture" &&
         !locked.has(field.key)
     )
@@ -41,7 +43,7 @@ export const spreadsheetInputRanges = (
   if (contract.table) {
     const body = contract.locations[contract.table.anchor] as SpreadsheetRange;
     for (const column of contract.table.columns.filter(
-      (field) => !field.computed && !field.source
+      (field) => !field.computed && !field.source && !field.attachment
     )) {
       ranges.push({
         ...body,
@@ -62,6 +64,68 @@ const protectedCellChanged = (
     (before.value ?? null) !== (after?.value ?? null)) ||
   (!before && after?.value !== null && after?.value !== undefined);
 
+const validateAttachmentTableStructure = (
+  previous: SpreadsheetWorkbook,
+  current: SpreadsheetWorkbook
+): void => {
+  const before = spreadsheetXmlTree(
+    templateArchiveText(previous.archive, previous.sheetPath)
+  );
+  const after = spreadsheetXmlTree(
+    templateArchiveText(current.archive, current.sheetPath)
+  );
+  const [protection] = spreadsheetXmlChildren(after, "sheetProtection");
+  // Row counts cannot prove identity; retain the native structural barriers.
+  if (
+    !["1", "true"].includes(protection?.attributes.sheet ?? "") ||
+    !["1", "true"].includes(protection?.attributes.sort ?? "") ||
+    !["1", "true"].includes(protection?.attributes.autoFilter ?? "") ||
+    [
+      "sort",
+      "autoFilter",
+      "insertRows",
+      "deleteRows",
+      "insertColumns",
+      "deleteColumns",
+      "formatCells",
+      "formatRows",
+      "formatColumns",
+    ].some((attribute) =>
+      ["0", "false"].includes(protection?.attributes[attribute] ?? "")
+    ) ||
+    JSON.stringify(
+      spreadsheetXmlChildren(before, "sortState").map(serializeSpreadsheetXml)
+    ) !==
+      JSON.stringify(
+        spreadsheetXmlChildren(after, "sortState").map(serializeSpreadsheetXml)
+      )
+  ) {
+    throw new Error("ยังยืนยันตำแหน่งไฟล์กับแถวไม่ได้ ยังไม่บันทึก กรุณาคงหน้านี้ไว้");
+  }
+};
+
+const validateAttachmentCellProtection = (
+  current: SpreadsheetWorkbook,
+  contract: SpreadsheetContract
+): void => {
+  const [formats] = spreadsheetXmlChildren(
+    spreadsheetXmlTree(templateArchiveText(current.archive, "xl/styles.xml")),
+    "cellXfs"
+  );
+  const styles = formats ? spreadsheetXmlChildren(formats, "xf") : [];
+  for (const slot of spreadsheetAttachmentSlots(contract)) {
+    const style = styles[current.cells.get(slot.address)?.style ?? 0];
+    if (
+      !style ||
+      ["0", "false"].includes(
+        spreadsheetXmlChildren(style, "protection")[0]?.attributes.locked ?? ""
+      )
+    ) {
+      throw new Error("ยังยืนยันตำแหน่งไฟล์กับแถวไม่ได้ ยังไม่บันทึก กรุณาคงหน้านี้ไว้");
+    }
+  }
+};
+
 export const validateSpreadsheetEdits = (
   previous: SpreadsheetWorkbook,
   current: SpreadsheetWorkbook,
@@ -78,6 +142,10 @@ export const validateSpreadsheetEdits = (
     if (JSON.stringify(current.names.get(name)) !== JSON.stringify(range)) {
       throw new Error(`The field position was changed: ${name}`);
     }
+  }
+  if (contract.table?.columns.some((column) => column.attachment)) {
+    validateAttachmentTableStructure(previous, current);
+    validateAttachmentCellProtection(current, contract);
   }
   const inputs = spreadsheetInputRanges(contract, locked);
   const addresses = new Set([
@@ -292,6 +360,7 @@ export const protectSpreadsheet = (
     sheet.children.indexOf(sheetData) + 1,
     0,
     spreadsheetXmlElement(sheet, "sheetProtection", {
+      autoFilter: "1",
       deleteColumns: "1",
       deleteRows: "1",
       formatCells: "1",
@@ -307,6 +376,7 @@ export const protectSpreadsheet = (
       selectLockedCells: "0",
       selectUnlockedCells: "0",
       sheet: "1",
+      sort: "1",
     })
   );
   const book = spreadsheetXmlTree(

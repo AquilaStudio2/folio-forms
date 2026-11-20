@@ -91,6 +91,7 @@ test("embedded pictures survive save/resume and stay out of answer JSON like DOC
   expect(extractSpreadsheetData(workbook, contract, true)).toEqual({
     data: {},
     errors: [],
+    rowIndices: [],
   });
   expect(
     extractSpreadsheetData(readSpreadsheetWorkbook(empty), contract, false)

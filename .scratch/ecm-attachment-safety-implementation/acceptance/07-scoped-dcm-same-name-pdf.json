@@ -1,0 +1,244 @@
+{
+  "schemaVersion": 1,
+  "branch": "feat/ecm-attachment-safety-implementation",
+  "head": "1071d3c7c50293f8706597e850036e4a5f50e28b",
+  "ecmClientSha256": "c846eed2af0fe72db46b160a88e7c433cb73ad4f3dc9734657915c4e11adabe5",
+  "providerRevision": null,
+  "apiOrigin": "https://pdms-documentmanagement.enconfund.go.th",
+  "apiPrefix": "/backend/api/beeecm/public",
+  "scopeAuthorization": {
+    "oldFiveOriginalsApprovedForBeforeAndAfter": true,
+    "sameNamePdfDestinationConfirmed": true,
+    "syntheticArtifactCustodian": "pyw1tt",
+    "deleteAuthorized": false
+  },
+  "run": {
+    "project": "กทอ.67-00-0001",
+    "target": "DMS/ShareFiles/2567/กทอ.67-00-0001/2. มติและการก่อหนี้",
+    "filename": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).pdf",
+    "counts": {
+      "login": 0,
+      "search": 3,
+      "originalGet": 11,
+      "upload": 1,
+      "delete": 0
+    },
+    "events": [
+      {
+        "kind": "search",
+        "attempt": 1,
+        "ordinal": 1,
+        "stage": "verify_exact_folder",
+        "at": "2026-11-19T07:26:36.421Z",
+        "status": 200
+      },
+      {
+        "kind": "search",
+        "attempt": 1,
+        "ordinal": 2,
+        "stage": "baseline_listing",
+        "at": "2026-11-19T07:26:36.644Z",
+        "status": 200
+      },
+      {
+        "kind": "originalGet",
+        "attempt": 1,
+        "ordinal": 1,
+        "stage": "baseline_originals",
+        "at": "2026-11-19T07:26:36.841Z",
+        "status": 200
+      },
+      {
+        "kind": "originalGet",
+        "attempt": 1,
+        "ordinal": 2,
+        "stage": "baseline_originals",
+        "at": "2026-11-19T07:26:37.018Z",
+        "status": 200
+      },
+      {
+        "kind": "originalGet",
+        "attempt": 1,
+        "ordinal": 3,
+        "stage": "baseline_originals",
+        "at": "2026-11-19T07:26:37.136Z",
+        "status": 200
+      },
+      {
+        "kind": "originalGet",
+        "attempt": 1,
+        "ordinal": 4,
+        "stage": "baseline_originals",
+        "at": "2026-11-19T07:26:37.262Z",
+        "status": 200
+      },
+      {
+        "kind": "originalGet",
+        "attempt": 1,
+        "ordinal": 5,
+        "stage": "baseline_originals",
+        "at": "2026-11-19T07:26:37.386Z",
+        "status": 200
+      },
+      {
+        "kind": "upload",
+        "attempt": 1,
+        "ordinal": 1,
+        "stage": "single_synthetic_upload",
+        "at": "2026-11-19T07:26:37.518Z",
+        "status": 200,
+        "providerDate": "Thu, 19 Nov 2026 07:26:37 GMT",
+        "responseType": "application/json",
+        "responseBytes": 725,
+        "businessStatus": 200
+      },
+      {
+        "kind": "originalGet",
+        "attempt": 1,
+        "ordinal": 6,
+        "stage": "read_new_original",
+        "at": "2026-11-19T07:26:37.837Z",
+        "status": 200
+      },
+      {
+        "kind": "originalGet",
+        "attempt": 1,
+        "ordinal": 7,
+        "stage": "compare_old_originals",
+        "at": "2026-11-19T07:26:37.963Z",
+        "status": 200
+      },
+      {
+        "kind": "originalGet",
+        "attempt": 1,
+        "ordinal": 8,
+        "stage": "compare_old_originals",
+        "at": "2026-11-19T07:26:38.141Z",
+        "status": 200
+      },
+      {
+        "kind": "originalGet",
+        "attempt": 1,
+        "ordinal": 9,
+        "stage": "compare_old_originals",
+        "at": "2026-11-19T07:26:38.257Z",
+        "status": 200
+      },
+      {
+        "kind": "originalGet",
+        "attempt": 1,
+        "ordinal": 10,
+        "stage": "compare_old_originals",
+        "at": "2026-11-19T07:26:38.407Z",
+        "status": 200
+      },
+      {
+        "kind": "originalGet",
+        "attempt": 1,
+        "ordinal": 11,
+        "stage": "compare_old_originals",
+        "at": "2026-11-19T07:26:38.534Z",
+        "status": 200
+      },
+      {
+        "kind": "search",
+        "attempt": 1,
+        "ordinal": 3,
+        "stage": "match_current_directory_receipts",
+        "at": "2026-11-19T07:26:38.737Z",
+        "status": 200
+      }
+    ],
+    "oldFiles": [
+      {
+        "label": "old-1",
+        "before": {
+          "bytes": 26275,
+          "sha256": "12ec9f9bdc5b35397b05905de3581d5b96c669f9d64e6527f0308430ab98b7e1"
+        },
+        "after": {
+          "bytes": 26275,
+          "sha256": "12ec9f9bdc5b35397b05905de3581d5b96c669f9d64e6527f0308430ab98b7e1"
+        }
+      },
+      {
+        "label": "old-2",
+        "before": {
+          "bytes": 26275,
+          "sha256": "12ec9f9bdc5b35397b05905de3581d5b96c669f9d64e6527f0308430ab98b7e1"
+        },
+        "after": {
+          "bytes": 26275,
+          "sha256": "12ec9f9bdc5b35397b05905de3581d5b96c669f9d64e6527f0308430ab98b7e1"
+        }
+      },
+      {
+        "label": "old-3",
+        "before": {
+          "bytes": 26275,
+          "sha256": "12ec9f9bdc5b35397b05905de3581d5b96c669f9d64e6527f0308430ab98b7e1"
+        },
+        "after": {
+          "bytes": 26275,
+          "sha256": "12ec9f9bdc5b35397b05905de3581d5b96c669f9d64e6527f0308430ab98b7e1"
+        }
+      },
+      {
+        "label": "old-4",
+        "before": {
+          "bytes": 667,
+          "sha256": "709b2ee6c999641c46cc3de0fd0201d00e9ddf6f2bba547d4d7a545590980256"
+        },
+        "after": {
+          "bytes": 667,
+          "sha256": "709b2ee6c999641c46cc3de0fd0201d00e9ddf6f2bba547d4d7a545590980256"
+        }
+      },
+      {
+        "label": "old-5",
+        "before": {
+          "bytes": 26275,
+          "sha256": "12ec9f9bdc5b35397b05905de3581d5b96c669f9d64e6527f0308430ab98b7e1"
+        },
+        "after": {
+          "bytes": 26275,
+          "sha256": "12ec9f9bdc5b35397b05905de3581d5b96c669f9d64e6527f0308430ab98b7e1"
+        }
+      }
+    ],
+    "rawSecretsRetained": false,
+    "fixture": {
+      "label": "FOLIO-ECM-SAFETY-4cbd6473-e3f4-4b6a-a5e4-caf7e00a987e",
+      "bytes": 628,
+      "sha256": "5545e5cd5d526194d4876b6f16f461871b7d2783ff9e2d408d44297af516fa83"
+    },
+    "newReceipt": {
+      "validatedOriginalPair": true,
+      "pairDistinctFromBaseline": true,
+      "providerCreated": "2026-11-19 14:26:37",
+      "original": {
+        "bytes": 628,
+        "sha256": "5545e5cd5d526194d4876b6f16f461871b7d2783ff9e2d408d44297af516fa83",
+        "exactBytesMatch": true
+      }
+    },
+    "postUploadListing": {
+      "exactEntryCount": 6,
+      "allOldAndNewPairsPresent": true
+    },
+    "allFiveOldOriginalsUnchanged": true,
+    "result": "scoped_pdf_same_name_sample_supported",
+    "completedAt": "2026-11-19T07:26:38.944Z"
+  },
+  "interpretation": {
+    "observed": "One successful same-name PDF in the confirmed project/template/destination; all five before/after originals and the direct paired receipt matched the stated evidence.",
+    "notEstablished": [
+      "DELETE isolation",
+      "Folio Draft, Submission, or Correction history in the live provider sample",
+      "per-slot format/boundary matrix",
+      "provider-wide non-overwrite guarantee",
+      "original HTTP 500 settlement"
+    ],
+    "localSensitiveRetention": "No endpoint response bodies, credentials, receipt URLs/tokens or original bytes published; checks were in memory."
+  }
+}

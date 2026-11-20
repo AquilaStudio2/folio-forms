@@ -3,6 +3,10 @@ import { runInNewContext } from "node:vm";
 
 import { createOffice } from "../src/office.js";
 import {
+  spreadsheetColumnAnchor,
+  spreadsheetTableColumnsAnchor,
+} from "../src/spreadsheet-columns.js";
+import {
   spreadsheetSelectionCommand,
   spreadsheetValidationCommand,
   spreadsheetTableSelectedRowCommand,
@@ -336,6 +340,14 @@ const click = async (harness, caption) => {
   await flushPlugin();
 };
 
+const workingBindings = async (harness) => {
+  expect(harness.requests).toHaveLength(0);
+  const { bindings } =
+    await harness.window.FormBridge.getSpreadsheetBindings(false);
+  expect(harness.requests).toHaveLength(0);
+  return bindings;
+};
+
 test("serialized selection retains valid anchors when another saved name is missing", () => {
   const result = runInNewContext(
     `(${spreadsheetSelectionCommand.toString()})()`,
@@ -422,12 +434,7 @@ test.each(["field", "table", "unfinished table"])(
     const native = { address: "E5", names: { month: "'Sheet1'!$E$5" } };
     const harness = createHarness({
       action: "template-edit",
-      capabilityResponses: ["read", "write"],
       documentKind: "xlsx",
-      responses: [
-        { bindings, revision: 0 },
-        { bindings, revision: 1 },
-      ],
       serializeCommands: true,
       spreadsheetBindings: bindings,
       spreadsheetSelection: native,
@@ -450,38 +457,35 @@ test.each(["field", "table", "unfinished table"])(
     expect(harness.requests).toHaveLength(0);
     expect(harness.spreadsheetNames.has("missing")).toBe(false);
     if (category === "table" && table.columns.length > 0) {
+      control(harness, "หนึ่ง (first)").value = "1";
+      control(harness, "สอง (second)").value = "2";
       native.address = "B9";
       await click(harness, "ผูกตำแหน่งใหม่กับช่วงที่เลือก");
       expect(harness.spreadsheetNames.has("missing")).toBe(false);
+      expect(harness.statusElement.textContent).toContain("ระบุลำดับคอลัมน์");
       native.address = "B9:C12";
       await harness.window.FormBridge.refreshSelection();
       existing.value = missing.id;
       existing.dispatchEvent({ type: "change" });
+      control(harness, "หนึ่ง (first)").value = "1";
+      control(harness, "สอง (second)").value = "2";
     }
     await click(harness, "ผูกตำแหน่งใหม่กับช่วงที่เลือก");
+    expect(harness.statusElement.textContent).toContain("ผูกตำแหน่งใหม่แล้ว");
     expect(harness.spreadsheetNames.get("missing")).toBe(
       `'Sheet1'!${native.address}`
     );
     expect(harness.spreadsheetNames.get("month")).toBe("'Sheet1'!$E$5");
     expect(harness.requests).toHaveLength(0);
     await click(harness, "บันทึกการแก้ไข");
-    const patches = harness.requests.filter(
-      (request) => request.method === "PATCH"
-    );
-    expect(patches).toHaveLength(1);
-    expect(JSON.parse(patches[0].body).change).toMatchObject({
-      kind: category,
-      value: {
-        anchor: "missing",
-        id: "missing-id",
-        key: "saved",
-        label: "ช่องเดิม",
-      },
-    });
+    const candidate = await workingBindings(harness);
+    const value =
+      category === "table"
+        ? candidate.table
+        : candidate.fields.find(({ id }) => id === missing.id);
+    expect(value).toMatchObject(missing);
     if (category === "table") {
-      expect(JSON.parse(patches[0].body).change.value.columns).toEqual(
-        table.columns
-      );
+      expect(value.columns).toEqual(table.columns);
     }
     native.address = "E5";
     await harness.window.FormBridge.refreshSelection();
@@ -542,14 +546,7 @@ test("selection editing keeps identity and hidden prefill metadata without accum
   const bindings = { fields: [field], table: null, version: 1 };
   const harness = createHarness({
     action: "template-edit",
-    capabilityResponses: ["read", "write", "read", "write"],
     documentKind: "xlsx",
-    responses: [
-      { bindings, revision: 0 },
-      { bindings, revision: 1 },
-      { bindings, revision: 1 },
-      { bindings, revision: 2 },
-    ],
     spreadsheetBindings: bindings,
     spreadsheetSelection: { address: "B2", names: { old: "'Sheet1'!$B$2" } },
   });
@@ -562,22 +559,19 @@ test("selection editing keeps identity and hidden prefill metadata without accum
     (node) => node.tagName === "BUTTON"
   ).length;
   await click(harness, "บันทึกการแก้ไข");
-  await click(harness, "บันทึกการแก้ไข");
-  for (const request of harness.requests.filter(
-    (item) => item.method === "PATCH"
-  )) {
-    expect(JSON.parse(request.body).change.value).toMatchObject({
+  const first = await workingBindings(harness);
+  expect(first.fields).toMatchObject([
+    {
       anchor: "old",
       id: "old",
       key: "customer_name",
       label: "Customer name",
       prefillPointer: "/customer/name",
       prefillPolicy: "lock_when_available",
-    });
-  }
-  expect(
-    harness.requests.filter((request) => request.method === "PATCH")
-  ).toHaveLength(2);
+    },
+  ]);
+  await click(harness, "บันทึกการแก้ไข");
+  expect(await workingBindings(harness)).toEqual(first);
   expect(
     descendants(harness.body).filter((node) => node.tagName === "BUTTON")
   ).toHaveLength(count);
@@ -614,16 +608,16 @@ test.each(["field", "column", "table"])(
     const bindings = { fields: [field], table, version: 1 };
     const native = {
       address: category === "field" ? "B2" : "A5",
-      names: { rows: "'Sheet1'!$A$5:$A$7", scalar: "'Sheet1'!$B$2" },
+      names: {
+        rows: "'Sheet1'!$A$5:$A$7",
+        scalar: "'Sheet1'!$B$2",
+        [spreadsheetColumnAnchor(column.id)]: "'Sheet1'!$A$5:$A$7",
+        [spreadsheetTableColumnsAnchor(table.id)]: "'Sheet1'!$A$5:$A$7",
+      },
     };
     const harness = createHarness({
       action: "template-edit",
-      capabilityResponses: ["read", "write"],
       documentKind: "xlsx",
-      responses: [
-        { bindings, revision: 0 },
-        { bindings, revision: 1 },
-      ],
       spreadsheetBindings: bindings,
       spreadsheetSelection: native,
     });
@@ -643,22 +637,18 @@ test.each(["field", "column", "table"])(
     expect(kind.value).toBe(category);
     control(harness, "Title · ชื่อช่อง").value = "ชื่อใหม่";
     await click(harness, "บันทึกการแก้ไข");
-    const changes = harness.requests.filter(
-      (request) => request.method === "PATCH"
-    );
-    expect(changes).toHaveLength(1);
-    expect(JSON.parse(changes[0].body).change).toMatchObject({
-      action: "upsert",
-      kind: category,
-      value: { id: category, label: "ชื่อใหม่" },
-    });
+    const candidate = await workingBindings(harness);
+    const edited = {
+      column: candidate.table.columns[0],
+      field: candidate.fields[0],
+      table: candidate.table,
+    }[category];
+    expect(edited).toMatchObject({ id: category, label: "ชื่อใหม่" });
     expect(kind.disabled).toBe(true);
     kind.value = category === "field" ? "table" : "field";
     await click(harness, "บันทึกการแก้ไข");
     expect(kind.value).toBe(category);
-    expect(
-      harness.requests.filter((request) => request.method === "PATCH")
-    ).toHaveLength(1);
+    expect(await workingBindings(harness)).toEqual(candidate);
     // Selecting an unbound range still allows choosing a new field's category.
     native.address = "D10";
     harness.window.Asc.plugin.init();
@@ -676,12 +666,7 @@ test.each([false, true])(
     const bindings = { fields: [], table: null, version: 1 };
     const harness = createHarness({
       action: "template-edit",
-      capabilityResponses: ["read", "write"],
       documentKind: "xlsx",
-      responses: [
-        { bindings, revision: 0 },
-        { bindings, revision: 1 },
-      ],
       spreadsheetBindings: bindings,
       spreadsheetSelection: {
         address: "B3:C8",
@@ -698,14 +683,9 @@ test.each([false, true])(
     headers.checked = withHeaders;
     headers.dispatchEvent({ type: "change" });
     await click(harness, "เพิ่มช่องจากช่วงที่เลือก");
-    const changes = harness.requests.filter(
-      (request) => request.method === "PATCH"
-    );
-    expect(changes).toHaveLength(1);
-    const { change } = JSON.parse(changes[0].body);
-    expect(change.kind).toBe("table");
+    const { table } = await workingBindings(harness);
     expect(
-      change.value.columns.map(({ key, label, offset, type }) => ({
+      table.columns.map(({ key, label, offset, type }) => ({
         key,
         label,
         offset,
@@ -725,7 +705,7 @@ test.each([false, true])(
         type: "text",
       },
     ]);
-    expect(harness.spreadsheetNames.get(change.value.anchor)).toBe(
+    expect(harness.spreadsheetNames.get(table.anchor)).toBe(
       withHeaders ? "'Sheet1'!B4:C8" : "'Sheet1'!B3:C8"
     );
     expect(
@@ -841,30 +821,34 @@ test("new default tags skip saved field and table keys", async () => {
   expect(control(harness, "Tag · รหัสช่อง").value).toBe("field_3");
 });
 
-test("selection changes while metadata saves are reconciled after the action", async () => {
+test("selection changes during native Apply are reconciled after the action", async () => {
   const native = { address: "A1" };
   const bindings = { fields: [], table: null, version: 1 };
   const harness = createHarness({
     action: "template-edit",
-    capabilityResponses: ["read", "write"],
     documentKind: "xlsx",
-    responses: [
-      { bindings, revision: 0 },
-      { bindings, revision: 1 },
-    ],
+    spreadsheetBindings: bindings,
     spreadsheetSelection: native,
   });
   acknowledgeBridge(harness);
   await flushPlugin();
-  const save = descendants(harness.body).find(
-    (node) =>
-      node.tagName === "BUTTON" && node.textContent === "เพิ่มช่องจากช่วงที่เลือก"
-  );
-  save.dispatchEvent({ type: "click" });
-  await Promise.resolve();
-  native.address = "B2";
-  harness.window.Asc.plugin.init();
-  await flushPlugin();
+  const { plugin } = harness.window.Asc;
+  const original = plugin.callCommand;
+  plugin.callCommand = (command, close, recalculate, done) => {
+    if (command.name !== spreadsheetValidationCommand.name) {
+      return original(command, close, recalculate, done);
+    }
+    return original(command, close, recalculate, (result) => {
+      native.address = "B2";
+      harness.emitEditorEvent("onTargetPositionChanged");
+      done(result);
+    });
+  };
+  await click(harness, "เพิ่มช่องจากช่วงที่เลือก");
+  expect(native.address).toBe("B2");
+  const { fields } = await workingBindings(harness);
+  expect(fields).toHaveLength(1);
+  expect(harness.spreadsheetNames.get(fields[0].anchor)).toBe("'Sheet1'!A1");
   expect(control(harness, "Title · ชื่อช่อง").value).toBe("ช่อง B2");
 });
 
@@ -873,12 +857,8 @@ test("dropdown options editor supports bulk add, edit, delete and reordering", a
   const bindings = { fields: [], table: null, version: 1 };
   const harness = createHarness({
     action: "template-edit",
-    capabilityResponses: ["read", "write"],
     documentKind: "xlsx",
-    responses: [
-      { bindings, revision: 0 },
-      { bindings, revision: 1 },
-    ],
+    spreadsheetBindings: bindings,
     spreadsheetSelection: native,
   });
   acknowledgeBridge(harness);
@@ -917,17 +897,11 @@ test("dropdown options editor supports bulk add, edit, delete and reordering", a
   await click(harness, "Delete");
   expect(optionTexts()).toEqual(["หญิง", "อื่นๆ (ระบุ)"]);
 
-  const save = descendants(harness.body).find(
-    (node) =>
-      node.tagName === "BUTTON" && node.textContent === "เพิ่มช่องจากช่วงที่เลือก"
-  );
-  save.dispatchEvent({ type: "click" });
-  await flushPlugin();
-  const { change } = JSON.parse(
-    harness.requests.find((request) => request.method === "PATCH").body
-  );
-  expect(change.value.type).toBe("dropdown");
-  expect(change.value.options).toEqual(["หญิง", "อื่นๆ (ระบุ)"]);
+  await click(harness, "เพิ่มช่องจากช่วงที่เลือก");
+  const { fields } = await workingBindings(harness);
+  expect(fields).toMatchObject([
+    { options: ["หญิง", "อื่นๆ (ระบุ)"], type: "dropdown" },
+  ]);
 });
 
 test("extending a reopened dropdown preserves its identity and refreshes the native dropdown", async () => {
@@ -942,12 +916,7 @@ test("extending a reopened dropdown preserves its identity and refreshes the nat
   const bindings = { fields: [field], table: null, version: 1 };
   const harness = createHarness({
     action: "template-edit",
-    capabilityResponses: ["read", "write"],
     documentKind: "xlsx",
-    responses: [
-      { bindings, revision: 0 },
-      { bindings, revision: 1 },
-    ],
     spreadsheetBindings: bindings,
     spreadsheetSelection: {
       address: "A1",
@@ -970,17 +939,14 @@ test("extending a reopened dropdown preserves its identity and refreshes the nat
   entry.value = "test_4";
   await click(harness, "Add");
   await click(harness, "บันทึกการแก้ไข");
-  const request = harness.requests.find(
-    (candidate) => candidate.method === "PATCH"
-  );
-  expect(JSON.parse(request.body).change).toMatchObject({
-    kind: "field",
-    value: {
+  const { fields } = await workingBindings(harness);
+  expect(fields).toMatchObject([
+    {
       anchor: field.anchor,
       id: field.id,
       options: [...field.options, "test_4"],
     },
-  });
+  ]);
   expect(validationRefreshes).toEqual([true]);
 });
 
@@ -1006,6 +972,46 @@ test("response append-row button inserts after all current rows with native save
     action: "insert",
     index: 3,
   });
+});
+
+test("last-row delete is disabled with a reason and follows trusted native body size after every action", async () => {
+  const harness = createHarness({
+    documentKind: "xlsx",
+    spreadsheetBindings: {
+      fields: [],
+      table: { anchor: "rows", columns: [] },
+      version: 1,
+    },
+    spreadsheetSelection: {
+      address: "B4",
+      names: { rows: "'Sheet1'!B4:C4" },
+    },
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  const remove = descendants(harness.body).find(
+    (node) => node.tagName === "BUTTON" && node.textContent === "ลบแถวที่เลือก"
+  );
+  expect(remove.disabled).toBe(true);
+  expect(remove.title).toBe("ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้");
+  remove.dispatchEvent({ type: "click" });
+  await flushPlugin();
+  expect(harness.requests).toHaveLength(0);
+  expect(
+    await harness.window.FormBridge.runAction("save-draft", "", {
+      action: "delete",
+      index: 0,
+    })
+  ).toMatchObject({ ok: false });
+  expect(harness.requests).toHaveLength(0);
+  harness.spreadsheetNames.set("rows", "'Sheet1'!B4:C5");
+  harness.emitEditorEvent("onTargetPositionChanged");
+  await flushPlugin();
+  expect(remove.disabled).toBe(false);
+  harness.spreadsheetNames.set("rows", "'Sheet1'!B4:C4");
+  harness.emitEditorEvent("onDocumentContentReady");
+  await flushPlugin();
+  expect(remove.disabled).toBe(true);
 });
 
 test("Excel response accepts authenticated shared submit actions from the parent", async () => {
@@ -1054,14 +1060,15 @@ test("editing an existing table preserves columns without redrawing user borders
   const bindings = { fields: [], table, version: 1 };
   const harness = createHarness({
     action: "template-edit",
-    capabilityResponses: ["read", "write"],
     documentKind: "xlsx",
-    responses: [
-      { bindings, revision: 0 },
-      { bindings, revision: 1 },
-    ],
     spreadsheetBindings: bindings,
-    spreadsheetSelection: { names: { rows: "'Sheet1'!$A$5:$A$7" } },
+    spreadsheetSelection: {
+      names: {
+        rows: "'Sheet1'!$A$5:$A$7",
+        [spreadsheetColumnAnchor("column")]: "'Sheet1'!$A$5:$A$7",
+        [spreadsheetTableColumnsAnchor(table.id)]: "'Sheet1'!$A$5:$A$7",
+      },
+    },
   });
   acknowledgeBridge(harness);
   await flushPlugin();
@@ -1070,9 +1077,8 @@ test("editing an existing table preserves columns without redrawing user borders
   existing.dispatchEvent({ type: "change" });
   control(harness, "Title · ชื่อช่อง").value = "Updated items";
   await click(harness, "บันทึกการแก้ไข");
-  expect(JSON.parse(harness.requests[1].body).change.value.columns).toEqual(
-    table.columns
-  );
+  const candidate = await workingBindings(harness);
+  expect(candidate.table).toEqual({ ...table, label: "Updated items" });
   expect(harness.spreadsheetBorders).toHaveLength(0);
 });
 

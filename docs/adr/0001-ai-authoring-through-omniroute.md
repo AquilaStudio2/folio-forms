@@ -1,6 +1,8 @@
 # ADR 0001: Route AI authoring through OmniRoute
 
-**Status:** Accepted
+**Status:** Retired — AI Authoring removed by the system owner's decision on 17 November 2026.
+
+The application no longer exposes AI Authoring, calls OmniRoute, or runs its document worker. Ordinary Form creation, uploaded/generated Forms already stored in Folio, and existing Responses remain unchanged. The sections below retain the historical decision; they do not describe an available integration.
 
 ## Context
 

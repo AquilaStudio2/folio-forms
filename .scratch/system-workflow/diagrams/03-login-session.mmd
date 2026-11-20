@@ -18,7 +18,7 @@ flowchart TD
     save["บันทึกหรือจัดการงานค้าง"]
     renew["login ใหม่ หรือ PDMS SSO"]
     logout["Sign out"]
-    clear["revoke session และจบ AI workspace"]
+    clear["revoke session"]
     open --> token
     token -->|"มี bearer"| check
     token -->|"ไม่มี bearer"| claim

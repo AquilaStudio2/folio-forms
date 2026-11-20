@@ -17,7 +17,7 @@ export const runtimeImage = "onlyoffice/documentserver:9.4.0.1";
 const builderPath =
   "/var/www/onlyoffice/documentserver/server/FileConverter/bin/docbuilder";
 
-interface XmlNode {
+export interface XmlNode {
   attributes: Record<string, string>;
   children: XmlNode[];
   local: string;

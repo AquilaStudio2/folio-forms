@@ -1,0 +1,828 @@
+{
+  "executionDate": "2026-11-19",
+  "branch": "feat/ecm-attachment-safety-implementation",
+  "baseCommit": "1071d3c7c50293f8706597e850036e4a5f50e28b",
+  "state": "uncommitted Working Tree",
+  "provenance": {
+    "widthJourneys": "Width-only fix before hidden-row extension. Not relabeled as full final-source journeys.",
+    "finalGeometryJourneys": "Final zero-height/whole-row hidden logic; formatter-only changes followed initial native checks. Final hidden ht22 cold opening and keyboard candidate/cancel used formatted plugin source.",
+    "preFormatSourceSha256": {
+      "apps/server/src/documents/spreadsheets/upload-poc-command.js": "c0cec2643a5fc86a04637506f4304c607b0dab6c5217cc9380d23b73e5b1b86a",
+      "apps/server/src/documents/spreadsheets/upload-poc.ts": "3fd0f3d64075ff348232faa3cd0007235407797ae9823e14bed44219c789a13b",
+      "apps/server/src/responses/deletion.ts": "2ea69e66c53aeda3a6bc2c2f159e90c78ae07547d6ed5d86e980ae54b36d887b",
+      "apps/onlyoffice-plugin/test/harness.js": "ce277cce4fd4bdf35c19c3a10390dc73de07ae6f49b76588583c4aceaa9f018b",
+      "apps/server/test/spreadsheet-runtime/upload-poc.test.ts": "8011e11442f0bd17b1cfde5a83809298e85c860e75bd40f663dffec0079a0f68",
+      "apps/server/test/http/ecm-scalar-save-submit.test.ts": "e963026164e32a6b2e1e0e6d0e97358c9381fc56a256170e59a8ed73f8730534"
+    },
+    "finalSourceSha256": {
+      "apps/server/src/documents/spreadsheets/upload-poc-command.js": "e79ea9e94963d5f6cec1c90fe88a53ca6d196843488d86018aea1c088823059f",
+      "apps/server/src/documents/spreadsheets/upload-poc.ts": "3fd0f3d64075ff348232faa3cd0007235407797ae9823e14bed44219c789a13b",
+      "apps/server/src/responses/deletion.ts": "896976bbd80cf52cb3b590f794f678712cfc45c45101322c528f0da23a6e9e8c",
+      "apps/onlyoffice-plugin/test/harness.js": "ce277cce4fd4bdf35c19c3a10390dc73de07ae6f49b76588583c4aceaa9f018b",
+      "apps/server/test/spreadsheet-runtime/upload-poc.test.ts": "f9b02040785e616d6691b70733d0781d46cfde889f9e21367c364ce2122d23c8",
+      "apps/server/test/http/ecm-scalar-save-submit.test.ts": "3c604e85d54bc8648e30ba0dfef8a49da02f592e702702857083fdf4f30fcc36"
+    }
+  },
+  "environment": {
+    "browser": "Chrome/150.0.7871.24",
+    "userAgent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/150.0.0.0 Safari/537.36",
+    "onlyoffice": "9.4.0-ae9ceb648960c9359d8339c7c6044e63 / 9.4.0-129",
+    "origin": "http://localhost:18198",
+    "databases": ["folio_ecm_local_2iiiv7", "folio_ecm_local_2iiiv7_http"],
+    "bucket": "folio-ecm-local-2iiiv7",
+    "syntheticProvider": true
+  },
+  "cases": {
+    "coldWidth0": {
+      "form": {
+        "width": 0,
+        "formId": "2d66bb32-cb0e-43b7-bf42-150377a2327b",
+        "publicId": "2d66bb32cb0e43b7bf42150377a2327b"
+      },
+      "native": {
+        "widthC": 0,
+        "rectC": {
+          "left": 216,
+          "top": 212,
+          "width": 0,
+          "height": 22
+        },
+        "rectD": {
+          "left": 216,
+          "top": 212,
+          "width": 90,
+          "height": 22
+        },
+        "protection": true,
+        "drawings": [
+          {
+            "from": {
+              "col": 1,
+              "row": 2,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extent": {
+              "x": 16.93333333333333,
+              "y": 3.6945555555555556
+            },
+            "data": "{\"bindingId\":\"folio_proof\",\"kind\":\"folio-upload-poc\",\"rowIndex\":null,\"tag\":\"proof\",\"version\":1}"
+          },
+          {
+            "from": {
+              "col": 2,
+              "row": 9,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extent": {
+              "x": 0,
+              "y": 0
+            },
+            "data": "{\"bindingId\":\"folio_row_proof\",\"kind\":\"folio-upload-poc\",\"rowIndex\":0,\"tag\":\"rows.proof\",\"version\":1}"
+          },
+          {
+            "from": {
+              "col": 2,
+              "row": 10,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extent": {
+              "x": 0,
+              "y": 0
+            },
+            "data": "{\"bindingId\":\"folio_row_proof\",\"kind\":\"folio-upload-poc\",\"rowIndex\":1,\"tag\":\"rows.proof\",\"version\":1}"
+          },
+          {
+            "from": {
+              "col": 3,
+              "row": 9,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extent": {
+              "x": 16.93333333333333,
+              "y": 3.6945555555555525
+            },
+            "data": "{\"bindingId\":\"folio_row_other\",\"kind\":\"folio-upload-poc\",\"rowIndex\":0,\"tag\":\"rows.other\",\"version\":1}"
+          },
+          {
+            "from": {
+              "col": 3,
+              "row": 10,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extent": {
+              "x": 16.93333333333333,
+              "y": 3.6945555555555525
+            },
+            "data": "{\"bindingId\":\"folio_row_other\",\"kind\":\"folio-upload-poc\",\"rowIndex\":1,\"tag\":\"rows.other\",\"version\":1}"
+          }
+        ],
+        "controllerKeys": ["selectedObjects", "selection"]
+      },
+      "saved": {
+        "responseId": "700fff77-2df2-425e-b025-49483841e6c4",
+        "data": {
+          "docs_number": "กทอ.67-00-0001",
+          "rows": [
+            {
+              "item": "LOCAL KEEP",
+              "other": {
+                "name": "zero.BIN",
+                "size": 0,
+                "row_index": 0
+              },
+              "proof": null
+            }
+          ]
+        },
+        "workbookBytes": 21832,
+        "zeroOriginalMatch": true,
+        "initialized": true
+      }
+    },
+    "coldWidth12": {
+      "form": {
+        "width": 12,
+        "formId": "6772dacc-8dee-4487-a725-4d1a79a59386",
+        "publicId": "6772dacc8dee4487a7254d1a79a59386"
+      },
+      "native": {
+        "widthC": 0,
+        "widthD": 90,
+        "protection": true,
+        "anchors": [
+          {
+            "from": {
+              "col": 1,
+              "row": 2,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extX": 16.93333333333333,
+            "extY": 3.6945555555555556,
+            "data": {
+              "bindingId": "folio_proof",
+              "kind": "folio-upload-poc",
+              "rowIndex": null,
+              "tag": "proof",
+              "version": 1
+            }
+          },
+          {
+            "from": {
+              "col": 2,
+              "row": 9,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extX": 0,
+            "extY": 0,
+            "data": {
+              "bindingId": "folio_row_proof",
+              "kind": "folio-upload-poc",
+              "rowIndex": 0,
+              "tag": "rows.proof",
+              "version": 1
+            }
+          },
+          {
+            "from": {
+              "col": 2,
+              "row": 10,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extX": 0,
+            "extY": 0,
+            "data": {
+              "bindingId": "folio_row_proof",
+              "kind": "folio-upload-poc",
+              "rowIndex": 1,
+              "tag": "rows.proof",
+              "version": 1
+            }
+          },
+          {
+            "from": {
+              "col": 3,
+              "row": 9,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extX": 16.93333333333333,
+            "extY": 3.6945555555555525,
+            "data": {
+              "bindingId": "folio_row_other",
+              "kind": "folio-upload-poc",
+              "rowIndex": 0,
+              "tag": "rows.other",
+              "version": 1
+            }
+          },
+          {
+            "from": {
+              "col": 3,
+              "row": 10,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extX": 16.93333333333333,
+            "extY": 3.6945555555555525,
+            "data": {
+              "bindingId": "folio_row_other",
+              "kind": "folio-upload-poc",
+              "rowIndex": 1,
+              "tag": "rows.other",
+              "version": 1
+            }
+          }
+        ]
+      },
+      "removalBaseline": {
+        "responseId": "05fdf425-a851-4faf-a248-b18c8ffc39fb",
+        "key": "response-05fdf425-a851-4faf-a248-b18c8ffc39fb-24ae6b83-e6d8-45f5-a5da-d23d87129de5",
+        "data": {
+          "rows": [
+            {
+              "item": "LOCAL KEEP",
+              "other": null,
+              "proof": null
+            },
+            {
+              "item": null,
+              "other": {
+                "name": "replacement.BIN",
+                "size": 3,
+                "row_index": 1
+              },
+              "proof": null
+            }
+          ]
+        },
+        "originalLiteralMatch": true
+      },
+      "removalSaved": {
+        "responseId": "05fdf425-a851-4faf-a248-b18c8ffc39fb",
+        "rows": [],
+        "referenceCount": 0,
+        "controls": [
+          {
+            "bindingId": "folio_row_other",
+            "tag": "rows.other",
+            "rowIndex": 0
+          },
+          {
+            "bindingId": "folio_row_proof",
+            "tag": "rows.proof",
+            "rowIndex": 0
+          },
+          {
+            "bindingId": "folio_proof",
+            "tag": "proof",
+            "rowIndex": null
+          }
+        ],
+        "body": {
+          "firstColumn": 1,
+          "firstRow": 9,
+          "lastColumn": 3,
+          "lastRow": 9,
+          "sheet": "Form"
+        },
+        "cellD10": null
+      },
+      "hiddenPairSaved": {
+        "responseId": "05fdf425-a851-4faf-a248-b18c8ffc39fb",
+        "physicalRows": [0, 0],
+        "saved": {
+          "proof": {
+            "name": "original.BIN",
+            "size": 4,
+            "row_index": 0
+          },
+          "other": {
+            "name": "zero.BIN",
+            "size": 0,
+            "row_index": 0
+          }
+        },
+        "literalOriginalsMatch": true
+      },
+      "exportEvidence": {
+        "bytes": 9166,
+        "sha256": "ae59fada0ca4df12bfaff2860e6f22d0782a8936638181715ca736132d637aae",
+        "managedControls": 0,
+        "hiddenAndAdjacentUrlsMatchCanonical": true
+      },
+      "correction": {
+        "responseId": "05fdf425-a851-4faf-a248-b18c8ffc39fb",
+        "status": "submitted",
+        "submissionId": "e2e546e4-478c-41b7-ac42-1d5834cb151e",
+        "correctionId": "5b1aa18e-a895-4dff-b314-9100fece4dcc",
+        "revision": 1,
+        "submissionSizes": [4, 0],
+        "correctionSizes": [3, 0],
+        "reason": "Local hidden-column native acceptance",
+        "historicalOriginalsMatch": true
+      }
+    },
+    "actualUserWidth0": {
+      "keyboardTarget": {
+        "data": {
+          "bindingId": "folio_row_proof",
+          "kind": "folio-upload-poc",
+          "rowIndex": 1,
+          "tag": "rows.proof",
+          "version": 1
+        },
+        "extX": 0,
+        "extY": 0
+      },
+      "saved": {
+        "responseId": "ebdf5547-34cd-43f0-b7ff-fd4f4a5d9b75",
+        "role": "user",
+        "rows": [
+          {
+            "item": "LOCAL KEEP",
+            "other": null,
+            "proof": null
+          },
+          {
+            "item": null,
+            "other": null,
+            "proof": {
+              "name": "replacement.BIN",
+              "size": 3,
+              "row_index": 1
+            }
+          }
+        ],
+        "literalOriginalMatch": true
+      },
+      "submitAndDefaultNext": {
+        "responseId": "ebdf5547-34cd-43f0-b7ff-fd4f4a5d9b75",
+        "submissionId": "5277aeed-c8d5-4d60-8e97-050227a870d2",
+        "nextStatus": "draft",
+        "nextDraftData": null,
+        "savedPhysicalRow": 1,
+        "submissionOriginalMatches": true
+      },
+      "cleanExitDiscardDialogs": 0
+    },
+    "coldHeight0": {
+      "form": {
+        "formId": "f7783d4c-50b9-4d57-a9fc-5da5ddf34393",
+        "publicId": "f7783d4c50b94d57a9fc5da5ddf34393"
+      },
+      "native": {
+        "hiddenRowRect": {
+          "left": 173,
+          "top": 190,
+          "width": 72,
+          "height": 0
+        },
+        "visibleRowRect": {
+          "left": 173,
+          "top": 190,
+          "width": 72,
+          "height": 19
+        },
+        "protection": true,
+        "drawings": [
+          {
+            "from": {
+              "col": 1,
+              "row": 2,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extX": 16.93333333333333,
+            "extY": 3.694555555555556,
+            "data": {
+              "bindingId": "folio_proof",
+              "kind": "folio-upload-poc",
+              "rowIndex": null,
+              "tag": "proof",
+              "version": 1
+            }
+          },
+          {
+            "from": {
+              "col": 2,
+              "row": 9,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extX": 0,
+            "extY": 0,
+            "data": {
+              "bindingId": "folio_row_proof",
+              "kind": "folio-upload-poc",
+              "rowIndex": 0,
+              "tag": "rows.proof",
+              "version": 1
+            }
+          },
+          {
+            "from": {
+              "col": 2,
+              "row": 10,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extX": 16.93333333333333,
+            "extY": 3.694555555555552,
+            "data": {
+              "bindingId": "folio_row_proof",
+              "kind": "folio-upload-poc",
+              "rowIndex": 1,
+              "tag": "rows.proof",
+              "version": 1
+            }
+          },
+          {
+            "from": {
+              "col": 3,
+              "row": 9,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extX": 0,
+            "extY": 0,
+            "data": {
+              "bindingId": "folio_row_other",
+              "kind": "folio-upload-poc",
+              "rowIndex": 0,
+              "tag": "rows.other",
+              "version": 1
+            }
+          },
+          {
+            "from": {
+              "col": 3,
+              "row": 10,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extX": 16.93333333333333,
+            "extY": 3.694555555555552,
+            "data": {
+              "bindingId": "folio_row_other",
+              "kind": "folio-upload-poc",
+              "rowIndex": 1,
+              "tag": "rows.other",
+              "version": 1
+            }
+          }
+        ]
+      },
+      "keyboardHiddenTarget": {
+        "data": {
+          "bindingId": "folio_row_other",
+          "kind": "folio-upload-poc",
+          "rowIndex": 0,
+          "tag": "rows.other",
+          "version": 1
+        },
+        "extX": 0,
+        "extY": 0
+      },
+      "keyboardVisibleTarget": {
+        "data": {
+          "bindingId": "folio_row_proof",
+          "kind": "folio-upload-poc",
+          "rowIndex": 1,
+          "tag": "rows.proof",
+          "version": 1
+        },
+        "extX": 16.93333333333333,
+        "extY": 3.694555555555552
+      },
+      "saved": {
+        "responseId": "b8470b4c-9d89-4322-9509-e85729f08c1d",
+        "rows": [
+          {
+            "item": "LOCAL KEEP",
+            "other": {
+              "name": "zero.BIN",
+              "size": 0,
+              "row_index": 0
+            },
+            "proof": null
+          },
+          {
+            "item": null,
+            "other": null,
+            "proof": {
+              "name": "original.BIN",
+              "size": 4,
+              "row_index": 1
+            }
+          }
+        ],
+        "literalOriginalsMatch": true
+      }
+    },
+    "coldHeight22": {
+      "form": {
+        "formId": "e89f019a-1452-4ee6-80f1-aaed2cd8c993",
+        "publicId": "e89f019a14524ee680f1aaed2cd8c993"
+      },
+      "native": {
+        "hidden": {
+          "left": 173,
+          "top": 190,
+          "width": 72,
+          "height": 0
+        },
+        "visible": {
+          "left": 173,
+          "top": 190,
+          "width": 72,
+          "height": 19
+        },
+        "protected": true,
+        "collapsed": [
+          {
+            "from": {
+              "col": 2,
+              "row": 9,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extX": 0,
+            "extY": 0,
+            "data": {
+              "bindingId": "folio_row_proof",
+              "kind": "folio-upload-poc",
+              "rowIndex": 0,
+              "tag": "rows.proof",
+              "version": 1
+            }
+          },
+          {
+            "from": {
+              "col": 3,
+              "row": 9,
+              "colOff": 0,
+              "rowOff": 0
+            },
+            "extX": 0,
+            "extY": 0,
+            "data": {
+              "bindingId": "folio_row_other",
+              "kind": "folio-upload-poc",
+              "rowIndex": 0,
+              "tag": "rows.other",
+              "version": 1
+            }
+          }
+        ]
+      },
+      "keyboardTarget": {
+        "data": {
+          "bindingId": "folio_row_other",
+          "kind": "folio-upload-poc",
+          "rowIndex": 0,
+          "tag": "rows.other",
+          "version": 1
+        },
+        "extX": 0,
+        "extY": 0
+      },
+      "candidateCancelCleanExit": true
+    },
+    "modalFooter": {
+      "samples": [
+        {
+          "viewportHeight": 768,
+          "frameHeight": 692,
+          "footerTop": 510.52679443359375,
+          "footerBottom": 548.0418090820312,
+          "reachable": true
+        },
+        {
+          "viewportHeight": 600,
+          "frameHeight": 524,
+          "footerTop": 427.7082214355469,
+          "footerBottom": 466.4065246582031,
+          "reachable": true
+        },
+        {
+          "viewportHeight": 520,
+          "frameHeight": 444,
+          "footerTop": 427.7628173828125,
+          "footerBottom": 466.47393798828125,
+          "reachable": false
+        }
+      ],
+      "method": "Immediate post-resize observations, not a settled-window guarantee. Native Cancel invoked using focused native footer and trusted Enter.",
+      "fixed": false
+    }
+  },
+  "transport": {
+    "events": [
+      {
+        "method": "POST",
+        "name": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 0
+      },
+      {
+        "method": "POST",
+        "name": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 3
+      },
+      {
+        "method": "DELETE"
+      },
+      {
+        "method": "POST",
+        "name": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 4
+      },
+      {
+        "method": "POST",
+        "name": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 0
+      },
+      {
+        "method": "POST",
+        "name": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 3
+      },
+      {
+        "method": "POST",
+        "name": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 3
+      },
+      {
+        "method": "POST",
+        "name": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 0
+      },
+      {
+        "method": "POST",
+        "name": "กทอ.67-00-0001-ก่อหนี้-4_ขยาย(45).BIN",
+        "size": 4
+      }
+    ],
+    "held": false,
+    "scope": "Counts begin after the width-fix runtime restart, not every historical attempt. Temporary provider checkpoint preserved five actually retrievable files before final geometry restart; no Folio or DCM recovery guarantee.",
+    "initialFixtureLimits": "Initial synthetic login model was wrong and dispatched zero file POSTs; corrected before save. Earlier in-memory provider restart lost three prior synthetic baseline files; no survival claim crosses that gap. The later explicit removal accounted for a separate unavailable receipt. No receipt invented or lookup result adopted."
+  },
+  "verification": {
+    "http": {
+      "passed": 161,
+      "assertions": 8809,
+      "files": 1,
+      "seconds": 437.61,
+      "scope": "Actual app/isolated DB/store/native Builder/controlled provider; final deletion fixture additionally targeted."
+    },
+    "nativeRuntime": {
+      "passed": 7,
+      "assertions": 267
+    },
+    "plugin": {
+      "passed": 343,
+      "files": 25
+    },
+    "spreadsheetUnit": {
+      "passed": 118,
+      "assertions": 324
+    },
+    "types": {
+      "successful": 5,
+      "cached": 4
+    },
+    "build": {
+      "successful": 3,
+      "cached": 2
+    },
+    "finalDeletionCase": {
+      "passed": 1,
+      "assertions": 34,
+      "filteredOut": 160,
+      "seconds": 1.9
+    },
+    "workflow": {
+      "diagrams": 22,
+      "loadedImages": 22,
+      "runtimeSources": 312,
+      "pageDeclarations": 25,
+      "apiDeclarations": 104,
+      "databaseModels": 35,
+      "buildAndCheck": "passed",
+      "actualVisualSections": ["08", "10"],
+      "zoomActualAndFit": "exercised",
+      "sourceLinkHrefs": "inspected; local source-link validation passed"
+    }
+  },
+  "remaining": {
+    "ticket03": "needs-info; no universal role/contract/filter/native-gesture matrix claim",
+    "ticket06": "needs-info; later confirmed-removal generation and full native combinations unverified",
+    "tickets07to10": "HOLD; external provider/settlement/old-data evidence absent",
+    "humanAcceptance": "pending",
+    "modalFooter": "risk retained; no causal native-window layout fix",
+    "deletion": "A verified initial transaction abort is409, not guaranteed completion; explicit user action required. No retry/isolation weakening or postcommit uncertainty reinterpretation."
+  },
+  "knowledge": {
+    "sessionRecall": "retrieved navigation only",
+    "pdmsKnowledgeBank": "skipped; mounted recall has no bank/types/budget selectors",
+    "missing": [
+      "document_id",
+      "chunk_id",
+      "source_path",
+      "stable_document_id",
+      "source_revision",
+      "source_revisions"
+    ],
+    "bankWrites": false
+  },
+  "notPerformed": [
+    "real DCM/PDMS call",
+    "real DELETE",
+    "live-data audit/remediation",
+    "push",
+    "deploy"
+  ],
+  "finalSurvivorAudit": {
+    "referencesVerified": 8,
+    "distinctProviderResources": 7,
+    "allLiteralOriginalsMatch": true
+  },
+  "originalWayfinderTickets": {
+    "comparisonBase": "1071d3c",
+    "unchanged": true,
+    "verification": "git diff --exit-code returned0 for original issue directory"
+  },
+  "cleanup": {
+    "clearedBuckets": [
+      {
+        "bucket": "folio-ecm-local-2iiiv7",
+        "objectsRemoved": 13,
+        "absent": true
+      },
+      {
+        "bucket": "folio-ecm-local-2iiiv7-http",
+        "objectsRemoved": 441,
+        "absent": true
+      }
+    ],
+    "droppedDbs": [
+      {
+        "name": "folio_ecm_local_2iiiv7",
+        "result": "DROP DATABASE"
+      },
+      {
+        "name": "folio_ecm_local_2iiiv7_http",
+        "result": "DROP DATABASE"
+      }
+    ],
+    "remainingOwnedDatabases": 0,
+    "listeners": [
+      {
+        "port": 18198,
+        "open": false
+      },
+      {
+        "port": 18797,
+        "open": false
+      },
+      {
+        "port": 18798,
+        "open": false
+      },
+      {
+        "port": 18799,
+        "open": false
+      },
+      {
+        "port": 15198,
+        "open": false
+      },
+      {
+        "port": 5433,
+        "open": true
+      },
+      {
+        "port": 9000,
+        "open": true
+      },
+      {
+        "port": 8081,
+        "open": true
+      }
+    ],
+    "ownedGatewayAbsent": true,
+    "privateRuntimeDirectoryAbsent": true,
+    "rawScreenshotPathsRemoved": 10,
+    "ownedBrowserTabsClosed": true,
+    "ownedDownloadsRemoved": true,
+    "sharedServicesRetained": true,
+    "disposition": "Owned synthetic teardown only; not real DCM DELETE/finality or shared native cache erasure. Gateway exit137 followed deliberate Docker stop."
+  }
+}

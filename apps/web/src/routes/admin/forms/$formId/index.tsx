@@ -22,6 +22,7 @@ import { useEffect, useRef, useState } from "react";
 import { OnlyOfficeEditor } from "@/components/onlyoffice-editor";
 import { Badge, Button, Notice, Spinner } from "@/components/ui";
 import { FormMetadataPanel } from "@/features/admin-forms/form-metadata-panel";
+import { XlsxPublishRecovery } from "@/features/admin-forms/xlsx-publish-recovery";
 import type {
   EditorBridgeMessage,
   OnlyOfficeEditorState,
@@ -34,6 +35,7 @@ import {
   waitForOperation,
 } from "@/lib/api";
 import type { FillMethod, FormDetail, FormSummary } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { useReauthenticationGuard } from "@/lib/use-reauthentication-guard";
 
 interface FormDetailResponse {
@@ -150,6 +152,7 @@ const FormEditorRoute = () => {
     from: "/admin/forms/$formId",
   });
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [form, setForm] = useState<FormDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -169,6 +172,7 @@ const FormEditorRoute = () => {
   const [editorRevision, setEditorRevision] = useState(0);
   const [commandReady, setCommandReady] = useState(false);
   const [editorDirty, setEditorDirty] = useState(false);
+  const [editorDraftUnresolved, setEditorDraftUnresolved] = useState(false);
   const [saveRequest, setSaveRequest] = useState(0);
   const [saveAction, setSaveAction] = useState<"save-template" | "publish">(
     "save-template"
@@ -180,6 +184,7 @@ const FormEditorRoute = () => {
   const restorePublishFocusRef = useRef(false);
   useReauthenticationGuard(
     editorDirty ||
+      editorDraftUnresolved ||
       busy !== null ||
       metadataBusy !== null ||
       operationStatus === "pending" ||
@@ -587,6 +592,9 @@ const FormEditorRoute = () => {
     ) {
       return;
     }
+    if (loadedForm.documentKind === "xlsx" && message.status !== "pending") {
+      setEditorDraftUnresolved(message.attachmentCommitUnresolved === true);
+    }
     setOperationStatus(
       message.status === "pending" ? "pending" : message.status
     );
@@ -620,11 +628,15 @@ const FormEditorRoute = () => {
     setOperationStatus("completed");
     setEditorDirty(false);
     setError(null);
-    setNotice(
-      message.action === "publish"
-        ? "เผยแพร่แบบฟอร์มแล้ว คำตอบใหม่จะใช้เอกสารฉบับนี้"
-        : "บันทึกแบบร่างเรียบร้อยแล้ว"
-    );
+    if (message.requestedAction) {
+      setNotice("ตรวจผลคำขอบันทึกหรือเผยแพร่รอบเดิมแล้ว ยังไม่ได้เริ่มคำขอใหม่");
+    } else {
+      setNotice(
+        message.action === "publish"
+          ? "เผยแพร่แบบฟอร์มแล้ว คำตอบใหม่จะใช้เอกสารฉบับนี้"
+          : "บันทึกแบบร่างเรียบร้อยแล้ว"
+      );
+    }
     await refreshFormAfterOperation(
       message.action === "publish" ? "publish" : "save"
     );
@@ -652,6 +664,13 @@ const FormEditorRoute = () => {
     metadataBusy === "archive" ? "กำลังเปลี่ยนสถานะ…" : archiveLabel;
 
   const status = formStatusDetails[loadedForm.status];
+
+  const busyDraftActionLabel = editorDraftUnresolved
+    ? "กำลังตรวจผล…"
+    : "กำลังบันทึก…";
+  const draftActionLabel = editorDraftUnresolved
+    ? "ตรวจผลรอบเดิม"
+    : "บันทึกแบบร่าง";
 
   return (
     <div>
@@ -701,14 +720,14 @@ const FormEditorRoute = () => {
             disabled={!canAct}
           >
             {busy === "save" ? <Spinner /> : <Save size={15} />}
-            {busy === "save" ? "กำลังบันทึก…" : "บันทึกแบบร่าง"}
+            {busy === "save" ? busyDraftActionLabel : draftActionLabel}
           </Button>
           <Button
             id="publish-trigger"
             size="sm"
             type="button"
             onClick={() => requestAction("publish")}
-            disabled={!canAct}
+            disabled={!canAct || editorDraftUnresolved}
           >
             {busy === "publish" ? <Spinner /> : <Send size={15} />}
             {busy === "publish" ? "กำลังเผยแพร่…" : "เผยแพร่"}
@@ -810,6 +829,13 @@ const FormEditorRoute = () => {
             : "แบบฟอร์มนี้เผยแพร่แล้ว สัญญาเอกสารและการตั้งค่า Field ไม่สามารถแก้ไขในที่เดิมได้ หากต้องการเปลี่ยนโครงสร้างให้สร้าง Form ใหม่"}
         </Notice>
       )}
+      {!canEditTemplate && loadedForm.documentKind === "xlsx" && user ? (
+        <XlsxPublishRecovery
+          key={JSON.stringify([user.id, publicId])}
+          actorId={user.id}
+          publicId={publicId}
+        />
+      ) : null}
       <FormMetadataPanel
         documentKind={loadedForm.documentKind ?? "docx"}
         title={title}

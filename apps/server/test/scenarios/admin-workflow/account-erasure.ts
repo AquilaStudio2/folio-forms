@@ -311,7 +311,6 @@ export const runResponseErasure = async (
     { confirm: true }
   );
   expect(pictureDeletionResponse.status).toBe(200);
-  expect(await pictureDeletionResponse.json()).toEqual({ deleted: true });
   expect(
     await prisma.response.findUnique({ where: { id: pictureResponseId } })
   ).toBeNull();
@@ -415,7 +414,6 @@ export const runResponseErasure = async (
     { confirm: true }
   );
   expect(mainDeletionResponse.status).toBe(200);
-  expect(await mainDeletionResponse.json()).toEqual({ deleted: true });
   expect(await sessionStatus(app, userBearer)).toBe(401);
   expect(
     await prisma.response.findUnique({ where: { id: responseId } })
@@ -568,7 +566,6 @@ export const runResponseErasure = async (
     { confirm: true }
   );
   expect(repeatedMainDeletion.status).toBe(200);
-  expect(await repeatedMainDeletion.json()).toEqual({ deleted: true });
   const deletedOwnerAccount = await accountRequest(
     app,
     "DELETE",

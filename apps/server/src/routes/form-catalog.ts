@@ -17,6 +17,7 @@ import { requireIdentity, requireAdmin } from "../auth/identity";
 import { contentHash } from "../digests";
 import { validateTemplatePackage } from "../documents/package";
 import { blankSpreadsheet } from "../documents/spreadsheets/blank";
+import { diagnoseXlsxDraft } from "../documents/spreadsheets/draft-diagnosis";
 import { withSpreadsheetExportSnapshot } from "../documents/spreadsheets/export-snapshot";
 import { unprotectSpreadsheet } from "../documents/spreadsheets/protection";
 import { XLSX_CONTENT_TYPE } from "../documents/spreadsheets/workbook";
@@ -253,18 +254,22 @@ export function registerFormCatalogRoutes(
           if (!publicIdPattern.test(params.publicId)) {
             fail(404, "not_found", "Form was not found");
           }
-          const source = await prisma.form.findUnique({
-            include: {
-              publishedTemplate: {
+          const source = await prisma.$transaction(
+            (tx) =>
+              tx.form.findUnique({
                 include: {
-                  manifest: { include: { fields: true } },
-                  prefillConfiguration: { include: { fields: true } },
+                  publishedTemplate: {
+                    include: {
+                      manifest: { include: { fields: true } },
+                      prefillConfiguration: { include: { fields: true } },
+                    },
+                  },
+                  templateDraft: { include: { fieldRules: true } },
                 },
-              },
-              templateDraft: { include: { fieldRules: true } },
-            },
-            where: { publicId: params.publicId },
-          });
+                where: { publicId: params.publicId },
+              }),
+            { isolationLevel: "RepeatableRead" }
+          );
           if (!source) {
             fail(404, "not_found", "Form was not found");
           }
@@ -277,6 +282,32 @@ export function registerFormCatalogRoutes(
             fail(409, "document_unavailable", "The Form DOCX is unavailable");
           }
           const originalBytes = await readObject(sourceDocument.objectKey);
+          const sourcePrefillFields =
+            source.publishedTemplate?.prefillConfiguration?.fields ?? [];
+          const spreadsheetBindings =
+            source.documentKind === "xlsx"
+              ? spreadsheetBindingsFromFields(
+                  source.publishedTemplate?.manifest?.fields ??
+                    source.templateDraft?.fieldRules ??
+                    [],
+                  source.publishedTemplate ? sourcePrefillFields : undefined
+                )
+              : null;
+          if (
+            spreadsheetBindings &&
+            !source.publishedTemplate &&
+            diagnoseXlsxDraft(
+              originalBytes,
+              spreadsheetBindings,
+              sourceDocument.contentHash
+            ).issues.some(({ code }) => code !== "unbound")
+          ) {
+            fail(
+              422,
+              "xlsx_draft_needs_repair",
+              "เปิดแบบร่าง Excel เพื่อตรวจสอบและซ่อมตำแหน่งช่องก่อนทำสำเนา"
+            );
+          }
           const sourceBytes =
             source.documentKind === "xlsx"
               ? unprotectSpreadsheet(originalBytes)
@@ -291,36 +322,37 @@ export function registerFormCatalogRoutes(
             source.documentKind
           );
           const duplicateDocumentKey = `template-${crypto.randomUUID()}`;
-          const sourcePrefillFields =
-            source.publishedTemplate?.prefillConfiguration?.fields ?? [];
-          const sourceRules =
-            source.documentKind === "xlsx"
-              ? spreadsheetDraftFieldData(
-                  spreadsheetBindingsFromFields(
-                    source.publishedTemplate?.manifest?.fields ??
-                      source.templateDraft?.fieldRules ??
-                      [],
-                    source.publishedTemplate ? sourcePrefillFields : undefined
-                  )
-                )
-              : (source.publishedTemplate?.manifest?.fields.map((field) => {
-                  const prefill = sourcePrefillFields.find(
-                    (candidate) => candidate.tag === field.tag
-                  );
-                  return {
-                    prefillPointer: prefill?.pointer ?? null,
-                    prefillPolicy: prefill?.policy ?? field.prefillPolicy,
-                    required: field.required,
-                    tag: field.tag,
-                  };
-                }) ??
-                source.templateDraft?.fieldRules.map((field) => ({
-                  prefillPointer: field.prefillPointer,
-                  prefillPolicy: field.prefillPolicy,
+          const sourceRules = spreadsheetBindings
+            ? spreadsheetDraftFieldData(spreadsheetBindings).map((row) =>
+                row.attachmentStorageMode === "legacy" && row.attachment
+                  ? {
+                      ...row,
+                      attachmentCategory: null,
+                      attachmentCategoryId: null,
+                      attachmentStorageMode: "template",
+                      attachmentTemplateId: null,
+                      attachmentTemplateName: null,
+                    }
+                  : row
+              )
+            : (source.publishedTemplate?.manifest?.fields.map((field) => {
+                const prefill = sourcePrefillFields.find(
+                  (candidate) => candidate.tag === field.tag
+                );
+                return {
+                  prefillPointer: prefill?.pointer ?? null,
+                  prefillPolicy: prefill?.policy ?? field.prefillPolicy,
                   required: field.required,
                   tag: field.tag,
-                })) ??
-                []);
+                };
+              }) ??
+              source.templateDraft?.fieldRules.map((field) => ({
+                prefillPointer: field.prefillPointer,
+                prefillPolicy: field.prefillPolicy,
+                required: field.required,
+                tag: field.tag,
+              })) ??
+              []);
           await prisma.objectCleanupIntent.create({
             data: {
               cleanupAfter: new Date(Date.now() + objectCleanupIntentGraceMs),

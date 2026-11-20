@@ -8,9 +8,7 @@ import {
   accountMutationLockId,
   requireAnotherEnabledAdmin,
 } from "../accounts/mutations";
-import type { AiAuthoringSessions } from "../ai-authoring";
 import { createAccountAudit } from "../audit/events";
-import { endAiAuthoringSessions } from "../auth/password-session";
 import { fail } from "../http/errors";
 import {
   legacySsoSessionIdentifier,
@@ -37,7 +35,6 @@ export async function finalizeLegacySsoLogin(
   config: LegacySsoConfig,
   evidence: LegacySsoRoleEvidence,
   now: Date,
-  aiAuthoring: AiAuthoringSessions,
   switchProof?: SwitchProof
 ): Promise<{ transferId: string; role: "admin" | "viewer" | "user" }> {
   const authContext = await auth.$context;
@@ -145,12 +142,6 @@ export async function finalizeLegacySsoLogin(
       if (roleChanged && user.role === "admin" && role !== "admin") {
         await requireAnotherEnabledAdmin(tx);
       }
-      const oldSessions = roleChanged
-        ? await tx.session.findMany({
-            select: { id: true },
-            where: { id: { not: session.id }, userId: user.id },
-          })
-        : [];
       if (roleChanged) {
         await tx.user.update({ data: { role }, where: { id: user.id } });
         await tx.session.deleteMany({
@@ -189,7 +180,7 @@ export async function finalizeLegacySsoLogin(
           value: session.token,
         },
       });
-      return { ownerSessionIds: oldSessions.map(({ id }) => id), role };
+      return { role };
     });
   } catch (error) {
     try {
@@ -198,12 +189,6 @@ export async function finalizeLegacySsoLogin(
       console.error("Could not remove unpublished SSO session");
     }
     throw error;
-  }
-  try {
-    await endAiAuthoringSessions(aiAuthoring, finalized.ownerSessionIds);
-  } catch {
-    // Revocation and the new login are committed; failed resource cleanup must not undo them.
-    console.error("Could not finish authoring cleanup after SSO role change");
   }
   return { role: finalized.role, transferId };
 }

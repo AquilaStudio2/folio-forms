@@ -9,20 +9,37 @@ flowchart TD
     read["แท็บ Document / Fields และ actions นอก tablist"]
     doc["submitted: ดาวน์โหลด Excel หรือ DOCX ที่บันทึกแล้วตาม revision"]
     pdf["submitted: ดาวน์โหลด PDF จากไฟล์ revision ที่เลือก"]
-    canCorrect{"Admin และยังเป็น Submission ล่าสุด"}
+    canCorrect{"Admin และ Submission ที่เลือกยังอยู่ใน Response"}
     workspace["สร้าง Correction workspace แยก"]
-    edit["แก้ค่าและกรอกเหตุผล"]
-    operation["Save Correction ผ่าน Operation"]
-    compare["ตรวจ base revision และ lease อีกครั้ง"]
-    append["เพิ่ม Correction และ changedData"]
-    preserved["คง Original และ revision ก่อนหน้า"]
+    edit["แก้ค่า/เลือกไฟล์ใน browser และกรอกเหตุผล"]
+    operation["final explicit Save Correction: trusted native snapshot + shared durable batch"]
+    compare["ตรวจ selected Submission/base, Admin, lease/workspace และ required ก่อนส่งและก่อน commit"]
+    append["เพิ่ม JSON/document/file versions ของ Correction"]
+    preserved["คง Original และ revision/file references ก่อนหน้า"]
     past["Admin submissions หรือ receipt ตาม submissionId"]
     search --> filters --> response --> state
+    search --> tracking["อ่าน durable attachment tracking แยกจาก normal Response rows"]
+    tracking --> expanded["ขยายใน Results เดิม: รวม cleanup-only และ deleted Response"]
+    expanded --> evidence["แสดง trusted ids/name/year/category/send/receipt/delete/evidence; ไม่แสดง token"]
+    evidence --> operator{"current enabled Admin เท่านั้น"}
+    operator --> fence["หยุด batch เดิม:กัน dispatch/commit ใหม่ ไม่ยืนยัน remote absence"]
+    operator --> cleanup["first DELETE เฉพาะ receipt ที่ settled + sender fenced + no refs + generation ตรง"]
+    cleanup --> verified["verified DELETE response:บันทึก actor/proof; ครบทุก canceled intent จึงปลด hold"]
+    cleanup --> uncertain["timeout/unknown:คง hold ห้าม retry หรือใช้ free text ปลด"]
     state -->|"ไม่ใช่"| draft --> read
     state -->|"ใช่"| submission --> revision --> read
     read -->|"เฉพาะ submitted"| doc
     read -->|"เฉพาะ submitted"| pdf
     submission --> canCorrect
     canCorrect -->|"ผ่าน"| workspace --> edit --> operation --> compare --> append
+    edit --> internal["internal project/workspace save:ไม่ upload; verified canonical/physical mapping คง pending Files"]
+    internal --> edit
     append --> preserved --> revision
+    append --> remaining{"มี File/removal ใหม่ที่ไม่อยู่ใน snapshot หรือไม่"}
+    remaining -->|"ไม่มี"| returnResult["กลับหน้ารายละเอียด"]
+    remaining -->|"มี"| keepEditor["คง editor/File เดิม; ห้าม Save ซ้ำด้วย workspace เก่า"]
+    keepEditor --> decision{"ตัดสินใจออกอย่างชัดเจน"}
+    decision -->|"อยู่ต่อ / Escape"| keepEditor
+    decision -->|"ยืนยันทิ้งงานใหม่"| returnResult
     past -->|"อ่าน Submission เก่าได้แม้ Response กลับ draft"| revision
+    past -->|"Admin เลือกแก้ Submission จากประวัติรายฟอร์ม"| canCorrect

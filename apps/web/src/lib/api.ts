@@ -10,21 +10,18 @@ export const SESSION_KEY = "onlyoffice.sessionToken";
 export class ApiError extends Error {
   readonly status: number;
   readonly code: string;
-  readonly sessionRevoked: boolean;
   readonly userMessage?: string;
 
   constructor(
     status: number,
     code: string,
     message: string,
-    sessionRevoked = false,
     userMessage?: string
   ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
     this.code = code;
-    this.sessionRevoked = sessionRevoked;
     this.userMessage = userMessage;
   }
 }
@@ -33,7 +30,6 @@ interface ApiErrorBody {
   error?: unknown;
   message?: unknown;
   code?: unknown;
-  sessionRevoked?: unknown;
 }
 export type Role = "admin" | "user" | "viewer";
 export interface SessionUser {
@@ -105,6 +101,15 @@ export interface SpreadsheetResultField {
   required: boolean;
   computed: boolean;
   options: string[];
+  attachment?:
+    | { mode: "legacy"; category: string | null }
+    | {
+        mode: "template";
+        category: null;
+        document_category_id: number | null;
+        storage_template_id: string | null;
+        template_name: string | null;
+      };
 }
 export interface SpreadsheetResultContract {
   version: 1;
@@ -228,6 +233,63 @@ export interface AdminResult {
 export interface AdminResultListResponse {
   pagination: PaginationInfo;
   results: AdminResult[];
+}
+export interface ResponseAttachmentCleanup {
+  caseReference: string | null;
+  state: "complete" | "pending";
+  warning: string | null;
+}
+export interface ResponseDeletionOutcome {
+  attachmentCleanup: ResponseAttachmentCleanup;
+}
+export interface AttachmentFollowUp {
+  operationId: string;
+  responseId: string;
+  responseDeleted: boolean;
+  caseReference: string | null;
+  formId: string | null;
+  formPublicId: string | null;
+  formTitle: string | null;
+  checkpoint: string | null;
+  documentKey: string | null;
+  actorId: string | null;
+  state: string;
+  generation: number | null;
+  canFence: boolean;
+  mutationHeld: boolean;
+  createdAt: string;
+  reason: string;
+  nextAction: string;
+  versions: {
+    id: string;
+    bindingId: string;
+    tag: string;
+    rowIndex: number | null;
+    filename: string;
+    originalName: string;
+    sizeBytes: number;
+    fiscalYear: string | null;
+    storageMode: string;
+    templateName: string | null;
+    documentCategoryId: number | null;
+    storageTemplateId: string | null;
+    identityId: string | null;
+    overwriteIdentityIds: string[];
+    documentNumber: string;
+    category: string;
+    state: string;
+    generation: number;
+    sentAt: string | null;
+    receivedAt: string | null;
+    requestSettledAt: string | null;
+    referenced: boolean;
+    cleanupState: string | null;
+    deleteAttemptedAt: string | null;
+    confirmedBy: string | null;
+    confirmedAt: string | null;
+    evidence: Record<string, unknown> | null;
+    canDelete: boolean;
+  }[];
 }
 export type AuditOutcome = "failure" | "success";
 export type AuditMetadataValue = boolean | number | string | null;
@@ -453,11 +515,11 @@ export const returnPathForRole = (value: unknown, role: Role): string => {
 
 const legacySsoAdminPaths = new Set([
   "/admin",
-  "/admin/ai-authoring",
   "/admin/audit",
   "/admin/forms/new",
   "/admin/results",
   "/admin/users",
+  "/admin/storage-templates",
 ]);
 const legacySsoAdminFormPattern =
   /^\/admin\/forms\/[0-9a-f]{32}(?:\/submissions(?:\/[0-9a-f]{8}-(?:[0-9a-f]{4}-){3}[0-9a-f]{12})?)?$/u;
@@ -566,7 +628,6 @@ const request = async <T>(
       response.status,
       code,
       fallbackMessage,
-      errorBody?.sessionRevoked === true,
       typeof errorBody?.message === "string" ? errorBody.message : undefined
     );
   }
@@ -598,8 +659,6 @@ const requestBlob = async (path: string, init?: RequestInit): Promise<Blob> => {
   }
   return response.blob();
 };
-export const apiGetBlob = (path: string): Promise<Blob> => requestBlob(path);
-
 export const apiPost = <T>(
   path: string,
   body?: unknown,
@@ -761,14 +820,7 @@ export const replacePassword = (currentPassword: string, newPassword: string) =>
   });
 
 export const signOut = async () => {
-  try {
-    await apiPost("/api/auth/sign-out");
-  } catch (error) {
-    if (error instanceof ApiError && error.sessionRevoked) {
-      clearToken();
-    }
-    throw error;
-  }
+  await apiPost("/api/auth/sign-out");
   clearToken();
 };
 
@@ -792,7 +844,6 @@ export const waitForOperation = async (
         422,
         operation.error ?? "operation_failed",
         operation.errorMessage ?? "The operation failed.",
-        false,
         operation.errorMessage
       );
     }

@@ -8,7 +8,10 @@ import { createApp } from "../../src/app";
 import { requireIdentity } from "../../src/auth/identity";
 import { actionEditorCapability } from "../../src/editor/authorization";
 import { claimEditorLease } from "../../src/editor/leases";
-import { createOnlyOfficeClient } from "../../src/onlyoffice";
+import {
+  createOnlyOfficeClient,
+  xlsxEditorOpening,
+} from "../../src/onlyoffice";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
 import { fixtureWorkbook, mutatePart } from "../spreadsheet-unit/fixture";
 
@@ -23,7 +26,6 @@ const maxDownloadBytes = 64_000;
 const upstream = mock<(url: string, init?: RequestInit) => Promise<Response>>();
 const app = createApp({
   legacySso: null,
-  omniRoute: null,
   onlyOffice: createOnlyOfficeClient({
     fetch: upstream,
     internalUrl: internalOfficeUrl,
@@ -42,9 +44,10 @@ let otherUser = "";
 let exportCapability = "";
 let saveCapability = "";
 let inactiveLeaseCapability = "";
+let documentServerKey = "";
 
 const snapshotUrl = (
-  key = documentKey,
+  key = documentServerKey,
   expires = Math.floor(Date.now() / 1000) + 60
 ) => {
   const url = new URL(env.ONLYOFFICE_URL);
@@ -145,8 +148,10 @@ beforeAll(async () => {
     responseId,
     formId
   );
+  ({ documentServerKey } = xlsxEditorOpening(documentKey, identity.sessionId));
   const scope = {
     documentKey,
+    documentServerKey,
     formId,
     targetId: responseId,
     targetType: "response",
@@ -195,8 +200,18 @@ test("editor export rejects a different origin, different workbook, or expired c
       })
     ).status
   ).toBe(400);
+  const canonicalCache = await exportRequest({ url: snapshotUrl(documentKey) });
+  expect(canonicalCache.status).toBe(400);
+  const foreignOpening = xlsxEditorOpening(
+    documentKey,
+    "foreign-opening"
+  ).documentServerKey;
+  const foreignCache = await exportRequest({
+    url: snapshotUrl(foreignOpening),
+  });
+  expect(foreignCache.status).toBe(400);
   expect(
-    (await exportRequest({ url: snapshotUrl(documentKey, 1) })).status
+    (await exportRequest({ url: snapshotUrl(documentServerKey, 1) })).status
   ).toBe(400);
 });
 
@@ -215,7 +230,11 @@ test("editor export copies safe workbook bytes and blocks external resources bef
   const download = await exportRequest();
   expect(download.status).toBe(200);
   expect(new Uint8Array(await download.arrayBuffer())).toEqual(safe);
-  expect(upstream.mock.calls[0]?.[0]).toStartWith(
+  const nativeRequestUrl = upstream.mock.calls[0]?.[0];
+  expect(nativeRequestUrl).toStartWith(
+    `${internalOfficeUrl}/cache/files/data/${documentServerKey}_`
+  );
+  expect(nativeRequestUrl).not.toStartWith(
     `${internalOfficeUrl}/cache/files/data/${documentKey}_`
   );
   expect(upstream.mock.calls[0]?.[1]?.redirect).toBe("error");

@@ -1,5 +1,6 @@
 import { API_ORIGIN } from "@/lib/api";
 
+import type { AttachmentCategoryPopupScope } from "./attachment-category-popup-relay";
 import type { PdmsProjectPopupScope } from "./pdms-popup-relay";
 import type { UploadPocHostOptions } from "./upload-poc-pending";
 
@@ -57,10 +58,14 @@ export interface PdmsProjectCatalog {
 }
 
 export interface EditorConfig {
+  attachmentNotice?: string | null;
+  attachmentRoutingPending?: boolean;
   pdmsProjectCatalog?: PdmsProjectCatalog;
   apiScriptUrl?: string;
   apiUrl?: string;
   bridge?: {
+    attachmentCategoryPopup?: AttachmentCategoryPopupScope;
+    documentKey?: string;
     capabilities?: Partial<Record<EditorAction | "export-workbook", string>>;
     id?: string;
     lease?: EditorLease;
@@ -88,6 +93,7 @@ interface BridgeReadyMessage {
 export interface CapabilityRequestMessage {
   action: EditorAction;
   bridgeId: string;
+  draftCheckpoint?: unknown;
   requestId: string;
   source: "form-bridge";
   type: "capability-request";
@@ -193,13 +199,33 @@ export const parseFieldSelectionMessage = (
   return value as unknown as FieldSelectionBridgeMessage;
 };
 
+const isValidAttachmentTransition = (value: unknown): boolean =>
+  isRecord(value) &&
+  isNonEmptyString(value.fromDocumentKey) &&
+  isNonEmptyString(value.toDocumentKey) &&
+  (value.tableBindingId === null || isNonEmptyString(value.tableBindingId)) &&
+  Number.isSafeInteger(value.oldRowCount) &&
+  Number(value.oldRowCount) >= 0 &&
+  Number.isSafeInteger(value.newRowCount) &&
+  Number(value.newRowCount) >= (value.tableBindingId === null ? 0 : 1) &&
+  Array.isArray(value.rowMapping) &&
+  value.rowMapping.length === value.oldRowCount &&
+  value.rowMapping.every(
+    (row) =>
+      row === null ||
+      (Number.isSafeInteger(row) && row >= 0 && row < Number(value.newRowCount))
+  );
+
 const isValidOperationResult = (value: Record<string, unknown>): boolean =>
   (value.submissionId === undefined ||
     typeof value.submissionId === "string") &&
   (value.documentKey === undefined || isNonEmptyString(value.documentKey)) &&
   (value.editorSessionPreserved === undefined ||
-    typeof value.editorSessionPreserved === "boolean");
+    typeof value.editorSessionPreserved === "boolean") &&
+  (value.attachmentTransition === undefined ||
+    isValidAttachmentTransition(value.attachmentTransition));
 
+// oxlint-disable-next-line complexity -- Validate original/requested action correlation and terminal payload together at the untrusted bridge boundary.
 export const parseOperationMessage = (
   value: unknown,
   bridgeId: string
@@ -213,8 +239,13 @@ export const parseOperationMessage = (
     !isEditorOperationAction(value.action) ||
     !isOperationStatus(value.status) ||
     (value.operationId !== undefined && !isNonEmptyString(value.operationId)) ||
-    (value.status !== "failed" && !isNonEmptyString(value.operationId)) ||
-    (value.error !== undefined && typeof value.error !== "string")
+    (value.status === "completed" && !isNonEmptyString(value.operationId)) ||
+    (value.attachmentCommitUnresolved !== undefined &&
+      typeof value.attachmentCommitUnresolved !== "boolean") ||
+    (value.error !== undefined && typeof value.error !== "string") ||
+    (value.requestedAction !== undefined &&
+      (typeof value.requestedAction !== "string" ||
+        !isEditorOperationAction(value.requestedAction)))
   ) {
     return null;
   }
@@ -240,9 +271,16 @@ interface EditorOperationBridgeMessage {
   action: EditorOperationAction;
   bridgeId: string;
   error?: string;
+  requestedAction?: EditorOperationAction;
+  hasPendingAttachments?: boolean;
+  hasAttachmentCandidates?: boolean;
+  attachmentCommitUnresolved?: boolean;
+  hasUnsavedDocumentChanges?: boolean;
+  editorRemountSafe?: boolean;
   operation?: {
     result?: {
       documentKey?: string;
+      attachmentTransition?: unknown;
       editorSessionPreserved?: boolean;
       submissionId?: string;
     };

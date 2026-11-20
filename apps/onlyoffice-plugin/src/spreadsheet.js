@@ -9,6 +9,7 @@ import {
   uploadPocPreview,
 } from "../../server/src/documents/spreadsheets/upload-poc-preview.ts";
 import { createApi } from "./api.js";
+import { chooseAttachmentCategory } from "./attachment-category-dialog.js";
 import { createBridge } from "./bridge.js";
 import { ACTIONS } from "./constants.js";
 import { createOffice } from "./office.js";
@@ -16,9 +17,6 @@ import { createOperations } from "./operations.js";
 import { createPdmsProjectPicker } from "./pdms-project-picker.js";
 import {
   spreadsheetBindingAttempt,
-  spreadsheetBindingOutcome,
-  spreadsheetBindingNeedsFence,
-  sameSpreadsheetBindings,
   sameSpreadsheetNativeState,
 } from "./spreadsheet-binding-recovery.js";
 import {
@@ -54,6 +52,7 @@ import {
 import { spreadsheetUploadPocActivationCommand } from "./spreadsheet-upload-poc-activation.js";
 import { spreadsheetUploadPocDeleteCommand } from "./spreadsheet-upload-poc-delete.js";
 import {
+  attachmentsForNewTable,
   selectedUploadPocTarget,
   selectedUploadPocBinding,
   existingUploadPocEntry,
@@ -267,10 +266,14 @@ export function initializeSpreadsheet(options, setStatus) {
   const office = createOffice(options);
   const api = createApi(options);
   let bindings = options.spreadsheetBindings;
-  let metadataBindings = bindings;
-  let revision;
+  let revision = options.xlsxDraftRevision;
+  const pendingDraft = () =>
+    options.xlsxDraftProtocol === 1 &&
+    options.scopeIdentity &&
+    window.sessionStorage.getItem(`folio-xlsx-draft:${options.scopeIdentity}`);
   let editing = null;
   let busy = false;
+  let authoringActionInFlight = false;
   let pictureSavePending = false;
   let authoringMismatch = false;
   let pendingRecovery = null;
@@ -279,8 +282,12 @@ export function initializeSpreadsheet(options, setStatus) {
   let ensureAuthoringReady = async () => {};
   let validatePanelDrafts = () => {};
   let uploadPocSaveInFlight = false;
+  let pendingUploadPocPromotion = null;
+  const pendingPromotionMessage =
+    "ตารางและปุ่มแนบไฟล์ยังรอบันทึกต้นแบบ กรุณากดบันทึกแบบร่างเพื่อลองอีกครั้งก่อนแก้ไขต่อ";
   let pdmsSourceSaveInFlight = false;
   let uploadPocDeleteNeedsSave = false;
+  let repairRemovalPending = false;
   let pendingTemplateDeletePurpose = "manual";
   const deletedUploadPocBindingIds = new Set();
   const deletedUploadPocTargets = new Map();
@@ -309,16 +316,73 @@ export function initializeSpreadsheet(options, setStatus) {
   let refreshPdmsPicker = () => {};
   let renderList = () => {};
   let refreshAfterAction = () => {};
+  const minimumRowReason = "ต้องมีอย่างน้อย 1 แถว ไม่สามารถลบแถวสุดท้ายได้";
+  const readTableRowCount = async () => {
+    window.Asc.scope = window.Asc.scope || {};
+    window.Asc.scope.folioTableAnchor = bindings.table.anchor;
+    const count = await office.callCommandResult(
+      spreadsheetTableRowCountCommand
+    );
+    if (!Number.isSafeInteger(count) || count < 1) {
+      throw new Error("ไม่พบช่วงตาราง กรุณาบันทึกและเปิดแบบฟอร์มใหม่");
+    }
+    return count;
+  };
+  const configuredAttachments =
+    ["fill", "draft", "submit", ACTIONS.CORRECTION].includes(options.action) &&
+    (bindings?.fields?.some((field) => field.attachment) ||
+      bindings?.table?.columns?.some((column) => column.attachment));
+  const activateUploadPoc = (savedData) => {
+    window.Asc.scope = window.Asc.scope || {};
+    window.Asc.scope.folioUploadPocActivation = {
+      bindings,
+      guid: uploadPocGuid,
+      savedData,
+    };
+    return office
+      .callCommandResult(spreadsheetUploadPocActivationCommand)
+      .then((raw) => {
+        const result = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (!result?.ok) {
+          throw new Error(result?.error || "ONLYOFFICE รุ่นนี้ยังเปิดปุ่มแนบไฟล์ไม่ได้");
+        }
+        if (result.count > 0) {
+          setStatus(
+            configuredAttachments
+              ? "พร้อมเปิดช่องแนบไฟล์ ดูไฟล์ที่บันทึกแล้วหรือเลือกไฟล์ใหม่ การเลือกจะมีผลเมื่อบันทึกฟอร์มสำเร็จ"
+              : "ปุ่มแนบไฟล์เดิมแสดงคำแนะนำติดต่อ Admin เพื่อตั้งค่าฟอร์มใหม่ ไม่รับการเลือกไฟล์",
+            "success"
+          );
+        }
+      })
+      .finally(() => {
+        delete window.Asc.scope.folioUploadPocActivation;
+      });
+  };
   const bridge = createBridge(options, office, {
     getFieldSelection: () => null,
     loadFieldRules: () => Promise.resolve(),
     runAction: (...args) => operations.runAction(...args),
+    onReady: () => {
+      if (options.action === ACTIONS.TEMPLATE_EDIT && pendingDraft()) {
+        bridge.notifyParent(
+          ACTIONS.SAVE_TEMPLATE,
+          "failed",
+          undefined,
+          undefined,
+          "ยังไม่ทราบผลบันทึกรอบเดิม กรุณาตรวจผลรอบเดิมก่อนแก้ไขต่อ",
+          undefined,
+          true
+        );
+      }
+    },
     onPdmsCatalogChanged: (catalog) => pdmsPicker?.updateCatalog(catalog),
     setPanelStatus: setStatus,
     setStatus,
   });
   const prefill = { shouldApplyRuntimePrefill: () => false };
   const operations = createOperations(options, office, prefill, bridge, api, {
+    onDraftContinuation: activateUploadPoc,
     isInitializationPending: () =>
       busy && !uploadPocSaveInFlight && !pdmsSourceSaveInFlight,
     getTemplateSaveContext: () =>
@@ -328,16 +392,27 @@ export function initializeSpreadsheet(options, setStatus) {
             deletedUploadPocBindingIds: [...deletedUploadPocBindingIds],
           }
         : { preserveEditorSessionPurpose: "manual" },
-    onTemplateSaveCompleted: (action, context) => {
+    onTemplateSaveCompleted: (action, context, result) => {
       if (
         action === ACTIONS.SAVE_TEMPLATE &&
         context?.preserveEditorSession === true
       ) {
+        if (Number.isSafeInteger(result?.bindingRevision)) {
+          applyBindings({
+            bindings: result.bindings,
+            revision: result.bindingRevision,
+          });
+        }
+        pendingUploadPocPromotion = null;
         uploadPocDeleteNeedsSave = false;
+        repairRemovalPending = false;
         pendingUploadPocChanges.clear();
       }
     },
-    beforeAction: async (action, rowChange) => {
+    beforeAction: async (action, rowChange, context) => {
+      if (pendingUploadPocPromotion && action !== ACTIONS.SAVE_TEMPLATE) {
+        throw new Error(pendingPromotionMessage);
+      }
       if (uploadPocDeleteNeedsSave && action !== ACTIONS.SAVE_TEMPLATE) {
         throw new Error(
           "การลบปุ่มยังรอบันทึกต้นแบบ กรุณากดบันทึกแบบร่างเพื่อลองอีกครั้งก่อนแก้ไขต่อ"
@@ -345,16 +420,24 @@ export function initializeSpreadsheet(options, setStatus) {
       }
       await ensureAuthoringReady();
       validatePanelDrafts();
-      await checkUploadPocPending(window, options, action, rowChange);
+      if (rowChange?.action === "delete" && (await readTableRowCount()) <= 1) {
+        throw new Error(minimumRowReason);
+      }
+      return checkUploadPocPending(
+        window,
+        options,
+        context?.pdmsSelection ? "change-project" : action,
+        rowChange
+      );
     },
     setActionBusy: (value) => {
-      busy = value;
+      busy = value || authoringActionInFlight;
       for (const item of buttons) {
-        item.disabled = value;
+        item.disabled = busy;
       }
-      disableAuthoringControls(value);
-      pdmsPicker?.setBusy(value);
-      if (!value) {
+      disableAuthoringControls(busy);
+      pdmsPicker?.setBusy(busy);
+      if (!busy) {
         void refreshAfterAction();
       }
     },
@@ -365,12 +448,24 @@ export function initializeSpreadsheet(options, setStatus) {
         ["manual", "delete"].includes(context.preserveEditorSessionPurpose)
           ? await preparePreservedTemplateSave(context)
           : {};
+      await readBindings(false);
+      window.Asc.scope.folioSpreadsheetAnchors =
+        spreadsheetBindingAnchors(bindings);
       const raw = await office.callCommandResult(spreadsheetSelectionCommand);
       const snapshot = typeof raw === "string" ? JSON.parse(raw) : raw;
       if (!Array.isArray(snapshot?.anchors)) {
         throw new TypeError("อ่านตำแหน่งช่องก่อนบันทึกไม่ได้ กรุณาลองใหม่");
       }
-      return { spreadsheetAnchors: snapshot.anchors, ...proof };
+      return {
+        spreadsheetAnchors: snapshot.anchors,
+        xlsxDraft: {
+          version: 1,
+          revision,
+          checkpoint: window.crypto.randomUUID(),
+          bindings,
+        },
+        ...proof,
+      };
     },
     setStatus,
   });
@@ -432,6 +527,7 @@ export function initializeSpreadsheet(options, setStatus) {
     return label(caption, node);
   };
   const buttons = [];
+  const repairButtons = new Set();
   const button = (caption, action, recoveryAction = false) => {
     const node = document.createElement("button");
     node.type = "button";
@@ -439,10 +535,25 @@ export function initializeSpreadsheet(options, setStatus) {
     buttons.push(node);
     panel.append(node);
     node.addEventListener("click", () => {
-      if (busy) {
+      if (busy || node.disabled) {
         return;
       }
-      if (uploadPocDeleteNeedsSave && !recoveryAction) {
+      if (
+        options.action === ACTIONS.TEMPLATE_EDIT &&
+        (options.xlsxDraftProtocol !== 1 || pendingDraft())
+      ) {
+        setStatus("กรุณาตรวจผลบันทึกเดิมหรือเปิดตัวแก้ไข Excel รุ่นล่าสุดก่อนแก้ไข", "error");
+        return;
+      }
+      if (pendingUploadPocPromotion && !recoveryAction) {
+        setStatus(pendingPromotionMessage, "error");
+        return;
+      }
+      if (
+        uploadPocDeleteNeedsSave &&
+        !recoveryAction &&
+        !(repairRemovalPending && repairButtons.has(node))
+      ) {
         setStatus(
           "การลบปุ่มยังรอบันทึกต้นแบบ กรุณากดบันทึกแบบร่างเพื่อลองอีกครั้งก่อนแก้ไขต่อ",
           "error"
@@ -453,6 +564,7 @@ export function initializeSpreadsheet(options, setStatus) {
         setStatus("ยังยืนยันผลการตั้งค่าไม่ได้ กรุณากด ลองยืนยันอีกครั้ง ก่อนแก้ไขต่อ", "error");
         return;
       }
+      authoringActionInFlight = true;
       busy = true;
       for (const item of buttons) {
         item.disabled = true;
@@ -464,11 +576,16 @@ export function initializeSpreadsheet(options, setStatus) {
           setStatus(error.message || "ดำเนินการไม่สำเร็จ", "error")
         )
         .finally(() => {
+          authoringActionInFlight = false;
           busy = false;
           for (const item of buttons) {
             item.disabled = false;
           }
           disableAuthoringControls(false);
+          // Dialog triggers become focusable only after the outer action finishes.
+          if (document.activeElement === document.body && document.hasFocus()) {
+            node.focus();
+          }
           void refreshAfterAction();
         });
     });
@@ -533,7 +650,8 @@ export function initializeSpreadsheet(options, setStatus) {
   };
   async function captureUploadPocTargets(
     bindingIds,
-    sourceBindings = bindings
+    sourceBindings = bindings,
+    removeUnprovedPlacement = false
   ) {
     window.Asc.scope.folioUploadPocDelete = {
       phase: "capture",
@@ -546,7 +664,12 @@ export function initializeSpreadsheet(options, setStatus) {
       );
       const result = typeof raw === "string" ? JSON.parse(raw) : raw;
       if (!result?.ok || !Array.isArray(result.targets)) {
-        throw new Error(result?.error || "อ่านข้อมูลปุ่ม POC ก่อนบันทึกไม่ได้");
+        throw new Error(result?.error || "อ่านข้อมูลปุ่มแนบไฟล์ก่อนบันทึกไม่ได้");
+      }
+      // Explicit removal can identify the exact native objects by managed binding ID and snapshot,
+      // even when their historical cell is unproved. It never authorizes those objects for use.
+      if (removeUnprovedPlacement) {
+        return result.targets;
       }
       window.Asc.scope.folioSpreadsheetAnchors =
         spreadsheetBindingAnchors(sourceBindings);
@@ -573,12 +696,12 @@ export function initializeSpreadsheet(options, setStatus) {
           uploadPocGuid
         );
         if (resolved?.entry[1].id !== target.bindingId) {
-          throw new Error("ปุ่ม POC ไม่ตรงกับช่องที่กำลังบันทึก");
+          throw new Error("ปุ่มแนบไฟล์ไม่ตรงกับช่องที่กำลังบันทึก");
         }
         const data = JSON.parse(target.data);
         const slot = `${target.bindingId}:${data.rowIndex ?? "scalar"}`;
         if (slots.has(slot)) {
-          throw new Error("ตำแหน่งปุ่ม POC ซ้ำกัน จึงยังบันทึกโดยไม่เปิดตัวแก้ไขใหม่ไม่ได้");
+          throw new Error("ตำแหน่งปุ่มแนบไฟล์ซ้ำกัน จึงยังบันทึกโดยไม่เปิดตัวแก้ไขใหม่ไม่ได้");
         }
         slots.add(slot);
       }
@@ -589,6 +712,43 @@ export function initializeSpreadsheet(options, setStatus) {
   }
   preparePreservedTemplateSave = async () => {
     // Operations invokes this only after freezing the native editor.
+    if (pendingUploadPocPromotion) {
+      const { tableId, sheet, ids } = pendingUploadPocPromotion;
+      const table = bindings.table;
+      const columns = table?.columns.filter((column) => ids.has(column.id));
+      if (
+        table?.id !== tableId ||
+        columns.length !== ids.size ||
+        columns.some((column) => !column.attachment)
+      ) {
+        throw new Error("การตั้งค่าคอลัมน์แนบที่รอบันทึกเปลี่ยนไป กรุณาตรวจสอบต้นแบบล่าสุด");
+      }
+      window.Asc.scope.folioSpreadsheetUploadPoc = {
+        mark: true,
+        targets: columns.map((column) => ({
+          bindingId: column.id,
+          bodyAnchor: table.anchor,
+          columnOffset: column.offset,
+          kind: "column",
+          sheet,
+          tag: `${table.key}.${column.key}`,
+        })),
+        preview: uploadPocPreview,
+        guid: uploadPocGuid,
+      };
+      try {
+        const raw = await office.callCommandResult(
+          spreadsheetUploadPocCommand,
+          true
+        );
+        const result = typeof raw === "string" ? JSON.parse(raw) : raw;
+        if (!result?.ok) {
+          throw new Error(result?.error || "สร้างปุ่มแนบไฟล์ในตารางไม่สำเร็จ");
+        }
+      } finally {
+        delete window.Asc.scope.folioSpreadsheetUploadPoc;
+      }
+    }
     for (const pending of pendingUploadPocChanges.values()) {
       const current = [
         ...(bindings.fields || []),
@@ -632,7 +792,7 @@ export function initializeSpreadsheet(options, setStatus) {
         );
         const result = typeof raw === "string" ? JSON.parse(raw) : raw;
         if (!result?.ok) {
-          throw new Error(result?.error || "ยังยืนยันข้อมูลปุ่ม POC ไม่ได้");
+          throw new Error(result?.error || "ยังยืนยันข้อมูลปุ่มแนบไฟล์ไม่ได้");
         }
       } finally {
         delete window.Asc.scope.folioUploadPocDelete;
@@ -717,7 +877,7 @@ export function initializeSpreadsheet(options, setStatus) {
           );
           const result = typeof raw === "string" ? JSON.parse(raw) : raw;
           if (!result?.ok) {
-            throw new Error(result?.error || "ปรับข้อมูลปุ่ม POC ไม่สำเร็จ");
+            throw new Error(result?.error || "ปรับข้อมูลปุ่มแนบไฟล์ไม่สำเร็จ");
           }
         } finally {
           delete window.Asc.scope.folioSpreadsheetUploadPoc;
@@ -749,7 +909,7 @@ export function initializeSpreadsheet(options, setStatus) {
     }
     const targets = await captureUploadPocTargets(activeUploadPocBindingIds());
     if (targets.length > 4096) {
-      throw new Error("จำนวนปุ่ม POC เกินขอบเขตการบันทึกในตัวแก้ไขเดิม");
+      throw new Error("จำนวนปุ่มแนบไฟล์เกินขอบเขตการบันทึกในตัวแก้ไขเดิม");
     }
     const spreadsheetUploadPocSnapshot = targets.map((target) => {
       const data = JSON.parse(target.data);
@@ -786,6 +946,9 @@ export function initializeSpreadsheet(options, setStatus) {
     );
     if (
       !Array.isArray(result?.bindings?.fields) ||
+      result.bindings.version !== 1 ||
+      (result.bindings.table !== null &&
+        !Array.isArray(result.bindings.table?.columns)) ||
       !Number.isSafeInteger(result?.revision)
     ) {
       throw new TypeError("อ่านผลการตั้งค่าช่องไม่ได้ กรุณาลองใหม่");
@@ -794,7 +957,6 @@ export function initializeSpreadsheet(options, setStatus) {
   }
   function applyBindings(result) {
     bindings = result.bindings;
-    metadataBindings = result.bindings;
     options.spreadsheetBindings = result.bindings;
     if (
       ![...bindings.fields, ...(bindings.table?.columns || [])].some(
@@ -807,17 +969,13 @@ export function initializeSpreadsheet(options, setStatus) {
     revision = result.revision;
   }
   async function readBindings(reconcile = true) {
-    const result = await fetchBindings();
-    if (result.documentKey && result.documentKey !== options.documentKey) {
-      throw new Error(
-        "ต้นแบบเปลี่ยนเป็นเอกสารอีกฉบับแล้ว กรุณาตรวจสอบต้นแบบล่าสุดก่อนแก้ไขต่อ"
-      );
+    if (options.xlsxDraftProtocol !== 1 || !Number.isSafeInteger(revision)) {
+      throw new Error("กรุณาเปิดตัวแก้ไข Excel รุ่นล่าสุดแล้วลองอีกครั้ง");
     }
-    applyBindings(result);
     if (reconcile) {
       await synchronizeColumns(false);
     }
-    return result;
+    return { bindings, documentKey: options.documentKey, revision };
   }
   const recoveryMessage = (outcome) => {
     if (outcome === "stale") {
@@ -878,6 +1036,9 @@ export function initializeSpreadsheet(options, setStatus) {
     }
     await restoreNativeState(native.before);
     native.checkpoint = await captureNativeState(native.target);
+    if (!sameSpreadsheetNativeState(native.checkpoint, native.before)) {
+      throw new Error("คืนกฎเดิมของช่องไม่ได้ กรุณากด ลองยืนยันอีกครั้ง");
+    }
   }
   async function synchronizeColumns(
     initialize,
@@ -887,7 +1048,7 @@ export function initializeSpreadsheet(options, setStatus) {
     window.Asc.scope = window.Asc.scope || {};
     window.Asc.scope.folioSpreadsheetAnchors =
       spreadsheetBindingAnchors(bindings);
-    if (!table?.columns?.length) {
+    if (!table?.columns?.length || (table.unbound && !repair)) {
       return;
     }
     window.Asc.scope.folioSpreadsheetColumns = { table, initialize, repair };
@@ -899,7 +1060,7 @@ export function initializeSpreadsheet(options, setStatus) {
     if (!result?.ok) {
       throw new Error(result?.error || "อ่านตำแหน่งคอลัมน์ไม่ได้ กรุณาเปิดต้นแบบใหม่");
     }
-    if (bindings?.table?.id === table.id) {
+    if (!repair && bindings?.table?.id === table.id) {
       bindings = reconcileSpreadsheetColumns(bindings, result);
     }
     if (result.changed) {
@@ -936,6 +1097,9 @@ export function initializeSpreadsheet(options, setStatus) {
     return left === right;
   };
   async function changeBinding(change, native = null) {
+    if (options.xlsxDraftProtocol !== 1 || pendingDraft()) {
+      throw new Error("กรุณาตรวจผลบันทึกเดิมหรือเปิดตัวแก้ไข Excel รุ่นล่าสุดก่อนแก้ไข");
+    }
     if (authoringMismatch) {
       throw new Error(
         pendingRecovery
@@ -943,105 +1107,21 @@ export function initializeSpreadsheet(options, setStatus) {
           : "การตั้งค่าช่องกับเอกสารยังไม่ตรงกัน กรุณาตรวจสอบต้นแบบล่าสุดก่อนบันทึก"
       );
     }
-    let capability;
-    try {
-      if (revision === undefined) {
-        await readBindings(change.action !== "delete");
-      }
-      capability = await bridge.requestActionCapability(
-        ACTIONS.CONFIGURE_FIELDS
-      );
-    } catch (error) {
-      error.bindingUnchanged = true;
-      throw error;
+    if (revision === undefined) {
+      await readBindings(change.action !== "delete");
     }
-    const columnOffsets =
-      change.kind === "column" && change.action === "upsert"
-        ? bindings.table.columns.map((column) => [column.id, column.offset])
-        : null;
     const attempt = spreadsheetBindingAttempt({
-      bindings: metadataBindings,
+      bindings,
       change,
-      columnOffsets,
       documentKey: options.documentKey,
       revision,
     });
     if (native) {
       native.attempt = attempt;
     }
-    try {
-      const result = await api.requestJson(
-        api.adminFormPath("spreadsheet-bindings"),
-        {
-          method: "PATCH",
-          body: JSON.stringify({
-            documentKey: options.documentKey,
-            revision,
-            change,
-            ...(columnOffsets
-              ? { spreadsheetColumnOffsets: columnOffsets }
-              : {}),
-          }),
-        },
-        capability
-      );
-      if (
-        !Array.isArray(result?.bindings?.fields) ||
-        !Number.isSafeInteger(result?.revision)
-      ) {
-        throw new TypeError("ยืนยันผลบันทึกการตั้งค่าช่องไม่ได้");
-      }
-      if (result.documentKey && result.documentKey !== attempt.documentKey) {
-        throw new Error("ผลบันทึกเป็นของต้นแบบอีกฉบับ");
-      }
-      applyBindings(result);
-    } catch (error) {
-      attempt.requiresFence = !(
-        Number.isInteger(error.httpStatus) &&
-        error.httpStatus >= 400 &&
-        error.httpStatus < 500 &&
-        error.httpStatus !== 408
-      );
-      let result;
-      let outcome = "unverified";
-      try {
-        result = await fetchBindings();
-        outcome = spreadsheetBindingOutcome(attempt, result);
-      } catch (verificationError) {
-        if (
-          [
-            "stale_document",
-            "editor_capability_scope_mismatch",
-            "document_unavailable",
-            "editor_lease_inactive",
-            "published_immutable",
-          ].includes(verificationError.code)
-        ) {
-          outcome = "stale";
-        }
-      }
-      if (outcome !== "committed") {
-        if (outcome === "unchanged" && !attempt.requiresFence) {
-          applyBindings(result);
-          const failure = new Error(error.message || "บันทึกการตั้งค่าไม่สำเร็จ", {
-            cause: error,
-          });
-          failure.bindingUnchanged = true;
-          failure.bindingAttempt = attempt;
-          throw failure;
-        }
-        const recoveryOutcome =
-          outcome === "unchanged" ? "unverified" : outcome;
-        beginRecovery(attempt, native, recoveryOutcome);
-        throw new Error(recoveryMessage(recoveryOutcome), { cause: error });
-      }
-      applyBindings(result);
-      if (change.action !== "delete") {
-        await synchronizeColumns(false);
-      }
-    }
+    applyBindings({ bindings: attempt.expected, revision });
     bridge.setDirtyState(true);
-    setStatus("บันทึกการตั้งค่าช่องแล้ว กรุณาบันทึกต้นแบบ", "success");
+    setStatus("ตั้งค่าช่องแล้ว รอบันทึกต้นแบบ", "success");
     renderList();
   }
   async function mutateBinding(change, requestedTarget, mutate, onCommitted) {
@@ -1083,6 +1163,7 @@ export function initializeSpreadsheet(options, setStatus) {
       native.lockConfirmed = true;
       if (
         change.action === "upsert" &&
+        !change.repair &&
         bindings?.table &&
         ["column", "table"].includes(change.kind)
       ) {
@@ -1134,7 +1215,7 @@ export function initializeSpreadsheet(options, setStatus) {
               spreadsheetUploadPocCleanupCommand
             )) !== true
           ) {
-            throw new Error("ยังยืนยันการล้างตำแหน่งปุ่ม POC ไม่ได้ กรุณาลองอีกครั้ง");
+            throw new Error("ยังยืนยันการล้างตำแหน่งปุ่มแนบไฟล์ไม่ได้ กรุณาลองอีกครั้ง");
           }
         } finally {
           delete window.Asc.scope.folioSpreadsheetUploadPocCleanup;
@@ -1159,7 +1240,7 @@ export function initializeSpreadsheet(options, setStatus) {
         } catch (unlockError) {
           native.noMutation = true;
           const attempt = spreadsheetBindingAttempt({
-            bindings: metadataBindings,
+            bindings,
             change,
             columnOffsets: null,
             documentKey: options.documentKey,
@@ -1181,7 +1262,7 @@ export function initializeSpreadsheet(options, setStatus) {
           error.bindingAttempt ||
           native.attempt ||
           spreadsheetBindingAttempt({
-            bindings: metadataBindings,
+            bindings,
             change,
             columnOffsets: null,
             documentKey: options.documentKey,
@@ -1206,7 +1287,7 @@ export function initializeSpreadsheet(options, setStatus) {
           error.bindingAttempt ||
           native.attempt ||
           spreadsheetBindingAttempt({
-            bindings: metadataBindings,
+            bindings,
             change,
             columnOffsets: null,
             documentKey: options.documentKey,
@@ -1267,58 +1348,16 @@ export function initializeSpreadsheet(options, setStatus) {
       refreshRecoveryControls();
       throw new Error(recoveryMessage(recovery.outcome), { cause: error });
     }
-    if (spreadsheetBindingNeedsFence(recovery.attempt, result)) {
-      try {
-        const capability = await bridge.requestActionCapability(
-          ACTIONS.CONFIGURE_FIELDS
-        );
-        result = await api.requestJson(
-          api.adminFormPath("spreadsheet-bindings/recover"),
-          {
-            method: "POST",
-            body: JSON.stringify({
-              documentKey: recovery.attempt.documentKey,
-              revision: recovery.attempt.revision,
-            }),
-          },
-          capability
-        );
-      } catch (error) {
-        if (
-          [
-            "stale_document",
-            "editor_capability_scope_mismatch",
-            "document_unavailable",
-            "editor_lease_inactive",
-            "published_immutable",
-          ].includes(error.code)
-        ) {
-          recovery.outcome = "stale";
-        }
-        throw new Error(recoveryMessage(recovery.outcome), { cause: error });
-      }
-    }
-    const outcome = spreadsheetBindingOutcome(recovery.attempt, result);
-    recovery.outcome = outcome;
+    const outcome = recovery.provenOutcome;
     if (
-      !["committed", "unchanged"].includes(outcome) ||
-      (outcome === "unchanged" &&
-        recovery.attempt.requiresFence &&
-        !(
-          result.recovery?.settled === true &&
-          result.recovery.baseRevision === recovery.attempt.revision &&
-          result.revision === recovery.attempt.revision + 1
-        ))
+      !outcome ||
+      result.documentKey !== options.documentKey ||
+      result.revision !== revision
     ) {
+      recovery.outcome = "stale";
       refreshRecoveryControls();
-      throw new Error(recoveryMessage(outcome));
+      throw new Error(recoveryMessage(recovery.outcome));
     }
-    if (recovery.provenOutcome && recovery.provenOutcome !== outcome) {
-      recovery.outcome = "conflict";
-      refreshRecoveryControls();
-      throw new Error(recoveryMessage("conflict"));
-    }
-    recovery.provenOutcome = outcome;
     const native = recovery.native;
     if (native && !native.noMutation) {
       if (!native.lockConfirmed) {
@@ -1358,18 +1397,6 @@ export function initializeSpreadsheet(options, setStatus) {
         recovery.phase = "restored";
       }
     }
-    applyBindings(result);
-    if (outcome === "committed") {
-      await synchronizeColumns(false);
-      if (
-        recovery.attempt.enforceColumnOffsets &&
-        !sameSpreadsheetBindings(result.bindings, bindings)
-      ) {
-        recovery.outcome = "native-conflict";
-        refreshRecoveryControls();
-        throw new Error(recoveryMessage(recovery.outcome));
-      }
-    }
     await releaseNativeLock(native);
     pendingRecovery = null;
     authoringMismatch = false;
@@ -1377,7 +1404,7 @@ export function initializeSpreadsheet(options, setStatus) {
     refreshRecoveryControls();
     if (outcome === "committed") {
       await native?.onCommitted?.();
-      setStatus("ยืนยันว่าบันทึกการตั้งค่าช่องแล้ว กรุณาบันทึกต้นแบบ", "success");
+      setStatus("ยืนยันการตั้งค่าช่องแล้ว รอบันทึกต้นแบบ", "success");
     } else {
       setStatus(
         "ยืนยันว่าการตั้งค่ายังไม่ได้บันทึก คืนกฎเดิมแล้ว การแก้ไขของคุณยังอยู่ กรุณาแก้ไขแล้วบันทึกอีกครั้ง",
@@ -1387,12 +1414,13 @@ export function initializeSpreadsheet(options, setStatus) {
   }
   const id = () =>
     `folio_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-  async function anchor(anchorName, requestedSelection) {
+  async function anchor(anchorName, requestedSelection, replace = false) {
     const selected = requestedSelection || (await selection());
     window.Asc.scope = window.Asc.scope || {};
     window.Asc.scope.folioSpreadsheetAnchor = {
       anchor: anchorName,
       reference: `'${selected.sheet.replaceAll("'", "''")}'!${selected.address}`,
+      replace,
     };
     if ((await office.callCommandResult(spreadsheetAnchorCommand)) !== true) {
       throw new Error("สร้างตำแหน่งอ้างอิงไม่ได้ กรุณาเลือกช่วงเซลล์ใหม่");
@@ -1453,6 +1481,75 @@ export function initializeSpreadsheet(options, setStatus) {
       ["picture", "รูปภาพ (JPEG / PNG)"],
     ]);
     const required = input("บังคับกรอก", "checkbox");
+    let attachmentConfiguration = null;
+    const categorySummary = document.createElement("p");
+    panel.append(categorySummary);
+    const loadCategories = async () => {
+      const capability = await bridge.requestActionCapability(
+        ACTIONS.CONFIGURE_FIELDS
+      );
+      const result = await api.requestJson(
+        api.adminFormPath("attachment-categories"),
+        { method: "GET" },
+        capability
+      );
+      return result;
+    };
+    const saveAttachmentTemplate = async (promotion = false) => {
+      uploadPocSaveInFlight = true;
+      let saved;
+      try {
+        saved = await operations.runAction(ACTIONS.SAVE_TEMPLATE, "", null, {
+          preserveEditorSession: true,
+          preserveEditorSessionPurpose: "manual",
+        });
+      } finally {
+        uploadPocSaveInFlight = false;
+      }
+      if (!saved?.ok) {
+        if (promotion) {
+          throw new Error(
+            `${pendingPromotionMessage}: ${saved?.error || "ยังยืนยันผลไม่ได้"}`
+          );
+        }
+        throw new Error(
+          `บันทึกต้นแบบยังไม่สำเร็จ: ${saved?.error || "ยังยืนยันผลไม่ได้"} กรุณาลองอีกครั้งที่ช่องเดิม ระบบจะใช้ปุ่มและ Tag เดิม ยังยืนยันการตั้งค่าช่องแนบไม่ได้`
+        );
+      }
+    };
+    const changeCategory = button("เปลี่ยนหมวด", async () => {
+      await ensureAuthoringReady();
+      validatePanelDrafts();
+      await checkUploadPocPending(window, options, ACTIONS.SAVE_TEMPLATE);
+      await readBindings();
+      const targetKind = editingKind;
+      const field = editing && bindingValue(bindings, targetKind, editing.id);
+      if (!field?.attachment) {
+        throw new Error("เลือกช่องแนบที่บันทึกไว้ก่อนเปลี่ยนหมวด");
+      }
+      const category = await chooseAttachmentCategory({
+        options,
+        loadCategories,
+        currentChoice: field.attachment,
+        target: `${field.label} (${field.key})`,
+      });
+      if (category === null) {
+        return;
+      }
+      await readBindings();
+      const current = bindingValue(bindings, targetKind, field.id);
+      if (!sameValue(field, current)) {
+        throw new Error(
+          "การตั้งค่าช่องเปลี่ยนระหว่างเลือกหมวด กรุณาเลือกช่องเดิมแล้วลองอีกครั้ง"
+        );
+      }
+      loadEntry([targetKind, current]);
+      attachmentConfiguration = category;
+      panelChanged();
+      await saveBinding();
+      await saveAttachmentTemplate();
+      setStatus("บันทึกหมวดหมู่จัดเก็บเอกสารและต้นแบบแล้ว", "success");
+    });
     const placeholder = input("คำแนะนำในเซลล์ · Placeholder (ไม่บังคับ)");
     let panelChanged = () => {};
     const optionsField = createOptionsField(() => panelChanged());
@@ -1468,6 +1565,45 @@ export function initializeSpreadsheet(options, setStatus) {
       selected?.anchors?.some(
         ([name, reference]) => name === entry.anchor && !reference
       );
+    const issues = [...(options.xlsxDraftIssues || [])];
+    const issueLabels = {
+      unbound: "ยังไม่ได้ผูกตำแหน่ง",
+      missing_or_broken_anchor: "ไม่พบตำแหน่งอ้างอิงที่ใช้ได้",
+      untracked_columns: "ไม่มีข้อมูลยืนยันตำแหน่งแต่ละคอลัมน์",
+      ambiguous_columns: "ตำแหน่งคอลัมน์หายหรือขัดแย้งกัน",
+      placement_mismatch: "ช่วงเซลล์ขัดแย้งกับการตั้งค่า",
+      attachment_mismatch: "ตำแหน่งหรือปุ่มแนบไฟล์ไม่ตรงกับการตั้งค่า",
+      validation_mismatch: "กฎชนิดข้อมูลไม่ตรงกับการตั้งค่า",
+      workbook_unproved: "ยืนยันการตั้งค่าของไฟล์ Excel ที่บันทึกไว้ไม่ได้",
+    };
+    const repairCodes = new Set([
+      "unbound",
+      "missing_or_broken_anchor",
+      "untracked_columns",
+      "ambiguous_columns",
+      "placement_mismatch",
+      "validation_mismatch",
+    ]);
+    const canRebind = (entry) =>
+      Boolean(entry?.anchor) &&
+      (missingAnchor(entry) ||
+        issues.some(
+          ({ bindingId, code }) =>
+            repairCodes.has(code) &&
+            (bindingId === entry.id ||
+              entry.columns?.some((column) => column.id === bindingId))
+        ));
+    const repairColumns = document.createElement("fieldset");
+    const repairLegend = document.createElement("legend");
+    repairLegend.textContent =
+      "ระบุลำดับคอลัมน์ของแต่ละช่อง นับจากซ้ายของช่วงข้อมูล เริ่มที่ 1";
+    repairColumns.append(repairLegend);
+    panel.append(repairColumns);
+    const confirmedColumns = new Map();
+    let repairTableId = null;
+    const diagnostic = document.createElement("p");
+    diagnostic.setAttribute("role", "status");
+    panel.append(diagnostic);
     const drafts = new Map();
     const draftBaselines = new Map();
     const pendingDrafts = new Set();
@@ -1477,6 +1613,7 @@ export function initializeSpreadsheet(options, setStatus) {
       key: key.value,
       type: type.value,
       required: required.checked,
+      attachment: attachmentConfiguration,
       placeholder: placeholder.value,
       choices: optionsField.getOptions(),
       optionEntry: optionsField.getEntry(),
@@ -1557,6 +1694,10 @@ export function initializeSpreadsheet(options, setStatus) {
       }
       show(type, !table);
       show(required, !table);
+      categorySummary.hidden = table || !attachmentConfiguration;
+      categorySummary.textContent = `แม่แบบจัดเก็บเอกสาร: ${attachmentConfiguration?.template_name || "ยังไม่ได้เลือกแม่แบบ"}`;
+      changeCategory.hidden = table || !attachmentConfiguration;
+      type.disabled = !table && Boolean(attachmentConfiguration);
       show(placeholder, !table);
       optionsField.element.hidden = table || type.value !== "dropdown";
       show(headers, table && !editing);
@@ -1574,7 +1715,36 @@ export function initializeSpreadsheet(options, setStatus) {
         editingKind !== "field" ||
         editing?.type !== "picture" ||
         missingAnchor(editing);
-      repairAnchor.hidden = !missingAnchor(editing);
+      repairAnchor.hidden = !canRebind(editing);
+      repairColumns.hidden =
+        repairAnchor.hidden || !table || !editing?.columns?.length;
+      if ((repairColumns.hidden ? null : editing.id) !== repairTableId) {
+        repairTableId = repairColumns.hidden ? null : editing.id;
+        repairColumns.replaceChildren(repairLegend);
+        confirmedColumns.clear();
+        for (const column of repairTableId ? editing.columns : []) {
+          const columnLabel = document.createElement("label");
+          const position = document.createElement("input");
+          position.type = "number";
+          position.min = "1";
+          position.step = "1";
+          const columnCaption = document.createElement("span");
+          columnCaption.textContent = `${column.label} (${column.key})`;
+          columnLabel.append(columnCaption, position);
+          repairColumns.append(columnLabel);
+          confirmedColumns.set(column.id, position);
+        }
+      }
+      const relevantIssues = issues.filter(
+        ({ bindingId }) =>
+          bindingId === null ||
+          (editing
+            ? bindingId === editing.id
+            : entries.some(([, entry]) => entry.id === bindingId))
+      );
+      diagnostic.textContent = [
+        ...new Set(relevantIssues.map(({ code }) => issueLabels[code])),
+      ].join(" · ");
       save.disabled = editing?.computed === true;
       message.textContent = selected
         ? `${selected.sheet}!${selected.address}`
@@ -1606,6 +1776,9 @@ export function initializeSpreadsheet(options, setStatus) {
           ? "pdms-project-name"
           : editing?.type || "text";
       required.checked = Boolean(editing?.required);
+      attachmentConfiguration = editing?.attachment
+        ? { ...editing.attachment }
+        : null;
       placeholder.value = editing?.placeholder || "";
       optionsField.setOptions(editing?.options || []);
       headers.checked = false;
@@ -1618,6 +1791,9 @@ export function initializeSpreadsheet(options, setStatus) {
         key.value = draft.key;
         type.value = draft.type;
         required.checked = draft.required;
+        attachmentConfiguration = draft.attachment
+          ? { ...draft.attachment }
+          : null;
         placeholder.value = draft.placeholder;
         optionsField.setOptions(draft.choices);
         optionsField.setEditorState(
@@ -1645,10 +1821,10 @@ export function initializeSpreadsheet(options, setStatus) {
     });
     const uploadPocHelp = document.createElement("p");
     uploadPocHelp.textContent =
-      "เลือกเซลล์ว่างแล้วกดวางปุ่มและบันทึกต้นแบบ ระบบสร้าง Title และ Tag และบันทึกปุ่มก่อนเลือกไฟล์ ถ้าเป็นช่องข้อความหรือคอลัมน์ตารางเดิมจะใช้ข้อมูลเดิม หลังบันทึกสำเร็จจึงดับเบิลคลิกเลือกไฟล์ ไฟล์ยังไม่อัปโหลดหรือบันทึกถาวร";
+      "เลือกเซลล์ว่างหรือช่องข้อความเดิม แล้วกดเพิ่มช่องแนบไฟล์ เลือกหมวดหมู่จัดเก็บเอกสารและยืนยัน ระบบสร้างหรือตั้งค่าช่องแนบและบันทึกต้นแบบให้อัตโนมัติ ยกเลิกก่อนยืนยันจะไม่เปลี่ยนช่องหรือปุ่ม หน้าต้นแบบใช้ตั้งค่าเท่านั้น ผู้ใช้แนบไฟล์ในฟอร์มที่เผยแพร่แล้ว";
     uploadPocHelp.id = "spreadsheet-upload-poc-help";
     panel.append(uploadPocHelp);
-    const placeUploadPoc = button("วางปุ่มและบันทึกต้นแบบ (POC)", async () => {
+    const placeUploadPoc = button("เพิ่มช่องแนบไฟล์", async () => {
       const clickedSelection = await selection();
       // Initial identity is only a movement check. Authorize against fresh metadata below.
       const clickedEntry = selectedBinding(clickedSelection, bindings);
@@ -1672,25 +1848,64 @@ export function initializeSpreadsheet(options, setStatus) {
       ) {
         throw new Error("ตำแหน่งช่องเปลี่ยนระหว่างวางปุ่ม กรุณาเลือกเซลล์ใหม่แล้วลองอีกครั้ง");
       }
-      window.Asc.scope.folioUploadPocSelection = {
-        ...current,
-        column: entry?.[0] === "column",
-        requireBlank: !entry,
-      };
-      const preflightRaw = await office.callCommandResult(
-        spreadsheetUploadPocSelectionCommand
-      );
-      const preflight =
-        typeof preflightRaw === "string"
-          ? JSON.parse(preflightRaw)
-          : preflightRaw;
-      if (!preflight?.ok) {
-        throw new Error(preflight?.error || "ตรวจสอบเซลล์ที่เลือกไม่ได้");
+      if (entry) {
+        selectedUploadPocTarget(current, bindings);
+        if (
+          entry[1].prefillPointer ||
+          (entry[1].prefillPolicy && entry[1].prefillPolicy !== "editable")
+        ) {
+          throw new Error(
+            "ช่องแนบต้องเป็นข้อความที่กรอกเองและไม่ใช้ข้อมูลเริ่มต้น กรุณาแก้กฎเดิมก่อน"
+          );
+        }
       }
-      current = { ...current, address: preflight.address };
-      entry = existingUploadPocEntry(current, bindings);
+      const checkTarget = async () => {
+        window.Asc.scope.folioUploadPocSelection = {
+          ...current,
+          column: entry?.[0] === "column",
+          requireBlank: !entry,
+        };
+        try {
+          const raw = await office.callCommandResult(
+            spreadsheetUploadPocSelectionCommand
+          );
+          const checked = typeof raw === "string" ? JSON.parse(raw) : raw;
+          if (!checked?.ok) {
+            throw new Error(checked?.error || "ตรวจสอบเซลล์ที่เลือกไม่ได้");
+          }
+          current = { ...current, address: checked.address };
+          entry = existingUploadPocEntry(current, bindings);
+        } finally {
+          delete window.Asc.scope.folioUploadPocSelection;
+        }
+      };
+      await checkTarget();
+      const category = await chooseAttachmentCategory({
+        options,
+        loadCategories,
+        currentChoice: entry?.[1]?.attachment,
+        target: `${entry?.[1]?.label || "ช่องแนบใหม่"} · ${current.sheet}!${current.address}`,
+      });
+      if (category === null) {
+        return;
+      }
+      await readBindings();
+      current = {
+        ...(await selection()),
+        sheet: current.sheet,
+        address: current.address,
+      };
+      const latestEntry = existingUploadPocEntry(current, bindings);
+      if (!sameValue(entry, latestEntry)) {
+        throw new Error(
+          "ตำแหน่งหรือการตั้งค่าช่องเปลี่ยนระหว่างเลือกหมวด กรุณาเลือกเซลล์ใหม่แล้วลองอีกครั้ง"
+        );
+      }
+      entry = latestEntry;
+      await checkTarget();
       if (!entry) {
         const value = automaticUploadPocField(bindings, id());
+        value.attachment = category;
         const savedDraftKey = draftKey();
         await mutateBinding(
           { action: "upsert", kind: "field", value },
@@ -1734,7 +1949,7 @@ export function initializeSpreadsheet(options, setStatus) {
           }
         );
       }
-      // Bindings must be committed before a marker or drawing can be created.
+      // Native projection uses the working binding, not the saved Draft.
       window.Asc.scope.folioSpreadsheetAnchors =
         spreadsheetBindingAnchors(bindings);
       const targetSelection = await selection();
@@ -1759,7 +1974,7 @@ export function initializeSpreadsheet(options, setStatus) {
         const result = typeof raw === "string" ? JSON.parse(raw) : raw;
         if (!result?.ok) {
           throw new Error(
-            result?.error || "ยังยืนยันการวางปุ่ม POC ไม่ได้ กรุณาลองวางซ้ำ"
+            result?.error || "ยังยืนยันการวางปุ่มแนบไฟล์ไม่ได้ กรุณาลองวางซ้ำ"
           );
         }
         window.Asc.scope.folioUploadPocSelection = {
@@ -1780,25 +1995,18 @@ export function initializeSpreadsheet(options, setStatus) {
         }
         selected = await selection();
         loadEntry(existingUploadPocEntry(selected, bindings));
-        // mutateBinding has confirmed its commit and released the native edit lock.
-        uploadPocSaveInFlight = true;
-        let saved;
-        try {
-          saved = await operations.runAction(ACTIONS.SAVE_TEMPLATE, "", null, {
-            preserveEditorSession: true,
-            preserveEditorSessionPurpose: "placement",
-            uploadPocBindingId: target.bindingId,
-          });
-        } finally {
-          uploadPocSaveInFlight = false;
+        if (entry && !sameValue(entry[1].attachment, category)) {
+          if (!entry[1].attachment) {
+            // Converting an existing binding requires a button proved in its saved base.
+            await saveAttachmentTemplate();
+          }
+          attachmentConfiguration = category;
+          panelChanged();
+          await saveBinding();
         }
-        if (!saved?.ok) {
-          throw new Error(
-            `วางปุ่มแล้ว แต่บันทึกต้นแบบยังไม่สำเร็จ: ${saved?.error || "ยังยืนยันผลไม่ได้"} กรุณากด “วางปุ่มและบันทึกต้นแบบ (POC)” ที่เซลล์เดิมเพื่อลองบันทึกซ้ำ ปุ่มและ Tag เดิมจะถูกใช้ต่อ ยังเลือกไฟล์ไม่ได้จนกว่าจะบันทึกสำเร็จ`
-          );
-        }
+        await saveAttachmentTemplate();
         setStatus(
-          "วางปุ่มและบันทึกต้นแบบ POC สำเร็จในตัวแก้ไขเดิมแล้ว ดับเบิลคลิกปุ่มเพื่อเลือกไฟล์ได้ ไฟล์ยังไม่อัปโหลดหรือบันทึกถาวร",
+          "เพิ่มช่องแนบไฟล์และบันทึกต้นแบบแล้ว เผยแพร่ฟอร์มเพื่อให้ผู้ใช้แนบไฟล์ได้ ไฟล์จะอัปโหลดเมื่อผู้ใช้บันทึกร่างหรือส่งคำตอบ",
           "success"
         );
       } finally {
@@ -1861,6 +2069,20 @@ export function initializeSpreadsheet(options, setStatus) {
         computed: false,
         options: type.value === "dropdown" ? optionsField.getOptions() : [],
       };
+      if (attachmentConfiguration && kind.value !== "table") {
+        if (
+          value.type !== "text" ||
+          editing?.prefillPointer ||
+          (editing?.prefillPolicy && editing.prefillPolicy !== "editable")
+        ) {
+          throw new Error(
+            "ช่องแนบต้องเป็นข้อความที่ไม่ใช้ข้อมูลเริ่มต้นหรือสูตร กรุณาแก้กฎเดิมก่อน"
+          );
+        }
+        value.attachment = { ...attachmentConfiguration };
+      } else {
+        delete value.attachment;
+      }
       if (type.value === "pdms-project-name") {
         value.source = "pdms-project-name";
       } else {
@@ -1886,6 +2108,7 @@ export function initializeSpreadsheet(options, setStatus) {
         );
       }
       let body = current;
+      let promotions = [];
       if (kind.value === "table") {
         value = {
           ...editing,
@@ -1902,6 +2125,15 @@ export function initializeSpreadsheet(options, setStatus) {
           }
           const setup = tableSelection(current.address, headers.checked);
           body = { ...current, address: setup.address };
+          const selectionWithAnchors = await selection();
+          const byOffset = attachmentsForNewTable(
+            { ...body, anchors: selectionWithAnchors.anchors },
+            bindings
+          );
+          promotions = [...byOffset.values()];
+          if (promotions.length) {
+            validatePanelDrafts(draftKey());
+          }
           let titles = [];
           if (headers.checked) {
             window.Asc.scope.folioSpreadsheetSelection = {
@@ -1918,16 +2150,31 @@ export function initializeSpreadsheet(options, setStatus) {
               titles = [titles];
             }
           }
-          value.columns = Array.from({ length: setup.width }, (_, offset) => ({
-            id: id(),
-            key: `column_${offset + 1}`,
-            label: String(titles?.[offset] || `คอลัมน์ ${offset + 1}`),
-            offset,
-            type: "text",
-            required: false,
-            computed: false,
-            options: [],
-          }));
+          const promotedKeys = new Set(
+            promotions.map(({ column }) => column.key)
+          );
+          let nextKey = setup.width + 1;
+          value.columns = Array.from({ length: setup.width }, (_, offset) => {
+            const promoted = byOffset.get(offset);
+            if (promoted) {
+              return promoted.column;
+            }
+            let columnKey = `column_${offset + 1}`;
+            while (promotedKeys.has(columnKey)) {
+              columnKey = `column_${nextKey}`;
+              nextKey += 1;
+            }
+            return {
+              id: id(),
+              key: columnKey,
+              label: String(titles?.[offset] || `คอลัมน์ ${offset + 1}`),
+              offset,
+              type: "text",
+              required: false,
+              computed: false,
+              options: [],
+            };
+          });
         }
       } else if (kind.value !== "column") {
         value.anchor = editing?.anchor || bindingId;
@@ -1941,6 +2188,13 @@ export function initializeSpreadsheet(options, setStatus) {
             : editing?.prefillPolicy || "editable";
       }
       const newTable = kind.value === "table" && !editing;
+      // ONLYOFFICE can retain the old marker reference when it is edited in place.
+      const promotionNames = promotions.flatMap(
+        ({ anchor: oldAnchor, column }) => [
+          oldAnchor,
+          `_folio_upload_poc_${column.id}`,
+        ]
+      );
       const target = {
         anchor:
           kind.value === "column"
@@ -1948,10 +2202,13 @@ export function initializeSpreadsheet(options, setStatus) {
             : value.anchor,
         ...(kind.value === "table"
           ? {
-              extraAnchorNames: spreadsheetBindingAnchors({
-                fields: [],
-                table: value,
-              }).filter((name) => name !== value.anchor),
+              extraAnchorNames: [
+                ...spreadsheetBindingAnchors({
+                  fields: [],
+                  table: value,
+                }).filter((name) => name !== value.anchor),
+                ...promotionNames,
+              ],
             }
           : {}),
       };
@@ -1972,6 +2229,41 @@ export function initializeSpreadsheet(options, setStatus) {
         { kind: kind.value, action: "upsert", value },
         target,
         async () => {
+          if (promotions.length) {
+            const targets = await captureUploadPocTargets(
+              promotions.map(({ column }) => column.id)
+            );
+            const firstColumn = selectionPosition(body.address).column;
+            if (
+              targets.length !== promotions.length ||
+              promotions.some(
+                ({ row, column }) =>
+                  !targets.some(
+                    (item) =>
+                      item.bindingId === column.id &&
+                      item.sheet === body.sheet &&
+                      item.row === row &&
+                      item.column === firstColumn + column.offset
+                  )
+              )
+            ) {
+              throw new Error(
+                "ยืนยันตำแหน่งปุ่มแนบไฟล์เดิมไม่ได้ กรุณาบันทึกต้นแบบเดิมก่อนลองอีกครั้ง"
+              );
+            }
+            window.Asc.scope.folioSpreadsheetUploadPocCleanup = promotionNames;
+            try {
+              if (
+                (await office.callCommandResult(
+                  spreadsheetUploadPocCleanupCommand
+                )) !== true
+              ) {
+                throw new Error("ลบตำแหน่งช่องแนบเดิมไม่สำเร็จ");
+              }
+            } finally {
+              delete window.Asc.scope.folioSpreadsheetUploadPocCleanup;
+            }
+          }
           if (kind.value !== "column" && !editing) {
             await anchor(value.anchor, body);
           }
@@ -2015,6 +2307,13 @@ export function initializeSpreadsheet(options, setStatus) {
             setStatus("บันทึกฟิลด์และกรอบรูปแล้ว กรุณาบันทึกต้นแบบ", "success");
           }
           if (newTable) {
+            if (promotions.length) {
+              pendingUploadPocPromotion = {
+                tableId: value.id,
+                sheet: body.sheet,
+                ids: new Set(promotions.map(({ column }) => column.id)),
+              };
+            }
             window.Asc.scope.folioSpreadsheetTableBorders = current;
             if (
               (await office.callCommandResult(
@@ -2030,6 +2329,10 @@ export function initializeSpreadsheet(options, setStatus) {
           }
         }
       );
+      if (promotions.length) {
+        await saveAttachmentTemplate(true);
+        setStatus("บันทึกตารางและปุ่มแนบไฟล์ทุกแถวแล้ว", "success");
+      }
     };
     const projectHelp = document.createElement("p");
     projectHelp.id = "spreadsheet-project-save-help";
@@ -2084,7 +2387,7 @@ export function initializeSpreadsheet(options, setStatus) {
         spreadsheetUploadPocHasMarkerCommand
       );
       delete window.Asc.scope.folioSpreadsheetUploadPocMarkerNames;
-      const deletingPoc = Boolean(hasPoc || marked);
+      let deletingPoc = Boolean(hasPoc || marked);
       validatePanelDrafts();
       await checkUploadPocPending(window, options, ACTIONS.SAVE_TEMPLATE);
       await readBindings(false);
@@ -2092,12 +2395,25 @@ export function initializeSpreadsheet(options, setStatus) {
       if (!current) {
         throw new Error("ไม่พบช่องเดิมในการตั้งค่าล่าสุด กรุณาเปิดต้นแบบใหม่");
       }
+      const namesOnly =
+        editingKind !== "column" &&
+        issues.some(
+          ({ bindingId, code }) =>
+            bindingId === current.id &&
+            [
+              "missing_or_broken_anchor",
+              "untracked_columns",
+              "ambiguous_columns",
+              "placement_mismatch",
+            ].includes(code)
+        );
       const target = {
         anchor:
           editingKind === "column"
             ? spreadsheetColumnAnchor(current.id)
             : current.anchor,
         removeAnchor: true,
+        namesOnly,
         clearDateFormat: current.type === "date",
         ...(editingKind === "table"
           ? {
@@ -2118,13 +2434,25 @@ export function initializeSpreadsheet(options, setStatus) {
         deletedKind === "table"
           ? current.columns.map((column) => column.id)
           : [current.id];
+      const removedIds = new Set([current.id, ...deletedIds]);
+      const repairRemoval =
+        repairRemovalPending ||
+        issues.some(
+          ({ bindingId, code }) =>
+            removedIds.has(bindingId) && code !== "unbound"
+        );
       let nativeDeleteTargets = [];
       await mutateBinding(
         { kind: editingKind, action: "delete", id: current.id },
         target,
         async () => {
-          if (deletingPoc) {
-            nativeDeleteTargets = await captureUploadPocTargets(deletedIds);
+          if (deletingPoc || repairRemoval) {
+            nativeDeleteTargets = await captureUploadPocTargets(
+              deletedIds,
+              bindings,
+              repairRemoval
+            );
+            deletingPoc ||= nativeDeleteTargets.length > 0;
           }
           window.Asc.scope.folioSpreadsheetValidation = target;
           if (
@@ -2137,8 +2465,17 @@ export function initializeSpreadsheet(options, setStatus) {
           }
         },
         async () => {
-          uploadPocDeleteNeedsSave = true;
-          pendingTemplateDeletePurpose = deletingPoc ? "delete" : "manual";
+          uploadPocDeleteNeedsSave ||= deletingPoc || !repairRemoval;
+          repairRemovalPending ||= repairRemoval && deletingPoc;
+          pendingTemplateDeletePurpose =
+            deletingPoc || deletedUploadPocBindingIds.size
+              ? "delete"
+              : "manual";
+          for (let index = issues.length - 1; index >= 0; index -= 1) {
+            if (removedIds.has(issues[index].bindingId)) {
+              issues.splice(index, 1);
+            }
+          }
           if (deletingPoc) {
             for (const bindingId of deletedIds) {
               deletedUploadPocBindingIds.add(bindingId);
@@ -2181,6 +2518,14 @@ export function initializeSpreadsheet(options, setStatus) {
           }
         }
       );
+      if (repairRemoval) {
+        renderList();
+        setStatus(
+          "นำการตั้งค่าช่องออกแล้ว กรุณากด “บันทึกแบบร่าง” เพื่อยืนยันกับไฟล์ Excel",
+          "success"
+        );
+        return;
+      }
       {
         uploadPocSaveInFlight = true;
         let saved;
@@ -2202,7 +2547,7 @@ export function initializeSpreadsheet(options, setStatus) {
         }
         setStatus(
           deletingPoc
-            ? "ลบช่องและปุ่ม POC พร้อมบันทึกต้นแบบแล้ว"
+            ? "ลบช่องและปุ่มแนบไฟล์พร้อมบันทึกต้นแบบแล้ว"
             : "ลบช่องและบันทึกต้นแบบในตัวแก้ไขเดิมแล้ว",
           "success"
         );
@@ -2219,33 +2564,37 @@ export function initializeSpreadsheet(options, setStatus) {
     });
     restorePicture.className = "secondary-action";
     const repairAnchor = button("ผูกตำแหน่งใหม่กับช่วงที่เลือก", async () => {
-      if (!editing?.anchor) {
+      if (!canRebind(editing)) {
         return;
       }
+      validatePanelDrafts();
       const current = await selection();
-      if (
-        !current.anchors?.some(
-          ([name, reference]) => name === editing.anchor && !reference
-        )
-      ) {
-        throw new Error("ช่องนี้มีตำแหน่งอ้างอิงแล้ว กรุณาเลือกช่องที่ตำแหน่งหาย");
-      }
+      const value = { ...editing };
+      delete value.unbound;
       if (editingKind === "table") {
         const range = tableSelection(current.address);
-        if (
-          editing.columns.length > 0 &&
-          range.width !==
-            Math.max(...editing.columns.map((column) => column.offset)) + 1
-        ) {
-          throw new Error(
-            "เลือกช่วงข้อมูลให้มีจำนวนคอลัมน์ตรงกับตารางเดิม โดยไม่รวมหัวตาราง"
-          );
-        }
+        const offsets = new Set();
+        value.columns = editing.columns.map((column) => {
+          const order = Number(confirmedColumns.get(column.id)?.value);
+          if (
+            !Number.isSafeInteger(order) ||
+            order < 1 ||
+            order > range.width ||
+            offsets.has(order)
+          ) {
+            throw new Error(
+              "ระบุลำดับคอลัมน์ให้ครบและไม่ซ้ำในช่วงข้อมูลที่เลือก โดยไม่รวมหัวตาราง"
+            );
+          }
+          offsets.add(order);
+          return { ...column, offset: order - 1 };
+        });
       }
       const target = {
         anchor: editing.anchor,
         sheet: current.sheet,
         address: current.address,
+        useSelection: true,
         ...(editingKind === "table"
           ? {
               extraAnchorNames: spreadsheetBindingAnchors({
@@ -2255,45 +2604,64 @@ export function initializeSpreadsheet(options, setStatus) {
             }
           : {}),
       };
-      window.Asc.scope.folioSpreadsheetValidation = target;
-      const snapshot = await office.callCommandResult(
-        spreadsheetCaptureValidationCommand
-      );
-      if (!snapshot) {
-        throw new Error("สำรองตำแหน่งช่องเดิมไม่ได้ กรุณาลองอีกครั้ง");
-      }
-      try {
-        await anchor(editing.anchor, current);
-        if (editingKind === "table") {
-          await synchronizeColumns(true, editing, true);
-          initializationError = null;
-        }
-      } catch (error) {
-        window.Asc.scope.folioSpreadsheetValidationSnapshot = snapshot;
-        try {
-          if (
-            (await office.callCommandResult(
-              spreadsheetRestoreValidationCommand,
-              true
-            )) !== true
-          ) {
-            throw new Error("คืนตำแหน่งเดิมไม่ได้", { cause: error });
+      await mutateBinding(
+        { action: "upsert", kind: editingKind, value, repair: true },
+        target,
+        async () => {
+          await anchor(value.anchor, current, true);
+          if (editingKind === "table") {
+            await synchronizeColumns(true, value, true);
           }
-        } catch {
-          authoringMismatch = true;
-          throw new Error("คืนตำแหน่งเดิมไม่ได้ กรุณาเปิดต้นแบบใหม่ก่อนบันทึก", {
-            cause: error,
-          });
-        } finally {
-          delete window.Asc.scope.folioSpreadsheetValidationSnapshot;
+          const placements =
+            editingKind === "table"
+              ? value.columns.map((column) => ({
+                  ...column,
+                  anchor: value.anchor,
+                }))
+              : [value];
+          for (const placement of placements) {
+            if (placement.computed) {
+              continue;
+            }
+            window.Asc.scope.folioSpreadsheetValidation = placement;
+            if (
+              (await office.callCommandResult(
+                spreadsheetValidationCommand,
+                true
+              )) !== true
+            ) {
+              throw new Error("ตั้งกฎชนิดข้อมูลไม่ได้ กรุณาลองอีกครั้ง");
+            }
+          }
+        },
+        () => {
+          const ids = new Set([
+            value.id,
+            ...(value.columns || []).map((column) => column.id),
+          ]);
+          for (let index = issues.length - 1; index >= 0; index -= 1) {
+            const issue = issues[index];
+            if (ids.has(issue.bindingId) && repairCodes.has(issue.code)) {
+              issues.splice(index, 1);
+            }
+          }
+          if (editingKind === "table") {
+            initializationError = null;
+          }
+          loadEntry([editingKind, value]);
+          renderList();
         }
-        throw error;
-      }
+      );
       selected = await selection();
       updateControls();
-      setStatus("ผูกตำแหน่งใหม่แล้ว กรุณาบันทึกการแก้ไขช่องและบันทึกแบบร่าง", "success");
+      setStatus(
+        "ผูกตำแหน่งใหม่แล้ว กรุณากด “บันทึกแบบร่าง” เพื่อยืนยันกับไฟล์ Excel",
+        "success"
+      );
     });
     repairAnchor.className = "secondary-action";
+    repairButtons.add(remove);
+    repairButtons.add(repairAnchor);
     const recoveryControlStates = new Map();
     refreshRecoveryControls = () => {
       recoveryStatus.hidden = !pendingRecovery;
@@ -2323,7 +2691,11 @@ export function initializeSpreadsheet(options, setStatus) {
       }
       if (pendingRecovery || uploadPocDeleteNeedsSave) {
         for (const item of buttons) {
-          item.disabled = !pendingRecovery || item !== retryRecovery || busy;
+          item.disabled =
+            busy ||
+            (pendingRecovery
+              ? item !== retryRecovery
+              : !repairRemovalPending || !repairButtons.has(item));
         }
       } else {
         recoveryControlStates.clear();
@@ -2344,7 +2716,7 @@ export function initializeSpreadsheet(options, setStatus) {
         ["", "เลือกช่องเพื่อแก้ไข"],
         ...entries.map(([entryKind, entry]) => [
           entry.id,
-          `${entryKind === "column" ? "↳ " : ""}${entry.label} (${entry.key})${entry.computed ? " · ช่องสูตรเดิม" : ""}`,
+          `${entryKind === "column" ? "↳ " : ""}${entry.label} (${entry.key})${entry.computed ? " · ช่องสูตรเดิม" : ""}${issues.some(({ bindingId }) => bindingId === entry.id) ? " · ตรวจสอบตำแหน่ง" : ""}`,
         ]),
       ]) {
         const item = document.createElement("option");
@@ -2446,9 +2818,13 @@ export function initializeSpreadsheet(options, setStatus) {
     for (const item of buttons) {
       item.disabled = true;
     }
-    const columnsReady = office
-      .executeMethodResult("SetEditingRestrictions", ["none"])
-      .then(() => synchronizeColumns(true))
+    const columnsReady = (
+      options.xlsxDraftProtocol !== 1 || pendingDraft()
+        ? office.freezeEditor()
+        : office
+            .executeMethodResult("SetEditingRestrictions", ["none"])
+            .then(() => synchronizeColumns(false))
+    )
       .catch((error) => {
         initializationError = error;
         setStatus(error.message, "error");
@@ -2488,8 +2864,34 @@ export function initializeSpreadsheet(options, setStatus) {
     message.hidden = true;
     busy = true;
     let initializationError = null;
-    const responseReady = office
-      .executeMethodResult("SetEditingRestrictions", ["none"])
+    const responseReady = (
+      configuredAttachments
+        ? office.freezeEditor().then(async () => {
+            let pending;
+            try {
+              pending = await checkUploadPocPending(
+                window,
+                options,
+                options.action === ACTIONS.CORRECTION
+                  ? ACTIONS.SAVE_CORRECTION
+                  : ACTIONS.SAVE_DRAFT
+              );
+            } catch (error) {
+              // Remain read-only after uncertain recovery, but keep the normal Save retry usable.
+              setStatus(
+                `ยังตรวจผลรอบเดิมไม่ได้ กรุณากดบันทึกเพื่อตรวจผลเดิม: ${error.message}`,
+                "error"
+              );
+              return;
+            }
+            if (pending?.attachmentCommitUnresolved !== true) {
+              await office.executeMethodResult("SetEditingRestrictions", [
+                "none",
+              ]);
+            }
+          })
+        : office.executeMethodResult("SetEditingRestrictions", ["none"])
+    )
       .catch((error) => {
         initializationError = error;
         setStatus(error.message, "error");
@@ -2503,32 +2905,7 @@ export function initializeSpreadsheet(options, setStatus) {
         throw initializationError;
       }
     };
-    if (options.scopeIdentity && options.action !== ACTIONS.CORRECTION) {
-      const activateUploadPoc = () => {
-        window.Asc.scope.folioUploadPocActivation = {
-          bindings,
-          guid: uploadPocGuid,
-        };
-        return office
-          .callCommandResult(spreadsheetUploadPocActivationCommand, true)
-          .then((raw) => {
-            const result = typeof raw === "string" ? JSON.parse(raw) : raw;
-            if (!result?.ok) {
-              throw new Error(
-                result?.error || "ONLYOFFICE รุ่นนี้ยังเปิดปุ่มเลือกไฟล์ POC ไม่ได้"
-              );
-            }
-            if (result.count > 0) {
-              setStatus(
-                "พร้อมเลือกไฟล์ POC ไฟล์อยู่ในหน้านี้เท่านั้น ยังไม่อัปโหลดหรือบันทึกถาวร",
-                "success"
-              );
-            }
-          })
-          .finally(() => {
-            delete window.Asc.scope.folioUploadPocActivation;
-          });
-      };
+    if (options.scopeIdentity) {
       const activation = createUploadPocActivationLifecycle(
         activateUploadPoc,
         (error) => setStatus(error.message, "error")
@@ -2711,6 +3088,7 @@ export function initializeSpreadsheet(options, setStatus) {
             for (const control of [...buttons, ...pictureInputs]) {
               control.disabled = false;
             }
+            void refreshAfterAction();
           });
       });
     }
@@ -2727,18 +3105,13 @@ export function initializeSpreadsheet(options, setStatus) {
         });
       };
       if (options.action !== ACTIONS.CORRECTION) {
-        button("เพิ่มแถว", async () => {
-          window.Asc.scope = window.Asc.scope || {};
-          window.Asc.scope.folioTableAnchor = bindings.table.anchor;
-          const count = await office.callCommandResult(
-            spreadsheetTableRowCountCommand
-          );
-          if (!Number.isSafeInteger(count) || count < 1) {
-            throw new Error("ไม่พบช่วงตาราง กรุณาบันทึกและเปิดแบบฟอร์มใหม่");
+        button("เพิ่มแถว", async () =>
+          changeRows("insert", await readTableRowCount())
+        );
+        const removeRow = button("ลบแถวที่เลือก", async () => {
+          if ((await readTableRowCount()) <= 1) {
+            throw new Error(minimumRowReason);
           }
-          return changeRows("insert", count);
-        });
-        button("ลบแถวที่เลือก", async () => {
           window.Asc.scope = window.Asc.scope || {};
           window.Asc.scope.folioTableAnchor = bindings.table.anchor;
           const index = await office.callCommandResult(
@@ -2749,6 +3122,40 @@ export function initializeSpreadsheet(options, setStatus) {
           }
           return changeRows("delete", index);
         });
+        const rowReason = document.createElement("p");
+        rowReason.id = "spreadsheet-minimum-row-reason";
+        removeRow.setAttribute("aria-describedby", rowReason.id);
+        panel.append(rowReason);
+        let refreshId = 0;
+        refreshAfterAction = async () => {
+          refreshId += 1;
+          const requestId = refreshId;
+          removeRow.disabled = true;
+          let reason = "";
+          try {
+            if ((await readTableRowCount()) <= 1) {
+              reason = minimumRowReason;
+            }
+          } catch (error) {
+            reason = error.message || "ไม่พบช่วงตาราง กรุณาบันทึกและเปิดแบบฟอร์มใหม่";
+          }
+          if (requestId !== refreshId) {
+            return;
+          }
+          removeRow.disabled = busy || Boolean(reason);
+          removeRow.title = reason;
+          rowReason.textContent = reason;
+        };
+        for (const event of [
+          "onTargetPositionChanged",
+          "onChangeCurrentSheet",
+          "onDocumentContentReady",
+        ]) {
+          window.Asc.plugin.attachEditorEvent?.(event, () => {
+            void refreshAfterAction();
+          });
+        }
+        void refreshAfterAction();
       }
     }
     window.FormBridge = {

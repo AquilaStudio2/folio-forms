@@ -11,6 +11,8 @@ import { jsonRecord } from "../http/input";
 import {
   deleteObjects,
   deleteObjectUnlessCanonical,
+  drainObjectCleanupIntents,
+  objectCleanupIntentGraceMs,
 } from "../operations/object-cleanup";
 import {
   pendingClaimCookie,
@@ -92,10 +94,12 @@ export function registerPublicFormRoutes(
           identity,
           responseId,
           requestedAction,
-          typeof query.pdmsOpeningId === "string"
-            ? query.pdmsOpeningId
-            : undefined,
-          dependencies.pdmsProjects
+          query.pdmsOpeningId,
+          dependencies.pdmsProjects,
+          {
+            nativeSessionDocumentKey: query.nativeSessionDocumentKey,
+            operationId: query.continuedOperationId,
+          }
         );
       }
     )
@@ -298,6 +302,16 @@ export function registerPublicFormRoutes(
       const draftDocumentKey = `response-${responseId}-${crypto.randomUUID()}`;
       const snapshotId = crypto.randomUUID();
       let unusedDraftObjectKey: string | undefined;
+      const isSpreadsheet = form.documentKind === "xlsx";
+      const transactionTimeout = 5000;
+      if (isSpreadsheet) {
+        await prisma.objectCleanupIntent.create({
+          data: {
+            cleanupAfter: new Date(Date.now() + objectCleanupIntentGraceMs),
+            objectKey: draftObjectKey,
+          },
+        });
+      }
       try {
         await putObject(
           draftObjectKey,
@@ -409,14 +423,44 @@ export function registerPublicFormRoutes(
             if (updated.count !== 1) {
               fail(500, "start_failed", "Unable to start response");
             }
+            if (isSpreadsheet) {
+              // Keep the candidate ineligible for sweeping until this transaction can commit.
+              const retired = await tx.objectCleanupIntent.deleteMany({
+                where: {
+                  cleanupAfter: {
+                    gt: new Date(Date.now() + transactionTimeout),
+                  },
+                  objectKey: draftObjectKey,
+                },
+              });
+              if (retired.count !== 1) {
+                fail(
+                  409,
+                  "start_expired",
+                  "The new workbook could not be committed"
+                );
+              }
+            }
             return tx.response.findUnique({ where: { id: responseTargetId } });
           },
-          { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+          {
+            isolationLevel: Prisma.TransactionIsolationLevel.Serializable,
+            timeout: transactionTimeout,
+          }
         );
         if (!response) {
           fail(500, "start_failed", "Unable to start response");
         }
-        await deleteObjects([existing?.draftObjectKey, unusedDraftObjectKey]);
+        if (isSpreadsheet) {
+          if (
+            response.draftObjectKey === draftObjectKey &&
+            existing?.draftObjectKey
+          ) {
+            await deleteObjectUnlessCanonical(existing.draftObjectKey);
+          }
+        } else {
+          await deleteObjects([existing?.draftObjectKey, unusedDraftObjectKey]);
+        }
         return {
           documentKind: form.documentKind,
           editorConfigUrl: `/api/forms/${form.publicId}/editor-config?responseId=${response.id}&action=${response.draftData ? "draft" : "fill"}`,
@@ -425,7 +469,9 @@ export function registerPublicFormRoutes(
           response: responseSummary(response),
         };
       } catch (error) {
-        await deleteObjectUnlessCanonical(draftObjectKey);
+        if (!isSpreadsheet) {
+          await deleteObjectUnlessCanonical(draftObjectKey);
+        }
         if (databaseErrorCode(error) === "P2034") {
           const current = await prisma.response.findUnique({
             where: {
@@ -451,6 +497,20 @@ export function registerPublicFormRoutes(
           }
         }
         throw error;
+      } finally {
+        if (isSpreadsheet) {
+          try {
+            const pending = await prisma.objectCleanupIntent.updateMany({
+              data: { cleanupAfter: new Date() },
+              where: { objectKey: draftObjectKey },
+            });
+            if (pending.count !== 0) {
+              await drainObjectCleanupIntents([draftObjectKey]);
+            }
+          } catch (error) {
+            console.error("Spreadsheet start cleanup will be retried", error);
+          }
+        }
       }
     });
 }

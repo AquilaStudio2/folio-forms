@@ -146,15 +146,17 @@ export function fieldRulePrefillPolicy(policy: FieldRulePolicy): PrefillPolicy {
     : PrefillPolicy.editable;
 }
 
-export async function requireFieldRuleContext(
-  request: Request,
-  publicId: string
-): Promise<{
+export interface FieldRuleContext {
   authorization: ActionEditorAuthorization;
   capabilityScope: Omit<EditorCapabilityScope, "action" | "operationId">;
   form: FormWithDocuments;
   templateDraft: TemplateDraft;
-}> {
+}
+
+export async function requireFieldRuleContext(
+  request: Request,
+  publicId: string
+): Promise<FieldRuleContext> {
   const authorization = await requireActionEditorAuthorization(request);
   requireAdmin(authorization.actor);
   const form = await findFormByPublicId(publicId);

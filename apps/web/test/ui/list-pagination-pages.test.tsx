@@ -4,17 +4,29 @@ import {
   createRouter,
   RouterProvider,
 } from "@tanstack/react-router";
-import { act, render, screen, waitFor, within } from "@testing-library/react";
+import {
+  act,
+  cleanup,
+  render,
+  screen,
+  waitFor,
+  within,
+} from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { SESSION_KEY } from "@/lib/api";
-import type { Role, Submission } from "@/lib/api";
+import type { Role, Submission, ResponseAttachmentCleanup } from "@/lib/api";
 import { routeTree } from "@/routeTree.gen";
 
 let role: Role;
 let rows: Submission[];
+let discardResponse: (() => Response) | null;
+let responsesOverride: Promise<Response> | null;
+let deletionWarnings: ResponseAttachmentCleanup[];
 const fetchMock = vi.fn<typeof fetch>();
+const deleteRequests = () =>
+  fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE");
 const accountLinkRequests = () =>
   fetchMock.mock.calls.filter(
     ([input]) => new URL(String(input)).pathname === "/api/admin/account-links"
@@ -46,6 +58,9 @@ const mount = async (path: string) => {
 beforeEach(() => {
   role = "user";
   rows = Array.from({ length: 11 }, (_, index) => response(index));
+  discardResponse = null;
+  responsesOverride = null;
+  deletionWarnings = [];
   localStorage.setItem(SESSION_KEY, "pagination-test-session");
   fetchMock.mockReset();
   fetchMock.mockImplementation(async (input, init) => {
@@ -56,15 +71,28 @@ beforeEach(() => {
         user: { email: "owner@example.test", id: "owner", role },
       });
     }
+    if (url.pathname === "/api/responses/deletion-status") {
+      return Response.json({ warnings: deletionWarnings });
+    }
     if (url.pathname === "/api/responses/me") {
-      return Response.json({ responses: rows });
+      return responsesOverride ?? Response.json({ responses: rows });
     }
     if (
       url.pathname.startsWith("/api/responses/") &&
       init?.method === "DELETE"
     ) {
+      if (discardResponse) {
+        return discardResponse();
+      }
       rows = rows.filter((row) => row.id !== url.pathname.split("/").at(-1));
-      return Response.json({ discarded: true });
+      return Response.json({
+        attachmentCleanup: {
+          caseReference: null,
+          state: "complete",
+          warning: null,
+        },
+        discarded: true,
+      });
     }
     if (url.pathname === `/api/admin/forms/${formId}/submissions`) {
       return Response.json({ submissions: rows });
@@ -139,6 +167,152 @@ it("paginates My responses without changing global statistics and returns to the
     screen.getByText("คำตอบทั้งหมด").previousElementSibling
   ).toHaveTextContent("10");
   expect(within(nav).getByRole("button", { name: "หน้าถัดไป" })).toBeDisabled();
+});
+
+it("keeps the history link without a discard action or inline warning on a reopened Draft", async () => {
+  rows = [{ ...response(0), submissionId: "submission-1" }];
+  await mount("/dashboard");
+  await screen.findByText("Response 1");
+  expect(screen.getByRole("link", { name: "ดูประวัติการส่งทั้งหมด" })).toBeVisible();
+  expect(
+    screen.queryByText(/ไม่สามารถทิ้งฉบับร่างที่มีประวัติการส่ง/u)
+  ).not.toBeInTheDocument();
+  expect(
+    screen.queryByRole("button", { name: "ทิ้งฉบับร่าง" })
+  ).not.toBeInTheDocument();
+  expect(deleteRequests()).toHaveLength(0);
+});
+
+it("keeps the Draft and explains a concurrent history rejection without reporting success", async () => {
+  rows = [response(0)];
+  discardResponse = () =>
+    Response.json({ error: "draft_has_history" }, { status: 409 });
+  await mount("/dashboard");
+  await screen.findByText("Response 1");
+  await userEvent.click(screen.getByRole("button", { name: "ทิ้งฉบับร่าง" }));
+  await userEvent.click(screen.getByRole("button", { name: "ยืนยันการทิ้ง" }));
+  expect(
+    await screen.findByText(/ไม่สามารถทิ้งฉบับร่างที่มีประวัติการส่ง/u)
+  ).toBeVisible();
+  expect(screen.getByText("Response 1")).toBeVisible();
+  expect(screen.queryByText("ทิ้งฉบับร่างแล้ว")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "ยืนยันการทิ้ง" })).toBeDisabled();
+  expect(deleteRequests()).toHaveLength(1);
+});
+
+it.each([true, false])(
+  "closes stale discard confirmation and requires fresh data (%s)",
+  async (refreshSucceeds) => {
+    rows = [response(0)];
+    await mount("/dashboard");
+    await screen.findByText("Response 1");
+    const refresh = Promise.withResolvers<Response>();
+    responsesOverride = refresh.promise;
+    discardResponse = () =>
+      Response.json({ error: "operation_in_progress" }, { status: 409 });
+    await userEvent.click(
+      screen.getByRole("button", { exact: true, name: "ทิ้งฉบับร่าง" })
+    );
+    await userEvent.click(screen.getByRole("button", { name: "ยืนยันการทิ้ง" }));
+    const warning = await screen.findByRole("alert");
+    expect(warning).toHaveFocus();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
+    const stale = screen.queryByRole("button", { name: "ทิ้งฉบับร่าง" });
+    if (stale) {
+      expect(stale).toBeDisabled();
+    }
+    expect(deleteRequests()).toHaveLength(1);
+
+    refresh.resolve(
+      refreshSucceeds
+        ? Response.json({
+            responses: [{ ...response(0), formTitle: "Refreshed response" }],
+          })
+        : Response.json({ error: "refresh_failed" }, { status: 500 })
+    );
+    if (!refreshSucceeds) {
+      expect(await screen.findByText(/โหลดข้อมูลล่าสุดไม่สำเร็จ/u)).toBeVisible();
+      const blocked = screen.queryByRole("button", { name: "ทิ้งฉบับร่าง" });
+      if (blocked) {
+        expect(blocked).toBeDisabled();
+      }
+      expect(deleteRequests()).toHaveLength(1);
+      return;
+    }
+    expect(await screen.findByText("Refreshed response")).toBeVisible();
+    expect(screen.getByRole("alert")).toHaveTextContent(/ตรวจสอบข้อมูลล่าสุด/u);
+    expect(deleteRequests()).toHaveLength(1);
+    discardResponse = null;
+    await userEvent.click(screen.getByRole("button", { name: "ทิ้งฉบับร่าง" }));
+    const dialog = screen.getByRole("dialog");
+    expect(dialog).toHaveTextContent("Refreshed response");
+    expect(deleteRequests()).toHaveLength(1);
+    await userEvent.click(
+      within(dialog).getByRole("button", { name: "ยืนยันการทิ้ง" })
+    );
+    expect(await screen.findByText("ทิ้งฉบับร่างแล้ว")).toBeVisible();
+    expect(deleteRequests()).toHaveLength(2);
+  }
+);
+
+it.each([undefined, "ผลการอัปโหลดไฟล์ยังไม่ชัดเจน กรุณาติดต่อผู้ดูแลระบบก่อนดำเนินการต่อ"])(
+  "keeps a held Draft and actionable guidance after refused deletion (%s)",
+  async (message) => {
+    rows = [response(0)];
+    discardResponse = () =>
+      Response.json(
+        { error: "attachment_outcome_unresolved", message },
+        { status: 409 }
+      );
+    await mount("/dashboard");
+    await screen.findByText("Response 1");
+    const trigger = screen.getByRole("button", {
+      exact: true,
+      name: "ทิ้งฉบับร่าง",
+    });
+    await userEvent.click(trigger);
+    await userEvent.click(screen.getByRole("button", { name: "ยืนยันการทิ้ง" }));
+    expect(await screen.findByText(/ติดต่อผู้ดูแลระบบ/u)).toBeVisible();
+    expect(screen.getByText("Response 1")).toBeVisible();
+    expect(
+      screen.getByText("คำตอบทั้งหมด").previousElementSibling
+    ).toHaveTextContent("1");
+    expect(
+      fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE")
+    ).toHaveLength(1);
+    await userEvent.click(screen.getByRole("button", { name: "ยกเลิก" }));
+    await waitFor(() => expect(trigger).toHaveFocus());
+  }
+);
+
+it("keeps deleted-data and pending-file outcomes distinct across Dashboard reload", async () => {
+  rows = [response(0)];
+  const pending: ResponseAttachmentCleanup = {
+    caseReference: "66666666-6666-4666-8666-666666666666",
+    state: "pending",
+    warning:
+      "ลบข้อมูลคำตอบแล้ว แต่ URL อาจยังเปิดได้ รหัสติดตาม 66666666-6666-4666-8666-666666666666",
+  };
+  discardResponse = () => {
+    rows = [];
+    deletionWarnings = [pending];
+    return Response.json({ attachmentCleanup: pending, discarded: true });
+  };
+  await mount("/dashboard");
+  await screen.findByText("Response 1");
+  await userEvent.click(
+    screen.getByRole("button", { exact: true, name: "ทิ้งฉบับร่าง" })
+  );
+  await userEvent.click(screen.getByRole("button", { name: "ยืนยันการทิ้ง" }));
+  expect(await screen.findByText(pending.warning ?? "")).toBeVisible();
+  expect(screen.queryByText("Response 1")).not.toBeInTheDocument();
+  cleanup();
+  await mount("/dashboard");
+  expect(await screen.findByText(pending.warning ?? "")).toBeVisible();
+  expect(screen.getByText("ยังไม่มีคำตอบ")).toBeVisible();
+  expect(
+    fetchMock.mock.calls.filter(([, init]) => init?.method === "DELETE")
+  ).toHaveLength(1);
 });
 
 it("keeps an empty My responses footer visible with disabled navigation", async () => {

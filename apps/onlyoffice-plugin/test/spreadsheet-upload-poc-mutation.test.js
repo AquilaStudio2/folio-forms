@@ -69,39 +69,31 @@ const setup = async ({
     }),
   };
   let revision = 0;
+  let draft;
   let remainingSaveFailures = saveFailures;
   let remainingProjectionFailures = projectionFailures;
   const response = (url, init) => {
-    if (String(url).includes("/operations/")) {
-      return {
-        operation: {
-          status: "completed",
-          result: { documentKey: "document-key", editorSessionPreserved: true },
+    if (String(url).endsWith("/save")) {
+      draft = JSON.parse(init.body).xlsxDraft;
+      return { operationCapability: "cap", operationId: "mutation-save" };
+    }
+    expect(String(url)).toContain("/operations/");
+    if (remainingSaveFailures > 0) {
+      remainingSaveFailures -= 1;
+      return { operation: { status: "failed" } };
+    }
+    revision += 1;
+    return {
+      operation: {
+        status: "completed",
+        result: {
+          bindingRevision: revision,
+          bindings: draft.bindings,
+          documentKey: "document-key",
+          editorSessionPreserved: true,
         },
-      };
-    }
-    if (init.method === "POST") {
-      if (remainingSaveFailures > 0) {
-        remainingSaveFailures -= 1;
-        return { httpStatus: 503, body: { error: "save unavailable" } };
-      }
-      return { operationCapability: "cap", operationId: "save" };
-    }
-    if (init.method === "PATCH") {
-      if (reject) {
-        return { httpStatus: 409, body: { error: "rejected" } };
-      }
-      const { change } = JSON.parse(init.body);
-      if (change.kind === "table") {
-        state.table = change.value;
-      } else if (table) {
-        state.table.columns = [change.value];
-      } else {
-        state.fields = [change.value];
-      }
-      revision += 1;
-    }
-    return { bindings: state, documentKey: "document-key", revision };
+      },
+    };
   };
   const selected = {
     address: "B3",
@@ -123,6 +115,7 @@ const setup = async ({
     capabilityResponses: Array.from({ length: 40 }, () => "cap"),
     documentKind: "xlsx",
     responses: Array.from({ length: 40 }, () => response),
+    scopeIdentity: "mutation-template",
     serializeCommands: true,
     spreadsheetBindings: state,
     spreadsheetSelection: selected,
@@ -153,20 +146,51 @@ const setup = async ({
     );
     remainingProjectionFailures -= 1;
   };
+  const post = harness.parentWindow.postMessage;
+  harness.parentWindow.postMessage = (message, origin) => {
+    post(message, origin);
+    if (message.type === "pending-file-check") {
+      harness.dispatch({
+        data: {
+          ...message,
+          allowed: true,
+          source: "folio-upload-poc-host",
+          type: "pending-file-result",
+        },
+        origin: harness.parentOrigin,
+        source: harness.parentWindow,
+      });
+    }
+  };
+  if (reject) {
+    const { plugin } = harness.window.Asc;
+    const { callCommand } = plugin;
+    plugin.callCommand = (command, ...args) => {
+      if (command.name === "spreadsheetUploadPocCleanupCommand") {
+        const done = args.at(-1);
+        args[args.length - 1] = () => done(false);
+      }
+      return callCommand(command, ...args);
+    };
+  }
   acknowledgeBridge(harness);
   await flushPlugin();
   return { harness, object, projections: () => projections, selected, state };
 };
 
 test.each(["number", "date"])(
-  "changing managed text to %s stages cleanup only after commit and manually saves zero controls",
+  "changing managed text to %s applies Rules locally and removes its control at manual Save",
   async (type) => {
     const { harness, object } = await setup();
     control(harness, "ชนิดข้อมูล").value = type;
     await click(harness);
+    expect(harness.requests).toHaveLength(0);
     expect(
-      harness.requests.filter((request) => request.method === "PATCH")
-    ).toHaveLength(1);
+      await harness.window.FormBridge.getSpreadsheetBindings(false)
+    ).toMatchObject({
+      bindings: { fields: [{ id: "folio_a", type }] },
+      revision: 0,
+    });
     expect(object.Drawing.removed).not.toBe(true);
     expect(harness.spreadsheetNames.has("_folio_upload_poc_folio_a")).toBe(
       false
@@ -176,17 +200,30 @@ test.each(["number", "date"])(
     expect(object.Drawing.removed).toBe(true);
     const save = harness.requests.find((request) => request.method === "POST");
     expect(JSON.parse(save.body).preserveEditorSessionPurpose).toBe("manual");
-    expect(JSON.parse(save.body).spreadsheetUploadPocSnapshot).toEqual([]);
+    expect(JSON.parse(save.body)).toMatchObject({
+      spreadsheetUploadPocSnapshot: [],
+      xlsxDraft: {
+        bindings: { fields: [{ id: "folio_a", type }] },
+        revision: 0,
+      },
+    });
   }
 );
 
-test("metadata rejection restores marker and never removes or reprojects control", async () => {
+test("native cleanup rejection restores marker and never removes or reprojects control", async () => {
   const { harness, object, projections } = await setup({ reject: true });
   control(harness, "ชนิดข้อมูล").value = "number";
   await click(harness);
   expect(object.Drawing.removed).not.toBe(true);
   expect(harness.spreadsheetNames.has("_folio_upload_poc_folio_a")).toBe(true);
   expect(projections()).toBe(0);
+  expect(harness.requests).toHaveLength(0);
+  expect(
+    await harness.window.FormBridge.getSpreadsheetBindings(false)
+  ).toMatchObject({
+    bindings: { fields: [{ id: "folio_a", type: "text" }] },
+    revision: 0,
+  });
 });
 
 test.each([false, true])(
@@ -213,7 +250,7 @@ test.each([false, true])(
   }
 );
 
-test("failed storage save retries cleanup without a second metadata write", async () => {
+test("definitive save failure retries the same working Rules and cleanup", async () => {
   const { harness, object } = await setup({ saveFailures: 1 });
   control(harness, "ชนิดข้อมูล").value = "number";
   await click(harness);
@@ -224,9 +261,19 @@ test("failed storage save retries cleanup without a second metadata write", asyn
   expect((await harness.window.FormBridge.runAction("save-template")).ok).toBe(
     true
   );
-  expect(
-    harness.requests.filter((request) => request.method === "PATCH")
-  ).toHaveLength(1);
+  expect(harness.requests.map(({ method }) => method)).toEqual([
+    "POST",
+    "GET",
+    "POST",
+    "GET",
+  ]);
+  const [first, retry] = harness.requests
+    .filter(({ method }) => method === "POST")
+    .map(({ body }) => JSON.parse(body));
+  expect(retry.xlsxDraft.checkpoint).not.toBe(first.xlsxDraft.checkpoint);
+  expect(retry.xlsxDraft.bindings).toEqual(first.xlsxDraft.bindings);
+  expect(retry.xlsxDraft.revision).toBe(0);
+  expect(retry.spreadsheetUploadPocSnapshot).toEqual([]);
 });
 
 test("table key change reprojects retained column tags", async () => {

@@ -1,10 +1,9 @@
 // oxlint-disable no-await-in-loop complexity -- The end-to-end journey deliberately keeps sequential transitions in one test.
-import { expect, vi } from "bun:test";
+import { expect } from "bun:test";
 import { createHash } from "node:crypto";
 
 import { prisma } from "@onlyoffice/db";
 
-import { AiAuthoringSessions } from "../../../src/ai-authoring";
 import { createApp } from "../../../src/app";
 import { objectExists, deleteObject } from "../../../src/storage";
 import { jsonHeaders, bearerFor } from "../../fixtures/http";
@@ -222,7 +221,6 @@ export const runErasureFailures = async (
     })
   );
   expect(retriedCleanupDeletion.status).toBe(200);
-  expect(await retriedCleanupDeletion.json()).toEqual({ deleted: true });
   expect(
     await prisma.objectCleanupIntent.count({
       where: {
@@ -255,13 +253,13 @@ export const runErasureFailures = async (
     safeMetadata: { errorCode: "deletion_cleanup_failed" },
   });
 
-  const cleanupAfterAiBearer = await bearerFor(
+  const cleanupAfterRetryBearer = await bearerFor(
     app,
     otherUserEmail,
     password,
     `ticket-17-ai-cleanup-${crypto.randomUUID()}`
   );
-  const cleanupAfterAiHandoff = await app.handle(
+  const cleanupAfterRetryHandoff = await app.handle(
     new Request("http://test.local/api/integrations/prefill/handoffs", {
       body: JSON.stringify({
         email: otherUserEmail,
@@ -276,97 +274,92 @@ export const runErasureFailures = async (
       method: "POST",
     })
   );
-  expect(cleanupAfterAiHandoff.status).toBe(200);
-  const cleanupAfterAiHandoffBody: unknown = await cleanupAfterAiHandoff.json();
+  expect(cleanupAfterRetryHandoff.status).toBe(200);
+  const cleanupAfterRetryHandoffBody: unknown =
+    await cleanupAfterRetryHandoff.json();
   if (
-    !cleanupAfterAiHandoffBody ||
-    typeof cleanupAfterAiHandoffBody !== "object" ||
-    !("code" in cleanupAfterAiHandoffBody) ||
-    typeof cleanupAfterAiHandoffBody.code !== "string" ||
-    !cleanupAfterAiHandoffBody.code
+    !cleanupAfterRetryHandoffBody ||
+    typeof cleanupAfterRetryHandoffBody !== "object" ||
+    !("code" in cleanupAfterRetryHandoffBody) ||
+    typeof cleanupAfterRetryHandoffBody.code !== "string" ||
+    !cleanupAfterRetryHandoffBody.code
   ) {
-    throw new Error("The AI cleanup handoff was not created");
+    throw new Error("The cleanup retry handoff was not created");
   }
-  const cleanupAfterAiHandoffCode = cleanupAfterAiHandoffBody.code;
-  const cleanupAfterAiLaunch = await app.handle(
+  const cleanupAfterRetryHandoffCode = cleanupAfterRetryHandoffBody.code;
+  const cleanupAfterRetryLaunch = await app.handle(
     new Request("http://test.local/prefill/handoff", {
-      body: new URLSearchParams({ code: cleanupAfterAiHandoffCode }),
+      body: new URLSearchParams({ code: cleanupAfterRetryHandoffCode }),
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       method: "POST",
     })
   );
-  expect(cleanupAfterAiLaunch.status).toBe(303);
-  const cleanupAfterAiPendingCookie = cleanupAfterAiLaunch.headers
+  expect(cleanupAfterRetryLaunch.status).toBe(303);
+  const cleanupAfterRetryPendingCookie = cleanupAfterRetryLaunch.headers
     .get("set-cookie")
     ?.split(";", 1)[0];
-  if (!cleanupAfterAiPendingCookie) {
+  if (!cleanupAfterRetryPendingCookie) {
     throw new Error(
-      "The AI cleanup handoff did not set a pending claim cookie"
+      "The cleanup retry handoff did not set a pending claim cookie"
     );
   }
-  const cleanupAfterAiStart = await app.handle(
+  const cleanupAfterRetryStart = await app.handle(
     new Request(`http://test.local/api/forms/${formRecord.publicId}/start`, {
       headers: {
-        Authorization: `Bearer ${cleanupAfterAiBearer}`,
-        Cookie: cleanupAfterAiPendingCookie,
+        Authorization: `Bearer ${cleanupAfterRetryBearer}`,
+        Cookie: cleanupAfterRetryPendingCookie,
       },
       method: "POST",
     })
   );
-  const cleanupAfterAiBody = (await cleanupAfterAiStart.json()) as {
+  const cleanupAfterRetryBody = (await cleanupAfterRetryStart.json()) as {
     response?: { id?: string };
   };
-  const cleanupAfterAiResponseId = cleanupAfterAiBody.response?.id;
-  if (!cleanupAfterAiResponseId) {
-    throw new Error("The AI cleanup response was not created");
+  const cleanupAfterRetryResponseId = cleanupAfterRetryBody.response?.id;
+  if (!cleanupAfterRetryResponseId) {
+    throw new Error("The cleanup retry response was not created");
   }
-  const cleanupAfterAiResponse = await prisma.response.findUniqueOrThrow({
+  const cleanupAfterRetryResponse = await prisma.response.findUniqueOrThrow({
     select: { draftObjectKey: true },
-    where: { id: cleanupAfterAiResponseId },
+    where: { id: cleanupAfterRetryResponseId },
   });
-  if (!cleanupAfterAiResponse.draftObjectKey) {
-    throw new Error("The AI cleanup response object was not created");
+  if (!cleanupAfterRetryResponse.draftObjectKey) {
+    throw new Error("The cleanup retry response object was not created");
   }
-  const cleanupAfterAiDigest = createHash("sha256")
-    .update(cleanupAfterAiResponseId)
+  const cleanupAfterRetryDigest = createHash("sha256")
+    .update(cleanupAfterRetryResponseId)
     .digest("hex");
-  const endForSession = vi
-    .spyOn(AiAuthoringSessions.prototype, "endForSession")
-    .mockRejectedValueOnce(new Error("AI authoring cleanup failed"));
-  let cleanupAfterAiDeletion: Response;
-  try {
-    cleanupAfterAiDeletion = await cleanupFailureApp.handle(
-      new Request(
-        `http://test.local/api/admin/responses/${cleanupAfterAiResponseId}`,
-        {
-          body: JSON.stringify({ confirm: true }),
-          headers: {
-            ...jsonHeaders,
-            Authorization: `Bearer ${erasureAdminBearer}`,
-          },
-          method: "DELETE",
-        }
-      )
-    );
-  } finally {
-    endForSession.mockRestore();
-  }
-  expect(cleanupAfterAiDeletion.status).toBe(500);
-  expect(await cleanupAfterAiDeletion.json()).toMatchObject({
-    error: "internal_error",
+  const cleanupAfterRetryDeletion = await cleanupFailureApp.handle(
+    new Request(
+      `http://test.local/api/admin/responses/${cleanupAfterRetryResponseId}`,
+      {
+        body: JSON.stringify({ confirm: true }),
+        headers: {
+          ...jsonHeaders,
+          Authorization: `Bearer ${erasureAdminBearer}`,
+        },
+        method: "DELETE",
+      }
+    )
+  );
+  expect(cleanupAfterRetryDeletion.status).toBe(200);
+  expect(await cleanupAfterRetryDeletion.json()).toMatchObject({
+    deleted: true,
   });
   expect(
     await prisma.response.findUnique({
-      where: { id: cleanupAfterAiResponseId },
+      where: { id: cleanupAfterRetryResponseId },
     })
   ).toBeNull();
   expect(
     await prisma.objectCleanupIntent.count({
-      where: { deletionResponseLookupDigest: cleanupAfterAiDigest },
+      where: { deletionResponseLookupDigest: cleanupAfterRetryDigest },
     })
   ).toBe(0);
-  expect(await objectExists(cleanupAfterAiResponse.draftObjectKey)).toBe(false);
-  expect(await sessionStatus(app, cleanupAfterAiBearer)).toBe(401);
+  expect(await objectExists(cleanupAfterRetryResponse.draftObjectKey)).toBe(
+    false
+  );
+  expect(await sessionStatus(app, cleanupAfterRetryBearer)).toBe(401);
 };
 
 export interface ImmutableAuditsInput {

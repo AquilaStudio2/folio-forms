@@ -23,6 +23,15 @@ import {
 } from "../auth/identity";
 import { callbackFieldMetadata } from "../documents/office-values";
 import {
+  resolveSpreadsheetContract,
+  readSpreadsheetWorkbook,
+} from "../documents/spreadsheets/workbook";
+import {
+  attachmentFollowUps,
+  fenceAttachmentFollowUp,
+  settleAttachmentFollowUp,
+} from "../ecm/follow-up";
+import {
   requireActionEditorAuthorization,
   requireEditorScope,
   operationEditorCapability,
@@ -35,6 +44,8 @@ import {
 import { spreadsheetBindingsForTemplate } from "../forms/spreadsheet-fields";
 import { fail } from "../http/errors";
 import {
+  legacyJsonBodyMaximumBytes,
+  readJsonRecord,
   validateId,
   queryString,
   publicIdPattern,
@@ -50,8 +61,14 @@ import { activeOperationForResponse } from "../operations/lifecycle";
 import type { OperationMetadata } from "../operations/model";
 import { operationTypeForAction } from "../operations/model";
 import { pdmsOperationContext } from "../pdms/catalog";
+import { hasSpreadsheetAttachments } from "../responses/attachment-data";
+import {
+  replayAttachmentOperation,
+  startAttachmentOperation,
+} from "../responses/attachment-operation";
 import { normalizeResponseData } from "../responses/data";
 import { correctionEditorConfig } from "../responses/editor";
+import { nativeResponseRequest } from "../responses/native-request";
 import {
   adminResultDate,
   adminResultSummary,
@@ -60,14 +77,14 @@ import {
   selectedSubmissionRevision,
 } from "../responses/query";
 import { resultAnswerValues } from "../responses/result-filters";
-import { objectExists, objectKey } from "../storage";
+import { objectExists, objectKey, readObject } from "../storage";
 import type { RouteDependencies } from "./dependencies";
 
 export function registerResultRoutes(
   app: Elysia,
   dependencies: Pick<
     RouteDependencies,
-    "onlyOffice" | "allowedCallbackOrigins" | "pdmsProjects"
+    "onlyOffice" | "allowedCallbackOrigins" | "pdmsProjects" | "ecm"
   >
 ): void {
   const { onlyOffice, allowedCallbackOrigins } = dependencies;
@@ -77,13 +94,11 @@ export function registerResultRoutes(
       request,
       params,
       query,
-      body,
       set,
     }: {
       request: Request;
       params: { id: string };
       query: { submissionId?: string };
-      body: unknown;
       set: { status?: number | string };
     }) => {
       const action = workspaceOnly
@@ -93,10 +108,9 @@ export function registerResultRoutes(
       const { actor: identity } = authorization;
       requireAdmin(identity);
       validateId(params.id, "Response");
-      if (query.submissionId) {
+      if (query.submissionId !== undefined) {
         validateId(query.submissionId, "Submission");
       }
-      const input = correctionInput(body, workspaceOnly);
       const response = await prisma.response.findUnique({
         include: { prefillSnapshot: true },
         where: { id: params.id },
@@ -106,7 +120,7 @@ export function registerResultRoutes(
             include: {
               corrections: { orderBy: { revision: "desc" }, take: 1 },
             },
-            where: { id: query.submissionId },
+            where: { id: query.submissionId, responseId: params.id },
           })
         : await prisma.submission.findFirst({
             include: {
@@ -115,7 +129,12 @@ export function registerResultRoutes(
             orderBy: [{ createdAt: "desc" }, { id: "desc" }],
             where: { responseId: params.id },
           });
-      if (!response || !submission || submission.responseId !== params.id) {
+      if (
+        !response ||
+        (!query.submissionId && response.status !== ResponseStatus.submitted) ||
+        !submission ||
+        submission.responseId !== params.id
+      ) {
         fail(404, "not_found", "Submitted Response was not found");
       }
       const form = await prisma.form.findUnique({
@@ -135,6 +154,62 @@ export function registerResultRoutes(
       const latest = submission.corrections[0];
       const currentRevision = latest?.revision ?? 0;
       const currentDocumentKey = latest?.documentKey ?? submission.documentKey;
+      const bindings =
+        form.documentKind === "xlsx"
+          ? await spreadsheetBindingsForTemplate(response.publishedTemplateId)
+          : undefined;
+      const workspace = await prisma.editorLease.findFirst({
+        where: {
+          holderUserId: identity.id,
+          id: authorization.capability.leaseId,
+          targetId: response.id,
+          targetType: "correction",
+        },
+      });
+      const attachmentBindings =
+        bindings && workspace?.workspaceObjectKey
+          ? resolveSpreadsheetContract(
+              bindings,
+              readSpreadsheetWorkbook(
+                await readObject(workspace.workspaceObjectKey)
+              )
+            )
+          : bindings;
+      const parsed = await nativeResponseRequest(
+        request,
+        [],
+        attachmentBindings
+      );
+      const input = correctionInput(
+        parsed.input,
+        workspaceOnly,
+        hasSpreadsheetAttachments(attachmentBindings) && !workspaceOnly
+      );
+      if (
+        workspaceOnly &&
+        (parsed.attachments.size ||
+          parsed.input.attachmentRemovals !== undefined)
+      ) {
+        fail(
+          400,
+          "invalid_attachment",
+          "บันทึกพื้นที่ทำงานไม่บันทึกไฟล์แนบ กรุณากดบันทึก Correction"
+        );
+      }
+      if (!workspaceOnly && hasSpreadsheetAttachments(attachmentBindings)) {
+        const replay = await replayAttachmentOperation(
+          authorization,
+          parsed.input,
+          form.id,
+          response.id,
+          "save-correction",
+          submission.id
+        );
+        if (replay) {
+          set.status = 202;
+          return replay;
+        }
+      }
       const capabilityScope = {
         documentKey: input.documentKey,
         formId: form.id,
@@ -217,6 +292,9 @@ export function registerResultRoutes(
         ...pdmsContext,
         action,
         baseDocumentKey,
+        ...(hasSpreadsheetAttachments(attachmentBindings)
+          ? { correctionStartSnapshotId: response.prefillSnapshot?.id ?? null }
+          : {}),
         baseRevision,
         data,
         documentKind: form.documentKind,
@@ -242,6 +320,23 @@ export function registerResultRoutes(
         workspaceLeaseId: authorization.capability.leaseId,
         workspaceObjectKey: workspaceLease.workspaceObjectKey,
       };
+      if (!workspaceOnly && hasSpreadsheetAttachments(attachmentBindings)) {
+        const accepted = await startAttachmentOperation({
+          action: "save-correction",
+          authorization,
+          bindings: attachmentBindings,
+          correctionMetadata: metadata,
+          ecm: dependencies.ecm,
+          files: parsed.attachments,
+          form,
+          input: parsed.input,
+          onlyOffice,
+          pdmsContext,
+          responseId: response.id,
+        });
+        set.status = 202;
+        return accepted;
+      }
 
       const operation = await createOperation({
         actorId: identity.id,
@@ -273,6 +368,57 @@ export function registerResultRoutes(
       };
     };
   app
+    .get(
+      "/api/admin/results/attachment-follow-up",
+      async ({ request, query }) => {
+        const identity = await requireIdentity(request);
+        requireResultReader(identity);
+        const form = typeof query.form === "string" ? query.form : undefined;
+        if (form && !publicIdPattern.test(form)) {
+          fail(400, "invalid_request", "form is invalid");
+        }
+        return { followUps: await attachmentFollowUps(form) };
+      }
+    )
+    .post(
+      "/api/admin/results/attachment-follow-up/:operationId/settle",
+      async ({ request, params }) => {
+        const identity = await requireIdentity(request);
+        requireAdmin(identity);
+        validateId(params.operationId, "Operation");
+        await settleAttachmentFollowUp(
+          params.operationId,
+          await readJsonRecord(request, legacyJsonBodyMaximumBytes),
+          identity.id,
+          dependencies.ecm
+        );
+        return { followUps: await attachmentFollowUps() };
+      },
+      { parse: "none" }
+    )
+    .post(
+      "/api/admin/results/attachment-follow-up/:operationId/cancel",
+      async ({ request, params }) => {
+        const identity = await requireIdentity(request);
+        requireAdmin(identity);
+        validateId(params.operationId, "Operation");
+        const input = await readJsonRecord(request, legacyJsonBodyMaximumBytes);
+        if (Object.keys(input).some((key) => key !== "generation")) {
+          fail(
+            400,
+            "invalid_request",
+            "Only the trusted batch generation is accepted"
+          );
+        }
+        await fenceAttachmentFollowUp(
+          params.operationId,
+          input.generation,
+          identity.id
+        );
+        return { followUps: await attachmentFollowUps() };
+      },
+      { parse: "none" }
+    )
     .get("/api/admin/results", async ({ request, query }) => {
       const identity = await requireIdentity(request);
       requireResultReader(identity);
@@ -508,6 +654,17 @@ export function registerResultRoutes(
         requireResultReader(identity);
         validateId(params.id, "Response");
         const selector = revisionSelector(query.revision);
+        const submissionId =
+          query.submissionId === undefined
+            ? undefined
+            : validateId(query.submissionId, "Submission");
+        if (submissionId && selector === "latest") {
+          fail(
+            400,
+            "invalid_request",
+            "An explicit Submission requires a revision"
+          );
+        }
         const response = await prisma.response.findUnique({
           include: {
             form: { select: { documentKind: true, publicId: true } },
@@ -515,18 +672,27 @@ export function registerResultRoutes(
               include: { corrections: { orderBy: { revision: "desc" } } },
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
               take: 1,
+              where: { id: submissionId },
             },
           },
           where: { id: params.id },
         });
-        const submission = response?.submissions[0];
-        if (
-          !response ||
-          (response.status === ResponseStatus.submitted && !submission)
-        ) {
+        if (!response) {
           fail(404, "not_found", "Response was not found");
         }
-        const submitted = response.status === ResponseStatus.submitted;
+        const submission = response.submissions[0];
+        const submitted =
+          Boolean(submissionId) || response.status === ResponseStatus.submitted;
+        if (submitted && !submission) {
+          fail(404, "not_found", "Response was not found");
+        }
+        if (
+          query.draftUpdatedAt !== undefined &&
+          (submitted ||
+            query.draftUpdatedAt !== response.updatedAt.toISOString())
+        ) {
+          fail(404, "not_found", "Draft snapshot is no longer current");
+        }
         if (!submitted && selector !== "latest") {
           fail(404, "not_found", "Submission revision was not found");
         }
@@ -572,7 +738,11 @@ export function registerResultRoutes(
             id: identity.id,
             name: identity.name,
           },
-          response.form.documentKind
+          response.form.documentKind,
+          {
+            objectKey: documentObjectKey,
+            publishedTemplateId: response.publishedTemplateId,
+          }
         );
       }
     )
@@ -590,6 +760,10 @@ export function registerResultRoutes(
         );
       }
     )
-    .post("/api/admin/results/:id/correction", saveCorrection(false))
-    .post("/api/admin/results/:id/correction/workspace", saveCorrection(true));
+    .post("/api/admin/results/:id/correction", saveCorrection(false), {
+      parse: "none",
+    })
+    .post("/api/admin/results/:id/correction/workspace", saveCorrection(true), {
+      parse: "none",
+    });
 }

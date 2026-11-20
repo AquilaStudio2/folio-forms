@@ -60,12 +60,6 @@ export const env = createEnv({
       .enum(["development", "production", "test"])
       .default("development"),
 
-    OMNIROUTE_API_KEY: z.string().trim().min(1).optional(),
-
-    OMNIROUTE_BASE_URL: z.url().optional(),
-
-    OMNIROUTE_MODEL: z.string().trim().min(1).optional(),
-
     ONGOING_API_URL: z
       .url()
       .refine((value) => {

@@ -8,6 +8,348 @@ import {
   flushPlugin,
 } from "./harness.js";
 
+test.each(["scalar", "table-only"])(
+  "%s uncertain Save keeps ordinary editing frozen while recovery remains usable and waits for the canonical remount after completion",
+  async (kind) => {
+    const harness = createHarness({
+      action: "draft",
+      capabilityResponses: ["first-capability", "retry-capability"],
+      documentKind: "xlsx",
+      nativeWorkbookCaptureUrl: "http://office.test/old-ordinary-snapshot.xlsx",
+      responses: [
+        completedOperation({
+          documentKey: "saved-document-key",
+          submissionId: "original-submission",
+        }),
+      ],
+      scopeIdentity: "actor/response",
+      serializeCommands: true,
+      spreadsheetBindings: {
+        fields:
+          kind === "scalar"
+            ? [
+                {
+                  anchor: "folio_file",
+                  attachment: { category: "หลักฐาน" },
+                  id: "folio_file",
+                  key: "file",
+                  label: "File",
+                  type: "text",
+                },
+              ]
+            : [],
+        table:
+          kind === "scalar"
+            ? null
+            : {
+                anchor: "folio_table",
+                columns: [
+                  {
+                    attachment: { category: "หลักฐาน" },
+                    id: "folio_file",
+                    key: "file",
+                    label: "File",
+                    offset: 0,
+                    type: "text",
+                  },
+                ],
+                id: "folio_table",
+                key: "items",
+                label: "Items",
+              },
+        version: 1,
+      },
+      spreadsheetSelection: {
+        names: {
+          folio_file: "'Form'!$B$10",
+          folio_table: "'Form'!$B$10:$B$12",
+        },
+      },
+    });
+    const post = harness.parentWindow.postMessage.bind(harness.parentWindow);
+    let attempts = 0;
+    harness.parentWindow.postMessage = (message, origin) => {
+      post(message, origin);
+      if (!["pending-file-check", "pending-file-save"].includes(message.type)) {
+        return;
+      }
+      let result = {
+        allowed: true,
+        attachmentCommitUnresolved: false,
+        hasPending: false,
+      };
+      if (message.type === "pending-file-save") {
+        attempts += 1;
+        result = {
+          attachmentCommitUnresolved: true,
+          error: "ผลรอบเดิมยังไม่ยืนยัน",
+        };
+      } else if (attempts > 0) {
+        result = {
+          ...result,
+          attachmentCommitUnresolved: true,
+          checkpointOperation: {
+            action: "submit",
+            operationCapability: "original-operation-capability",
+            operationId: "original-operation",
+            status: "completed",
+          },
+        };
+      }
+      queueMicrotask(() =>
+        harness.dispatch({
+          data: {
+            ...message,
+            ...result,
+            source: "folio-upload-poc-host",
+            type: "pending-file-result",
+          },
+          origin: harness.parentOrigin,
+          source: harness.parentWindow,
+        })
+      );
+    };
+    acknowledgeBridge(harness);
+    await flushPlugin();
+    const first = await harness.window.FormBridge.runAction("submit");
+    expect(attempts, JSON.stringify(first)).toBe(1);
+    expect(first).toMatchObject({ ok: false });
+    expect(harness.editorRestriction).toBe("readOnly");
+    expect(
+      harness.messages
+        .filter(({ message }) => message.type === "operation")
+        .at(-1).message.status
+    ).toBe("failed");
+    expect(
+      harness.messages
+        .filter(({ message }) => message.type === "operation")
+        .at(-1).message.attachmentCommitUnresolved
+    ).toBe(true);
+    const recovered = await harness.window.FormBridge.runAction("save-draft");
+    expect(recovered).toMatchObject({
+      ok: true,
+      operationId: "original-operation",
+    });
+    expect(attempts).toBe(1);
+    expect(
+      harness.messages.filter(
+        ({ message }) => message.type === "capability-request"
+      )
+    ).toHaveLength(1);
+    expect(harness.requests.map(({ method }) => method)).toEqual(["GET"]);
+    expect(harness.editorRestriction).toBe("readOnly");
+    expect(
+      harness.messages
+        .filter(({ message }) => message.type === "operation")
+        .at(-1).message
+    ).toMatchObject({
+      action: "submit",
+      operationId: "original-operation",
+      requestedAction: "save-draft",
+      status: "completed",
+    });
+  }
+);
+
+test("Save freezes native edits and announces busy before waiting for the pending-file guard", async () => {
+  const harness = createHarness({
+    action: "draft",
+    documentKind: "xlsx",
+    scopeIdentity: "actor/response",
+    spreadsheetBindings: {
+      fields: [
+        {
+          anchor: "folio_file",
+          attachment: { category: "หลักฐาน" },
+          id: "folio_file",
+          key: "file",
+          label: "File",
+          type: "text",
+        },
+      ],
+      table: null,
+      version: 1,
+    },
+    spreadsheetSelection: { names: { folio_file: "'Form'!$B$10" } },
+  });
+  await flushPlugin();
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  const openingCheck = harness.messages.find(
+    ({ message }) => message.type === "pending-file-check"
+  ).message;
+  harness.dispatch({
+    data: {
+      ...openingCheck,
+      allowed: true,
+      attachmentCommitUnresolved: false,
+      hasPending: false,
+      source: "folio-upload-poc-host",
+      type: "pending-file-result",
+    },
+    origin: harness.parentOrigin,
+    source: harness.parentWindow,
+  });
+  await flushPlugin();
+  void harness.window.FormBridge.runAction("save-draft");
+  await flushPlugin();
+  expect(harness.editorRestriction).toBe("readOnly");
+  expect(
+    harness.messages.some(
+      ({ message }) => message.type === "pending-file-check"
+    )
+  ).toBe(true);
+  expect(
+    harness.messages.some(
+      ({ message }) =>
+        message.type === "operation" &&
+        message.status === "pending" &&
+        message.action === "save-draft"
+    )
+  ).toBe(true);
+  expect(await harness.window.FormBridge.runAction("submit")).toMatchObject({
+    ignored: true,
+    ok: false,
+  });
+  expect(harness.requests).toHaveLength(0);
+});
+
+test("only authenticated current Draft completion resumes the same native editor with fresh canonical admission", async () => {
+  const locks = new Map();
+  let locked = true;
+  const selection = {
+    names: {
+      _folio_upload_poc_folio_file: "'Form'!$B$10",
+      folio_file: "'Form'!$B$10",
+    },
+    oleObjects: [
+      {
+        Drawing: {
+          drawingBase: { from: { col: 1, row: 9 } },
+          getProtectionLocked: () => locked,
+          setProtectionLocked: (value) => {
+            locked = value;
+          },
+        },
+        GetApplicationId: () => "asc.{804C7D5D-8243-47D9-87A2-64E42806D42F}",
+        GetData: () =>
+          JSON.stringify({
+            bindingId: "folio_file",
+            kind: "folio-upload-poc",
+            rowIndex: null,
+            tag: "file",
+            version: 1,
+          }),
+        GetLockValue: (key) => locks.get(key),
+        SetLockValue: (key, value) => {
+          locks.set(key, value);
+          return true;
+        },
+      },
+    ],
+    sheet: "Form",
+    values: { B10: "https://example.test/original" },
+  };
+  const harness = createHarness({
+    action: "draft",
+    capabilityResponses: ["first-capability", "second-capability"],
+    documentKind: "xlsx",
+    nativeWorkbookCaptureUrl: "http://office.test/live-native-snapshot.xlsx",
+    responses: [
+      completedOperation({ documentKey: "committed-first" }),
+      completedOperation({ documentKey: "committed-second" }),
+    ],
+    scopeIdentity: "actor/response",
+    spreadsheetBindings: {
+      fields: [
+        {
+          anchor: "folio_file",
+          attachment: { category: "หลักฐาน" },
+          id: "folio_file",
+          key: "file",
+          label: "File",
+          type: "text",
+        },
+      ],
+      table: null,
+      version: 1,
+    },
+    spreadsheetSelection: selection,
+  });
+  const post = harness.parentWindow.postMessage.bind(harness.parentWindow);
+  const saves = [];
+  harness.parentWindow.postMessage = (message, origin) => {
+    post(message, origin);
+    if (!["pending-file-check", "pending-file-save"].includes(message.type)) {
+      return;
+    }
+    const result = {
+      allowed: true,
+      attachmentCommitUnresolved: false,
+      hasPending: false,
+    };
+    if (message.type === "pending-file-save") {
+      saves.push(message.body.documentKey);
+      Object.assign(result, {
+        operationCapability: "poll-capability",
+        operationId: `saved-${saves.length}`,
+        status: "pending",
+      });
+    }
+    queueMicrotask(() =>
+      harness.dispatch({
+        data: {
+          ...message,
+          ...result,
+          source: "folio-upload-poc-host",
+          type: "pending-file-result",
+        },
+        origin: harness.parentOrigin,
+        source: harness.parentWindow,
+      })
+    );
+  };
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  expect(await harness.window.FormBridge.runAction("save-draft")).toMatchObject(
+    { ok: true }
+  );
+  expect(harness.editorRestriction).toBe("readOnly");
+  const acknowledge = (
+    operationId,
+    documentKey,
+    origin = harness.parentOrigin
+  ) =>
+    harness.dispatch({
+      data: {
+        bridgeId: harness.bridgeId,
+        documentKey,
+        operationId,
+        savedData: { file: { file_link: "https://example.test/saved" } },
+        source: "folio-parent",
+        type: "retain-completed-editor",
+      },
+      origin,
+      source: harness.parentWindow,
+    });
+  acknowledge("saved-1", "committed-first", "https://foreign.test");
+  acknowledge("not-this-operation", "committed-first");
+  await flushPlugin();
+  expect(harness.editorRestriction).toBe("readOnly");
+  expect(selection.values.B10).toBe("https://example.test/original");
+  acknowledge("saved-1", "committed-first");
+  await flushPlugin();
+  expect(harness.editorRestriction).toBe("none");
+  expect(selection.values.B10).toBe("https://example.test/saved");
+  expect(await harness.window.FormBridge.runAction("save-draft")).toMatchObject(
+    { ok: true }
+  );
+  expect(saves).toEqual(["document-key", "committed-first"]);
+  acknowledge("saved-1", "committed-first");
+  await flushPlugin();
+  expect(harness.editorRestriction).toBe("readOnly");
+});
+
 for (const action of ["save-template", "publish"]) {
   test(`DOCX ${action} ignores new parent commands and preserves the existing toolbar contract`, async () => {
     const harness = createHarness({
@@ -174,6 +516,16 @@ for (const action of ["save-template", "publish"]) {
         ["folio_month", "'Form'!$E$5"],
         ["folio_unfinished", null],
       ],
+      xlsxDraft: {
+        bindings: expect.objectContaining({
+          fields: expect.arrayContaining([
+            expect.objectContaining({ id: "folio_month" }),
+          ]),
+        }),
+        checkpoint: expect.any(String),
+        revision: 0,
+        version: 1,
+      },
     });
     expect(harness.requests[0].url).toEndWith(
       action === "publish" ? "/publish" : "/save"
@@ -215,6 +567,186 @@ test("a failed native template save preserves the workbook and permits retry", a
   await flushPlugin();
   harness.finishEditorSave();
   await expect(retry).resolves.toMatchObject({ ok: true });
+});
+
+test("Excel Apply stays local and a lost admission response checks the same checkpoint without dispatching again", async () => {
+  let checkpoint;
+  const harness = createHarness({
+    action: "template-edit",
+    capabilityResponses: ["save-capability", "recover-capability"],
+    documentKind: "xlsx",
+    responses: [
+      (_url, init) => {
+        const { xlsxDraft } = JSON.parse(init.body);
+        checkpoint = xlsxDraft.checkpoint;
+        expect(xlsxDraft.bindings.fields[0].id).toBe("folio_amount");
+        return { body: { error: "connection_lost" }, httpStatus: 503 };
+      },
+      (_url, init) => {
+        expect(JSON.parse(init.body)).toEqual({
+          checkpoint,
+          leaseId: "test-editor-lease",
+        });
+        return {
+          action: "save-template",
+          operationCapability: "poll",
+          operationId: "original",
+          status: "completed",
+        };
+      },
+      completedOperation({
+        bindingRevision: 1,
+        bindings: { fields: [], table: null, version: 1 },
+        documentKey: "document-key",
+        editorSessionPreserved: true,
+      }),
+    ],
+    scopeIdentity: "author/form",
+    spreadsheetSelection: {
+      address: "A1",
+      names: { folio_amount: "'Form'!$A$1" },
+      sheet: "Form",
+    },
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  const change = {
+    action: "upsert",
+    kind: "field",
+    value: {
+      anchor: "folio_amount",
+      id: "folio_amount",
+      key: "amount",
+      label: "Amount",
+      type: "text",
+    },
+  };
+  await harness.window.FormBridge.saveSpreadsheetBinding(change);
+  expect(harness.requests).toHaveLength(0);
+
+  const attempt = harness.window.FormBridge.runAction("save-template");
+  await flushPlugin();
+  const guard = harness.messages.find(
+    ({ message }) => message.type === "pending-file-check"
+  ).message;
+  harness.dispatch({
+    data: {
+      ...guard,
+      allowed: true,
+      source: "folio-upload-poc-host",
+      type: "pending-file-result",
+    },
+    origin: harness.parentOrigin,
+    source: harness.parentWindow,
+  });
+  await expect(attempt).resolves.toMatchObject({ ok: false });
+  await expect(
+    harness.window.FormBridge.saveSpreadsheetBinding(change)
+  ).rejects.toThrow();
+  await expect(
+    harness.window.FormBridge.runAction("save-template")
+  ).resolves.toMatchObject({ ok: true, operationId: "original" });
+  expect(harness.requests.map(({ url }) => url.split("/").at(-1))).toEqual([
+    "save",
+    "recover",
+    "original",
+  ]);
+  expect(
+    harness.messages
+      .filter(({ message }) => message.type === "operation")
+      .at(-1).message
+  ).toMatchObject({
+    operation: { result: { editorSessionPreserved: false } },
+    requestedAction: "save-template",
+    status: "completed",
+  });
+});
+
+test.each([true, false])(
+  "Excel unlocks a rejected POST only when rejection explicitly proves no admission (%s)",
+  async (preAdmission) => {
+    const scopeIdentity = "author/rejected-form";
+    const harness = createHarness({
+      action: "template-edit",
+      capabilityResponses: ["save-capability"],
+      documentKind: "xlsx",
+      responses: [
+        {
+          body: { error: "duplicate_field_tag", preAdmission },
+          httpStatus: 409,
+        },
+      ],
+      scopeIdentity,
+    });
+    acknowledgeBridge(harness);
+    await flushPlugin();
+    const save = harness.window.FormBridge.runAction("save-template");
+    await flushPlugin();
+    const guard = harness.messages.find(
+      ({ message }) => message.type === "pending-file-check"
+    ).message;
+    harness.dispatch({
+      data: {
+        ...guard,
+        allowed: true,
+        source: "folio-upload-poc-host",
+        type: "pending-file-result",
+      },
+      origin: harness.parentOrigin,
+      source: harness.parentWindow,
+    });
+    await expect(save).resolves.toMatchObject({ ok: false });
+    expect(harness.requests).toHaveLength(1);
+    expect(
+      Boolean(
+        harness.window.sessionStorage.getItem(
+          `folio-xlsx-draft:${scopeIdentity}`
+        )
+      )
+    ).toBe(!preAdmission);
+    expect(
+      harness.messages
+        .filter(({ message }) => message.type === "operation")
+        .at(-1).message
+    ).toMatchObject({
+      attachmentCommitUnresolved: !preAdmission,
+      status: "failed",
+    });
+    expect(harness.editorRestriction).toBe(preAdmission ? "none" : "readOnly");
+  }
+);
+
+test("reopening an Excel editor with an unresolved checkpoint advertises recovery before making any request", async () => {
+  const scopeIdentity = "author/form";
+  const harness = createHarness({
+    action: "template-edit",
+    documentKind: "xlsx",
+    scopeIdentity,
+    sessionStorageEntries: [
+      [
+        `folio-xlsx-draft:${scopeIdentity}`,
+        JSON.stringify({
+          action: "save-template",
+          checkpoint: crypto.randomUUID(),
+          leaseId: "original-lease",
+        }),
+      ],
+    ],
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  expect(
+    harness.messages.some(
+      ({ message }) =>
+        message.type === "operation" &&
+        message.action === "save-template" &&
+        message.attachmentCommitUnresolved === true
+    )
+  ).toBe(true);
+  expect(harness.requests).toHaveLength(0);
+  await expect(
+    harness.window.FormBridge.saveSpreadsheetBinding({})
+  ).rejects.toThrow("กรุณาตรวจผลบันทึกเดิม");
 });
 
 test("reports dirty state after a document content change", () => {

@@ -25,10 +25,18 @@ export const createPdmsPopupRelay = ({
   let sequence = 0;
   let pendingLocate: Record<string, unknown> | null = null;
   let closed = false;
+  let primaryDocumentKey = scope?.documentKey;
   const post = (target: Window, message: Record<string, unknown>) => {
     try {
       target.postMessage(
-        { ...message, ...scope, bridgeId, source: "folio-pdms-popup-host" },
+        {
+          ...message,
+          ...scope,
+          bridgeId,
+          documentKey:
+            target === getPrimary() ? primaryDocumentKey : scope?.documentKey,
+          source: "folio-pdms-popup-host",
+        },
         pluginOrigin
       );
     } catch {
@@ -48,6 +56,9 @@ export const createPdmsPopupRelay = ({
       pendingLocate = null;
       popup = null;
     },
+    continueDocument(documentKey: string) {
+      primaryDocumentKey = documentKey;
+    },
     handle(event: MessageEvent<unknown>) {
       const message = event.data;
       if (
@@ -57,7 +68,10 @@ export const createPdmsPopupRelay = ({
         !isRecord(message) ||
         message.bridgeId !== bridgeId ||
         message.channelId !== scope.channelId ||
-        message.documentKey !== scope.documentKey ||
+        message.documentKey !==
+          (event.source === getPrimary()
+            ? primaryDocumentKey
+            : scope.documentKey) ||
         !isLive(event.source)
       ) {
         return;

@@ -20,6 +20,7 @@ export const createHarness = ({
   pdmsProjectEnabled = false,
   pdmsProjectCatalog,
   pdmsPopupChannelId,
+  attachmentCategoryPopupChannelId,
   spreadsheetSelection = {},
   browserGlobals = {},
   bodyDataset = {},
@@ -32,11 +33,17 @@ export const createHarness = ({
   holdEditorSave = false,
   initialEditorRestriction = "none",
   prefill,
+  nativeWorkbookCaptureUrl,
   responses = [],
   scopeIdentity,
   selection,
   serializeCommands = false,
+  sessionStorageEntries = [],
   tagAliases,
+  xlsxDraftProtocol = action === "template-edit" && documentKind === "xlsx"
+    ? 1
+    : undefined,
+  xlsxDraftRevision = 0,
 } = {}) => {
   const parentOrigin = "https://web.example.test";
   const bridgeId = "bridge-test-1";
@@ -51,6 +58,7 @@ export const createHarness = ({
   const saveCalls = [];
   const timers = [];
   const queuedCapabilityResponses = [...capabilityResponses];
+  const sessionEntries = new Map(sessionStorageEntries);
   const queuedResponses = [...responses];
   const selectionState = {
     currentControl: selection?.currentControl,
@@ -147,6 +155,16 @@ export const createHarness = ({
       textContent: "",
       value: "",
     };
+    if (element.tagName === "DIALOG") {
+      element.open = false;
+      element.showModal = function showModal() {
+        this.open = true;
+      };
+      element.close = function close() {
+        this.open = false;
+        this.dispatchEvent({ type: "close" });
+      };
+    }
     if (id) {
       elements.set(id, element);
     }
@@ -245,6 +263,10 @@ export const createHarness = ({
       if (typeof done !== "function") {
         return;
       }
+      if (method === "GetFileToDownload" && nativeWorkbookCaptureUrl) {
+        done(nativeWorkbookCaptureUrl);
+        return;
+      }
       if (selection !== undefined) {
         if (method === "GetCurrentContentControl") {
           done(selectionState.currentControl);
@@ -262,6 +284,7 @@ export const createHarness = ({
       options: {
         action,
         apiBase: "https://api.example.test/",
+        attachmentCategoryPopupChannelId,
         bridgeId,
         documentKey: "document-key",
         documentKind,
@@ -277,6 +300,9 @@ export const createHarness = ({
         spreadsheetPictureFrames,
         tagAliases,
         targetId: "target-id",
+        xlsxDraftLeaseId: "test-editor-lease",
+        xlsxDraftProtocol,
+        xlsxDraftRevision,
       },
     },
   };
@@ -340,6 +366,11 @@ export const createHarness = ({
         )
       );
     },
+    sessionStorage: {
+      getItem: (key) => sessionEntries.get(key) ?? null,
+      removeItem: (key) => sessionEntries.delete(key),
+      setItem: (key, value) => sessionEntries.set(key, value),
+    },
     setTimeout(callback, milliseconds) {
       const timer = { callback, cancelled: false, milliseconds };
       timers.push(timer);
@@ -384,6 +415,25 @@ export const createHarness = ({
   const nativeValidationModel = createNativeValidationModel(
     spreadsheetValidations
   );
+  const nativeHistory = {
+    TurnOff() {
+      this.TurnOffHistory += 1;
+    },
+    TurnOffHistory: 0,
+    TurnOn() {
+      this.TurnOffHistory -= 1;
+    },
+  };
+  if (nativeWorkbookCaptureUrl) {
+    nativeValidationModel.worksheet.workbook = {
+      handlers: { trigger() {} },
+      oApi: {
+        asc_closeCellEditor: () => true,
+        asc_getCellEditMode: () => false,
+        onWorksheetChange() {},
+      },
+    };
+  }
   Object.assign(window.Asc, nativeValidationModel.constructors);
   const normalizedAddress = (address) =>
     address.split("!").at(-1).replaceAll("$", "");
@@ -449,6 +499,35 @@ export const createHarness = ({
       spreadsheetNames.set(name, reference);
       return true;
     },
+    AddOleObject(_preview, _width, _height, data, guid, col, _x, row, _y) {
+      spreadsheetSelection.oleObjects ??= [];
+      const objects = spreadsheetSelection.oleObjects;
+      let currentData = data;
+      const from = { col, row };
+      const object = {
+        Drawing: {
+          Id: `native-ole-${objects.length}`,
+          deleteDrawingBase() {
+            this.removed = true;
+          },
+          drawingBase: { from },
+        },
+        GetApplicationId: () => guid,
+        GetData: () => currentData,
+        SetData(value) {
+          currentData = value;
+        },
+        SetLockValue() {},
+        SetName() {},
+        SetPosition(nextColumn, _columnOffset, nextRow) {
+          from.col = nextColumn;
+          from.row = nextRow;
+        },
+        SetSize() {},
+      };
+      objects.push(object);
+      return object;
+    },
     AddShape(
       type,
       width,
@@ -502,7 +581,10 @@ export const createHarness = ({
     GetDefNames: () =>
       [...spreadsheetNames.keys()].map((name) => Api.GetDefName(name)),
     GetName: () => spreadsheetSelection?.sheet || "Sheet1",
-    GetRange: spreadsheetRange,
+    GetRange: (address) =>
+      /^\d+:\d+$/u.test(address)
+        ? { GetHidden: () => false }
+        : spreadsheetRange(address),
     GetRangeByNumber: (row, column) => {
       let letters = "";
       for (
@@ -522,6 +604,10 @@ export const createHarness = ({
     SetActive() {},
     worksheet: nativeValidationModel.worksheet,
   });
+  nativeValidationModel.worksheet.getId = () =>
+    spreadsheetSelection.sheet || "Sheet1";
+  nativeValidationModel.worksheet.getRange3 = (row, column) =>
+    spreadsheetSheet().GetRangeByNumber(row, column).range;
   // oxlint-enable no-use-before-define
   const spreadsheetRange = (address) => ({
     GetAddress: () => address,
@@ -532,6 +618,7 @@ export const createHarness = ({
     },
     GetFormula: () =>
       spreadsheetSelection?.formulas?.[normalizedAddress(address)] || "",
+    GetHidden: () => false,
     GetNumberFormat: () =>
       spreadsheetNumberFormats.get(normalizedAddress(address)) ?? "General",
     GetRow: () => position(normalizedAddress(address)).row,
@@ -559,7 +646,19 @@ export const createHarness = ({
       return true;
     },
     Width: 48,
-    range: nativeValidationModel.range(normalizedAddress(address)),
+    range: {
+      ...nativeValidationModel.range(normalizedAddress(address)),
+      cleanHyperlinks() {
+        delete spreadsheetSelection.hyperlinks?.[normalizedAddress(address)];
+      },
+      getValue: () =>
+        spreadsheetSelection.values?.[normalizedAddress(address)] ?? "",
+      setValue(value) {
+        spreadsheetSelection.values ??= {};
+        spreadsheetSelection.values[normalizedAddress(address)] = value;
+      },
+      worksheet: nativeValidationModel.worksheet,
+    },
   });
   const Api = {
     AddDefName(name, reference) {
@@ -637,6 +736,7 @@ export const createHarness = ({
         runInNewContext(`(${command.toString()})()`, {
           Api,
           Asc: window.Asc,
+          AscCommon: { History: nativeHistory },
           AscCommonExcel: nativeValidationModel.AscCommonExcel,
         })
       );
@@ -683,6 +783,7 @@ export const createHarness = ({
     AbortController,
     Api,
     Asc: window.Asc,
+    AscCommon: { History: nativeHistory },
     AscCommonExcel: nativeValidationModel.AscCommonExcel,
     Headers,
     Response,
@@ -715,9 +816,9 @@ export const createHarness = ({
         callback(value);
       }
     },
-    emitWindowEvent(type) {
+    emitWindowEvent(type, event = {}) {
       for (const listener of windowEventListeners.get(type) || []) {
-        listener();
+        listener(event);
       }
     },
     expireCapabilityRequests() {

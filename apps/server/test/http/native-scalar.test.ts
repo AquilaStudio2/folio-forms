@@ -81,7 +81,7 @@ test("DOCX template save, reopen and publish retain the documentKey-only API", a
     return response.json() as Promise<EditorConfigBody>;
   };
   let editor = await readConfig();
-  const originalKey = editor.config.document.key;
+  const originalKey = editor.bridge.documentKey;
   for (const action of ["save", "publish"] as const) {
     const capability =
       editor.bridge.capabilities[
@@ -92,7 +92,7 @@ test("DOCX template save, reopen and publish retain the documentKey-only API", a
     }
     const response = await app.handle(
       new Request(`${base}/${action}`, {
-        body: JSON.stringify({ documentKey: editor.config.document.key }),
+        body: JSON.stringify({ documentKey: editor.bridge.documentKey }),
         headers: {
           ...jsonHeaders,
           Authorization: `Bearer ${bearer}`,
@@ -110,7 +110,7 @@ test("DOCX template save, reopen and publish retain the documentKey-only API", a
     ).toMatchObject({ status: "completed" });
     if (action === "save") {
       editor = await readConfig();
-      expect(editor.config.document.key).not.toBe(originalKey);
+      expect(editor.bridge.documentKey).not.toBe(originalKey);
     }
   }
   const saved = await prisma.form.findUniqueOrThrow({
@@ -224,7 +224,7 @@ test("Ticket 07 preserves local namespaces when expanding empty content", async 
   );
   const editor = (await editorResponse.json()) as EditorConfigBody;
   const publishCapability = editor.bridge.capabilities.publish;
-  const templateDocumentKey = editor.config.document.key;
+  const templateDocumentKey = editor.bridge.documentKey;
   if (!publishCapability || !templateDocumentKey) {
     throw new Error("The local namespace publish capability is missing");
   }

@@ -1,6 +1,7 @@
 // oxlint-disable sort-keys -- Target descriptors follow their binding identity; validation branches are explicit.
 import { strToU8, zipSync } from "fflate";
 
+import { fail } from "../../http/errors";
 import { templateRelationshipPartPath, templateArchiveText } from "../package";
 import { responsePictureRelationships } from "../pictures";
 import {
@@ -12,6 +13,7 @@ import { parseSpreadsheetRange } from "./contract";
 import { readUploadPocMetadata } from "./upload-poc-package";
 import { uploadPocGuid } from "./upload-poc-preview";
 import { readSpreadsheetWorkbook } from "./workbook";
+import type { SpreadsheetWorkbook } from "./workbook";
 import {
   serializeSpreadsheetXml,
   spreadsheetXmlTree,
@@ -150,7 +152,7 @@ export const spreadsheetUploadPocTargets = (
       )
     ) {
       throw new Error(
-        "Upload POC marker does not match an editable text mapping"
+        "Attachment button marker does not match an editable text mapping"
       );
     }
     seen.add(id);
@@ -251,6 +253,114 @@ export const savedSpreadsheetUploadPocButtons = (
   );
 };
 
+const managedOleObject = (
+  node: string | SpreadsheetXmlNode
+): node is SpreadsheetXmlNode =>
+  typeof node !== "string" &&
+  local(node) === "oleObject" &&
+  node.attributes.progId === uploadPocGuid;
+
+const oleReference = (node: SpreadsheetXmlNode): string | null => {
+  const relationship = Object.entries(node.attributes).find(
+    ([key]) => key.split(":").at(-1) === "id"
+  )?.[1];
+  return node.attributes.shapeId && relationship
+    ? JSON.stringify([node.attributes.shapeId, relationship])
+    : null;
+};
+
+const managedControlCount = (sheet: SpreadsheetXmlNode): number => {
+  let count = nodes(sheet, "oleObject").filter(managedOleObject).length;
+  for (const alternate of nodes(sheet, "AlternateContent")) {
+    const branches = alternate.children.filter(
+      (child): child is SpreadsheetXmlNode => typeof child !== "string"
+    );
+    const choices = branches
+      .filter((branch) => local(branch) === "Choice")
+      .flatMap((branch) => branch.children)
+      .filter(managedOleObject);
+    const fallbacks = branches
+      .filter((branch) => local(branch) === "Fallback")
+      .flatMap((branch) => branch.children)
+      .filter(managedOleObject);
+    const choiceReferences = choices.map(oleReference);
+    const fallbackReferences = fallbacks.map(oleReference);
+    for (const fallback of fallbacks) {
+      const reference = oleReference(fallback);
+      if (
+        !reference ||
+        fallback.children.some(
+          (child) => typeof child !== "string" || child.trim().length > 0
+        )
+      ) {
+        continue;
+      }
+      // Native OOXML emits one anchored Choice and one empty Fallback alias for the same physical button.
+      if (
+        choiceReferences.filter((value) => value === reference).length === 1 &&
+        fallbackReferences.filter((value) => value === reference).length === 1
+      ) {
+        count -= 1;
+      }
+    }
+  }
+  return count;
+};
+
+export const validateSpreadsheetAttachmentButtons = (
+  bytes: Uint8Array,
+  bindings: SpreadsheetBindings,
+  draft = false
+): void => {
+  const workbook = readSpreadsheetWorkbook(bytes);
+  const targets = spreadsheetUploadPocTargets(bytes, bindings);
+  const configured = new Set(
+    [
+      ...bindings.fields.filter((field) => !field.unbound),
+      ...(bindings.table?.unbound ? [] : (bindings.table?.columns ?? [])),
+    ]
+      .filter((field) => field.attachment)
+      .map((field) => field.id)
+  );
+  const managedCount = managedControlCount(
+    spreadsheetXmlTree(
+      templateArchiveText(workbook.archive, workbook.sheetPath)
+    )
+  );
+  const verified =
+    managedCount > 0 ? savedSpreadsheetUploadPocButtons(bytes, bindings) : [];
+  const counts = new Map<string, number>();
+  for (const button of verified) {
+    counts.set(button.bindingId, (counts.get(button.bindingId) ?? 0) + 1);
+  }
+  const incomplete = [...configured].some((id) => {
+    const target = targets.find((entry) => entry.bindingId === id);
+    if (!target) {
+      return true;
+    }
+    let expected = 1;
+    if (target.kind === "column") {
+      const body = workbook.names.get(target.bodyAnchor ?? "");
+      if (!body) {
+        return true;
+      }
+      expected = body.lastRow - body.firstRow + 1;
+    }
+    return counts.get(id) !== expected;
+  });
+  if (
+    managedCount !== verified.length ||
+    incomplete ||
+    (!draft && targets.some((target) => !configured.has(target.bindingId)))
+  ) {
+    fail(
+      422,
+      "invalid_template",
+      "ตั้งค่าช่องแนบและปุ่มเดิมให้ครบ ตำแหน่งและ Tag ต้องตรงกัน หรือนำปุ่มที่ไม่ใช้ออกก่อนเผยแพร่"
+    );
+  }
+};
+
 /** A placement ACK proves this exact binding, including every canonical table row. */
 export const savedSpreadsheetUploadPocBindingComplete = (
   bytes: Uint8Array,
@@ -294,6 +404,46 @@ export const savedSpreadsheetUploadPocBindingComplete = (
   );
 };
 
+const stripManagedRasterPreviews = (
+  workbook: SpreadsheetWorkbook,
+  sheet: SpreadsheetXmlNode,
+  relationships: ReadonlyMap<string, string | null>,
+  ids: ReadonlySet<string>,
+  previewTargets: ReadonlySet<string>
+): void => {
+  for (const drawing of nodes(sheet, "drawing")) {
+    const id = Object.entries(drawing.attributes).find(
+      ([key]) => key.split(":").at(-1) === "id"
+    )?.[1];
+    const path = id && relationships.get(id);
+    if (!path || !workbook.archive[path]) {
+      continue;
+    }
+    const tree = spreadsheetXmlTree(
+      templateArchiveText(workbook.archive, path)
+    );
+    const links = responsePictureRelationships(workbook.archive, path);
+    tree.children = tree.children.filter((child) => {
+      if (typeof child === "string") {
+        return true;
+      }
+      const ownedShape = nodes(child, "cNvPr").some(
+        (node) =>
+          ids.has(node.attributes.id ?? "") ||
+          ids.has((node.attributes.name ?? "").replace(/^_x0000_s/u, ""))
+      );
+      const ownedPreview = nodes(child, "blip").some((node) => {
+        const imageId = Object.entries(node.attributes).find(
+          ([key]) => key.split(":").at(-1) === "embed"
+        )?.[1];
+        return imageId && previewTargets.has(links.get(imageId) ?? "");
+      });
+      return !(ownedShape && ownedPreview);
+    });
+    workbook.archive[path] = strToU8(serializeSpreadsheetXml(tree));
+  }
+};
+
 /** Community 9.4 has no drawing Delete API. Remove only this POC's OLE nodes and VML previews before native regeneration. */
 export const stripSpreadsheetUploadPoc = (
   bytes: Uint8Array,
@@ -308,6 +458,7 @@ export const stripSpreadsheetUploadPoc = (
     workbook.sheetPath
   );
   const removedTargets = new Set<string>();
+  const previewTargets = new Set<string>();
   const ids = new Set(
     nodes(sheet, "oleObject")
       .filter((node) => {
@@ -320,15 +471,30 @@ export const stripSpreadsheetUploadPoc = (
         const target = id && relationships.get(id);
         const part = target && workbook.archive[target];
         if (!part || !target) {
-          throw new Error("Missing POC object metadata");
+          throw new Error("Missing attachment button object metadata");
         }
         if (retainBindingIds.has(readUploadPocMetadata(part).bindingId)) {
           return false;
         }
         removedTargets.add(target);
+        for (const properties of nodes(node, "objectPr")) {
+          const imageId = Object.entries(properties.attributes).find(
+            ([key]) => key.split(":").at(-1) === "id"
+          )?.[1];
+          const image = imageId && relationships.get(imageId);
+          if (image) {
+            previewTargets.add(image);
+          }
+        }
         return true;
       })
-      .map((node) => node.attributes.shapeId)
+      .map((node) => {
+        const { shapeId } = node.attributes;
+        if (!shapeId) {
+          throw new Error("Missing attachment button object shape");
+        }
+        return shapeId;
+      })
   );
   if (!ids.size) {
     return bytes;
@@ -341,7 +507,7 @@ export const stripSpreadsheetUploadPoc = (
       const objects = nodes(child, "oleObject");
       if (
         objects.length &&
-        objects.every((object) => ids.has(object.attributes.shapeId))
+        objects.every((object) => ids.has(object.attributes.shapeId ?? ""))
       ) {
         return false;
       }
@@ -386,7 +552,70 @@ export const stripSpreadsheetUploadPoc = (
     );
     workbook.archive[name] = strToU8(serializeSpreadsheetXml(vml));
   }
-  const embedded = new Set<string>();
+  stripManagedRasterPreviews(
+    workbook,
+    sheet,
+    relationships,
+    ids,
+    previewTargets
+  );
+  // Remove only unused relationships to the verified managed previews, never shared artwork.
+  const remainingPreviews = new Set<string>();
+  for (const path of Object.keys(workbook.archive).filter(
+    (name) => name.endsWith(".xml") || name.endsWith(".vml")
+  )) {
+    const relPath = templateRelationshipPartPath(path);
+    if (!workbook.archive[relPath]) {
+      continue;
+    }
+    const owner = spreadsheetXmlTree(
+      templateArchiveText(workbook.archive, path)
+    );
+    const used = new Set<string>();
+    const collect = (node: SpreadsheetXmlNode): void => {
+      for (const [key, value] of Object.entries(node.attributes)) {
+        if (
+          key.includes(":") &&
+          ["id", "embed", "link"].includes(key.split(":").at(-1) ?? "")
+        ) {
+          used.add(value);
+        }
+      }
+      for (const child of node.children) {
+        if (typeof child !== "string") {
+          collect(child);
+        }
+      }
+    };
+    collect(owner);
+    const links = responsePictureRelationships(workbook.archive, path);
+    const rels = spreadsheetXmlTree(
+      templateArchiveText(workbook.archive, relPath)
+    );
+    rels.children = rels.children.filter((child) => {
+      if (typeof child === "string") {
+        return true;
+      }
+      const target = links.get(child.attributes.Id ?? "");
+      if (!target || !previewTargets.has(target)) {
+        return true;
+      }
+      if (used.has(child.attributes.Id ?? "")) {
+        remainingPreviews.add(target);
+        return true;
+      }
+      return false;
+    });
+    workbook.archive[relPath] = strToU8(serializeSpreadsheetXml(rels));
+  }
+  for (const target of previewTargets) {
+    if (!remainingPreviews.has(target)) {
+      Reflect.deleteProperty(workbook.archive, target);
+    }
+  }
+  const embedded = new Set(
+    [...previewTargets].filter((target) => !workbook.archive[target])
+  );
   const relationshipsPath = templateRelationshipPartPath(workbook.sheetPath);
   const relations = spreadsheetXmlTree(
     templateArchiveText(workbook.archive, relationshipsPath)
@@ -474,18 +703,26 @@ export const normalizeSpreadsheetUploadPocAnchors = (
       Number(node.attributes.ht ?? defaultHeight),
     ])
   );
+  const hiddenRows = new Set(
+    nodes(sheet, "row")
+      .filter(
+        (node) =>
+          node.attributes.hidden === "1" || node.attributes.hidden === "true"
+      )
+      .map((node) => Number(node.attributes.r) - 1)
+  );
   for (const object of objects) {
     const relationshipId = Object.entries(object.attributes).find(
       ([key]) => key.split(":").at(-1) === "id"
     )?.[1];
     const part = relationshipId && relationships.get(relationshipId);
     if (!part || !workbook.archive[part]) {
-      throw new Error("Missing POC metadata");
+      throw new Error("Missing attachment button metadata");
     }
     const metadata = readUploadPocMetadata(workbook.archive[part]);
     const marker = markers.get(`_folio_upload_poc_${metadata.bindingId}`);
     if (!marker) {
-      throw new Error("Missing POC placement marker");
+      throw new Error("Missing attachment button placement marker");
     }
     const range = parseSpreadsheetRange(
       marker.children
@@ -509,19 +746,25 @@ export const normalizeSpreadsheetUploadPocAnchors = (
       row < range.firstRow ||
       row > range.lastRow
     ) {
-      throw new Error("Invalid POC preview anchor");
+      throw new Error("Invalid attachment button preview anchor");
     }
     for (const name of ["colOff", "rowOff"]) {
       const [coordinate] = nodes(from, name);
       if (!coordinate) {
-        throw new Error("Incomplete POC preview anchor");
+        throw new Error("Incomplete attachment button preview anchor");
       }
       coordinate.children = ["0"];
     }
     const lastRow = metadata.tag.includes(".") ? row : range.lastRow;
     let cellHeight = 0;
     for (let current = row; current <= lastRow; current += 1) {
-      cellHeight += rowHeights.get(current) ?? defaultHeight;
+      const rowHeight = rowHeights.get(current) ?? defaultHeight;
+      if (!Number.isFinite(rowHeight) || rowHeight < 0) {
+        throw new Error("Attachment button cell has invalid row height");
+      }
+      if (!hiddenRows.has(current)) {
+        cellHeight += rowHeight;
+      }
     }
     let cellWidth = 0;
     for (let current = column; current <= range.lastColumn; current += 1) {
@@ -530,16 +773,25 @@ export const normalizeSpreadsheetUploadPocAnchors = (
           Number(node.attributes.min) <= current + 1 &&
           Number(node.attributes.max) >= current + 1
       );
+      const columnWidth = Number(definition?.attributes.width ?? defaultWidth);
+      if (!Number.isFinite(columnWidth) || columnWidth < 0) {
+        throw new Error("Attachment button cell has invalid column width");
+      }
+      const hidden = definition?.attributes.hidden;
       cellWidth +=
-        definition?.attributes.hidden === "1"
+        hidden === "1" || hidden === "true" || columnWidth === 0
           ? 0
-          : Math.floor(
-              Number(definition?.attributes.width ?? defaultWidth) * 7 + 5
-            );
+          : Math.floor(columnWidth * 7 + 5);
     }
     const scale = Math.min(1, cellWidth / 110, (cellHeight * 4) / 3 / 24);
-    if (!Number.isFinite(scale) || scale <= 0) {
-      throw new Error("Upload POC cell has no visible space");
+    // Hidden rows/columns keep their physical mappings and collapsed previews;
+    // invalid geometry still fails rather than substituting a visible target.
+    if (
+      !Number.isFinite(scale) ||
+      scale < 0 ||
+      (scale === 0 && cellWidth !== 0 && cellHeight !== 0)
+    ) {
+      throw new Error("Attachment button cell has no visible space");
     }
     const width = 110 * scale;
     const height = 24 * scale;
@@ -552,7 +804,7 @@ export const normalizeSpreadsheetUploadPocAnchors = (
     ] as const) {
       const [coordinate] = nodes(to, name);
       if (!coordinate) {
-        throw new Error("Incomplete POC preview anchor");
+        throw new Error("Incomplete attachment button preview anchor");
       }
       coordinate.children = [String(value)];
     }
@@ -594,7 +846,9 @@ export const normalizeSpreadsheetUploadPocAnchors = (
       );
       const [client] = nodes(shape, "ClientData");
       if (!client) {
-        throw new Error("Missing POC preview interaction metadata");
+        throw new Error(
+          "Missing attachment button preview interaction metadata"
+        );
       }
       const [locked] = nodes(client, "Locked");
       if (locked) {
@@ -607,7 +861,7 @@ export const normalizeSpreadsheetUploadPocAnchors = (
       }
       const [anchor] = nodes(shape, "Anchor");
       if (!anchor) {
-        throw new Error("Missing POC preview geometry");
+        throw new Error("Missing attachment button preview geometry");
       }
       anchor.children = [
         String([
