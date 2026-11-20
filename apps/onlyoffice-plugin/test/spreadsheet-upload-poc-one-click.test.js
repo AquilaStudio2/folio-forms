@@ -669,6 +669,18 @@ test("sequential placements keep the document key and save each new native butto
 
 test.each([
   { documentKey: "other-document", editorSessionPreserved: true },
+  {
+    bindingRevision: undefined,
+    documentKey: "document-key",
+    editorSessionPreserved: true,
+  },
+  {
+    bindings: undefined,
+    documentKey: "document-key",
+    editorSessionPreserved: true,
+  },
+  { documentKey: "document-key" },
+  { editorSessionPreserved: true },
   { documentKey: "document-key", editorSessionPreserved: false },
   {},
 ])(
@@ -694,6 +706,23 @@ test.each([
       "document-key"
     );
     expect(saves(harness)).toHaveLength(1);
+    const [save] = saves(harness);
+    expect(harness.editorRestriction).toBe("readOnly");
+    const stored = harness.window.sessionStorage.getItem(
+      "folio-xlsx-draft:one-click-authoring"
+    );
+    expect(JSON.parse(stored)).toEqual({
+      action: "save-template",
+      checkpoint: JSON.parse(save.body).xlsxDraft.checkpoint,
+      leaseId: "test-editor-lease",
+    });
+    expect(
+      harness.messages.findLast(({ message }) => message.type === "operation")
+        .message
+    ).toMatchObject({
+      attachmentCommitUnresolved: true,
+      status: "failed",
+    });
   }
 );
 
