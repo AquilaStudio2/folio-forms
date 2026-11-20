@@ -6,6 +6,11 @@ import { prisma } from "@onlyoffice/db";
 
 import { createApp } from "../../src/app";
 import { requireIdentity } from "../../src/auth/identity";
+import {
+  spreadsheetBindingAnchors,
+  spreadsheetColumnAnchor,
+  spreadsheetTableColumnsAnchor,
+} from "../../src/documents/spreadsheets/columns";
 import { spreadsheetBindingSchema } from "../../src/documents/spreadsheets/contract";
 import type { SpreadsheetBindings } from "../../src/documents/spreadsheets/contract";
 import { processSpreadsheet } from "../../src/documents/spreadsheets/engine";
@@ -19,6 +24,7 @@ import {
 import { xlsxEditorOpening } from "../../src/onlyoffice";
 import { putObject, deleteObject } from "../../src/storage";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
+import { workbookXml } from "../spreadsheet-runtime/runtime-fixture";
 import { fixtureWorkbook, mutatePart } from "../spreadsheet-unit/fixture";
 
 if (!process.env.DATABASE_URL) {
@@ -35,6 +41,7 @@ let bearer = "";
 let capability = "";
 let categoryStatus = 200;
 let categoryNames = ["เอกสารประกอบ"];
+let saveCapability = "";
 let publishCapability = "";
 const storageTemplateId: string = crypto.randomUUID();
 const templateChoice = {
@@ -212,6 +219,13 @@ beforeAll(async () => {
       templateDraft: {
         create: {
           documentKey,
+          fieldRules: {
+            create: spreadsheetDraftFieldData({
+              fields: [{ ...proof, attachment: undefined }],
+              table: null,
+              version: 1,
+            }),
+          },
           id: templateId,
           objectKey: `tests/${fixtureId}/template.xlsx`,
         },
@@ -313,15 +327,92 @@ const authoringRequest = (
       ...(body === undefined ? {} : { body: JSON.stringify(body) }),
     })
   );
-const upsert = async (value: unknown, kind = "field") => {
-  const current = await authoringRequest("spreadsheet-bindings");
-  const { revision } = (await current.json()) as { revision: number };
-  return authoringRequest("spreadsheet-bindings", "PATCH", {
-    change: { action: "upsert", kind, value },
-    documentKey,
-    revision,
-  });
+interface BindingState {
+  bindings: SpreadsheetBindings;
+  documentKey: string;
+  revision: number;
+}
+
+const bindingState = async () => {
+  const response = await authoringRequest("spreadsheet-bindings");
+  expect(response.status).toBe(200);
+  return (await response.json()) as BindingState;
 };
+
+const capture = async (bindings: SpreadsheetBindings) => {
+  const names: Record<string, string> = {};
+  for (const [index, field] of bindings.fields.entries()) {
+    let position = `'Form'!$D$${index + 1}`;
+    if (field.anchor === "folio_proof") {
+      position = "'Form'!$B$3";
+    } else if (field.anchor === "folio_number") {
+      position = "'Form'!$B$2";
+    }
+    names[field.anchor] = position;
+    if (field.attachment || field.id === "folio_proof") {
+      names[`_folio_upload_poc_${field.id}`] = position;
+    }
+  }
+  if (bindings.table) {
+    const { anchor, columns, id } = bindings.table;
+    names[anchor] = "'Form'!$F$10:$F$11";
+    names[spreadsheetTableColumnsAnchor(id)] = names[anchor];
+    for (const column of columns) {
+      const position = "'Form'!$F$10:$F$11";
+      names[spreadsheetColumnAnchor(column.id)] = position;
+      if (column.attachment) {
+        names[`_folio_upload_poc_${column.id}`] = position;
+      }
+    }
+  }
+  const input = fixtureWorkbook({ cells: [], merges: [], names });
+  return Object.keys(names).some((name) =>
+    name.startsWith("_folio_upload_poc_")
+  )
+    ? (await processSpreadsheet(input, { bindings })).workbook
+    : input;
+};
+
+const payloadFor = (
+  state: BindingState,
+  bindings = state.bindings,
+  bytes = snapshot
+) => {
+  const { names } = workbookXml(bytes);
+  return {
+    documentKey: state.documentKey,
+    spreadsheetAnchors: spreadsheetBindingAnchors(bindings).map((name) => [
+      name,
+      names[name] ?? null,
+    ]),
+    xlsxDraft: {
+      bindings,
+      checkpoint: crypto.randomUUID(),
+      revision: state.revision,
+      version: 1,
+    },
+  };
+};
+
+const refreshCapabilities = async () => {
+  const opened = await authoringRequest("editor-config");
+  expect(opened.status).toBe(200);
+  const { bridge } = (await opened.json()) as {
+    bridge: { capabilities: Record<string, string> };
+  };
+  capability = bridge.capabilities["configure-fields"] ?? "";
+  publishCapability = bridge.capabilities.publish ?? "";
+  saveCapability = bridge.capabilities["save-template"] ?? "";
+};
+
+const publish = async () =>
+  authoringRequest(
+    "publish",
+    "POST",
+    payloadFor(await bindingState()),
+    publishCapability
+  );
+
 const operationResult = async (operationId: string) => {
   for (let poll = 0; poll < 3000; poll += 1) {
     // oxlint-disable-next-line no-await-in-loop -- Observe this operation's prior state before polling again.
@@ -343,6 +434,78 @@ const operationResult = async (operationId: string) => {
   }
   throw new Error("Publish operation did not settle through HTTP");
 };
+const save = async (
+  state: BindingState,
+  bindings: SpreadsheetBindings,
+  target = app
+) => {
+  await refreshCapabilities();
+  const previousCapture = snapshot;
+  const parsed = spreadsheetBindingSchema.safeParse(bindings);
+  if (parsed.success) {
+    snapshot = await capture(parsed.data);
+  }
+  const started = await authoringRequest(
+    "save",
+    "POST",
+    payloadFor(state, bindings),
+    saveCapability,
+    target
+  );
+  if (started.status !== 202) {
+    snapshot = previousCapture;
+    const { error } = (await started.json()) as { error: string };
+    return { error, httpStatus: started.status, status: "rejected" };
+  }
+  const { operationId } = (await started.json()) as { operationId: string };
+  const result = await operationResult(operationId);
+  if (result.status === "completed") {
+    await refreshCapabilities();
+  } else {
+    snapshot = previousCapture;
+  }
+  return result;
+};
+
+type Field = SpreadsheetBindings["fields"][number];
+type Table = NonNullable<SpreadsheetBindings["table"]>;
+const replace = <T extends { id: string }>(items: T[], item: T) => [
+  ...items.filter(({ id }) => id !== item.id),
+  item,
+];
+
+const upsert = async <T extends { id: string }>(
+  value: T,
+  kind = "field",
+  target = app
+) => {
+  const state = await bindingState();
+  const bindings = { ...state.bindings };
+  if (kind === "field") {
+    bindings.fields = replace(bindings.fields, value as Field);
+  } else if (kind === "table") {
+    bindings.table = value as Table;
+  } else if (bindings.table) {
+    bindings.table = {
+      ...bindings.table,
+      columns: replace(
+        bindings.table.columns,
+        value as Table["columns"][number]
+      ),
+    };
+  }
+  return save(state, bindings, target);
+};
+const remove = async (id: string, kind = "field") => {
+  const state = await bindingState();
+  return save(state, {
+    ...state.bindings,
+    fields: state.bindings.fields.filter(
+      (field) => kind !== "field" || field.id !== id
+    ),
+    table: kind === "table" ? null : state.bindings.table,
+  });
+};
 
 test("ordinary Draft slot cannot convert without saved native marker binding and placement proof", async () => {
   const ordinary = {
@@ -352,42 +515,52 @@ test("ordinary Draft slot cannot convert without saved native marker binding and
     id: "folio_unproved",
     key: "attachment_99",
   };
-  expect((await upsert(ordinary)).status).toBe(200);
+  expect(await upsert(ordinary)).toMatchObject({ status: "completed" });
   const before = await (await authoringRequest("spreadsheet-bindings")).json();
   const rejected = await upsert({
     ...ordinary,
     attachment: proof.attachment,
   });
-  expect(rejected.status).toBe(422);
-  expect(await rejected.json()).toMatchObject({
+  expect(rejected).toMatchObject({
     error: "attachment_mapping_unproved",
+    status: "failed",
   });
   expect(await (await authoringRequest("spreadsheet-bindings")).json()).toEqual(
     before
   );
-  const current = before as { revision: number };
-  expect(
-    (
-      await authoringRequest("spreadsheet-bindings", "PATCH", {
-        change: { action: "delete", id: ordinary.id, kind: "field" },
-        documentKey,
-        revision: current.revision,
-      })
-    ).status
-  ).toBe(200);
+  expect(await remove(ordinary.id)).toMatchObject({ status: "completed" });
 });
 
+const withLegacyCapture = async (
+  bytes: Uint8Array,
+  check: () => Promise<void>
+) => {
+  const { objectKey, contentHash } =
+    await prisma.templateDraft.findUniqueOrThrow({ where: { id: templateId } });
+  const legacyKey = `tests/${fixtureId}/legacy-${crypto.randomUUID()}.xlsx`;
+  await putObject(legacyKey, bytes, XLSX_CONTENT_TYPE);
+  await prisma.templateDraft.update({
+    data: { contentHash: null, objectKey: legacyKey },
+    where: { id: templateId },
+  });
+  try {
+    await check();
+  } finally {
+    await prisma.templateDraft.update({
+      data: { contentHash, objectKey },
+      where: { id: templateId },
+    });
+    await deleteObject(legacyKey);
+  }
+};
 test("explicit verified old Draft conversion preserves binding placement and allows a deliberate Tag rename", async () => {
-  expect((await upsert({ ...proof, attachment: undefined })).status).toBe(200);
-  expect(
-    (
-      await upsert({
-        ...proof,
-        attachment: proof.attachment,
-        key: "renamed_attachment",
-      })
-    ).status
-  ).toBe(200);
+  expect(await upsert({ ...proof, attachment: undefined })).toMatchObject({
+    status: "completed",
+  });
+  const oldButton = snapshot;
+  expect(await upsert({ ...proof, key: "renamed_attachment" })).toMatchObject({
+    status: "completed",
+  });
   const configured = (await (
     await authoringRequest("spreadsheet-bindings")
   ).json()) as { bindings: { fields: unknown[] } };
@@ -399,39 +572,29 @@ test("explicit verified old Draft conversion preserves binding placement and all
       key: "renamed_attachment",
     })
   );
-  // Unsaved renamed rules are not proof that the canonical old button changed.
   expect(
-    (
-      await upsert({
-        ...proof,
-        attachment: undefined,
-        key: "renamed_attachment",
-      })
-    ).status
-  ).toBe(200);
-  const before = await (await authoringRequest("spreadsheet-bindings")).json();
-  expect(
-    (
-      await upsert({
-        ...proof,
-        attachment: proof.attachment,
-        key: "renamed_attachment",
-      })
-    ).status
-  ).toBe(422);
-  expect(await (await authoringRequest("spreadsheet-bindings")).json()).toEqual(
-    before
-  );
-  expect((await upsert({ ...proof, attachment: undefined })).status).toBe(200);
-  expect((await upsert(proof)).status).toBe(200);
+    await upsert({ ...proof, attachment: undefined, key: "renamed_attachment" })
+  ).toMatchObject({ status: "completed" });
+  // Legacy split Drafts may contain a renamed Rule but retain the old native Tag.
+  const before = await bindingState();
+  await withLegacyCapture(oldButton, async () => {
+    expect(await upsert({ ...proof, key: "renamed_attachment" })).toMatchObject(
+      { error: "attachment_mapping_unproved", status: "failed" }
+    );
+    expect(await bindingState()).toEqual(before);
+  });
+  expect(await upsert({ ...proof, attachment: undefined })).toMatchObject({
+    status: "completed",
+  });
+  expect(await upsert(proof)).toMatchObject({ status: "completed" });
 });
 
 test.each(["marker-only", "misplaced", "duplicate"] as const)(
   "old Draft conversion rejects %s native mapping without mutation",
   async (mapping) => {
-    expect((await upsert({ ...proof, attachment: undefined })).status).toBe(
-      200
-    );
+    expect(await upsert({ ...proof, attachment: undefined })).toMatchObject({
+      status: "completed",
+    });
     let unproved = snapshot;
     if (mapping === "marker-only") {
       unproved = fixtureWorkbook({
@@ -457,27 +620,15 @@ test.each(["marker-only", "misplaced", "duplicate"] as const)(
         )
       );
     }
-    await putObject(
-      `tests/${fixtureId}/template.xlsx`,
-      unproved,
-      XLSX_CONTENT_TYPE
-    );
-    try {
-      const before = await (
-        await authoringRequest("spreadsheet-bindings")
-      ).json();
-      expect((await upsert(proof)).status).toBe(422);
-      expect(
-        await (await authoringRequest("spreadsheet-bindings")).json()
-      ).toEqual(before);
-    } finally {
-      await putObject(
-        `tests/${fixtureId}/template.xlsx`,
-        snapshot,
-        XLSX_CONTENT_TYPE
-      );
-    }
-    expect((await upsert(proof)).status).toBe(200);
+    await withLegacyCapture(unproved, async () => {
+      const before = await bindingState();
+      expect(await upsert(proof)).toMatchObject({
+        error: "attachment_mapping_unproved",
+        status: "failed",
+      });
+      expect(await bindingState()).toEqual(before);
+    });
+    expect(await upsert(proof)).toMatchObject({ status: "completed" });
   }
 );
 
@@ -500,20 +651,15 @@ test("Storage Template authoring rejects forged, renamed, moved and deleted loca
   expect(created.status).toBe(200);
   const { template } = (await created.json()) as { template: { id: string } };
   templateChoice.storage_template_id = template.id;
-  expect((await upsert({ ...proof, attachment: templateChoice })).status).toBe(
-    200
-  );
+  expect(await upsert({ ...proof, attachment: templateChoice })).toMatchObject({
+    status: "completed",
+  });
   expect(
-    (
-      await upsert({
-        ...proof,
-        attachment: {
-          ...templateChoice,
-          storage_template_id: storageTemplateId,
-        },
-      })
-    ).status
-  ).toBe(422);
+    await upsert({
+      ...proof,
+      attachment: { ...templateChoice, storage_template_id: storageTemplateId },
+    })
+  ).toMatchObject({ error: "attachment_template_stale", status: "failed" });
   expect(
     (
       await catalogRequest(
@@ -527,16 +673,14 @@ test("Storage Template authoring rejects forged, renamed, moved and deleted loca
     ).status
   ).toBe(200);
   expect(
-    (
-      await upsert({
-        ...proof,
-        anchor: "folio_stale_selection",
-        attachment: templateChoice,
-        id: "folio_stale_selection",
-        key: "stale_selection",
-      })
-    ).status
-  ).toBe(422);
+    await upsert({
+      ...proof,
+      anchor: "folio_stale_selection",
+      attachment: templateChoice,
+      id: "folio_stale_selection",
+      key: "stale_selection",
+    })
+  ).toMatchObject({ error: "attachment_template_stale", status: "failed" });
   expect(
     (
       await catalogRequest(
@@ -586,8 +730,8 @@ test.each(["rename", "delete"] as const)(
       key: "repair_items",
       label: "รายการ",
     };
-    expect((await upsert(scalar)).status).toBe(200);
-    expect((await upsert(table, "table")).status).toBe(200);
+    expect(await upsert(scalar)).toMatchObject({ status: "completed" });
+    expect(await upsert(table, "table")).toMatchObject({ status: "completed" });
     expect(
       (
         await catalogRequest(
@@ -610,7 +754,7 @@ test.each(["rename", "delete"] as const)(
       key: "docs_number",
       label: "Keep my Draft",
     };
-    expect((await upsert(ordinary)).status).toBe(200);
+    expect(await upsert(ordinary)).toMatchObject({ status: "completed" });
     const rejected = await upsert({
       ...ordinary,
       anchor: "folio_rejected",
@@ -618,47 +762,26 @@ test.each(["rename", "delete"] as const)(
       id: "folio_rejected",
       key: "rejected",
     });
-    expect(rejected.status).toBe(422);
-    expect(await rejected.json()).toMatchObject({
+    expect(rejected).toMatchObject({
       error: "attachment_template_stale",
+      status: "failed",
     });
     expect(
-      (await upsert({ ...scalar, label: "Retained stale choice" })).status
-    ).toBe(200);
-    const beforeDelete = await authoringRequest("spreadsheet-bindings");
-    const { revision: deleteRevision } = (await beforeDelete.json()) as {
-      revision: number;
-    };
+      await upsert({ ...scalar, label: "Retained stale choice" })
+    ).toMatchObject({ status: "completed" });
+    expect(await remove(proof.id)).toMatchObject({ status: "completed" });
     expect(
-      (
-        await authoringRequest("spreadsheet-bindings", "PATCH", {
-          change: { action: "delete", id: proof.id, kind: "field" },
-          documentKey,
-          revision: deleteRevision,
-        })
-      ).status
-    ).toBe(200);
-    expect(
-      (await upsert({ ...scalar, attachment: templateChoice })).status
-    ).toBe(200);
-    const blocked = await authoringRequest(
-      "publish",
-      "POST",
-      { documentKey, spreadsheetAnchors: [] },
-      publishCapability
-    );
+      await upsert({ ...scalar, attachment: templateChoice })
+    ).toMatchObject({ status: "completed" });
+    const blocked = await publish();
     expect(blocked.status).toBe(422);
     expect(await blocked.json()).toMatchObject({
       error: "attachment_template_stale",
     });
     expect(
-      (await upsert({ ...column, attachment: templateChoice }, "column")).status
-    ).toBe(200);
-    const saved = await authoringRequest("spreadsheet-bindings");
-    const payload = (await saved.json()) as {
-      bindings: SpreadsheetBindings;
-      revision: number;
-    };
+      await upsert({ ...column, attachment: templateChoice }, "column")
+    ).toMatchObject({ status: "completed" });
+    const payload = await bindingState();
     expect(payload.bindings.fields).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ attachment: templateChoice, id: proof.id }),
@@ -668,57 +791,29 @@ test.each(["rename", "delete"] as const)(
     expect(payload.bindings.table?.columns).toEqual([
       expect.objectContaining({ attachment: templateChoice, id: column.id }),
     ]);
-    expect(
-      (
-        await authoringRequest("spreadsheet-bindings", "PATCH", {
-          change: { action: "delete", id: table.id, kind: "table" },
-          documentKey,
-          revision: payload.revision,
-        })
-      ).status
-    ).toBe(200);
-    const current = await authoringRequest("spreadsheet-bindings");
-    const { revision } = (await current.json()) as { revision: number };
-    expect(
-      (
-        await authoringRequest("spreadsheet-bindings", "PATCH", {
-          change: { action: "delete", id: ordinary.id, kind: "field" },
-          documentKey,
-          revision,
-        })
-      ).status
-    ).toBe(200);
+    expect(await remove(table.id, "table")).toMatchObject({
+      status: "completed",
+    });
+    expect(await remove(ordinary.id)).toMatchObject({ status: "completed" });
   }
 );
 test("incomplete attachment Draft saves; publication requires a Storage Template and docs_number, not fiscal_year", async () => {
-  expect((await upsert(proof)).status).toBe(200);
-  const publish = await authoringRequest(
-    "publish",
-    "POST",
-    { documentKey, spreadsheetAnchors: [["folio_proof", "'Form'!$B$3"]] },
-    publishCapability
-  );
-  expect(publish.status).toBe(422);
-  expect(await publish.json()).toMatchObject({
+  expect(await upsert(proof)).toMatchObject({ status: "completed" });
+  const incomplete = await publish();
+  expect(incomplete.status).toBe(422);
+  expect(await incomplete.json()).toMatchObject({
     error: "attachment_category_required",
   });
   expect(
-    (
-      await upsert({
-        ...proof,
-        attachment: { ...templateChoice, template_name: "หมวดสมมติ" },
-      })
-    ).status
-  ).toBe(422);
-  expect((await upsert({ ...proof, attachment: templateChoice })).status).toBe(
-    200
-  );
-  const metadataMissing = await authoringRequest(
-    "publish",
-    "POST",
-    { documentKey, spreadsheetAnchors: [["folio_proof", "'Form'!$B$3"]] },
-    publishCapability
-  );
+    await upsert({
+      ...proof,
+      attachment: { ...templateChoice, template_name: "หมวดสมมติ" },
+    })
+  ).toMatchObject({ error: "attachment_template_stale", status: "failed" });
+  expect(await upsert({ ...proof, attachment: templateChoice })).toMatchObject({
+    status: "completed",
+  });
+  const metadataMissing = await publish();
   expect(metadataMissing.status).toBe(422);
   expect(await metadataMissing.json()).toMatchObject({
     error: "attachment_metadata_required",
@@ -736,18 +831,14 @@ test("category outage and upstream rename preserve saved template, binding, Tag 
     key: "supporting_document",
     required: true,
   };
-  const saved = await upsert(renamed);
-  expect(saved.status).toBe(200);
-  const body = (await saved.json()) as { bindings: { fields: unknown[] } };
-  expect(body.bindings.fields).toEqual([renamed]);
+  expect(await upsert(renamed)).toMatchObject({ status: "completed" });
+  expect((await bindingState()).bindings.fields).toEqual([renamed]);
   expect(
-    (
-      await upsert({
-        ...renamed,
-        attachment: { ...templateChoice, template_name: "ไม่เคยเลือก" },
-      })
-    ).status
-  ).toBe(422);
+    await upsert({
+      ...renamed,
+      attachment: { ...templateChoice, template_name: "ไม่เคยเลือก" },
+    })
+  ).toMatchObject({ error: "attachment_template_stale", status: "failed" });
   expect(
     (await authoringRequest("attachment-categories", "GET", undefined, ""))
       .status
@@ -755,7 +846,15 @@ test("category outage and upstream rename preserve saved template, binding, Tag 
 });
 
 test("ordinary Field authoring remains usable with ECM unset and attachments cannot replace ordinary validation", async () => {
-  const ordinary = createApp({ ecm: null, legacySso: null });
+  const ordinary = createApp({
+    ecm: null,
+    legacySso: null,
+    onlyOffice: {
+      convertDocxToPdf: () => Promise.resolve(new Uint8Array()),
+      forceSave: () => Promise.resolve({ url: native.url.href }),
+    },
+    onlyOfficeCallbackOrigins: [native.url.origin],
+  });
   expect(
     (
       await authoringRequest(
@@ -778,32 +877,42 @@ test("ordinary Field authoring remains usable with ECM unset and attachments can
       )
     ).status
   ).toBe(503);
-  expect((await upsert({ ...proof, type: "number" })).status).toBe(400);
   expect(
-    (await upsert({ ...proof, prefillPointer: "/person/name" })).status
-  ).toBe(400);
+    await upsert({ ...proof, type: "number" }, "field", ordinary)
+  ).toMatchObject({ error: "invalid_field_config", httpStatus: 400 });
   expect(
-    (
-      await upsert({
+    await upsert(
+      { ...proof, prefillPointer: "/person/name" },
+      "field",
+      ordinary
+    )
+  ).toMatchObject({ error: "invalid_field_config", httpStatus: 400 });
+  expect(
+    await upsert(
+      {
         ...proof,
         anchor: "folio_plain",
         attachment: undefined,
         id: "folio_plain",
         key: "plain",
-      })
-    ).status
-  ).toBe(200);
+      },
+      "field",
+      ordinary
+    )
+  ).toMatchObject({ status: "completed" });
   expect(
-    (
-      await upsert({
+    await upsert(
+      {
         ...proof,
         anchor: "folio_collision",
         attachment: undefined,
         id: "folio_collision",
         key: "plain",
-      })
-    ).status
-  ).toBe(409);
+      },
+      "field",
+      ordinary
+    )
+  ).toMatchObject({ error: "duplicate_field_tag", httpStatus: 409 });
 });
 
 test("attachment column settings share one category across rows and retain column binding after Tag and required changes", async () => {
@@ -830,59 +939,31 @@ test("attachment column settings share one category across rows and retain colum
     key: "items",
     label: "รายการ",
   };
-  expect((await upsert(table, "table")).status).toBe(200);
+  expect(await upsert(table, "table")).toMatchObject({ status: "completed" });
   categoryStatus = 503;
   const column = { ...table.columns[0], key: "documents", required: true };
-  const changed = await upsert(column, "column");
-  expect(changed.status).toBe(200);
-  const payload = (await changed.json()) as {
-    bindings: { table: { columns: unknown[] } };
-    revision: number;
-  };
-  expect(payload.bindings.table.columns).toEqual([column]);
-  expect(
-    (
-      await authoringRequest("spreadsheet-bindings", "PATCH", {
-        change: { action: "delete", id: table.id, kind: "table" },
-        documentKey,
-        revision: payload.revision,
-      })
-    ).status
-  ).toBe(200);
+  expect(await upsert(column, "column")).toMatchObject({ status: "completed" });
+  expect((await bindingState()).bindings.table?.columns).toEqual([column]);
+  expect(await remove(table.id, "table")).toMatchObject({
+    status: "completed",
+  });
 });
 
 test("complete saved categories publish offline without User metadata values and the published contract cannot change", async () => {
-  const current = await authoringRequest("spreadsheet-bindings");
-  const { revision } = (await current.json()) as { revision: number };
+  expect(await remove("folio_plain")).toMatchObject({ status: "completed" });
   expect(
-    (
-      await authoringRequest("spreadsheet-bindings", "PATCH", {
-        change: { action: "delete", id: "folio_plain", kind: "field" },
-        documentKey,
-        revision,
-      })
-    ).status
-  ).toBe(200);
-  for (const [id, key] of [["folio_number", "docs_number"]]) {
-    expect(
-      // oxlint-disable-next-line no-await-in-loop -- Each Field PATCH consumes the previous revision.
-      (await upsert({ ...proof, anchor: id, attachment: undefined, id, key }))
-        .status
-    ).toBe(200);
-  }
-  expect((await upsert({ ...proof, attachment: undefined })).status).toBe(200);
-  const unconfigured = await authoringRequest(
-    "publish",
-    "POST",
-    {
-      documentKey,
-      spreadsheetAnchors: [
-        ["folio_proof", "'Form'!$B$3"],
-        ["folio_number", "'Form'!$B$2"],
-      ],
-    },
-    publishCapability
-  );
+    await upsert({
+      ...proof,
+      anchor: "folio_number",
+      attachment: undefined,
+      id: "folio_number",
+      key: "docs_number",
+    })
+  ).toMatchObject({ status: "completed" });
+  expect(await upsert({ ...proof, attachment: undefined })).toMatchObject({
+    status: "completed",
+  });
+  const unconfigured = await publish();
   expect(unconfigured.status).toBe(202);
   const unconfiguredBody = (await unconfigured.json()) as {
     operationId: string;
@@ -892,25 +973,13 @@ test("complete saved categories publish offline without User metadata values and
     status: "failed",
   });
   expect(
-    (
-      await upsert({
-        ...proof,
-        attachment: templateChoice,
-        key: "supporting_document",
-        required: true,
-      })
-    ).status
-  ).toBe(200);
-  const nativeSettings = await authoringRequest("spreadsheet-bindings");
-  const nativeSettingsBody = (await nativeSettings.json()) as {
-    bindings: unknown;
-  };
-  // The editor fixture applies the renamed Tag to actual native OLE metadata before its callback snapshot.
-  snapshot = (
-    await processSpreadsheet(snapshot, {
-      bindings: spreadsheetBindingSchema.parse(nativeSettingsBody.bindings),
+    await upsert({
+      ...proof,
+      attachment: templateChoice,
+      key: "supporting_document",
+      required: true,
     })
-  ).workbook;
+  ).toMatchObject({ status: "completed" });
   for (const mutation of ["rename", "move", "delete"] as const) {
     beforeSnapshot = async () => {
       beforeSnapshot = null;
@@ -940,18 +1009,7 @@ test("complete saved categories publish offline without User metadata values and
       );
       expect(response.status).toBe(200);
     };
-    const racing = await authoringRequest(
-      "publish",
-      "POST",
-      {
-        documentKey,
-        spreadsheetAnchors: [
-          ["folio_proof", "'Form'!$B$3"],
-          ["folio_number", "'Form'!$B$2"],
-        ],
-      },
-      publishCapability
-    );
+    const racing = await publish();
     expect(racing.status).toBe(202);
     const started = (await racing.json()) as { operationId: string };
     expect(await operationResult(started.operationId)).toMatchObject({
@@ -980,40 +1038,29 @@ test("complete saved categories publish offline without User metadata values and
     };
     templateChoice.storage_template_id = restoredBody.template.id;
     expect(
-      (
-        await upsert({
-          ...proof,
-          attachment: templateChoice,
-          key: "supporting_document",
-          required: true,
-        })
-      ).status
-    ).toBe(200);
+      await upsert({
+        ...proof,
+        attachment: templateChoice,
+        key: "supporting_document",
+        required: true,
+      })
+    ).toMatchObject({ status: "completed" });
   }
   categoryStatus = 503;
   const beforeRequests = providerRequests.length;
-  const published = await authoringRequest(
-    "publish",
-    "POST",
-    {
-      documentKey,
-      spreadsheetAnchors: [
-        ["folio_proof", "'Form'!$B$3"],
-        ["folio_number", "'Form'!$B$2"],
-      ],
-    },
-    publishCapability
-  );
+  const finalState = await bindingState();
+  const published = await publish();
   expect(published.status).toBe(202);
   const { operationId } = (await published.json()) as { operationId: string };
   const outcome = await operationResult(operationId);
   expect(outcome).toMatchObject({ status: "completed" });
   expect(providerRequests.length).toBe(beforeRequests);
-  const frozen = await authoringRequest("spreadsheet-bindings", "PATCH", {
-    change: { action: "upsert", kind: "field", value: proof },
-    documentKey,
-    revision: 0,
-  });
+  const frozen = await authoringRequest(
+    "save",
+    "POST",
+    payloadFor(finalState),
+    saveCapability
+  );
   expect(frozen.status).toBe(409);
   expect(await frozen.json()).toMatchObject({ error: "published_immutable" });
   const visible = await app.handle(
@@ -1079,7 +1126,7 @@ const isolatedPublication = async (
       ownTemplateId,
       ownFormId
     );
-    const publish = actionEditorCapability(
+    const ownPublishCapability = actionEditorCapability(
       identity,
       {
         documentKey: ownDocumentKey,
@@ -1097,10 +1144,16 @@ const isolatedPublication = async (
         body: JSON.stringify({
           documentKey: ownDocumentKey,
           spreadsheetAnchors,
+          xlsxDraft: {
+            bindings,
+            checkpoint: crypto.randomUUID(),
+            revision: 0,
+            version: 1,
+          },
         }),
         headers: {
           "Content-Type": "application/json",
-          "X-Editor-Capability": publish,
+          "X-Editor-Capability": ownPublishCapability,
         },
         method: "POST",
       })
@@ -1364,15 +1417,19 @@ test("duplicates keep independent links and frozen new choices; legacy duplicate
           plugins: {
             options: Record<
               string,
-              { spreadsheetBindings?: SpreadsheetBindings }
+              {
+                spreadsheetBindings?: SpreadsheetBindings;
+                xlsxDraftRevision?: number;
+              }
             >;
           };
         };
       };
     };
-    const copied = Object.values(
+    const copiedOptions = Object.values(
       config.config.editorConfig.plugins.options
-    ).find((entry) => entry.spreadsheetBindings)?.spreadsheetBindings;
+    ).find((entry) => entry.spreadsheetBindings);
+    const copied = copiedOptions?.spreadsheetBindings;
     expect(
       copied?.fields.find((field) => field.attachment)?.attachment
     ).toEqual(
@@ -1393,6 +1450,12 @@ test("duplicates keep independent links and frozen new choices; legacy duplicate
           body: JSON.stringify({
             documentKey: config.bridge.documentKey,
             spreadsheetAnchors: [["folio_proof", "'Form'!$B$3"]],
+            xlsxDraft: {
+              bindings: copied,
+              checkpoint: crypto.randomUUID(),
+              revision: copiedOptions?.xlsxDraftRevision,
+              version: 1,
+            },
           }),
           headers: {
             Authorization: `Bearer ${bearer}`,

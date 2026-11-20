@@ -313,27 +313,28 @@ const bindingState = async (publicId: string, editor: Config) => {
   expect(response.status).toBe(200);
   return (await response.json()) as BindingState;
 };
-const remove = async (
-  publicId: string,
-  editor: Config,
+const remove = (
   state: BindingState,
   kind: "field" | "column" | "table",
   id: string
-) => {
-  const response = await request(
-    `/api/admin/forms/${publicId}/spreadsheet-bindings`,
-    editor.bridge.capabilities["configure-fields"] as string,
-    {
-      documentKey: state.documentKey,
-      revision: state.revision,
-      change: { action: "delete", kind, id },
-    },
-    true,
-    "PATCH"
-  );
-  expect(response.status).toBe(200);
-  return (await response.json()) as BindingState;
-};
+): BindingState => ({
+  ...state,
+  bindings: {
+    ...state.bindings,
+    fields: state.bindings.fields.filter(
+      (field) => kind !== "field" || field.id !== id
+    ),
+    table:
+      kind === "table"
+        ? null
+        : state.bindings.table && {
+            ...state.bindings.table,
+            columns: state.bindings.table.columns.filter(
+              (column) => kind !== "column" || column.id !== id
+            ),
+          },
+  },
+});
 const removeNativeNames = (bytes: Uint8Array, removed: string[]) =>
   mutatePart(bytes, "xl/workbook.xml", (xml) => {
     let result = xml;
@@ -355,6 +356,20 @@ const anchors = (bytes: Uint8Array, bindings: SpreadsheetBindings) => {
     book.names[name] ?? null,
   ]);
 };
+const candidate = (
+  state: BindingState,
+  bytes: Uint8Array,
+  checkpoint = crypto.randomUUID()
+) => ({
+  documentKey: state.documentKey,
+  spreadsheetAnchors: anchors(bytes, state.bindings),
+  xlsxDraft: {
+    bindings: state.bindings,
+    checkpoint,
+    revision: state.revision,
+    version: 1,
+  },
+});
 const savedBytes = async (publicId: string, adminToken: string) => {
   const response = await request(
     `/api/admin/forms/${publicId}/template/xlsx`,
@@ -387,26 +402,7 @@ test("Admin source removal rejects stale revisions and failed saving keeps a rec
   const opening = crypto.randomUUID();
   const editor = await config(f.publicId, f.adminToken, opening);
   const before = await bindingState(f.publicId, editor);
-  const removed = await remove(
-    f.publicId,
-    editor,
-    before,
-    "field",
-    "folio_project"
-  );
-  const stale = await request(
-    `/api/admin/forms/${f.publicId}/spreadsheet-bindings`,
-    editor.bridge.capabilities["configure-fields"] as string,
-    {
-      documentKey: before.documentKey,
-      revision: before.revision,
-      change: { action: "delete", kind: "table", id: "folio_rows" },
-    },
-    true,
-    "PATCH"
-  );
-  expect(stale.status).toBe(409);
-  expect(await bindingState(f.publicId, editor)).toEqual(removed);
+  const removed = remove(before, "field", "folio_project");
   const oldBytes = await savedBytes(f.publicId, f.adminToken);
   let checkpoint = crypto.randomUUID();
   // An old callback lacks the fresh checkpoint required by the existing removal save barrier.
@@ -416,8 +412,7 @@ test("Admin source removal rejects stale revisions and failed saving keeps a rec
         `/api/admin/forms/${f.publicId}/save`,
         editor.bridge.capabilities["save-template"] as string,
         {
-          documentKey: removed.documentKey,
-          spreadsheetAnchors: anchors(oldBytes, removed.bindings),
+          ...candidate(removed, oldBytes, checkpoint),
           preserveEditorSession: true,
           preserveEditorSessionPurpose: "manual",
           spreadsheetSaveCheckpoint: checkpoint,
@@ -428,7 +423,7 @@ test("Admin source removal rejects stale revisions and failed saving keeps a rec
     )
   ).toMatchObject({ status: "failed", error: "invalid_template" });
   expect(await savedBytes(f.publicId, f.adminToken)).toEqual(oldBytes);
-  expect(await bindingState(f.publicId, editor)).toEqual(removed);
+  expect(await bindingState(f.publicId, editor)).toEqual(before);
   checkpoint = crypto.randomUUID();
   snapshot = removeNativeNames(oldBytes, ["folio_project"]);
   snapshot = mutatePart(snapshot, "xl/workbook.xml", (xml) =>
@@ -443,8 +438,7 @@ test("Admin source removal rejects stale revisions and failed saving keeps a rec
         `/api/admin/forms/${f.publicId}/save`,
         editor.bridge.capabilities["save-template"] as string,
         {
-          documentKey: removed.documentKey,
-          spreadsheetAnchors: anchors(snapshot, removed.bindings),
+          ...candidate(removed, snapshot, checkpoint),
           preserveEditorSession: true,
           preserveEditorSessionPurpose: "manual",
           spreadsheetSaveCheckpoint: checkpoint,
@@ -458,6 +452,13 @@ test("Admin source removal rejects stale revisions and failed saving keeps a rec
     result: { documentKey: removed.documentKey, editorSessionPreserved: true },
   });
   const reopened = await config(f.publicId, f.adminToken, opening);
+  const stale = await request(
+    `/api/admin/forms/${f.publicId}/save`,
+    reopened.bridge.capabilities["save-template"] as string,
+    candidate(remove(removed, "table", "folio_rows"), snapshot),
+    true
+  );
+  expect(stale.status).toBe(409);
   expect(
     (await bindingState(f.publicId, reopened)).bindings.fields.map(
       (field) => field.key
@@ -489,8 +490,25 @@ test("removing the last project source rejects a Retry that was waiting for the 
     );
     await started.promise;
     let state = await bindingState(f.publicId, editor);
-    state = await remove(f.publicId, editor, state, "field", "folio_project");
-    await remove(f.publicId, editor, state, "table", "folio_rows");
+    state = remove(
+      remove(state, "field", "folio_project"),
+      "table",
+      "folio_rows"
+    );
+    snapshot = removeNativeNames(await savedBytes(f.publicId, f.adminToken), [
+      "folio_project",
+      ...spreadsheetBindingAnchors({ ...initialBindings, fields: [] }),
+    ]);
+    expect(
+      await poll(
+        await request(
+          `/api/admin/forms/${f.publicId}/save`,
+          editor.bridge.capabilities["save-template"] as string,
+          candidate(state, snapshot),
+          true
+        )
+      )
+    ).toMatchObject({ status: "completed" });
     delayed.resolve(readyCatalog());
     expect((await retry).status).toBe(409);
     expect(
@@ -508,11 +526,8 @@ workflowTest(
     const f = await fixture();
     let editor = await config(f.publicId, f.adminToken);
     let state = await bindingState(f.publicId, editor);
-    state = await remove(f.publicId, editor, state, "field", "folio_project");
-    state = await remove(
-      f.publicId,
-      editor,
-      state,
+    state = remove(
+      remove(state, "field", "folio_project"),
       "column",
       "folio_removed_column"
     );
@@ -525,10 +540,7 @@ workflowTest(
         await request(
           `/api/admin/forms/${f.publicId}/save`,
           editor.bridge.capabilities["save-template"] as string,
-          {
-            documentKey: state.documentKey,
-            spreadsheetAnchors: anchors(snapshot, state.bindings),
-          },
+          candidate(state, snapshot),
           true
         )
       )
@@ -547,10 +559,7 @@ workflowTest(
         await request(
           `/api/admin/forms/${f.publicId}/publish`,
           editor.bridge.capabilities.publish as string,
-          {
-            documentKey: state.documentKey,
-            spreadsheetAnchors: anchors(snapshot, state.bindings),
-          },
+          candidate(state, snapshot),
           true
         )
       )
@@ -648,15 +657,10 @@ workflowTest(
     expect(
       (
         await request(
-          `/api/admin/forms/${f.publicId}/spreadsheet-bindings`,
-          editor.bridge.capabilities["configure-fields"] as string,
-          {
-            documentKey: state.documentKey,
-            revision: state.revision,
-            change: { action: "delete", kind: "table", id: "folio_rows" },
-          },
-          true,
-          "PATCH"
+          `/api/admin/forms/${f.publicId}/save`,
+          editor.bridge.capabilities["save-template"] as string,
+          candidate(remove(state, "table", "folio_rows"), publishedBytes),
+          true
         )
       ).status
     ).toBe(409);
@@ -675,7 +679,7 @@ workflowTest(
     state = await bindingState(duplicateId, editor);
     expect(state.bindings.table?.columns[0]?.source).toBe("pdms-project-name");
     const catalog = editor.pdmsProjectCatalog;
-    state = await remove(duplicateId, editor, state, "table", "folio_rows");
+    state = remove(state, "table", "folio_rows");
     snapshot = removeNativeNames(
       await savedBytes(duplicateId, f.adminToken),
       spreadsheetBindingAnchors({
@@ -689,16 +693,14 @@ workflowTest(
         await request(
           `/api/admin/forms/${duplicateId}/save`,
           editor.bridge.capabilities["save-template"] as string,
-          {
-            documentKey: state.documentKey,
-            spreadsheetAnchors: anchors(snapshot, state.bindings),
-          },
+          candidate(state, snapshot),
           true
         )
       )
     ).toMatchObject({ status: "completed" });
     const beforeRequests = upstreamRequests;
     editor = await config(duplicateId, f.adminToken);
+    state = await bindingState(duplicateId, editor);
     expect(editor.pdmsProjectCatalog).toBeUndefined();
     expect(upstreamRequests).toBe(beforeRequests);
     expect((await bindingState(duplicateId, editor)).bindings).toEqual({
@@ -726,10 +728,7 @@ workflowTest(
         await request(
           `/api/admin/forms/${duplicateId}/publish`,
           editor.bridge.capabilities.publish as string,
-          {
-            documentKey: editor.bridge.documentKey,
-            spreadsheetAnchors: anchors(snapshot, state.bindings),
-          },
+          candidate(state, snapshot),
           true
         )
       )
@@ -795,8 +794,11 @@ workflowTest(
     const f = await fixture(true);
     const editor = await config(f.publicId, f.adminToken);
     let state = await bindingState(f.publicId, editor);
-    state = await remove(f.publicId, editor, state, "field", "folio_project");
-    state = await remove(f.publicId, editor, state, "table", "folio_rows");
+    state = remove(
+      remove(state, "field", "folio_project"),
+      "table",
+      "folio_rows"
+    );
     snapshot = removeNativeNames(snapshot as Uint8Array, [
       "folio_project",
       ...spreadsheetBindingAnchors({
@@ -810,10 +812,7 @@ workflowTest(
         await request(
           `/api/admin/forms/${f.publicId}/publish`,
           editor.bridge.capabilities.publish as string,
-          {
-            documentKey: state.documentKey,
-            spreadsheetAnchors: anchors(snapshot, state.bindings),
-          },
+          candidate(state, snapshot),
           true
         )
       )

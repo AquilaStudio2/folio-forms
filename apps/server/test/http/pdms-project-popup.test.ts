@@ -400,17 +400,6 @@ nativeTest.each([200, 503])(
       source: "pdms-project-name",
       options: [],
     };
-    const mapped = await request(
-      `/api/admin/forms/${publicId}/spreadsheet-bindings`,
-      initial.bridge.capabilities["configure-fields"],
-      {
-        documentKey,
-        revision: 1,
-        change: { action: "upsert", kind: "field", value: field },
-      },
-      "PATCH"
-    );
-    expect(mapped.status).toBe(200);
     // The actual button's native flush supplies the new anchor and all ordinary unsaved edits.
     const names = { folio_created: "'Form'!$A$1:$B$1" };
     snapshot = fixtureWorkbook({
@@ -418,16 +407,19 @@ nativeTest.each([200, 503])(
       merges: ["A1:B1"],
       cells: [{ address: "D1", value: "unsaved template note" }],
     });
-    const renewedResponse = await request(path);
-    expect(renewedResponse.status).toBe(200);
-    const renewed = (await renewedResponse.json()) as Config;
-    expect(renewed.pdmsProjectCatalog?.names).toEqual(
-      status === 200 ? ["โครงการ ก", "00123"] : []
-    );
     const saved = await request(
       `/api/admin/forms/${publicId}/save`,
-      renewed.bridge.capabilities["save-template"],
-      { documentKey, spreadsheetAnchors: Object.entries(names) }
+      initial.bridge.capabilities["save-template"],
+      {
+        documentKey,
+        spreadsheetAnchors: Object.entries(names),
+        xlsxDraft: {
+          bindings: { fields: [field], table: null, version: 1 },
+          checkpoint: crypto.randomUUID(),
+          revision: 1,
+          version: 1,
+        },
+      }
     );
     expect(saved.status).toBe(202);
     const job = (await saved.json()) as {
@@ -454,7 +446,9 @@ nativeTest.each([200, 503])(
     expect(reopened.status).toBe(200);
     const current = (await reopened.json()) as Config;
     expect(current.bridge.documentKey).not.toBe(documentKey);
-    expect(current.pdmsProjectCatalog).toEqual(renewed.pdmsProjectCatalog);
+    expect(current.pdmsProjectCatalog?.names).toEqual(
+      status === 200 ? ["โครงการ ก", "00123"] : []
+    );
     expect(current.bridge.pdmsProjectPopup).toBeDefined();
     expect(providerRequests - before).toBe(1);
     const downloaded = await request(
