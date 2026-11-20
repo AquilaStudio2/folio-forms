@@ -12,11 +12,14 @@ import type {
   Submission,
 } from "@/lib/api";
 
-// oxlint-disable-next-line complexity -- The detail route owns read, history, revision, and export state.
-const SubmissionDetailRoute = () => {
-  const { formId, submissionId } = useParams({
-    from: "/admin/forms/$formId/submissions/$submissionId",
-  });
+// oxlint-disable-next-line complexity -- The detail owns read, history, revision, and export state.
+const SubmissionDetailPage = ({
+  formId,
+  submissionId,
+}: {
+  formId: string;
+  submissionId: string;
+}) => {
   const [submission, setSubmission] = useState<Submission | null>(null);
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [dataRevision, setDataRevision] = useState<number | null>(null);
@@ -234,7 +237,7 @@ const SubmissionDetailRoute = () => {
         <SubmissionResultViewer
           configUrl={
             submission.responseId && selectedRevisionRecord
-              ? `/api/admin/results/${submission.responseId}/viewer-config?revision=${selectedRevision}`
+              ? `/api/admin/results/${submission.responseId}/viewer-config?submissionId=${submissionId}&revision=${selectedRevision}`
               : undefined
           }
           data={dataRevision === selectedRevision ? (data ?? {}) : {}}
@@ -247,6 +250,19 @@ const SubmissionDetailRoute = () => {
         />
       </Card>
     </div>
+  );
+};
+
+const SubmissionDetailRoute = () => {
+  const { formId, submissionId } = useParams({
+    from: "/admin/forms/$formId/submissions/$submissionId",
+  });
+  return (
+    <SubmissionDetailPage
+      key={submissionId}
+      formId={formId}
+      submissionId={submissionId}
+    />
   );
 };
 

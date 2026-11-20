@@ -640,6 +640,17 @@ export function registerResultRoutes(
         requireResultReader(identity);
         validateId(params.id, "Response");
         const selector = revisionSelector(query.revision);
+        const submissionId =
+          query.submissionId === undefined
+            ? undefined
+            : validateId(query.submissionId, "Submission");
+        if (submissionId && selector === "latest") {
+          fail(
+            400,
+            "invalid_request",
+            "An explicit Submission requires a revision"
+          );
+        }
         const response = await prisma.response.findUnique({
           include: {
             form: { select: { documentKind: true, publicId: true } },
@@ -647,18 +658,27 @@ export function registerResultRoutes(
               include: { corrections: { orderBy: { revision: "desc" } } },
               orderBy: [{ createdAt: "desc" }, { id: "desc" }],
               take: 1,
+              where: { id: submissionId },
             },
           },
           where: { id: params.id },
         });
-        const submission = response?.submissions[0];
-        if (
-          !response ||
-          (response.status === ResponseStatus.submitted && !submission)
-        ) {
+        if (!response) {
           fail(404, "not_found", "Response was not found");
         }
-        const submitted = response.status === ResponseStatus.submitted;
+        const submission = response.submissions[0];
+        const submitted =
+          Boolean(submissionId) || response.status === ResponseStatus.submitted;
+        if (submitted && !submission) {
+          fail(404, "not_found", "Response was not found");
+        }
+        if (
+          query.draftUpdatedAt !== undefined &&
+          (submitted ||
+            query.draftUpdatedAt !== response.updatedAt.toISOString())
+        ) {
+          fail(404, "not_found", "Draft snapshot is no longer current");
+        }
         if (!submitted && selector !== "latest") {
           fail(404, "not_found", "Submission revision was not found");
         }

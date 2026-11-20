@@ -233,6 +233,7 @@ beforeEach(() => {
             formTitle: "Other owner draft",
             id: responseId,
             latestCorrectionNumber: resultLatestRevision,
+            revision: resultState === "submitted" ? resultLatestRevision : null,
             state: resultState,
             submissionId: "submission",
             updatedAt: "2026-10-27T00:00:00.000Z",
@@ -241,7 +242,7 @@ beforeEach(() => {
         })
       );
     }
-    if (pathname === `/api/responses/${responseId}/corrections`) {
+    if (pathname === "/api/submissions/submission/corrections") {
       if (historyResponse) {
         return historyResponse;
       }
@@ -981,6 +982,39 @@ describe("VIEWER existing results access", () => {
       screen.getByRole("button", { name: "ดาวน์โหลด DOCX" })
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "ดาวน์โหลด PDF" })).toBeDisabled();
+  });
+
+  it("keeps the Results revision selected when another Correction arrives during loading", async () => {
+    resultState = "submitted";
+    historyResponse = Promise.resolve(
+      Response.json({
+        latestRevision: 2,
+        revisions: [
+          {
+            createdAt: "2026-10-27T00:00:00.000Z",
+            data: { name: "Pinned result value" },
+            document: { available: false },
+            revision: 1,
+          },
+          {
+            createdAt: "2026-10-27T00:00:01.000Z",
+            data: { name: "Newer result value" },
+            document: { available: false },
+            revision: 2,
+          },
+        ],
+      })
+    );
+    await mount(`/admin/results/${responseId}`);
+    const selector = await screen.findByRole("combobox", {
+      name: "เลือก Revision",
+    });
+    await waitFor(() => expect(selector).toBeEnabled());
+    expect(selector).toHaveValue("1");
+    expect(screen.queryByRole("option", { name: "Correction 2" })).toBeNull();
+    await userEvent.click(screen.getByRole("tab", { name: "Fields" }));
+    expect(await screen.findByText("Pinned result value")).toBeVisible();
+    expect(screen.queryByText("Newer result value")).toBeNull();
   });
 
   it("blocks duplicate exports while busy and retries a failed PDF without changing the submission", async () => {
