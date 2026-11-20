@@ -183,9 +183,16 @@ workflowTest(
       bridge: {
         capabilities: Record<string, string>;
         documentKey: string;
-        xlsxDraftRevision: number;
       };
     };
+    const rules = await request(
+      `/api/admin/forms/${publicId}/spreadsheet-bindings`,
+      config.bridge.capabilities["configure-fields"] as string,
+      undefined,
+      true
+    );
+    expect(rules.status).toBe(200);
+    const { revision } = (await rules.json()) as { revision: number };
     const published = await request(
       `/api/admin/forms/${publicId}/publish`,
       config.bridge.capabilities.publish as string,
@@ -195,7 +202,7 @@ workflowTest(
         xlsxDraft: {
           bindings,
           checkpoint: crypto.randomUUID(),
-          revision: config.bridge.xlsxDraftRevision,
+          revision,
           version: 1,
         },
       },

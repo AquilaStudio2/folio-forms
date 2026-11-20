@@ -305,7 +305,15 @@ const fixture = async (
   });
   const author = (await (
     await request(`/api/admin/forms/${publicId}/editor-config`, adminToken)
-  ).json()) as { bridge: Editor["bridge"] & { xlsxDraftRevision: number } };
+  ).json()) as Editor;
+  const rules = await request(
+    `/api/admin/forms/${publicId}/spreadsheet-bindings`,
+    author.bridge.capabilities["configure-fields"] as string,
+    undefined,
+    true
+  );
+  expect(rules.status).toBe(200);
+  const { revision } = (await rules.json()) as { revision: number };
   const publication = await complete(
     await request(
       `/api/admin/forms/${publicId}/publish`,
@@ -316,7 +324,7 @@ const fixture = async (
         xlsxDraft: {
           bindings,
           checkpoint: crypto.randomUUID(),
-          revision: author.bridge.xlsxDraftRevision,
+          revision,
           version: 1,
         },
       },

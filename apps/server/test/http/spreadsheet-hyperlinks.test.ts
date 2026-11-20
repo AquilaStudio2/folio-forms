@@ -34,7 +34,6 @@ const editorSchema = z.object({
     capabilities: z.record(z.string(), z.string()),
     documentKey: z.string(),
     lease: z.object({ id: z.string(), releaseUrl: z.string() }),
-    xlsxDraftRevision: z.number().optional(),
   }),
   config: z.object({
     document: z.object({ key: z.string(), url: z.string() }),
@@ -123,21 +122,32 @@ const action = async (
   if (!token) {
     throw new Error(`Missing ${name} capability`);
   }
+  const templateAction = name === "save-template" || name === "publish";
+  let xlsxDraft;
+  if (templateAction) {
+    const rules = await request(
+      `/api/admin/forms/${publicId}/spreadsheet-bindings`,
+      z.string().parse(editor.bridge.capabilities["configure-fields"]),
+      undefined,
+      true
+    );
+    expect(rules.status).toBe(200);
+    const { revision } = z
+      .object({ revision: z.number() })
+      .parse(await rules.json());
+    xlsxDraft = {
+      bindings,
+      checkpoint: crypto.randomUUID(),
+      revision,
+      version: 1,
+    };
+  }
   const response = await request(
     path,
     token,
     {
       documentKey: editor.bridge.documentKey,
-      ...(name === "save-template" || name === "publish"
-        ? {
-            xlsxDraft: {
-              bindings,
-              checkpoint: crypto.randomUUID(),
-              revision: z.number().parse(editor.bridge.xlsxDraftRevision),
-              version: 1,
-            },
-          }
-        : { data: {} }),
+      ...(xlsxDraft ? { xlsxDraft } : { data: {} }),
       ...body,
     },
     true

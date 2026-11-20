@@ -415,6 +415,7 @@ test("preserved placement saves validate input, commit twice under one key, igno
   });
   const savedOne = await current();
   expect(savedOne.documentKey).toBe(documentKey);
+  expect(savedOne.bindingRevision).toBe(initialCandidate.revision + 1);
   expect(savedOne.objectKey).not.toBe(initialObjectKey);
   // Existing B's native anchor is unchanged, but the old canonical artifact only
   // contains A. Force-save(false) must not ACK B by merely counting A's button.
@@ -445,6 +446,7 @@ test("preserved placement saves validate input, commit twice under one key, igno
   });
   const savedTwo = await current();
   expect(savedTwo.documentKey).toBe(documentKey);
+  expect(savedTwo.bindingRevision).toBe(savedOne.bindingRevision + 1);
   expect(savedTwo.objectKey).not.toBe(savedOne.objectKey);
   expect(savedTwo.contentHash).not.toBe(savedOne.contentHash);
   expect(
@@ -462,7 +464,6 @@ test("preserved placement saves validate input, commit twice under one key, igno
   expect(configResponse.status).toBe(200);
   expect(await configResponse.json()).toMatchObject({
     bridge: {
-      xlsxDraftRevision: savedTwo.bindingRevision,
       lease: { id: leaseId },
       uploadPoc: {
         documentKey,
