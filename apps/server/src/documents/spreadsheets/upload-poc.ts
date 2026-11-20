@@ -309,12 +309,16 @@ const managedControlCount = (sheet: SpreadsheetXmlNode): number => {
 
 export const validateSpreadsheetAttachmentButtons = (
   bytes: Uint8Array,
-  bindings: SpreadsheetBindings
+  bindings: SpreadsheetBindings,
+  draft = false
 ): void => {
   const workbook = readSpreadsheetWorkbook(bytes);
   const targets = spreadsheetUploadPocTargets(bytes, bindings);
   const configured = new Set(
-    [...bindings.fields, ...(bindings.table?.columns ?? [])]
+    [
+      ...bindings.fields.filter((field) => !field.unbound),
+      ...(bindings.table?.unbound ? [] : (bindings.table?.columns ?? [])),
+    ]
       .filter((field) => field.attachment)
       .map((field) => field.id)
   );
@@ -347,7 +351,7 @@ export const validateSpreadsheetAttachmentButtons = (
   if (
     managedCount !== verified.length ||
     incomplete ||
-    targets.some((target) => !configured.has(target.bindingId))
+    (!draft && targets.some((target) => !configured.has(target.bindingId)))
   ) {
     fail(
       422,

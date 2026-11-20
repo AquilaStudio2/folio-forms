@@ -10,7 +10,7 @@ import {
   spreadsheetXmlTree,
 } from "../documents/spreadsheets/xml";
 import { spreadsheetContractForTemplate } from "../forms/spreadsheet-fields";
-import { fail, HttpError } from "../http/errors";
+import { fail } from "../http/errors";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Operation } from "../model-types";
 import type { OnlyOfficeClient } from "../onlyoffice";
@@ -23,7 +23,11 @@ import {
   updateOperationFailed,
   operationDocumentKey,
 } from "./lifecycle";
-import { operationMetadata, operationDocumentServerKey } from "./model";
+import {
+  isReportableOperationError,
+  operationMetadata,
+  operationDocumentServerKey,
+} from "./model";
 import { nativeCaptureKey } from "./object-cleanup";
 import { SpreadsheetValidationError } from "./spreadsheet-document";
 
@@ -198,12 +202,14 @@ export function launchForceSave(
           return;
         }
         let snapshot: Uint8Array | undefined;
+        let recoveredNativeSnapshot = false;
         if (saveResult === false) {
-          const catalogSessionId = (
-            operation.metadata as { pdmsCatalogSessionId?: unknown } | null
-          )?.pdmsCatalogSessionId;
+          const metadata = operationMetadata(operation.metadata);
+          const { nativeCaptureLeaseId, pdmsCatalogSessionId } = metadata;
+          const plainXlsx =
+            metadata.documentKind === "xlsx" && !pdmsCatalogSessionId;
           const previous =
-            typeof catalogSessionId === "string"
+            plainXlsx || pdmsCatalogSessionId
               ? await prisma.operation.findFirst({
                   orderBy: [{ createdAt: "desc" }, { id: "desc" }],
                   where: {
@@ -229,8 +235,36 @@ export function launchForceSave(
               : null;
           const failed =
             previous?.status === OperationStatus.failed ? previous : null;
-          const recoveredCaptureKey = failed ? nativeCaptureKey(failed) : null;
-          if (failed && !recoveredCaptureKey) {
+          const failedMetadata = failed && operationMetadata(failed.metadata);
+          const samePlainScope =
+            plainXlsx &&
+            failed &&
+            failedMetadata &&
+            operation.actorId &&
+            operation.targetId &&
+            failed.actorId === operation.actorId &&
+            failedMetadata.documentKind === "xlsx" &&
+            !failedMetadata.pdmsCatalogSessionId &&
+            failedMetadata.action === metadata.action &&
+            failedMetadata.bindingRevision === metadata.bindingRevision &&
+            nativeCaptureLeaseId &&
+            failedMetadata.nativeCaptureLeaseId === nativeCaptureLeaseId &&
+            (await prisma.editorLease.findFirst({
+              select: { id: true },
+              where: {
+                expiresAt: { gt: new Date() },
+                holderSession: { expiresAt: { gt: new Date() } },
+                holderUserId: operation.actorId,
+                id: nativeCaptureLeaseId,
+                targetId: operation.targetId,
+                targetType: operation.targetType,
+              },
+            }));
+          const recoveredCaptureKey =
+            failed && (pdmsCatalogSessionId || samePlainScope)
+              ? nativeCaptureKey(failed)
+              : null;
+          if (failed && pdmsCatalogSessionId && !recoveredCaptureKey) {
             snapshot =
               (await pickerOnlyCanonicalSnapshot(operation)) ?? undefined;
           }
@@ -257,6 +291,7 @@ export function launchForceSave(
             );
           }
           if (!snapshot) {
+            recoveredNativeSnapshot = recoveredCaptureKey !== null;
             try {
               snapshot = await readObject(currentObjectKey);
             } catch {
@@ -278,21 +313,19 @@ export function launchForceSave(
             ...(saveResult === false ? {} : { url: saveResult.url }),
           },
           snapshot,
-          allowedCallbackOrigins
+          allowedCallbackOrigins,
+          undefined,
+          undefined,
+          recoveredNativeSnapshot
         );
       }
     } catch (error) {
+      const reported = isReportableOperationError(error);
       await updateOperationFailed(
         operation.id,
-        error instanceof HttpError &&
-          (error.code === "invalid_template" ||
-            error.code === "attachment_template_stale")
-          ? error.code
-          : "force_save_failed",
+        reported ? error.code : "force_save_failed",
         undefined,
-        error instanceof HttpError &&
-          (error.code === "invalid_template" ||
-            error.code === "attachment_template_stale")
+        reported
           ? { errorMessage: error.message }
           : error instanceof SpreadsheetValidationError
             ? {

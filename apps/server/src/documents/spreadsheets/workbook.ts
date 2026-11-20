@@ -8,6 +8,7 @@ import {
   templateArchiveText,
   parseTemplateXml,
   templateAttribute,
+  templateOfficeRelationshipNamespaces,
 } from "../package";
 import { reconcileSpreadsheetColumns } from "./columns";
 import {
@@ -48,6 +49,7 @@ export interface SpreadsheetCell {
 }
 export interface SpreadsheetWorkbook {
   hyperlinks: SpreadsheetHyperlink[];
+  localHyperlinks: SpreadsheetRange[];
   archive: Record<string, Uint8Array>;
   sheet: string;
   sheetPath: string;
@@ -57,8 +59,10 @@ export interface SpreadsheetWorkbook {
   merges: SpreadsheetRange[];
 }
 
+// oxlint-disable-next-line complexity -- Parse and reject unsafe package content even when collecting repairable name defects.
 export const readSpreadsheetWorkbook = (
-  bytes: Uint8Array
+  bytes: Uint8Array,
+  rejectedNames?: Set<string>
 ): SpreadsheetWorkbook => {
   const archive = readTemplateArchive(bytes, () => true);
   const hyperlinks = validateSpreadsheetRelationships(archive);
@@ -94,7 +98,11 @@ export const readSpreadsheetWorkbook = (
       if (element.local === "definedName" && name !== null) {
         if (name.startsWith("folio_")) {
           if (rawNames.has(name)) {
-            throw new Error(`Duplicate binding: ${name}`);
+            if (rejectedNames) {
+              rejectedNames.add(name);
+            } else {
+              throw new Error(`Duplicate binding: ${name}`);
+            }
           }
           rawNames.set(name, reference.trim());
         }
@@ -125,7 +133,11 @@ export const readSpreadsheetWorkbook = (
           name?.startsWith("folio_") &&
           templateAttribute(element, "localSheetId") !== undefined
         ) {
-          throw new Error("Folio bindings must be workbook-scoped");
+          if (rejectedNames) {
+            rejectedNames.add(name);
+          } else {
+            throw new Error("Folio bindings must be workbook-scoped");
+          }
         }
       }
     },
@@ -204,26 +216,32 @@ export const readSpreadsheetWorkbook = (
     throw new Error("Worksheet is unavailable");
   }
   validateUploadPocEmbeddings(archive, sheetPath);
-  const names = new Map(
-    [...rawNames].map(([key, value]) => {
-      try {
-        return [key, parseSpreadsheetRange(value)] as const;
-      } catch (error) {
-        if (
-          key.startsWith("folio_column_") ||
-          key.startsWith("folio_columns_")
-        ) {
-          throw new Error(
-            "ตำแหน่งคอลัมน์ตารางถูกลบหรือไม่ถูกต้อง กรุณาย้อนการลบคอลัมน์ หรือลบคอลัมน์นั้นจากการตั้งค่าก่อนบันทึก",
-            { cause: error }
-          );
-        }
+  const names = new Map<string, SpreadsheetRange>();
+  for (const [key, value] of rawNames) {
+    if (rejectedNames?.has(key)) {
+      continue;
+    }
+    try {
+      const range = parseSpreadsheetRange(value);
+      if (range.sheet !== sheet.name) {
+        throw new Error("Binding references a missing worksheet");
+      }
+      names.set(key, range);
+    } catch (error) {
+      if (rejectedNames) {
+        rejectedNames.add(key);
+      } else if (
+        key.startsWith("folio_column_") ||
+        key.startsWith("folio_columns_")
+      ) {
+        throw new Error(
+          "ตำแหน่งคอลัมน์ตารางถูกลบหรือไม่ถูกต้อง กรุณาย้อนการลบคอลัมน์ หรือลบคอลัมน์นั้นจากการตั้งค่าก่อนบันทึก",
+          { cause: error }
+        );
+      } else {
         throw error;
       }
-    })
-  );
-  if ([...names.values()].some((range) => range.sheet !== sheet.name)) {
-    throw new Error("Binding references a missing worksheet");
+    }
   }
   const strings: string[] = [];
   if (archive["xl/sharedStrings.xml"]) {
@@ -255,6 +273,7 @@ export const readSpreadsheetWorkbook = (
   }
   const cells = new Map<string, SpreadsheetCell>();
   const merges: SpreadsheetRange[] = [];
+  const localHyperlinks: SpreadsheetRange[] = [];
   let cell: SpreadsheetCell | null = null;
   let cellValue = "";
   let formula = "";
@@ -303,6 +322,21 @@ export const readSpreadsheetWorkbook = (
       }
       if (element.local === "mergeCell") {
         merges.push(
+          parseSpreadsheetRange(
+            `'${sheet.name.replaceAll("'", "''")}'!${templateAttribute(element, "ref") ?? ""}`
+          )
+        );
+      }
+      if (
+        element.local === "hyperlink" &&
+        templateAttribute(element, "location") &&
+        !element.attributes.some(
+          (attribute) =>
+            attribute.local === "id" &&
+            templateOfficeRelationshipNamespaces.has(attribute.uri)
+        )
+      ) {
+        localHyperlinks.push(
           parseSpreadsheetRange(
             `'${sheet.name.replaceAll("'", "''")}'!${templateAttribute(element, "ref") ?? ""}`
           )
@@ -369,6 +403,7 @@ export const readSpreadsheetWorkbook = (
       ...link,
       range: { ...link.range, sheet: sheet.name },
     })),
+    localHyperlinks,
     merges,
     names,
     sheet: sheet.name,
@@ -378,7 +413,8 @@ export const readSpreadsheetWorkbook = (
 
 export const resolveSpreadsheetContract = (
   input: SpreadsheetBindings,
-  workbook: SpreadsheetWorkbook
+  workbook: SpreadsheetWorkbook,
+  draft = false
 ): SpreadsheetContract => {
   const bindings = reconcileSpreadsheetColumns(input, workbook.names);
   const locations: Record<string, SpreadsheetRange> = {};
@@ -422,7 +458,7 @@ export const resolveSpreadsheetContract = (
     ) {
       throw new Error("Merged cells cannot cross table body rows");
     }
-    if (!bindings.table.columns.some((column) => !column.computed)) {
+    if (!draft && !bindings.table.columns.some((column) => !column.computed)) {
       throw new Error("A table needs at least one input column");
     }
     if (

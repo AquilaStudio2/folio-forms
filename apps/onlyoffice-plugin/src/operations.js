@@ -33,6 +33,10 @@ export function createOperations(
       ));
   let attachmentCommitUnresolved = false;
   let attachmentOperationId = "";
+  const draftCheckpointKey =
+    options.xlsxDraftProtocol === 1 && options.scopeIdentity
+      ? `folio-xlsx-draft:${options.scopeIdentity}`
+      : "";
 
   function actionRequest(action, data, reason, rowChange, requestContext) {
     const documentKey = requireOption(options.documentKey, "documentKey");
@@ -69,7 +73,10 @@ export function createOperations(
               }
             : {}),
           ...(options.documentKind === "xlsx" && data?.spreadsheetAnchors
-            ? { spreadsheetAnchors: data.spreadsheetAnchors }
+            ? {
+                spreadsheetAnchors: data.spreadsheetAnchors,
+                xlsxDraft: data.xlsxDraft,
+              }
             : {}),
         },
         path,
@@ -263,21 +270,27 @@ export function createOperations(
       .join(" — ");
   }
 
-  async function pollOperation(operationId, label, operationCapability) {
+  async function pollOperation(
+    operationId,
+    label,
+    operationCapability,
+    readStatus
+  ) {
     const operationLabel = label === undefined ? "operation" : label;
     const id = requireOption(operationId, "operationId");
-    const capability = requireOption(
-      operationCapability,
-      "operationCapability"
-    );
+    const capability = readStatus
+      ? null
+      : requireOption(operationCapability, "operationCapability");
     let previousStatus = "";
 
     for (let attempt = 0; attempt < MAX_OPERATION_POLLS; attempt += 1) {
-      const payload = await api.requestJson(
-        `${API_ROUTES.OPERATIONS}/${encodeURIComponent(id)}`,
-        { method: "GET" },
-        capability
-      );
+      const payload = readStatus
+        ? await readStatus()
+        : await api.requestJson(
+            `${API_ROUTES.OPERATIONS}/${encodeURIComponent(id)}`,
+            { method: "GET" },
+            capability
+          );
       const status = operationStatus(payload);
 
       if (!status) {
@@ -315,7 +328,9 @@ export function createOperations(
         if (id === attachmentOperationId) {
           attachmentCommitUnresolved = false;
         }
-        throw new Error(operationFailureMessage(payload, id));
+        const error = new Error(operationFailureMessage(payload, id));
+        error.operationTerminal = true;
+        throw error;
       }
 
       if (attempt < MAX_OPERATION_POLLS - 1) {
@@ -368,6 +383,12 @@ export function createOperations(
     let waitForReload = false;
     let resultAction = action;
     let recoveredCheckpoint = false;
+    const tracksDraft =
+      Boolean(draftCheckpointKey) &&
+      [ACTIONS.SAVE_TEMPLATE, ACTIONS.PUBLISH].includes(action);
+    let draftUnresolved = false;
+    let expectedDraftRevision;
+    let preservedDraftKey;
     const correctionReason = typeof reason === "string" ? reason.trim() : "";
     const attachmentSave =
       hasAttachments &&
@@ -420,11 +441,14 @@ export function createOperations(
         editorFrozen = true;
         bridge.notifyParent(action, "pending");
       }
-      const pendingGuard = await callbacks.beforeAction?.(
-        action,
-        rowChange,
-        saveContext
-      );
+      let readDraftStatus;
+      const storedDraft = tracksDraft
+        ? window.sessionStorage.getItem(draftCheckpointKey)
+        : null;
+      draftUnresolved = Boolean(storedDraft);
+      const pendingGuard = storedDraft
+        ? null
+        : await callbacks.beforeAction?.(action, rowChange, saveContext);
       const needsData =
         action === ACTIONS.SAVE_DRAFT ||
         action === ACTIONS.SAVE_CORRECTION ||
@@ -463,6 +487,36 @@ export function createOperations(
         editorFrozen = true;
         setStatus("กำลังตรวจผลการบันทึกรอบเดิม…", "pending");
         response = recovery;
+      } else if (storedDraft) {
+        await office.freezeEditor();
+        editorFrozen = true;
+        const original = JSON.parse(storedDraft);
+        expectedDraftRevision = original.revision;
+        preservedDraftKey = original.preservedDocumentKey;
+        const capability = await bridge.requestActionCapability(action);
+        readDraftStatus = () =>
+          api.requestJson(
+            api.adminFormPath("xlsx-draft/recover"),
+            {
+              method: "POST",
+              body: JSON.stringify({
+                checkpoint: original.checkpoint,
+                leaseId: original.leaseId,
+              }),
+            },
+            capability
+          );
+        response = await readDraftStatus();
+        if (response.status === "not-admitted") {
+          window.sessionStorage.removeItem(draftCheckpointKey);
+          waitForReload = true;
+          throw new Error("คำขอเดิมยังไม่เริ่ม กรุณาเปิดต้นแบบใหม่ก่อนแก้ไขต่อ");
+        }
+        if (response.action !== original.action) {
+          throw new Error("ผลบันทึกไม่ตรงกับคำขอเดิม");
+        }
+        resultAction = response.action;
+        recoveredCheckpoint = true;
       } else {
         let data;
         if (needsData) {
@@ -502,7 +556,12 @@ export function createOperations(
         ) {
           attachmentCommitUnresolved = true;
         }
-        const capability = await bridge.requestActionCapability(action);
+        const capability = await bridge.requestActionCapability(
+          action,
+          tracksDraft && action === ACTIONS.PUBLISH
+            ? data.xlsxDraft.checkpoint
+            : undefined
+        );
         if (
           saveContext?.pdmsSelection &&
           saveContext.pdmsSelection.sessionId !==
@@ -512,14 +571,43 @@ export function createOperations(
             "สิทธิ์ตัวแก้ไขเปลี่ยนแล้ว กรุณาเลือกชื่อโครงการจากรายการปัจจุบันอีกครั้ง"
           );
         }
-        response = await postAction(
-          action,
-          data,
-          correctionReason,
-          capability,
-          rowChange,
-          saveContext
-        );
+        if (tracksDraft) {
+          expectedDraftRevision = data.xlsxDraft.revision;
+          preservedDraftKey =
+            saveContext?.preserveEditorSession === true
+              ? options.documentKey
+              : undefined;
+          window.sessionStorage.setItem(
+            draftCheckpointKey,
+            JSON.stringify({
+              action,
+              checkpoint: data.xlsxDraft.checkpoint,
+              revision: expectedDraftRevision,
+              preservedDocumentKey: preservedDraftKey,
+              leaseId: requireOption(
+                options.xlsxDraftLeaseId,
+                "Excel authoring lease"
+              ),
+            })
+          );
+          draftUnresolved = true;
+        }
+        try {
+          response = await postAction(
+            action,
+            data,
+            correctionReason,
+            capability,
+            rowChange,
+            saveContext
+          );
+        } catch (error) {
+          if (tracksDraft && error.preAdmission === true) {
+            window.sessionStorage.removeItem(draftCheckpointKey);
+            draftUnresolved = false;
+          }
+          throw error;
+        }
       }
       if (
         attachmentSave &&
@@ -544,26 +632,67 @@ export function createOperations(
       );
 
       if (operationId) {
+        const pollCapability = operationCapabilityFromResponse(response);
         completedPayload = await pollOperation(
           operationId,
           actionLabel(resultAction),
-          operationCapabilityFromResponse(response)
+          pollCapability,
+          readDraftStatus && !pollCapability
+            ? async () => {
+                const status =
+                  response.status === "completed" ||
+                  response.status === "failed"
+                    ? response
+                    : await readDraftStatus();
+                if (
+                  status.operationId !== operationId ||
+                  status.action !== resultAction
+                ) {
+                  throw new Error("ผลบันทึกไม่ตรงกับคำขอเดิม");
+                }
+                return { operation: status };
+              }
+            : undefined
         );
       }
 
       const completion = completedPayload || response;
       const result = completion?.operation?.result ?? completion?.result;
-      const preservedResult = completedPayload?.operation?.result;
-      if (
-        saveContext?.preserveEditorSession === true &&
-        (preservedResult?.editorSessionPreserved !== true ||
-          preservedResult.documentKey !== options.documentKey)
-      ) {
-        throw new Error(
-          "ยังยืนยันการบันทึกต้นแบบในตัวแก้ไขเดิมไม่ได้ กรุณาลองบันทึกซ้ำ หรือกดบันทึกแบบร่างเพื่อลองบันทึกต้นแบบอีกครั้ง"
-        );
+      if (tracksDraft) {
+        const savedTemplate = resultAction === ACTIONS.SAVE_TEMPLATE;
+        if (
+          !operationId ||
+          !isRecord(result) ||
+          typeof result.documentKey !== "string" ||
+          !result.documentKey ||
+          (savedTemplate &&
+            (!Number.isSafeInteger(result.bindingRevision) ||
+              (Number.isSafeInteger(expectedDraftRevision) &&
+                result.bindingRevision !== expectedDraftRevision + 1) ||
+              result.bindingRevision < 1 ||
+              !isRecord(result.bindings) ||
+              result.bindings.version !== 1 ||
+              !Array.isArray(result.bindings.fields))) ||
+          (savedTemplate &&
+            preservedDraftKey &&
+            (result.editorSessionPreserved !== true ||
+              result.documentKey !== preservedDraftKey)) ||
+          (!savedTemplate &&
+            (result.publicId !== options.publicId ||
+              !Number.isSafeInteger(result.version) ||
+              result.version < 1))
+        ) {
+          throw new Error(
+            preservedDraftKey
+              ? "ยังยืนยันการบันทึกต้นแบบในตัวแก้ไขเดิมไม่ได้"
+              : "ยังยืนยันผลบันทึกต้นแบบ Excel ไม่ได้"
+          );
+        }
+        window.sessionStorage.removeItem(draftCheckpointKey);
+        draftUnresolved = false;
       }
       waitForReload =
+        (tracksDraft && recoveredCheckpoint) ||
         resultAction === ACTIONS.SAVE_CORRECTION ||
         (options.documentKind === "xlsx" &&
           (Boolean(options.pdmsProjectCatalog) || attachmentSave) &&
@@ -633,19 +762,32 @@ export function createOperations(
         resultAction,
         "completed",
         operationId,
-        completion,
+        tracksDraft && recoveredCheckpoint && completion?.operation
+          ? {
+              ...completion,
+              operation: {
+                ...completion.operation,
+                result: { ...result, editorSessionPreserved: false },
+              },
+            }
+          : completion,
         undefined,
         recoveredCheckpoint ? action : undefined
       );
 
-      if (needsData || saveContext?.preserveEditorSession === true) {
+      if (
+        (!tracksDraft || !recoveredCheckpoint) &&
+        (needsData || saveContext?.preserveEditorSession === true)
+      ) {
         bridge.setDirtyState(false);
       }
-      await callbacks.onTemplateSaveCompleted?.(
-        resultAction,
-        saveContext,
-        result
-      );
+      if (!tracksDraft || !recoveredCheckpoint) {
+        await callbacks.onTemplateSaveCompleted?.(
+          resultAction,
+          saveContext,
+          result
+        );
+      }
 
       return {
         ok: true,
@@ -655,8 +797,12 @@ export function createOperations(
         result,
       };
     } catch (error) {
+      if (tracksDraft && error.operationTerminal === true) {
+        window.sessionStorage.removeItem(draftCheckpointKey);
+        draftUnresolved = false;
+      }
       let message = errorMessage(error);
-      if (attachmentCommitUnresolved) {
+      if (attachmentCommitUnresolved || draftUnresolved) {
         message +=
           " ตัวแก้ไขยังอ่านอย่างเดียว ยังยืนยันผลรอบเดิมไม่ได้ ห้ามส่งซ้ำ ใช้การตรวจผลรอบเดิมก่อนแก้ไขต่อ";
       }
@@ -668,7 +814,7 @@ export function createOperations(
         completedPayload,
         message,
         recoveredCheckpoint ? action : undefined,
-        attachmentCommitUnresolved
+        attachmentCommitUnresolved || draftUnresolved
       );
 
       return {
@@ -677,7 +823,12 @@ export function createOperations(
         operationId: operationId || null,
       };
     } finally {
-      if (editorFrozen && !waitForReload && !attachmentCommitUnresolved) {
+      if (
+        editorFrozen &&
+        !waitForReload &&
+        !attachmentCommitUnresolved &&
+        !draftUnresolved
+      ) {
         try {
           await office.executeMethodResult("SetEditingRestrictions", [
             options.documentKind === "xlsx" ||

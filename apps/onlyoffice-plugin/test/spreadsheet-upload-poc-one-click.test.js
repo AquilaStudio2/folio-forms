@@ -14,6 +14,13 @@ const input = (harness, title) =>
       node.tagName === "LABEL" && node.children[0]?.textContent === title
   )?.children[1];
 const empty = () => ({ fields: [], table: null, version: 1 });
+const saves = (harness) =>
+  harness.requests.filter(({ url }) => url.endsWith("/save"));
+const working = async (harness) => {
+  const { bindings } =
+    await harness.window.FormBridge.getSpreadsheetBindings(false);
+  return bindings;
+};
 const button = (harness, text) =>
   descendants(harness.body).find(
     (node) => node.tagName === "BUTTON" && node.textContent === text
@@ -37,77 +44,52 @@ const catalog = (names) => ({
 const setup = async ({
   bindings = empty(),
   selected = { address: "B3" },
-  reject = false,
-  saveFailures = 0,
+  saveError,
+  checkpointRejected = false,
+  bindingRejected = false,
   saveResult = { documentKey: "document-key", editorSessionPreserved: true },
   gate,
   categories = ["หลักฐาน"],
-  conversionGate,
-  liveBindings = bindings,
+  pendingFiles = { allowed: true },
+  completionGate,
   categoryPopup = true,
   categoryChannel = "category-channel",
 } = {}) => {
-  let state = structuredClone(liveBindings);
+  let state = structuredClone(bindings);
   let revision = 0;
-  let firstRead = true;
-  let remainingSaveFailures = saveFailures;
-  let proofSaved = false;
-  let conversionPaused = false;
+  let candidate;
   const response = async (url, init) => {
     if (String(url).endsWith("/attachment-categories")) {
+      await gate?.promise;
       return typeof categories === "function"
         ? categories()
         : catalog(categories);
     }
     if (String(url).includes("/operations/")) {
-      return { operation: { result: saveResult, status: "completed" } };
-    }
-    if (init.method === "POST" && String(url).endsWith("/save")) {
-      if (remainingSaveFailures > 0) {
-        remainingSaveFailures -= 1;
-        return { body: { error: "save unavailable" }, httpStatus: 503 };
-      }
-      proofSaved = true;
+      await completionGate?.promise;
+      state = candidate;
+      revision += 1;
       return {
-        operationCapability: "operation-capability",
-        operationId: "poc-save-operation",
+        operation: {
+          result: { bindingRevision: revision, bindings: state, ...saveResult },
+          status: "completed",
+        },
       };
     }
-    if (!init.method || init.method === "GET") {
-      if (conversionGate && proofSaved && !conversionPaused) {
-        conversionPaused = true;
-        await conversionGate.promise;
+    if (String(url).endsWith("/save") && init.method === "POST") {
+      if (saveError) {
+        return saveError;
       }
-      if (firstRead && gate) {
-        await gate.promise;
-      }
-      firstRead = false;
-    } else if (reject) {
-      return { body: { error: "binding denied" }, httpStatus: 409 };
-    } else {
-      const { change } = JSON.parse(init.body);
-      if (change.kind === "table") {
-        const columnIds = new Set(
-          change.value.columns.map((column) => column.id)
-        );
-        state = {
-          ...state,
-          fields: state.fields.filter((field) => !columnIds.has(field.id)),
-          table: change.value,
-        };
-      } else if (change.kind === "column") {
-        state.table.columns = state.table.columns.map((column) =>
-          column.id === change.value.id ? change.value : column
-        );
-      } else {
-        state.fields = [
-          ...state.fields.filter((field) => field.id !== change.value.id),
-          change.value,
-        ];
-      }
-      revision += 1;
+      candidate = JSON.parse(init.body).xlsxDraft.bindings;
+      return {
+        operationCapability: "operation-capability",
+        operationId: `poc-save-operation-${revision + 1}`,
+      };
     }
-    return { bindings: state, documentKey: "document-key", revision };
+    if (String(url).endsWith("/xlsx-draft/recover") && init.method === "POST") {
+      return { status: "not-admitted" };
+    }
+    throw new Error(`Unexpected request: ${init.method} ${url}`);
   };
   const harness = createHarness({
     action: "template-edit",
@@ -118,10 +100,29 @@ const setup = async ({
     ),
     documentKind: "xlsx",
     responses: Array.from({ length: 30 }, () => response),
+    scopeIdentity: "one-click-authoring",
     serializeCommands: true,
     spreadsheetBindings: bindings,
     spreadsheetSelection: selected,
   });
+  const post = harness.parentWindow.postMessage;
+  harness.parentWindow.postMessage = (message, origin) => {
+    post(message, origin);
+    if (message.type === "pending-file-check") {
+      queueMicrotask(() =>
+        harness.dispatch({
+          data: {
+            ...message,
+            ...pendingFiles,
+            source: "folio-upload-poc-host",
+            type: "pending-file-result",
+          },
+          origin: harness.parentOrigin,
+          source: harness.parentWindow,
+        })
+      );
+    }
+  };
   if (categoryPopup) {
     attachCategoryPopup(harness);
   }
@@ -129,6 +130,17 @@ const setup = async ({
   const projectionLocks = [];
   const original = harness.window.Asc.plugin.callCommand;
   harness.window.Asc.plugin.callCommand = (...args) => {
+    if (bindingRejected && args[0]?.name === "spreadsheetValidationCommand") {
+      args.at(-1)(false);
+      return;
+    }
+    if (
+      checkpointRejected &&
+      args[0]?.name === "spreadsheetEditorSaveCheckpointCommand"
+    ) {
+      args.at(-1)(false);
+      return;
+    }
     if (args[0]?.name !== "spreadsheetUploadPocCommand") {
       return original(...args);
     }
@@ -141,16 +153,7 @@ const setup = async ({
         (call) => call.method === "SetEditingRestrictions"
       )?.args?.[0]
     );
-    if (selected.oleObjects) {
-      return original(...args);
-    }
-    for (const target of targets) {
-      harness.spreadsheetNames.set(
-        `_folio_upload_poc_${target.bindingId}`,
-        harness.spreadsheetNames.get(target.anchor)
-      );
-    }
-    args.at(-1)(JSON.stringify({ count: targets.length, ok: true }));
+    return original(...args);
   };
   acknowledgeBridge(harness);
   await flushPlugin();
@@ -220,14 +223,22 @@ test("confirmation creates a configured attachment and repeat placement reuses t
     required: false,
     type: "text",
   });
+  expect(saves(harness)).toHaveLength(1);
+  const [firstSave] = saves(harness);
+  expect(JSON.parse(firstSave.body)).toMatchObject({
+    spreadsheetUploadPocSnapshot: [
+      { bindingId: field.id, rowIndex: null, tag: "attachment_1" },
+    ],
+    xlsxDraft: { bindings: { fields: [field] }, revision: 0, version: 1 },
+  });
   expect(harness.spreadsheetNames.get(field.anchor)).toContain("B3");
   expect(input(harness, "Title · ชื่อช่อง").value).toBe(field.label);
   expect(input(harness, "Tag · รหัสช่อง").value).toBe(field.key);
   await click(harness);
   expect(state().fields).toHaveLength(1);
-  expect(
-    harness.requests.filter((request) => request.method === "PATCH")
-  ).toHaveLength(1);
+  expect(harness.requests.some(({ method }) => method === "PATCH")).toBe(false);
+  expect(saves(harness)).toHaveLength(2);
+  expect(harness.spreadsheetNames.get(field.anchor)).toContain("B3");
   expect(projections).toHaveLength(2);
   expect(projections[1][0].bindingId).toBe(field.id);
 });
@@ -259,11 +270,15 @@ test("automatic title and tag skip existing collisions", async () => {
 });
 
 test("binding rejection rolls back its anchor and never projects a button or marker", async () => {
-  const { harness, projections, state } = await setup({ reject: true });
+  const { harness, projections, state } = await setup({
+    bindingRejected: true,
+  });
   await click(harness);
   expect(state().fields).toHaveLength(0);
   expect(projections).toHaveLength(0);
   expect([...harness.spreadsheetNames.keys()]).toHaveLength(0);
+  expect(saves(harness)).toHaveLength(0);
+  expect(harness.statusElement.textContent).toContain("ตั้งค่าช่องแนบไฟล์ไม่ได้");
 });
 
 test("creating a table around an existing attachment makes it a table-column button", async () => {
@@ -370,11 +385,35 @@ test("existing table column is reused with its metadata and body projection", as
       placeholder: null,
     },
   ]);
-  const save = harness.requests.find((request) => request.method === "POST");
-  expect(JSON.parse(save.body)).toMatchObject({
-    preserveEditorSession: true,
-    uploadPocBindingId: "folio_proof",
-  });
+  expect(saves(harness)).toHaveLength(2);
+  for (const [revision, request] of saves(harness).entries()) {
+    expect(JSON.parse(request.body)).toMatchObject({
+      preserveEditorSession: true,
+      preserveEditorSessionPurpose: "manual",
+      spreadsheetSaveCheckpoint: expect.any(String),
+      spreadsheetUploadPocSnapshot: [0, 1, 2].map((rowIndex) => ({
+        bindingId: "folio_proof",
+        rowIndex,
+        tag: "items.proof",
+      })),
+      xlsxDraft: {
+        bindings: {
+          ...bindings,
+          table: {
+            ...bindings.table,
+            columns: [
+              {
+                ...bindings.table.columns[0],
+                ...(revision ? { attachment: choice("หลักฐาน") } : {}),
+              },
+            ],
+          },
+        },
+        revision,
+        version: 1,
+      },
+    });
+  }
   expect(projections[0][0]).toMatchObject({
     bindingId: "folio_proof",
     bodyAnchor: "items",
@@ -383,7 +422,7 @@ test("existing table column is reused with its metadata and body projection", as
   });
 });
 
-test("selection changing while bindings GET waits keeps the originally clicked cell", async () => {
+test("selection changing while the category catalog loads keeps the originally clicked cell", async () => {
   const gate = Promise.withResolvers();
   const selected = { address: "B3" };
   const { harness, state, projections } = await setup({ gate, selected });
@@ -413,6 +452,47 @@ const configuredAttachment = (number) => ({
   type: "text",
 });
 
+test("existing scalar conversion commits ordinary Rules and native proof before attachment Rules", async () => {
+  const original = configuredAttachment(1);
+  const { harness } = await setup({
+    bindings: { ...empty(), fields: [original] },
+    selected: {
+      address: "B3",
+      names: { [original.anchor]: "'Sheet1'!$B$3" },
+      oleObjects: [],
+    },
+  });
+  await click(harness);
+  expect(saves(harness)).toHaveLength(2);
+  const [proof, conversion] = saves(harness).map(({ body }) =>
+    JSON.parse(body)
+  );
+  for (const [revision, body] of [proof, conversion].entries()) {
+    expect(body).toMatchObject({
+      preserveEditorSession: true,
+      preserveEditorSessionPurpose: "manual",
+      spreadsheetSaveCheckpoint: expect.any(String),
+      spreadsheetUploadPocSnapshot: [
+        { bindingId: original.id, rowIndex: null, tag: original.key },
+      ],
+      xlsxDraft: { checkpoint: expect.any(String), revision, version: 1 },
+    });
+    expect(body.spreadsheetAnchors).toContainEqual([
+      original.anchor,
+      "'Sheet1'!$B$3",
+    ]);
+  }
+  expect(proof.xlsxDraft.bindings).toEqual({ ...empty(), fields: [original] });
+  expect(conversion.xlsxDraft.bindings).toMatchObject({
+    ...empty(),
+    fields: [{ ...original, attachment: choice("หลักฐาน") }],
+  });
+  expect(conversion.xlsxDraft.checkpoint).not.toBe(proof.xlsxDraft.checkpoint);
+  expect(conversion.spreadsheetSaveCheckpoint).not.toBe(
+    proof.spreadsheetSaveCheckpoint
+  );
+});
+
 test("real orphan mappings name every missing tag and block new placement until explicitly repaired", async () => {
   const bindings = {
     ...empty(),
@@ -438,7 +518,7 @@ test("real orphan mappings name every missing tag and block new placement until 
     )
   ).toBe(true);
   expect(projections).toHaveLength(0);
-  expect(harness.requests.map((request) => request.method)).toEqual(["GET"]);
+  expect(harness.requests).toEqual([]);
   expect([...harness.spreadsheetNames.keys()]).toHaveLength(0);
   expect(state()).toEqual(bindings);
   // Explicit native repair restores trustworthy locations; unrelated placement can proceed.
@@ -447,21 +527,6 @@ test("real orphan mappings name every missing tag and block new placement until 
   await click(harness);
   expect(projections).toHaveLength(1);
   expect(state().fields).toHaveLength(3);
-});
-
-test("fresh metadata removes a stale orphan before authorizing original blank-cell placement", async () => {
-  const bindings = { ...empty(), fields: [configuredAttachment(6)] };
-  const { harness, state, projections } = await setup({
-    bindings,
-    liveBindings: empty(),
-    selected: { address: "D13" },
-  });
-  await click(harness);
-  expect(projections).toHaveLength(1);
-  expect(state().fields).toHaveLength(1);
-  expect(harness.spreadsheetNames.get(state().fields[0].anchor)).toContain(
-    "D13"
-  );
 });
 
 test("selection reads complete current anchors even if shared command scope was stale", async () => {
@@ -482,51 +547,63 @@ test("selection reads complete current anchors even if shared command scope was 
   );
 });
 
-test("placement saves only after the binding commit and native unlock, and failed save retries reuse the button", async () => {
-  const { harness, state, projectionLocks } = await setup({
-    saveFailures: 1,
+test("a failed native checkpoint sends no Save and preserves the original Rules", async () => {
+  const original = configuredAttachment(1);
+  const { harness, state } = await setup({
+    bindings: { ...empty(), fields: [original] },
+    checkpointRejected: true,
+    selected: { address: "B3", names: { [original.anchor]: "'Sheet1'!$B$3" } },
   });
   await click(harness);
-  const [field] = state().fields;
-  expect(projectionLocks).toEqual(["none"]);
-  expect(harness.requests.at(-1).url).toEndWith("/save");
-  expect(
-    JSON.parse(harness.requests.at(-1).body).spreadsheetAnchors
-  ).toContainEqual([field.anchor, harness.spreadsheetNames.get(field.anchor)]);
+  expect(saves(harness)).toEqual([]);
+  expect(harness.requests.map(({ method }) => method)).toEqual(["GET"]);
+  expect(state().fields).toEqual([original]);
+  expect(harness.statusElement.textContent).toContain(
+    "สร้างรหัสยืนยันการบันทึกต้นแบบไม่ได้"
+  );
   expect(harness.statusElement.dataset.state).not.toBe("success");
+});
+
+test("an unknown placement outcome locks the editor and verifies the original checkpoint without replay", async () => {
+  const { harness, state, projectionLocks } = await setup({
+    saveError: { body: { error: "save unavailable" }, httpStatus: 503 },
+  });
   await click(harness);
-  expect(state().fields).toHaveLength(1);
-  expect(state().fields[0].id).toBe(field.id);
-  expect(
-    harness.requests.filter((request) => request.method === "PATCH")
-  ).toHaveLength(1);
-  expect(
-    harness.requests.filter((request) => request.method === "POST")
-  ).toHaveLength(2);
+  expect(state()).toEqual(empty());
+  expect(projectionLocks).toEqual(["none"]);
+  const [save] = saves(harness);
+  const body = JSON.parse(save.body);
+  const [field] = body.xlsxDraft.bindings.fields;
+  expect(body.spreadsheetAnchors).toContainEqual([
+    field.anchor,
+    harness.spreadsheetNames.get(field.anchor),
+  ]);
+  expect(body.spreadsheetUploadPocSnapshot).toEqual([
+    { bindingId: field.id, rowIndex: null, tag: "attachment_1" },
+  ]);
+  expect(harness.editorRestriction).toBe("readOnly");
+  expect(harness.statusElement.textContent).toContain("ห้ามส่งซ้ำ");
+  const result = await harness.window.FormBridge.runAction("save-template");
+  expect(result).toMatchObject({
+    error: expect.stringContaining("เปิดต้นแบบใหม่"),
+    ok: false,
+  });
+  expect(saves(harness)).toHaveLength(1);
+  const recover = harness.requests.find(({ url }) =>
+    url.endsWith("/xlsx-draft/recover")
+  );
+  expect(JSON.parse(recover.body)).toEqual({
+    checkpoint: body.xlsxDraft.checkpoint,
+    leaseId: "test-editor-lease",
+  });
+  expect(harness.editorRestriction).toBe("readOnly");
+  expect(state()).toEqual(empty());
 });
 
 test("pending File denial happens before binding or native placement mutation", async () => {
-  const { harness, state, projections } = await setup();
-  harness.window.FormBridge.getRuntimeOptions().scopeIdentity = "admin:test";
-  const original = harness.parentWindow.postMessage;
-  harness.parentWindow.postMessage = (message, origin) => {
-    if (message.type !== "pending-file-check") {
-      return original(message, origin);
-    }
-    queueMicrotask(() =>
-      harness.dispatch({
-        data: {
-          ...message,
-          allowed: false,
-          error: "pending file prevents save",
-          source: "folio-upload-poc-host",
-          type: "pending-file-result",
-        },
-        origin: harness.parentOrigin,
-        source: harness.parentWindow,
-      })
-    );
-  };
+  const { harness, state, projections } = await setup({
+    pendingFiles: { allowed: false, error: "pending file prevents save" },
+  });
   await click(harness);
   expect(harness.requests).toHaveLength(0);
   expect(state().fields).toHaveLength(0);
@@ -542,13 +619,19 @@ test("visiting untouched blank cells does not restore stale generated defaults a
   const selected = { address: "B3", names: { [old.anchor]: "'Sheet1'!$A$1" } };
   const { harness, projections } = await setup({
     bindings: { ...empty(), fields: [old] },
-    liveBindings: empty(),
     selected,
   });
   selected.address = "D4";
   harness.emitEditorEvent("onTargetPositionChanged");
   await flushPlugin();
-  await harness.window.FormBridge.getSpreadsheetBindings();
+  selected.address = "A1";
+  harness.emitEditorEvent("onTargetPositionChanged");
+  await flushPlugin();
+  button(harness, "ลบช่องนี้").click();
+  await flushPlugin();
+  const { fields } = await working(harness);
+  expect(fields).toEqual([]);
+  expect(saves(harness)).toHaveLength(1);
   selected.address = "B3";
   harness.emitEditorEvent("onTargetPositionChanged");
   await flushPlugin();
@@ -576,13 +659,16 @@ test("sequential placements keep the document key and save each new native butto
     "attachment_2",
   ]);
   expect(projections).toHaveLength(2);
-  const saves = harness.requests.filter((request) => request.method === "POST");
-  expect(saves).toHaveLength(2);
-  for (const [index, request] of saves.entries()) {
+  expect(saves(harness)).toHaveLength(2);
+  for (const [index, request] of saves(harness).entries()) {
     expect(JSON.parse(request.body)).toMatchObject({
       documentKey: "document-key",
       preserveEditorSession: true,
-      uploadPocBindingId: state().fields[index].id,
+      preserveEditorSessionPurpose: "manual",
+      spreadsheetUploadPocSnapshot: state()
+        .fields.slice(0, index + 1)
+        .map(({ id, key }) => ({ bindingId: id, rowIndex: null, tag: key })),
+      xlsxDraft: { revision: index, version: 1 },
     });
   }
   expect(harness.window.FormBridge.getRuntimeOptions().documentKey).toBe(
@@ -605,6 +691,18 @@ test("sequential placements keep the document key and save each new native butto
 
 test.each([
   { documentKey: "other-document", editorSessionPreserved: true },
+  {
+    bindingRevision: undefined,
+    documentKey: "document-key",
+    editorSessionPreserved: true,
+  },
+  {
+    bindings: undefined,
+    documentKey: "document-key",
+    editorSessionPreserved: true,
+  },
+  { documentKey: "document-key" },
+  { editorSessionPreserved: true },
   { documentKey: "document-key", editorSessionPreserved: false },
   {},
 ])(
@@ -626,11 +724,29 @@ test.each([
       harness.messages.findLast(({ message }) => message.type === "dirty-state")
         .message.dirty
     ).toBe(true);
-    await click(harness);
-    expect(state().fields).toHaveLength(1);
+    expect(harness.window.FormBridge.getRuntimeOptions().documentKey).toBe(
+      "document-key"
+    );
+    expect(saves(harness)).toHaveLength(1);
+    const [save] = saves(harness);
+    expect(harness.editorRestriction).toBe("readOnly");
+    const stored = harness.window.sessionStorage.getItem(
+      "folio-xlsx-draft:one-click-authoring"
+    );
+    expect(JSON.parse(stored)).toEqual({
+      action: "save-template",
+      checkpoint: JSON.parse(save.body).xlsxDraft.checkpoint,
+      leaseId: "test-editor-lease",
+      preservedDocumentKey: "document-key",
+      revision: JSON.parse(save.body).xlsxDraft.revision,
+    });
     expect(
-      harness.requests.filter((request) => request.method === "PATCH")
-    ).toHaveLength(1);
+      harness.messages.findLast(({ message }) => message.type === "operation")
+        .message
+    ).toMatchObject({
+      attachmentCommitUnresolved: true,
+      status: "failed",
+    });
   }
 );
 
@@ -695,45 +811,42 @@ test.each([
   }
 );
 
-test.each([0, 1])(
-  "preserved placement restores editable panel controls after success or failure and retry: failures %s",
-  async (saveFailures) => {
-    const selected = { address: "B3" };
-    const { harness } = await setup({ saveFailures, selected });
-    for (const label of [
-      "Title · ชื่อช่อง",
-      "Tag · รหัสช่อง",
-      "ชนิดข้อมูล",
-      "ช่องที่บันทึกแล้ว",
-    ]) {
-      expect(input(harness, label).disabled).toBe(false);
-    }
-    await click(harness);
-    for (const label of ["Title · ชื่อช่อง", "Tag · รหัสช่อง", "ช่องที่บันทึกแล้ว"]) {
-      expect(input(harness, label).disabled).toBe(false);
-    }
-    // Existing binding kind cannot change; restoring controls must preserve that rule.
-    expect(input(harness, "กำหนดช่วงที่เลือกเป็น").disabled).toBe(true);
-    await click(harness);
-    for (const label of ["Title · ชื่อช่อง", "Tag · รหัสช่อง", "ช่องที่บันทึกแล้ว"]) {
-      expect(input(harness, label).disabled).toBe(false);
-    }
-    expect(input(harness, "กำหนดช่วงที่เลือกเป็น").disabled).toBe(true);
-    selected.address = "D3";
-    harness.emitEditorEvent("onTargetPositionChanged");
-    await flushPlugin();
-    expect(input(harness, "กำหนดช่วงที่เลือกเป็น").disabled).toBe(false);
-    expect(input(harness, "Title · ชื่อช่อง").disabled).toBe(false);
-    const caption = input(harness, "Title · ชื่อช่อง");
-    caption.value = "Actual pending panel edit";
-    caption.dispatchEvent({ type: "input" });
-    const before = harness.requests.length;
-    await click(harness);
-    expect(harness.requests).toHaveLength(before);
-    expect(caption.value).toBe("Actual pending panel edit");
-    expect(harness.statusElement.textContent).toContain("ยังไม่ได้บันทึก");
+test("preserved placement restores editable controls after successful Save", async () => {
+  const selected = { address: "B3" };
+  const { harness } = await setup({ selected });
+  for (const label of [
+    "Title · ชื่อช่อง",
+    "Tag · รหัสช่อง",
+    "ชนิดข้อมูล",
+    "ช่องที่บันทึกแล้ว",
+  ]) {
+    expect(input(harness, label).disabled).toBe(false);
   }
-);
+  await click(harness);
+  for (const label of ["Title · ชื่อช่อง", "Tag · รหัสช่อง", "ช่องที่บันทึกแล้ว"]) {
+    expect(input(harness, label).disabled).toBe(false);
+  }
+  // Existing binding kind cannot change; restoring controls must preserve that rule.
+  expect(input(harness, "กำหนดช่วงที่เลือกเป็น").disabled).toBe(true);
+  await click(harness);
+  for (const label of ["Title · ชื่อช่อง", "Tag · รหัสช่อง", "ช่องที่บันทึกแล้ว"]) {
+    expect(input(harness, label).disabled).toBe(false);
+  }
+  expect(input(harness, "กำหนดช่วงที่เลือกเป็น").disabled).toBe(true);
+  selected.address = "D3";
+  harness.emitEditorEvent("onTargetPositionChanged");
+  await flushPlugin();
+  expect(input(harness, "กำหนดช่วงที่เลือกเป็น").disabled).toBe(false);
+  expect(input(harness, "Title · ชื่อช่อง").disabled).toBe(false);
+  const caption = input(harness, "Title · ชื่อช่อง");
+  caption.value = "Actual pending panel edit";
+  caption.dispatchEvent({ type: "input" });
+  const before = harness.requests.length;
+  await click(harness);
+  expect(harness.requests).toHaveLength(before);
+  expect(caption.value).toBe("Actual pending panel edit");
+  expect(harness.statusElement.textContent).toContain("ยังไม่ได้บันทึก");
+});
 
 test("cancelling during category loading ignores the late result and reopening fetches fresh choices", async () => {
   const pending = Promise.withResolvers();
@@ -855,7 +968,12 @@ test("changing a saved category and later editing Title and Tag keep one attachm
     )
     .click();
   await flushPlugin();
+  expect(saves(harness)).toHaveLength(2);
   expect(state().fields).toEqual([
+    { ...original, attachment: choice("หมวดใหม่") },
+  ]);
+  const { fields } = await working(harness);
+  expect(fields).toEqual([
     {
       ...original,
       attachment: choice("หมวดใหม่"),
@@ -865,35 +983,43 @@ test("changing a saved category and later editing Title and Tag keep one attachm
   ]);
 });
 
-test("an existing scalar is converted only after its button is saved and a failed proof save preserves its original rules", async () => {
-  const original = {
-    ...configuredAttachment(1),
-    attachment: undefined,
-    required: true,
-  };
-  delete original.attachment;
-  const { harness, state } = await setup({
-    bindings: { ...empty(), fields: [original] },
-    saveFailures: 1,
-    selected: { address: "B3", names: { [original.anchor]: "'Sheet1'!$B$3" } },
-  });
-  await click(harness);
-  expect(state().fields).toEqual([original]);
-  expect(harness.statusElement.dataset.state).not.toBe("success");
-  await click(harness);
-  expect(state().fields).toMatchObject([
-    {
-      ...original,
-      attachment: choice("หลักฐาน"),
-    },
-  ]);
-  const conversion = harness.requests.findIndex(
-    (request) => request.method === "PATCH"
-  );
-  expect(conversion).toBeGreaterThan(
-    harness.requests.findIndex((request) => request.method === "POST")
-  );
-});
+test.each(["invalid_template", "attachment_template_stale"])(
+  "a rejected first proof Save never applies attachment Rules: %s",
+  async (code) => {
+    const original = { ...configuredAttachment(1), required: true };
+    const { harness, state } = await setup({
+      bindings: { ...empty(), fields: [original] },
+      saveError: {
+        body: { error: code, message: "conversion denied" },
+        httpStatus: 422,
+      },
+      selected: {
+        address: "B3",
+        names: { [original.anchor]: "'Sheet1'!$B$3" },
+      },
+    });
+    await click(harness);
+    expect(state().fields).toEqual([original]);
+    expect(saves(harness)).toHaveLength(1);
+    const [proof] = saves(harness);
+    const body = JSON.parse(proof.body);
+    expect(body).toMatchObject({
+      spreadsheetSaveCheckpoint: expect.any(String),
+      spreadsheetUploadPocSnapshot: [
+        { bindingId: original.id, rowIndex: null, tag: original.key },
+      ],
+      xlsxDraft: { revision: 0, version: 1 },
+    });
+    expect(body.xlsxDraft.bindings).toEqual({
+      ...empty(),
+      fields: [original],
+    });
+    const { fields } = await working(harness);
+    expect(fields).toEqual([original]);
+    expect(harness.statusElement.textContent).toContain("conversion denied");
+    expect(harness.statusElement.dataset.state).not.toBe("success");
+  }
+);
 
 test("a mapped cell moved while its category dialog is open cannot convert or create a different field", async () => {
   const original = configuredAttachment(1);
@@ -913,23 +1039,25 @@ test("a mapped cell moved while its category dialog is open cannot convert or cr
   expect(harness.spreadsheetNames.get(original.anchor)).toBe("'Sheet1'!$D$3");
 });
 
-test("automatic conversion keeps authoring locked between its proof save and category commit", async () => {
-  const original = { ...configuredAttachment(1) };
-  delete original.attachment;
-  const conversionGate = Promise.withResolvers();
+test("automatic conversion waits for the ordinary proof operation to complete", async () => {
+  const original = configuredAttachment(1);
+  const completionGate = Promise.withResolvers();
   const { harness, state, projections } = await setup({
     bindings: { ...empty(), fields: [original] },
-    conversionGate,
+    completionGate,
     selected: { address: "B3", names: { [original.anchor]: "'Sheet1'!$B$3" } },
   });
   await click(harness);
   expect(state().fields).toEqual([original]);
+  expect(saves(harness)).toHaveLength(1);
+  const { fields } = await working(harness);
+  expect(fields).toEqual([original]);
   const stayedLocked =
     action(harness).disabled && input(harness, "Title · ชื่อช่อง").disabled;
   const pendingChoiceRetained = harness.messages.findLast(
     ({ message }) => message.type === "dirty-state"
   )?.message.dirty;
-  conversionGate.resolve();
+  completionGate.resolve();
   await flushPlugin();
   await flushPlugin();
   expect(stayedLocked).toBe(true);
@@ -937,6 +1065,7 @@ test("automatic conversion keeps authoring locked between its proof save and cat
   expect(state().fields[0].attachment).toEqual(choice("หลักฐาน"));
   expect(projections).toHaveLength(1);
   expect(action(harness).disabled).toBe(false);
+  expect(saves(harness)).toHaveLength(2);
 });
 
 test("category chooser rejects forged, stale and unlisted choices without changing the workbook", async () => {

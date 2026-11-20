@@ -1,7 +1,9 @@
 // oxlint-disable no-await-in-loop complexity -- Exercise real isolated HTTP, PostgreSQL, storage and native Builder; poll public Operations across process boundaries.
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 
-import { prisma } from "@onlyoffice/db";
+import { Prisma, prisma } from "@onlyoffice/db";
+import { env } from "@onlyoffice/env/server";
 import { unzipSync, zipSync, strFromU8, strToU8 } from "fflate";
 import { z } from "zod";
 
@@ -20,6 +22,7 @@ import {
   resolveSpreadsheetContract,
   XLSX_CONTENT_TYPE,
 } from "../../src/documents/spreadsheets/workbook";
+import type { SpreadsheetWorkbook } from "../../src/documents/spreadsheets/workbook";
 import {
   spreadsheetXmlTree,
   spreadsheetXmlChildren,
@@ -37,12 +40,18 @@ import {
   createOnlyOfficeAuthorization,
   createCallbackUserdata,
 } from "../../src/onlyoffice";
+import { drainObjectCleanupIntents } from "../../src/operations/object-cleanup";
 import {
   attachmentSchema,
   tableAttachmentSchema,
 } from "../../src/responses/attachment-data";
 import { jsonValue } from "../../src/responses/data";
-import { putObject, readObject } from "../../src/storage";
+import {
+  deleteObject,
+  objectExists,
+  putObject,
+  readObject,
+} from "../../src/storage";
 import { bearerFor, createCredentialFixture, signIn } from "../fixtures/http";
 import { fixtureWorkbook, mutatePart } from "../spreadsheet-unit/fixture";
 
@@ -52,6 +61,8 @@ const fixtureValue = <T>(value: T | null | undefined): T => {
   }
   return value;
 };
+const sha256 = (bytes: Uint8Array) =>
+  new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
 const xmlElements = (
   node: SpreadsheetXmlNode,
   name: string
@@ -504,6 +515,40 @@ const app = createApp({
   pdmsProjects: null,
 });
 let nativeTemplate: Uint8Array;
+const scalarTemplateInput = (mergedHidden = false) => {
+  const proofRange = mergedHidden ? "'Form'!$B$3:$C$3" : "'Form'!$B$3";
+  const workbook = fixtureWorkbook({
+    cells: [
+      { address: "B1", value: "2570" },
+      { address: "B2", value: "DOC.42" },
+    ],
+    merges: mergedHidden ? ["B3:C3"] : [],
+    names: {
+      _folio_upload_poc_folio_other: "'Form'!$B$4",
+      _folio_upload_poc_folio_proof: proofRange,
+      folio_notes1: "'Form'!$B$5",
+      folio_notes2: "'Form'!$B$6",
+      folio_notes3: "'Form'!$B$7",
+      folio_number: "'Form'!$B$2",
+      folio_other: "'Form'!$B$4",
+      folio_proof: proofRange,
+      folio_year: "'Form'!$B$1",
+    },
+  });
+  return mergedHidden
+    ? mutatePart(workbook, "xl/worksheets/sheet1.xml", (xml) =>
+        xml
+          .replace(
+            "<sheetData>",
+            '<cols><col min="4" max="4" hidden="1" width="8.43" customWidth="1"/></cols><sheetData>'
+          )
+          .replace(
+            "</sheetData>",
+            '<row r="12" hidden="1" ht="15" customHeight="1"/></sheetData>'
+          )
+      )
+    : workbook;
+};
 beforeAll(async () => {
   const jobBase = new URL(
     process.env.ONLYOFFICE_DOCUMENT_BASE_URL ?? "http://localhost:3000"
@@ -521,25 +566,9 @@ beforeAll(async () => {
     throw new Error("Scalar native Builder requires isolated callback port");
   }
   app.listen({ hostname: "0.0.0.0", port: Number(jobBase.port) });
-  const raw = fixtureWorkbook({
-    cells: [
-      { address: "B1", value: "2570" },
-      { address: "B2", value: "DOC.42" },
-    ],
-    merges: [],
-    names: {
-      _folio_upload_poc_folio_other: "'Form'!$B$4",
-      _folio_upload_poc_folio_proof: "'Form'!$B$3",
-      folio_notes1: "'Form'!$B$5",
-      folio_notes2: "'Form'!$B$6",
-      folio_notes3: "'Form'!$B$7",
-      folio_number: "'Form'!$B$2",
-      folio_other: "'Form'!$B$4",
-      folio_proof: "'Form'!$B$3",
-      folio_year: "'Form'!$B$1",
-    },
+  const builtResult = await processSpreadsheet(scalarTemplateInput(), {
+    bindings,
   });
-  const builtResult = await processSpreadsheet(raw, { bindings });
   const { workbook: built } = builtResult;
   nativeTemplate = protectSpreadsheet(
     built,
@@ -611,6 +640,7 @@ const fixture = async (
     table?: boolean;
     tableAttachments?: boolean;
     tableRows?: number;
+    mergedHidden?: boolean;
     tableTemplateNames?: Record<string, string>;
     tableItemRequired?: boolean;
     project?: boolean;
@@ -704,13 +734,16 @@ const fixture = async (
         label: "ตาราง",
       },
     });
-    const withTable = mutatePart(nativeTemplate, "xl/workbook.xml", (xml) =>
-      xml.replace(
-        "</definedNames>",
-        values.tableAttachments
-          ? `<definedName name="folio_rows">'Form'!$B$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_columns_folio_rows">'Form'!$B$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_item">'Form'!$B$10:$B$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_row_proof">'Form'!$C$10:$C$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_row_other">'Form'!$D$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="_folio_upload_poc_folio_row_proof">'Form'!$C$10:$C$${9 + (values.tableRows ?? 4)}</definedName><definedName name="_folio_upload_poc_folio_row_other">'Form'!$D$10:$D$${9 + (values.tableRows ?? 4)}</definedName></definedNames>`
-          : "<definedName name=\"folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_columns_folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_column_folio_item\">'Form'!$B$10:$B$11</definedName></definedNames>"
-      )
+    const withTable = mutatePart(
+      values.mergedHidden ? scalarTemplateInput(true) : nativeTemplate,
+      "xl/workbook.xml",
+      (xml) =>
+        xml.replace(
+          "</definedNames>",
+          values.tableAttachments
+            ? `<definedName name="folio_rows">'Form'!$B$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_columns_folio_rows">'Form'!$B$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_item">'Form'!$B$10:$B$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_row_proof">'Form'!$C$10:$C$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_row_other">'Form'!$D$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="_folio_upload_poc_folio_row_proof">'Form'!$C$10:$C$${9 + (values.tableRows ?? 4)}</definedName><definedName name="_folio_upload_poc_folio_row_other">'Form'!$D$10:$D$${9 + (values.tableRows ?? 4)}</definedName></definedNames>`
+            : "<definedName name=\"folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_columns_folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_column_folio_item\">'Form'!$B$10:$B$11</definedName></definedNames>"
+        )
     );
     const prepared = await processSpreadsheet(unprotectSpreadsheet(withTable), {
       bindings: publishedBindings,
@@ -1041,6 +1074,18 @@ const draft = async (f: Fixture) => {
   expect(result.status).toBe(200);
   return z.record(z.string(), z.unknown()).parse(await result.json());
 };
+const routingPending = async (f: Fixture) => {
+  const result = await app.handle(
+    new Request(
+      `http://test.local/api/forms/${f.form.publicId}/editor-config?responseId=${f.response.id}&action=draft`,
+      { headers: { Authorization: `Bearer ${f.bearer}` } }
+    )
+  );
+  expect(result.status).toBe(200);
+  return z
+    .object({ attachmentRoutingPending: z.boolean() })
+    .parse(await result.json()).attachmentRoutingPending;
+};
 const tableRowsSchema = z.array(
   z.object({
     item: z.string().nullable(),
@@ -1048,6 +1093,20 @@ const tableRowsSchema = z.array(
     proof: tableAttachmentSchema.nullable(),
   })
 );
+const expectWorkbookAttachment = (
+  workbook: SpreadsheetWorkbook,
+  address: string,
+  row: number,
+  column: number,
+  fileLink: string
+) => {
+  expect(workbook.cells.get(address)?.value).toBe(fileLink);
+  expect(
+    workbook.hyperlinks.find(
+      ({ range }) => range.firstRow === row && range.firstColumn === column
+    )?.target
+  ).toBe(fileLink);
+};
 const file = (bytes = new Uint8Array([0, 255, 7, 1]), name = "Original.PDF") =>
   new File([bytes], name, { type: "application/x-encrypted-private" });
 interface CorrectionBridgeFixture {
@@ -2343,6 +2402,266 @@ test("initial Correction rejects a changed captured workspace base before origin
   }
 });
 
+const startRequest = (owner: Fixture) =>
+  new Request(`http://test.local/api/forms/${owner.form.publicId}/start`, {
+    headers: { Authorization: `Bearer ${owner.bearer}` },
+    method: "POST",
+  });
+
+test("XLSX Start crash retires only its uncommitted workbook after a successful Submit", async () => {
+  const owner = await fixture({ templateMode: true });
+  const submitted = await poll(
+    owner,
+    await send(owner, { folio_proof: file() }, "submit")
+  );
+  expect(submitted.status).toBe("completed");
+  const where = { id: owner.response.id };
+  const before = await prisma.response.findUniqueOrThrow({ where });
+  const history = await prisma.submission.findFirstOrThrow({
+    where: { responseId: before.id },
+  });
+  const submissionBytes = await readObject(history.objectKey);
+  const template = await prisma.publishedTemplate.findUniqueOrThrow({
+    where: { id: before.publishedTemplateId },
+  });
+  const publishedKey = fixtureValue(template.objectKey);
+  expect(publishedKey).not.toBe(history.objectKey);
+  const publishedBytes = await readObject(publishedKey);
+  await deleteObject(publishedKey);
+  try {
+    const failed = await app.handle(startRequest(owner));
+    expect(failed.status).toBe(409);
+    expect(await failed.json()).toMatchObject({
+      error: "document_unavailable",
+    });
+    expect(await prisma.response.findUniqueOrThrow({ where })).toEqual(before);
+    expect(await readObject(history.objectKey)).toEqual(submissionBytes);
+  } finally {
+    await putObject(publishedKey, publishedBytes, XLSX_CONTENT_TYPE);
+  }
+  const storage = new Bun.S3Client({
+    accessKeyId: env.RUSTFS_ACCESS_KEY_ID,
+    bucket: env.RUSTFS_BUCKET,
+    endpoint: env.RUSTFS_ENDPOINT,
+    region: env.RUSTFS_REGION,
+    secretAccessKey: env.RUSTFS_SECRET_ACCESS_KEY,
+  });
+  const prefix = `responses/${before.id}/draft/`;
+  const listing = await storage.list({ prefix });
+  const baseline = new Set(listing.contents?.map(({ key }) => key));
+  const request = startRequest(owner);
+  const script = `
+    import { createApp } from "./src/app";
+    const [url, authorization] = JSON.parse(await Bun.stdin.text());
+    await createApp({ legacySso: null, pdmsProjects: null }).handle(
+      new Request(url, { headers: { authorization }, method: "POST" })
+    );
+  `;
+  const orphan = await prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw(Prisma.sql`
+      SELECT "id" FROM "forms" WHERE "id" = ${owner.form.id}::uuid FOR UPDATE
+    `);
+      const child = Bun.spawn(
+        [process.execPath, "--no-env-file", "-e", script],
+        {
+          cwd: fileURLToPath(new URL("../..", import.meta.url)),
+          stderr: "inherit",
+          stdin: new Blob([
+            JSON.stringify([request.url, request.headers.get("Authorization")]),
+          ]),
+          stdout: "ignore",
+        }
+      );
+      try {
+        const deadline = Date.now() + 10_000;
+        while (Date.now() < deadline && child.exitCode === null) {
+          const { contents } = await storage.list({ prefix });
+          const written = contents?.find(({ key }) => !baseline.has(key));
+          if (written) {
+            child.kill("SIGKILL");
+            await child.exited;
+            expect(child.signalCode).toBe("SIGKILL");
+            return written.key;
+          }
+        }
+        throw new Error(
+          "Start stopped before writing the candidate under the form lock"
+        );
+      } finally {
+        if (child.signalCode === null && child.exitCode === null) {
+          child.kill("SIGKILL");
+          await child.exited;
+        }
+      }
+    },
+    { timeout: 15_000 }
+  );
+  try {
+    expect(await prisma.response.findUniqueOrThrow({ where })).toEqual(before);
+    const openings = await Promise.all([
+      app.handle(startRequest(owner)),
+      app.handle(startRequest(owner)),
+    ]);
+    expect(openings.map(({ status }) => status)).toEqual([200, 200]);
+    const reopened = await prisma.response.findUniqueOrThrow({ where });
+    const winner = fixtureValue(reopened.draftObjectKey);
+    expect(winner).not.toBe(orphan);
+    expect(reopened).toMatchObject({
+      draftData: null,
+      publishedVersion: before.publishedVersion,
+      status: "draft",
+    });
+    expect(reopened.draftDocumentKey).not.toBe(history.documentKey);
+    expect(await readObject(winner)).toEqual(publishedBytes);
+    expect(
+      await prisma.objectCleanupIntent.findUnique({
+        where: { objectKey: winner },
+      })
+    ).toBeNull();
+    await prisma.objectCleanupIntent.update({
+      data: { cleanupAfter: new Date(0) },
+      where: { objectKey: orphan },
+    });
+    await drainObjectCleanupIntents([orphan]);
+    expect(await objectExists(orphan)).toBe(false);
+    expect(await objectExists(winner)).toBe(true);
+    expect(await readObject(history.objectKey)).toEqual(submissionBytes);
+  } finally {
+    await deleteObject(orphan);
+  }
+});
+
+test.each(["before dispatch", "after dispatch"] as const)(
+  "User Start %s fences stale Correction without replacing the Submission",
+  async (phase) => {
+    const owner = await fixture({ templateMode: true });
+    const admin = await fixture({ admin: true });
+    const submitted = await poll(
+      owner,
+      await send(owner, { folio_proof: file() }, "submit")
+    );
+    expect(submitted.status).toBe("completed");
+    const submission = await prisma.submission.findFirstOrThrow({
+      where: { responseId: owner.response.id },
+    });
+    const original = await readObject(submission.objectKey);
+    const proof = attachmentSchema.parse(
+      z.object({ proof: z.unknown() }).parse(submission.data).proof
+    );
+    const bridge = await openCorrection(owner, admin);
+    const lease = await prisma.editorLease.findFirstOrThrow({
+      where: { targetId: owner.response.id, targetType: "correction" },
+    });
+    expect(lease.workspaceDocumentKey).toBe(bridge.documentKey);
+    const dispatched = phase === "after dispatch";
+    if (!dispatched) {
+      // Invalidate the shared auth generation through a real loopback rejection.
+      const other = await fixture();
+      nextMode = "unauthorized";
+      const unauthorized = await poll(
+        other,
+        await send(other, { folio_proof: file() })
+      );
+      expect(unauthorized.status).toBe("failed");
+    }
+    const entered = Promise.withResolvers<undefined>();
+    const released = Promise.withResolvers<undefined>();
+    const barrier = {
+      enter: () => entered.resolve(),
+      release: released.promise,
+    };
+    if (dispatched) {
+      receiptBarrier = barrier;
+    } else {
+      loginBarrier = barrier;
+    }
+    const uploads = received.length;
+    const deletes = deleted.length;
+    try {
+      const accepted = await postCorrection(owner, admin, bridge, {
+        folio_proof: file(new Uint8Array([7, 6]), "Correction.PDF"),
+      });
+      expect(accepted.status).toBe(202);
+      const { operationId } = envelopeSchema.parse(
+        await accepted.clone().json()
+      );
+      await entered.promise;
+      expect(received.length).toBe(uploads + Number(dispatched));
+      const versions = await prisma.ecmAttachmentVersion.findMany({
+        where: { operationId },
+      });
+      expect(versions).toHaveLength(1);
+      expect(versions[0]).toMatchObject({
+        fileToken: null,
+        state: dispatched ? "started" : "prepared",
+      });
+      const batch = await prisma.ecmAttachmentBatch.findUniqueOrThrow({
+        where: { operationId },
+      });
+      expect(batch).toMatchObject({
+        documentKey: bridge.documentKey,
+        leaseId: lease.id,
+      });
+      const where = { id: owner.response.id };
+      const { publishedVersion } = await prisma.response.findUniqueOrThrow({
+        select: { publishedVersion: true },
+        where,
+      });
+      const started = await app.handle(startRequest(owner));
+      expect(started.status).toBe(200);
+      const reopened = await prisma.response.findUniqueOrThrow({ where });
+      expect(reopened.draftDocumentKey).not.toBe(bridge.documentKey);
+      expect(reopened.publishedVersion).toBe(publishedVersion);
+      expect(deleted.length).toBe(deletes);
+      const winner = fixtureValue(reopened.draftObjectKey);
+      const winnerBytes = await readObject(winner);
+      released.resolve();
+      const final = await poll(admin, accepted);
+      expect(final.status).toBe("failed");
+      if (dispatched) {
+        const delivered = fixtureValue(received.at(-1));
+        const receipt = await prisma.ecmAttachmentVersion.findFirstOrThrow({
+          where: { fileToken: delivered.token, operationId },
+        });
+        expect(receipt.state).not.toBe("committed");
+        expect(receipt.fileLink).toBeTruthy();
+        expect(
+          await prisma.ecmAttachmentCleanup.findFirst({
+            where: { operationId, versionId: receipt.id },
+          })
+        ).not.toBeNull();
+        expect(
+          deleted.slice(deletes).every((token) => token === delivered.token)
+        ).toBe(true);
+        expect(providerFiles.has(new URL(proof.file_link).pathname)).toBe(true);
+      } else {
+        expect(
+          await prisma.ecmAttachmentVersion.findFirst({
+            where: { operationId, sentAt: { not: null } },
+          })
+        ).toBeNull();
+        expect(deleted.length).toBe(deletes);
+      }
+      expect(received.length).toBe(uploads + Number(dispatched));
+      expect(await prisma.response.findUniqueOrThrow({ where })).toEqual(
+        reopened
+      );
+      expect(await readObject(winner)).toEqual(winnerBytes);
+      expect(await readObject(submission.objectKey)).toEqual(original);
+      expect(
+        await prisma.correction.count({
+          where: { submissionId: submission.id },
+        })
+      ).toBe(0);
+    } finally {
+      loginBarrier = null;
+      receiptBarrier = null;
+      released.resolve();
+    }
+  }
+);
+
 test("template Correction freezes catalog routing and preserves history while reusing scalar/table originals at distinct destinations", async () => {
   const templateNameSuffix = `-${crypto.randomUUID()}`;
   const owner = await fixture({
@@ -3098,11 +3417,21 @@ test("HTTP rejects zero- and one-byte scalar and table uploads before dispatch, 
 
 for (const templateMode of [false, true]) {
   test(`${templateMode ? "template " : ""}table attachments retain physical gaps and attachment-only two-byte rows across multiple columns`, async () => {
-    const f = await fixture({ tableAttachments: true, templateMode });
+    const f = await fixture({
+      mergedHidden: true,
+      tableAttachments: true,
+      templateMode,
+    });
+    const typedUrl = "https://example.test/not-a-receipt";
+    snapshots.set(
+      f.documentKey,
+      replaceCell(fixtureValue(snapshots.get(f.documentKey)), "B5", typedUrl)
+    );
     const uploads = received.length;
     const completed = await poll(
       f,
       await send(f, {
+        folio_proof: file(new Uint8Array([3, 254]), "scalar.PDF"),
         [JSON.stringify(["folio_row_proof", 2])]: file(
           new Uint8Array([0, 254]),
           "empty.TXT"
@@ -3119,6 +3448,7 @@ for (const templateMode of [false, true]) {
     );
     expect(completed.status).toBe("completed");
     const saved = await draft(f);
+    expect(saved.notes1).toBe(typedUrl);
     expect(saved.rows).toEqual([
       {
         item: null,
@@ -3150,6 +3480,7 @@ for (const templateMode of [false, true]) {
       },
     ]);
     expect(received.slice(uploads).map((entry) => [...entry.bytes])).toEqual([
+      [3, 254],
       [0, 254],
       [7, 254],
       [9, 254],
@@ -3159,9 +3490,77 @@ for (const templateMode of [false, true]) {
       fixtureValue(snapshots.get(f.documentKey))
     );
     expect(workbook.cells.get("C10")?.value ?? null).toBeNull();
-    expect(workbook.cells.get("C12")?.value).toBe(
-      tableRowsSchema.parse(saved.rows)[0]?.proof?.file_link
+    const rows = tableRowsSchema.parse(saved.rows);
+    expectWorkbookAttachment(
+      workbook,
+      "B3",
+      2,
+      1,
+      attachmentSchema.parse(saved.proof).file_link
     );
+    expectWorkbookAttachment(
+      workbook,
+      "C12",
+      11,
+      2,
+      fixtureValue(rows[0]?.proof).file_link
+    );
+    expectWorkbookAttachment(
+      workbook,
+      "D12",
+      11,
+      3,
+      fixtureValue(rows[0]?.other).file_link
+    );
+    expectWorkbookAttachment(
+      workbook,
+      "D13",
+      12,
+      3,
+      fixtureValue(rows[1]?.other).file_link
+    );
+    expect(workbook.names.get("folio_proof")).toMatchObject({
+      firstColumn: 1,
+      firstRow: 2,
+      lastColumn: 2,
+      lastRow: 2,
+    });
+    expect(workbook.merges).toContainEqual(
+      fixtureValue(workbook.names.get("folio_proof"))
+    );
+    const sheet = spreadsheetXmlTree(
+      strFromU8(fixtureValue(workbook.archive[workbook.sheetPath]))
+    );
+    expect(
+      xmlElements(sheet, "row").find((row) => row.attributes.r === "12")
+        ?.attributes.hidden
+    ).toBe("1");
+    expect(
+      xmlElements(sheet, "col").find((col) => col.attributes.min === "4")
+        ?.attributes.hidden
+    ).toBe("1");
+    expect(xmlElements(sheet, "sheetProtection")).toHaveLength(1);
+    const refs = await prisma.ecmAttachmentReference.findMany({
+      where: { responseId: f.response.id, snapshotId: f.documentKey },
+    });
+    const versions = await prisma.ecmAttachmentVersion.findMany({
+      where: { id: { in: refs.map(({ versionId }) => versionId) } },
+    });
+    expect(refs).toHaveLength(4);
+    for (const [tag, physicalRow, link] of [
+      ["proof", null, attachmentSchema.parse(saved.proof).file_link],
+      ["rows.proof", 2, fixtureValue(rows[0]?.proof).file_link],
+      ["rows.other", 2, fixtureValue(rows[0]?.other).file_link],
+      ["rows.other", 3, fixtureValue(rows[1]?.other).file_link],
+    ] as const) {
+      const version = fixtureValue(
+        versions.find(({ fileLink }) => fileLink === link)
+      );
+      expect(version.tag).toBe(tag);
+      expect(
+        refs.find(({ versionId }) => versionId === version.id)?.rowIndex
+      ).toBe(physicalRow);
+    }
   });
 
   test(`${templateMode ? "template " : ""}table attachment-only selected rows validate other required columns before any upload`, async () => {
@@ -3581,6 +3980,145 @@ for (const templateMode of [false, true]) {
     expect(received.length).toBe(uploads);
   });
 }
+
+test.each([
+  "missing scalar link",
+  "swapped physical links",
+  "internal link without a receipt",
+])(
+  "final Builder output with %s cannot replace the committed Draft",
+  async (fault) => {
+    const f = await fixture({ tableAttachments: true, templateMode: true });
+    const initial = await poll(
+      f,
+      await send(f, {
+        folio_proof: file(),
+        [JSON.stringify(["folio_row_proof", 2])]: file(),
+        [JSON.stringify(["folio_row_other", 3])]: file(),
+      })
+    );
+    expect(initial.status).toBe("completed");
+    await resume(f);
+    const before = await draft(f);
+    const persisted = () =>
+      prisma.response.findUniqueOrThrow({ where: { id: f.response.id } });
+    const beforeResponse = await persisted();
+    const key = fixtureValue(beforeResponse.draftObjectKey);
+    const beforeHash = Bun.CryptoHasher.hash(
+      "sha256",
+      await readObject(key),
+      "hex"
+    );
+    const refs = () =>
+      prisma.ecmAttachmentReference.findMany({
+        orderBy: { versionId: "asc" },
+        where: { responseId: f.response.id, snapshotId: f.documentKey },
+      });
+    const beforeRefs = await refs();
+    expect(beforeRefs).toHaveLength(3);
+    const uploads = received.length;
+    const deletes = deleted.length;
+    const checkpoint = crypto.randomUUID();
+    let faults = 0;
+    const fetchOriginal = globalThis.fetch;
+    const corruptBuilderOutput = async (
+      input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1]
+    ) => {
+      const response = await fetchOriginal(input, init);
+      if (
+        !response.ok ||
+        !(input instanceof URL) ||
+        !input.pathname.endsWith("/canonical.xlsx")
+      ) {
+        return response;
+      }
+      const workbook = readSpreadsheetWorkbook(
+        new Uint8Array(await response.arrayBuffer())
+      );
+      const { archive, sheetPath } = workbook;
+      const sheet = spreadsheetXmlTree(
+        strFromU8(fixtureValue(archive[sheetPath]))
+      );
+      const links = fixtureValue(
+        spreadsheetXmlChildren(sheet, "hyperlinks")[0]
+      );
+      const at = (address: string) =>
+        fixtureValue(
+          spreadsheetXmlChildren(links, "hyperlink").find(
+            (node) => node.attributes.ref === address
+          )
+        );
+      if (fault === "missing scalar link") {
+        const scalar = at("B3");
+        const relationshipId = fixtureValue(
+          Object.entries(scalar.attributes).find(([name]) =>
+            name.endsWith(":id")
+          )?.[1]
+        );
+        const path = templateRelationshipPartPath(sheetPath);
+        const relationships = spreadsheetXmlTree(
+          strFromU8(fixtureValue(archive[path]))
+        );
+        relationships.children = relationships.children.filter(
+          (node) =>
+            typeof node === "string" || node.attributes.Id !== relationshipId
+        );
+        archive[path] = strToU8(serializeSpreadsheetXml(relationships));
+        links.children = links.children.filter((node) => node !== scalar);
+      } else if (fault === "swapped physical links") {
+        const first = at("C12");
+        const second = at("D13");
+        first.attributes.ref = "D13";
+        second.attributes.ref = "C12";
+      } else {
+        links.children.push({
+          attributes: { location: "Form!A1", ref: "C13" },
+          children: [],
+          name: at("D13").name,
+        });
+      }
+      archive[sheetPath] = strToU8(serializeSpreadsheetXml(sheet));
+      faults += 1;
+      return new Response(zipSync(archive));
+    };
+    globalThis.fetch = Object.assign(corruptBuilderOutput, {
+      preconnect: fetchOriginal.preconnect,
+    });
+    try {
+      const failed = await poll(
+        f,
+        await send(f, { folio_proof: file() }, "draft", checkpoint)
+      );
+      expect(faults).toBe(1);
+      expect(failed.status).toBe("failed");
+      expect(failed.result?.errorMessage).toContain(
+        "ยืนยันไฟล์แนบในเอกสารที่สร้างเสร็จไม่ได้"
+      );
+      expect(await draft(f)).toEqual(before);
+      expect(await refs()).toEqual(beforeRefs);
+      const afterResponse = await persisted();
+      expect(afterResponse.draftObjectKey).toBe(key);
+      expect(
+        Bun.CryptoHasher.hash("sha256", await readObject(key), "hex")
+      ).toBe(beforeHash);
+      const receipt = await prisma.ecmAttachmentVersion.findFirstOrThrow({
+        where: { operationId: failed.operationId },
+      });
+      const fileToken = fixtureValue(receipt.fileToken);
+      expect(fileToken).toBe(fixtureValue(received[uploads]).token);
+      const recovered = await recover(f, checkpoint);
+      expect(recovered.status).toBe(200);
+      expect(envelopeSchema.parse(await recovered.json()).operationId).toBe(
+        failed.operationId
+      );
+      expect(received.length).toBe(uploads + 1);
+      expect(deleted.slice(deletes)).toEqual([fileToken]);
+    } finally {
+      globalThis.fetch = fetchOriginal;
+    }
+  }
+);
 
 test.each([false, true])(
   "table multi-column failure leaves the complete old Draft and never sends the next physical slot (template mode: %s)",
@@ -5184,6 +5722,7 @@ test("internal project save preserves files and canonical references while metad
   expect(operationOutcome38.status).toBe("completed");
   const canonicalData39 = await draft(f);
   const old = attachmentSchema.parse(canonicalData39.proof);
+  expect(await routingPending(f)).toBe(false);
   await resume(f);
   const session = await prisma.pdmsProjectCatalogSession.create({
     data: {
@@ -5236,6 +5775,7 @@ test("internal project save preserves files and canonical references while metad
     })
   ).toBe(batches);
   await resume(f);
+  expect(await routingPending(f)).toBe(true);
   const version = await prisma.ecmAttachmentVersion.findFirstOrThrow({
     where: { fileToken: old.file_token },
   });
@@ -5258,6 +5798,58 @@ test("internal project save preserves files and canonical references while metad
   await cleanup.promise;
   expect(fixtureValue(received.at(-1)).year).toBe("2571");
   expect([...fixtureValue(received.at(-1)).bytes]).toEqual([0, 255, 7, 1]);
+  await resume(f);
+  expect(await routingPending(f)).toBe(false);
+});
+
+test("template internal row save keeps trusted file routing pending across reopen until explicit Save", async () => {
+  const f = await fixture({ tableAttachments: true, templateMode: true });
+  const uploaded = await poll(
+    f,
+    await send(f, { [JSON.stringify(["folio_row_proof", 2])]: file() })
+  );
+  expect(uploaded.status).toBe("completed");
+  const before = await draft(f);
+  const old = tableRowsSchema.parse(before.rows)[0]?.proof;
+  expect(old).toBeTruthy();
+  await resume(f);
+  expect(await routingPending(f)).toBe(false);
+  const number = `${before.docs_number}.changed`;
+  snapshots.set(
+    f.documentKey,
+    replaceCell(fixtureValue(snapshots.get(f.documentKey)), "B2", number)
+  );
+  const uploads = received.length;
+  const deletes = deleted.length;
+  const reads = originalReads.length;
+  const internal = await poll(
+    f,
+    await send(f, {}, "draft", crypto.randomUUID(), {
+      rowChange: { action: "delete", index: 0 },
+    })
+  );
+  expect(internal.status).toBe("completed");
+  expect(await draft(f)).toMatchObject({
+    docs_number: number,
+    rows: [{ proof: { ...old, row_index: 1 } }],
+  });
+  expect(received.length).toBe(uploads);
+  expect(deleted.length).toBe(deletes);
+  expect(originalReads.length).toBe(reads);
+  await resume(f);
+  expect(await routingPending(f)).toBe(true);
+  const settled = await poll(f, await send(f, {}));
+  expect(settled.status).toBe("completed");
+  expect(received.slice(uploads)).toMatchObject([
+    {
+      fields: ["documentFile", "template"],
+      name: `${number}-หลักฐาน-ตาราง.PDF`,
+      template: "1",
+    },
+  ]);
+  expect([...fixtureValue(received.at(-1)).bytes]).toEqual([0, 255, 7, 1]);
+  await resume(f);
+  expect(await routingPending(f)).toBe(false);
 });
 
 test("an in-flight DELETE fences stale canonical receipt reference acquisition through HTTP", async () => {
@@ -5569,6 +6161,23 @@ test("final Admin Correction replaces scalar and table files while preserving th
   });
   expect(correctedScalar.file_token).not.toBe(scalar.file_token);
   expect(correctedRow.file_token).not.toBe(row.file_token);
+  const correctedWorkbook = readSpreadsheetWorkbook(
+    await readObject(correction.objectKey)
+  );
+  expectWorkbookAttachment(
+    correctedWorkbook,
+    "B3",
+    2,
+    1,
+    correctedScalar.file_link
+  );
+  expectWorkbookAttachment(
+    correctedWorkbook,
+    "C12",
+    11,
+    2,
+    correctedRow.file_link
+  );
   expect(received.slice(uploads).map((upload) => upload.bytes)).toEqual([
     replacementScalar,
     replacementRow,
@@ -6181,6 +6790,18 @@ test("Results exposes trusted unknown-upload follow-up without allowing an Admin
     error: "attachment_outcome_unresolved",
     message: expect.stringContaining("กรุณาติดต่อผู้ดูแล"),
   });
+  const deletesBefore = deleted.length;
+  const discard = await app.handle(
+    new Request(`http://test.local/api/responses/${f.response.id}`, {
+      headers: { Authorization: `Bearer ${f.bearer}` },
+      method: "DELETE",
+    })
+  );
+  expect(discard.status).toBe(409);
+  expect(await discard.json()).toMatchObject({
+    error: "attachment_outcome_unresolved",
+  });
+  expect(deleted).toHaveLength(deletesBefore);
   const status = await app.handle(
     new Request(
       `http://test.local/api/responses/${f.response.id}/attachment-status`,
@@ -6619,6 +7240,18 @@ test("Admin cancellation before dispatch fences an auth-waiting sender without t
   const original = envelopeSchema.parse(await accepted.clone().json());
   try {
     await entered.promise;
+    const deletesBefore = deleted.length;
+    const discard = await app.handle(
+      new Request(`http://test.local/api/responses/${f.response.id}`, {
+        headers: { Authorization: `Bearer ${f.bearer}` },
+        method: "DELETE",
+      })
+    );
+    expect(discard.status).toBe(409);
+    expect(await discard.json()).toMatchObject({
+      error: "operation_in_progress",
+    });
+    expect(deleted).toHaveLength(deletesBefore);
     const waiting = await followUpFor(admin, original.operationId);
     expect(waiting).toMatchObject({ canFence: true, state: "prepared" });
     expect(waiting.versions).toHaveLength(1);
@@ -6658,6 +7291,87 @@ test("Admin cancellation before dispatch fences an auth-waiting sender without t
     loginBarrier = null;
     nextMode = "ok";
   }
+});
+
+test("owner discard of a reopened Draft preserves Submission and Correction history without deleting files", async () => {
+  const owner = await fixture();
+  const admin = await fixture({ admin: true });
+  const submitted = await poll(
+    owner,
+    await send(owner, { folio_proof: file() }, "submit")
+  );
+  expect(submitted.status).toBe("completed");
+  const bridge = await openCorrection(owner, admin);
+  const corrected = await poll(
+    admin,
+    await postCorrection(owner, admin, bridge, {
+      folio_proof: file(new Uint8Array([4, 3, 2]), "Corrected.PDF"),
+    })
+  );
+  expect(corrected.status).toBe("completed");
+  const reopened = await app.handle(
+    new Request(`http://test.local/api/forms/${owner.form.publicId}/start`, {
+      headers: { Authorization: `Bearer ${owner.bearer}` },
+      method: "POST",
+    })
+  );
+  expect(reopened.status).toBe(200);
+  const where = { responseId: owner.response.id };
+  const responseWhere = { id: owner.response.id };
+  const readResponse = () =>
+    prisma.response.findUniqueOrThrow({ where: responseWhere });
+  const readHistory = () =>
+    Promise.all([
+      prisma.submission.findFirstOrThrow({ where }),
+      prisma.correction.findFirstOrThrow({ where }),
+    ] as const);
+  const readReferences = () =>
+    prisma.ecmAttachmentReference.findMany({
+      orderBy: [{ versionId: "asc" }, { snapshotId: "asc" }],
+      where,
+    });
+  const savedDraft = await readResponse();
+  expect(savedDraft.status).toBe("draft");
+  const history = await readHistory();
+  const references = await readReferences();
+  expect(references).toHaveLength(2);
+  const workbookHashes = () =>
+    Promise.all(
+      history.map(async (entry) => sha256(await readObject(entry.objectKey)))
+    );
+  const fileHashes = () =>
+    history.map((entry) => {
+      const data = z.object({ proof: attachmentSchema }).parse(entry.data);
+      const stored = providerFiles.get(new URL(data.proof.file_link).pathname);
+      return sha256(fixtureValue(stored).bytes);
+    });
+  const workbooksBefore = await workbookHashes();
+  const filesBefore = fileHashes();
+  const deletesBefore = deleted.length;
+  const objectDeletes: string[] = [];
+  const discardApp = createApp({
+    deleteObject: (key) => {
+      objectDeletes.push(key);
+      return Promise.resolve();
+    },
+    legacySso: null,
+    pdmsProjects: null,
+  });
+  const refused = await discardApp.handle(
+    new Request(`http://test.local/api/responses/${owner.response.id}`, {
+      headers: { Authorization: `Bearer ${owner.bearer}` },
+      method: "DELETE",
+    })
+  );
+  expect(refused.status).toBe(409);
+  expect(await refused.json()).toMatchObject({ error: "draft_has_history" });
+  expect(objectDeletes).toEqual([]);
+  expect(deleted).toHaveLength(deletesBefore);
+  expect(await readResponse()).toEqual(savedDraft);
+  expect(await readHistory()).toEqual(history);
+  expect(await readReferences()).toEqual(references);
+  expect(await workbookHashes()).toEqual(workbooksBefore);
+  expect(fileHashes()).toEqual(filesBefore);
 });
 
 test("whole-Response deletion reports a ledger serialization conflict without effects or provider retry", async () => {
@@ -7179,22 +7893,32 @@ test.each(["failed", "unknown"] as const)(
   }
 );
 
-test.each(["other Draft", "other Submission", "own Submission"] as const)(
-  "whole-Response deletion rejects Admin User-route bypass for %s",
+test.each([
+  "other Draft",
+  "other Submission",
+  "own Submission",
+  "foreign User",
+  "Viewer",
+] as const)(
+  "whole-Response deletion rejects owner-route bypass for %s",
   async (scope) => {
     const admin = await fixture({ admin: true });
     const owner = scope === "own Submission" ? admin : await fixture();
-    if (scope !== "other Draft") {
+    if (scope === "other Submission" || scope === "own Submission") {
       const submitted = await poll(
         owner,
         await send(owner, { folio_proof: file() }, "submit")
       );
       expect(submitted.status).toBe("completed");
     }
+    const actor =
+      scope === "foreign User" || scope === "Viewer"
+        ? await fixture({ viewer: scope === "Viewer" })
+        : admin;
     const before = deleted.length;
     const removed = await app.handle(
       new Request(`http://test.local/api/responses/${owner.response.id}`, {
-        headers: { Authorization: `Bearer ${admin.bearer}` },
+        headers: { Authorization: `Bearer ${actor.bearer}` },
         method: "DELETE",
       })
     );
@@ -7257,6 +7981,25 @@ test("whole-Response deletion snapshots Submission, Correction, workspace and Op
     where: { responseId: owner.response.id },
   });
   expect(references.length).toBeGreaterThan(versions.length);
+  const removeAsAdmin = () =>
+    app.handle(
+      new Request(
+        `http://test.local/api/admin/responses/${owner.response.id}`,
+        {
+          body: JSON.stringify({ confirm: true }),
+          headers: {
+            Authorization: `Bearer ${admin.bearer}`,
+            "Content-Type": "application/json",
+          },
+          method: "DELETE",
+        }
+      )
+    );
+  const before = deleted.length;
+  const leased = await removeAsAdmin();
+  expect(leased.status).toBe(409);
+  expect(await leased.json()).toMatchObject({ error: "editor_in_use" });
+  expect(deleted).toHaveLength(before);
   const leases = await prisma.editorLease.findMany({
     where: { targetId: owner.response.id },
   });
@@ -7271,17 +8014,7 @@ test("whole-Response deletion snapshots Submission, Correction, workspace and Op
     );
     expect(released.status).toBe(200);
   }
-  const before = deleted.length;
-  const removed = await app.handle(
-    new Request(`http://test.local/api/admin/responses/${owner.response.id}`, {
-      body: JSON.stringify({ confirm: true }),
-      headers: {
-        Authorization: `Bearer ${admin.bearer}`,
-        "Content-Type": "application/json",
-      },
-      method: "DELETE",
-    })
-  );
+  const removed = await removeAsAdmin();
   expect(removed.status).toBe(200);
   const outcome = z
     .object({

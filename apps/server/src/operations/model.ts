@@ -4,12 +4,13 @@ import type { OperationType } from "@onlyoffice/db";
 import { spreadsheetEditorSaveOptions } from "../documents/spreadsheets/editor-save-proof";
 import type { SpreadsheetAnchorSnapshot } from "../documents/spreadsheets/save-snapshot";
 import type { SavedUploadPocButton } from "../documents/spreadsheets/upload-poc";
-import { fail } from "../http/errors";
+import { fail, HttpError } from "../http/errors";
 import { asRecord } from "../http/input";
 import type { JsonRecord } from "../model-types";
 import { isDocumentServerKey } from "../onlyoffice";
 import type { PdmsSelection } from "../pdms/catalog";
 import { pdmsSelectionSchema } from "../pdms/selection";
+import type { XlsxDraftCandidate } from "./xlsx-draft";
 
 type OperationAction =
   | "save-template"
@@ -26,8 +27,22 @@ export const operationTypeForAction: Record<OperationAction, OperationType> = {
   "save-template": "save_template_draft",
   submit: "submit_response",
 };
+const reportableOperationErrorCodes = [
+  "attachment_mapping_unproved",
+  "attachment_template_stale",
+  "invalid_field_config",
+  "invalid_template",
+] as const;
+type ReportableOperationError = (typeof reportableOperationErrorCodes)[number];
+
+export const isReportableOperationError = (
+  error: unknown
+): error is HttpError & { code: ReportableOperationError } =>
+  error instanceof HttpError &&
+  reportableOperationErrorCodes.some((code) => error.code === code);
+
 export type OperationErrorCode =
-  | "attachment_template_stale"
+  | ReportableOperationError
   | "callback_claim_invalid"
   | "callback_document_unavailable"
   | "callback_key_mismatch"
@@ -35,7 +50,6 @@ export type OperationErrorCode =
   | "document_save_failed"
   | "fill_method_changed"
   | "force_save_failed"
-  | "invalid_template"
   | "native_snapshot_read_failed"
   | "onlyoffice_document_error"
   | "operation_timeout"
@@ -47,6 +61,7 @@ export interface OperationMetadata extends JsonRecord {
   documentKind?: "docx" | "xlsx";
   documentServerKey?: string;
   bindingRevision?: number;
+  xlsxDraft?: XlsxDraftCandidate;
   action: OperationAction;
   baseDocumentKey?: string;
   baseRevision?: number;
@@ -57,6 +72,7 @@ export interface OperationMetadata extends JsonRecord {
   finalObjectKey: string;
   formId: string;
   nativeDocumentStaged?: boolean;
+  nativeCaptureLeaseId?: string;
   nativeCaptureObjectKey?: string;
   nextDocumentKey?: string;
   preserveEditorSession?: true;
@@ -140,6 +156,10 @@ export function operationMetadata(value: unknown): OperationMetadata {
     (metadata.workspaceLeaseId !== undefined &&
       !pdmsSelectionSchema.shape.leaseId.safeParse(metadata.workspaceLeaseId)
         .success) ||
+    (metadata.nativeCaptureLeaseId !== undefined &&
+      !pdmsSelectionSchema.shape.leaseId.safeParse(
+        metadata.nativeCaptureLeaseId
+      ).success) ||
     (workspaceDocumentKey !== undefined &&
       typeof workspaceDocumentKey !== "string") ||
     (workspaceObjectKey !== undefined &&

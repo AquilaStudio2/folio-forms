@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { env } from "@onlyoffice/env/server";
 import { z } from "zod";
 
+import type { XlsxDraftIssue } from "./documents/spreadsheets/draft-diagnosis";
 import { uploadPocGuid } from "./documents/spreadsheets/upload-poc-preview";
 import { fail } from "./http/errors";
 import type { PdmsProjectCatalog } from "./pdms/catalog";
@@ -136,6 +137,9 @@ export interface CallbackClaimInput {
 export interface EditorOptions {
   documentKind?: "docx" | "xlsx";
   spreadsheetBindings?: unknown;
+  xlsxDraftProtocol?: 1;
+  xlsxDraftRevision?: number;
+  xlsxDraftIssues?: XlsxDraftIssue[];
   attachmentSavedData?: unknown;
   attachmentCleanupWarning?: string | null;
   attachmentMutationNotice?: string | null;
@@ -156,6 +160,7 @@ export interface EditorOptions {
     renewUrl: string;
   };
   documentKey: string;
+  templateDraftObjectKey?: string;
   documentServerKey?: string;
   operationId?: string;
   prefill?: {
@@ -451,6 +456,44 @@ export function verifyDocumentAccessToken(
   );
 }
 
+export function verifyEditableSpreadsheetToken(
+  token: string,
+  documentKey: string
+): string | null {
+  const claims = verifiedTokenPayload(token, env.ONLYOFFICE_JWT_SECRET);
+  return claims?.kind === "onlyoffice-editable-spreadsheet" &&
+    claims.documentKey === documentKey &&
+    liveExpiry(claims.expiresAt) &&
+    typeof claims.objectKey === "string"
+    ? claims.objectKey
+    : null;
+}
+
+interface SavedSpreadsheetSnapshot {
+  objectKey: string;
+  publishedTemplateId: string;
+}
+
+export function verifySavedSpreadsheetToken(
+  token: string,
+  documentKey: string
+): SavedSpreadsheetSnapshot | null {
+  const claims = verifiedTokenPayload(token, env.ONLYOFFICE_JWT_SECRET);
+  if (
+    claims?.kind !== "onlyoffice-saved-spreadsheet" ||
+    claims.documentKey !== documentKey ||
+    !liveExpiry(claims.expiresAt) ||
+    typeof claims.objectKey !== "string" ||
+    typeof claims.publishedTemplateId !== "string"
+  ) {
+    return null;
+  }
+  return {
+    objectKey: claims.objectKey,
+    publishedTemplateId: claims.publishedTemplateId,
+  };
+}
+
 export function createCallbackUserdata(input: CallbackClaimInput): string {
   return signToken(
     {
@@ -535,9 +578,47 @@ export function verifyOnlyOfficeAuthorization(
   );
 }
 
+function documentUrlFor(
+  documentKey: string,
+  baseUrl: string,
+  pdfOnly = false,
+  snapshot?: SavedSpreadsheetSnapshot
+): string {
+  const token = snapshot
+    ? signToken(
+        {
+          ...snapshot,
+          documentKey,
+          expiresAt: expiresIn(tokenLifetimeSeconds),
+          kind: "onlyoffice-saved-spreadsheet",
+        },
+        env.ONLYOFFICE_JWT_SECRET
+      )
+    : createDocumentAccessToken(documentKey);
+  const exportMode = pdfOnly ? "&pdf=1" : "";
+  const mode = snapshot ? "&readonly=1" : exportMode;
+  return `${trimOrigin(baseUrl)}/onlyoffice/document/${encodeURIComponent(documentKey)}?token=${encodeURIComponent(token)}${mode}`;
+}
+
 export function documentUrl(documentKey: string): string {
-  const token = createDocumentAccessToken(documentKey);
-  return `${trimOrigin(env.ONLYOFFICE_DOCUMENT_BASE_URL)}/onlyoffice/document/${encodeURIComponent(documentKey)}?token=${encodeURIComponent(token)}`;
+  return documentUrlFor(documentKey, env.ONLYOFFICE_DOCUMENT_BASE_URL);
+}
+
+function editableSpreadsheetDocumentUrl(
+  documentKey: string,
+  objectKey: string
+): string {
+  const token = signToken(
+    {
+      documentKey,
+      expiresAt: expiresIn(tokenLifetimeSeconds),
+      kind: "onlyoffice-editable-spreadsheet",
+      objectKey,
+    },
+    env.ONLYOFFICE_JWT_SECRET
+  );
+  const base = trimOrigin(env.ONLYOFFICE_DOCUMENT_BASE_URL);
+  return `${base}/onlyoffice/document/${encodeURIComponent(documentKey)}?token=${encodeURIComponent(token)}&editable=1`;
 }
 
 // oxlint-disable-next-line complexity -- Compose the existing plugin capabilities and optional source popup in one signed editor config.
@@ -614,7 +695,12 @@ export function editorConfig(
         review: false,
       },
       title: `${options.action}-${options.publicId}.${documentFileType}`,
-      url: documentUrl(options.documentKey),
+      url: options.templateDraftObjectKey
+        ? editableSpreadsheetDocumentUrl(
+            options.documentKey,
+            options.templateDraftObjectKey
+          )
+        : documentUrl(options.documentKey),
     },
     documentType: options.documentKind === "xlsx" ? "cell" : "word",
     editorConfig: {
@@ -660,6 +746,9 @@ export function editorConfig(
           ...(uploadPocOptions ? { [uploadPocGuid]: uploadPocOptions } : {}),
           [pluginGuid]: {
             ...pluginOptions,
+            ...(options.xlsxDraftProtocol === 1
+              ? { xlsxDraftLeaseId: options.lease.id, xlsxDraftProtocol: 1 }
+              : {}),
             ...(attachmentCategoryPopup
               ? {
                   attachmentCategoryPopupChannelId:
@@ -727,7 +816,8 @@ export function readOnlyViewerConfig(
   documentKey: string,
   publicId: string,
   user: { id: string; name: string },
-  documentKind: "docx" | "xlsx" = "docx"
+  documentKind: "docx" | "xlsx",
+  snapshot: SavedSpreadsheetSnapshot
 ): Record<string, unknown> {
   const config = {
     document: {
@@ -744,7 +834,12 @@ export function readOnlyViewerConfig(
         review: false,
       },
       title: `submission-${publicId}.${documentKind}`,
-      url: `${documentUrl(documentKey)}${documentKind === "xlsx" ? "&readonly=1" : ""}`,
+      url: documentUrlFor(
+        documentKey,
+        env.ONLYOFFICE_DOCUMENT_BASE_URL,
+        false,
+        documentKind === "xlsx" ? snapshot : undefined
+      ),
     },
     documentType: documentKind === "xlsx" ? "cell" : "word",
     editorConfig: {
@@ -783,16 +878,6 @@ export interface OnlyOfficeClientOptions {
   fetch?: (url: string, init?: RequestInit) => Promise<Response>;
   internalUrl?: string;
   maxDownloadBytes?: number;
-}
-
-function documentUrlFor(
-  documentKey: string,
-  baseUrl: string,
-  pdfOnly = false
-): string {
-  const token = createDocumentAccessToken(documentKey);
-  const pdfParameter = pdfOnly ? "&pdf=1" : "";
-  return `${trimOrigin(baseUrl)}/onlyoffice/document/${encodeURIComponent(documentKey)}?token=${encodeURIComponent(token)}${pdfParameter}`;
 }
 
 function converterResponseError(payload: unknown): string | null {

@@ -1,6 +1,6 @@
 # แผนงาน Folio XLSX — กฎ, workbook และผลลัพธ์ต้องตรง revision
 
-**สถานะ:** ข้อเสนอรอตรวจรับแผน ยังไม่เริ่ม implementation  
+**สถานะ:** อนุมัติเริ่มงานและทดสอบ; รวมบน `fix/xlsx-workbook-consistency`  
 **ฐานหลักฐาน:** `ba89561`; [รายงาน audit และ source refs](map.md). ตรวจ HEAD และทำ red-capable probe ใหม่ก่อนลงมือแต่ละตั๋ว หาก source เปลี่ยน ห้ามถือว่าผลเดิมใช้แทนได้
 
 ## เป้าหมายและขอบเขต
@@ -13,7 +13,7 @@
 
 ## ตั๋วตามลำดับ
 
-`Blocked by` คือ dependency จริง ไม่ใช่แค่ลำดับความสำคัญ. เริ่ม 01, 02 และ 04 แยกกันได้หลังอนุมัติ; 03 ตาม 02 เพื่อทดสอบ end-to-end ว่าได้ทั้ง revision และ bytes ถูกชุด. 07, 08 และ 10 ให้วางแผนการแก้ไฟล์ callback/shared pipeline ไม่ชนกับ 05 แม้ไม่ต้องรอ contract เดียวกันทุกกรณี
+`Blocked by` คือ dependency จริง ไม่ใช่แค่ลำดับความสำคัญ. 01 และ 02 เริ่มแยกกันได้; 03 ตาม 02 เพื่อทดสอบ end-to-end ว่าได้ทั้ง revision และ bytes ถูกชุด. 07, 08 และ 10 ไม่ต้องรอ contract เดียวกัน แต่ต้องแยกเจ้าของไฟล์ callback/shared pipeline จาก 05.
 
 | # | ตั๋ว | Priority | Blocked by | Audit |
 |---|---|---|---|---|
@@ -32,7 +32,7 @@
 
 ## การอนุมัติและการตรวจรับ
 
-- หยุดที่ review แผนก่อนแก้โค้ด. ตั๋ว `needs-triage` ยังไม่อนุมัติเริ่ม; `needs-info` มี decision/evidence gate ตามตั๋ว
+- เริ่ม implementation ตามลำดับ dependency. เกณฑ์ตรวจรับในตั๋วเป็น seams ที่อนุมัติแล้ว; ผลเทสต์ไม่แทนข้อกำหนดด้านข้อมูลและสิทธิ์
 - เริ่มจาก P1 ที่พิสูจน์แล้ว: 01 → 05, 02 → 03 และพิจารณา guard ของ 04. ทำ 07 เมื่อมี red-capable repro; ไม่รวมทุกเรื่องเป็น patch เดียว
 - Local acceptance (12) ไม่ต้องรอ DCM จริง (11) แต่ไม่ใช่ provider/Production release approval. อ้างผลตาม revision และแยก sandbox, native, provider และ human review
 - เมื่อ implementation เปลี่ยน flow ให้แก้ [system map](../system-workflow/system-map.md) ตาม [workflow maintenance](../../docs/agents/system-workflow.md). รอบวางแผนไม่เปลี่ยน map ของระบบที่ทำงานอยู่
@@ -40,3 +40,6 @@
 ## Comments
 
 - ผู้ใช้ขอให้จัดแผนเป็นตั๋วตามลำดับ ยังไม่ให้แก้โค้ด
+- ผู้ใช้อนุมัติเริ่มแก้และทดสอบเอง อนุญาต DCM จริงเฉพาะ `กทอ.67-00-0001` ถึง `กทอ.67-00-0003` เมื่อมีเหตุทดสอบที่ sandbox ไม่ตอบ. ไม่ถือเป็นคำสั่ง push/deploy หรือให้ resend/DELETE หลังผลไม่ชัด
+- เลือก block การทิ้งร่างเมื่อมี Submission (04) โดยไม่เปลี่ยน Admin whole-Response delete. คง no-upload ระหว่าง internal action (09); ย้ายไฟล์เฉพาะเมื่อผู้ใช้กด Save Draft/Submit/Save Correction ตามกติกาเดิม
+- รับ [สัญญา commit/recovery และ test seams ของ 01](draft-commit-contract.md) สำหรับ 05. ยืนยัน Firefox/Chromium ไม่จำเป็นทั้งคู่: Chromium กับ ONLYOFFICE 9.4 ใน sandbox ทำให้ `A1:A2` → Apply → reload โดยไม่ Save → เพิ่มช่องแนบ แสดง “ไม่พบตำแหน่งตาราง กรุณาผูกตำแหน่งตารางใหม่ก่อนบันทึก” ที่ baseline

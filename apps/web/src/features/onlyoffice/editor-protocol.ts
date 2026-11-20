@@ -59,6 +59,7 @@ export interface PdmsProjectCatalog {
 
 export interface EditorConfig {
   attachmentNotice?: string | null;
+  attachmentRoutingPending?: boolean;
   pdmsProjectCatalog?: PdmsProjectCatalog;
   apiScriptUrl?: string;
   apiUrl?: string;
@@ -92,6 +93,7 @@ interface BridgeReadyMessage {
 export interface CapabilityRequestMessage {
   action: EditorAction;
   bridgeId: string;
+  draftCheckpoint?: unknown;
   requestId: string;
   source: "form-bridge";
   type: "capability-request";

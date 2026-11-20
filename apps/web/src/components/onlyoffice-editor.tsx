@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui";
+import { rememberXlsxPublishCheckpoint } from "@/features/admin-forms/xlsx-publish-recovery";
 import { recoveredAttachmentLease } from "@/features/onlyoffice/attachment-admission-recovery";
 import { createAttachmentCategoryPopupRelay } from "@/features/onlyoffice/attachment-category-popup-relay";
 import {
@@ -199,6 +200,7 @@ export const OnlyOfficeEditor = ({
   const [attachmentNotice, setAttachmentNotice] = useState<
     string | null | undefined
   >();
+  const [routingPending, setRoutingPending] = useState<boolean>();
   const [cleanupWarning, setCleanupWarning] = useState<
     string | null | undefined
   >();
@@ -513,6 +515,7 @@ export const OnlyOfficeEditor = ({
     loadedConfigUrlRef.current = null;
     setConfig(null);
     setAttachmentNotice(undefined);
+    setRoutingPending(undefined);
     setCleanupWarning(undefined);
     setCheckpointPending(true);
     setError(null);
@@ -726,6 +729,11 @@ export const OnlyOfficeEditor = ({
     let nativeDocumentDirty: boolean | null = null;
     let nativeSaveError: string | null = null;
     let pendingEditorSaveId: string | null = null;
+    let publishCheckpoint: {
+      key: string;
+      value: string;
+      operationId?: string;
+    } | null = null;
     const pdmsPopupRelay = createPdmsPopupRelay({
       bridgeId,
       getPrimary: () => pinnedSourceRef.current,
@@ -764,6 +772,7 @@ export const OnlyOfficeEditor = ({
         // The plugin may close its frame while native saving is in flight.
       }
     };
+
     const respondToCapabilityRequest = (
       request: CapabilityRequestMessage,
       response:
@@ -802,6 +811,7 @@ export const OnlyOfficeEditor = ({
       }
     };
 
+    // oxlint-disable-next-line complexity -- Grant capabilities only after verifying the opening, lease and any Publish checkpoint together.
     const renewCapability = async (
       request: CapabilityRequestMessage,
       requestedSource: MessageEventSource
@@ -833,10 +843,13 @@ export const OnlyOfficeEditor = ({
           return;
         }
         const freshLease = fresh.bridge?.lease;
+        const scope = config.bridge?.uploadPoc;
         if (
           !freshLease ||
           !requestedLeaseId ||
-          leaseRef.current?.id !== requestedLeaseId
+          leaseRef.current?.id !== requestedLeaseId ||
+          (scope?.action === "template-edit" &&
+            freshLease.id !== requestedLeaseId)
         ) {
           respondToCapabilityRequest(
             request,
@@ -857,6 +870,13 @@ export const OnlyOfficeEditor = ({
             requestedSource
           );
           return;
+        }
+        if (request.draftCheckpoint !== undefined) {
+          publishCheckpoint = rememberXlsxPublishCheckpoint(
+            request,
+            scope,
+            freshLease.id
+          );
         }
         respondToCapabilityRequest(
           request,
@@ -1402,6 +1422,28 @@ export const OnlyOfficeEditor = ({
         setMutationState("saving");
       }
       const result = message.operation?.result;
+      if (message.action === "publish" && publishCheckpoint) {
+        if (message.status === "pending" && message.operationId) {
+          publishCheckpoint.operationId ??= message.operationId;
+        } else if (
+          (message.status === "completed" &&
+            isNonEmptyString(result?.documentKey) &&
+            publishCheckpoint.operationId === message.operationId) ||
+          (message.status === "failed" &&
+            message.attachmentCommitUnresolved === false &&
+            publishCheckpoint.operationId === message.operationId)
+        ) {
+          const { key, value } = publishCheckpoint;
+          try {
+            if (sessionStorage.getItem(key) === value) {
+              sessionStorage.removeItem(key);
+            }
+          } catch {
+            // An intact checkpoint remains available for read-only verification after reload.
+          }
+          publishCheckpoint = null;
+        }
+      }
       if (result?.editorSessionPreserved === true) {
         const uploadPoc = config.bridge?.uploadPoc;
         const canonicalDocumentKey = config.bridge?.documentKey;
@@ -1586,10 +1628,12 @@ export const OnlyOfficeEditor = ({
                 await uploadPocFilesRef.current?.refreshStatus(options);
               if (
                 !cancelled &&
-                requestSequence === requestSequenceRef.current &&
-                status?.cleanupWarning
+                requestSequence === requestSequenceRef.current
               ) {
-                setCleanupWarning(status.cleanupWarning);
+                if (status?.cleanupWarning) {
+                  setCleanupWarning(status.cleanupWarning);
+                }
+                setRoutingPending(status?.attachmentRoutingPending);
               }
             } catch {
               // Keep the last durable cleanup warning when its refresh is unavailable.
@@ -1831,6 +1875,19 @@ export const OnlyOfficeEditor = ({
             />
           ) : null}
         </div>
+      ) : null}
+      {mutationState === "idle" &&
+      !uploadPocFilesRef.current?.hasUnresolvedCommit() &&
+      (routingPending ?? config?.attachmentRoutingPending) ? (
+        <p
+          className="mb-3 rounded-lg border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950"
+          role="status"
+          aria-live="polite"
+        >
+          บันทึกข้อมูลคำตอบแล้ว แต่ไฟล์แนบที่บันทึกไว้ยังอยู่ที่ปลายทางเดิม
+          กดบันทึกร่างหรือส่งคำตอบเพื่อใช้ปลายทางใหม่
+          ไฟล์ที่เพิ่งเลือกจะยังไม่ถูกอัปโหลดจนกว่าจะกดบันทึกร่างหรือส่งคำตอบ
+        </p>
       ) : null}
       {activeCleanupWarning ? (
         <p

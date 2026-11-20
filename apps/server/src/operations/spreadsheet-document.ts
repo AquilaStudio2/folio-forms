@@ -1,14 +1,20 @@
 import { prisma } from "@onlyoffice/db";
 
-import { reconcileSpreadsheetColumns } from "../documents/spreadsheets/columns";
-import { spreadsheetColumnName } from "../documents/spreadsheets/contract";
+import {
+  spreadsheetCellPosition,
+  spreadsheetColumnName,
+  spreadsheetRangesOverlap,
+} from "../documents/spreadsheets/contract";
 import type {
+  SpreadsheetBindings,
+  SpreadsheetField,
   SpreadsheetRange,
   SpreadsheetContract,
 } from "../documents/spreadsheets/contract";
 import { validatePreservedSpreadsheetEditorSave } from "../documents/spreadsheets/editor-save-proof";
 import { processSpreadsheet } from "../documents/spreadsheets/engine";
 import { compactSpreadsheetDraftOptions } from "../documents/spreadsheets/helper-storage";
+import type { SpreadsheetHyperlink } from "../documents/spreadsheets/hyperlinks";
 import {
   resetSpreadsheetPicturePlaceholders,
   readSpreadsheetPictures,
@@ -29,6 +35,10 @@ import {
   stripSpreadsheetUploadPoc,
   validateSpreadsheetAttachmentButtons,
 } from "../documents/spreadsheets/upload-poc";
+import {
+  applySpreadsheetValidation,
+  mismatchedSpreadsheetDraftValidations,
+} from "../documents/spreadsheets/validation";
 import type { SpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
 import {
   extractSpreadsheetData,
@@ -45,6 +55,8 @@ import { spreadsheetPictureFramesForTemplate } from "../forms/spreadsheet-pictur
 import { fail } from "../http/errors";
 import { pdmsSelectionValue } from "../pdms/selection";
 import {
+  attachmentSlotKey,
+  canonicalAttachment,
   canonicalTableAttachments,
   spreadsheetAttachmentSlots,
   hasSpreadsheetAttachments,
@@ -53,6 +65,7 @@ import {
 import type { TableAttachment } from "../responses/attachment-data";
 import { readObject } from "../storage";
 import type { OperationMetadata } from "./model";
+import { validateXlsxDraftCapture } from "./xlsx-draft";
 
 export class SpreadsheetValidationError extends Error {
   readonly errors: { address: string; message: string }[];
@@ -72,6 +85,81 @@ export type PrepareAttachments = (
   workbook: SpreadsheetWorkbook
 ) => Promise<Record<string, unknown>>;
 
+const validateAttachmentProjection = (
+  workbook: SpreadsheetWorkbook,
+  contract: SpreadsheetContract,
+  expectedLinks: ReadonlyMap<string, string>
+): void => {
+  const singleLinks = new Map<string, SpreadsheetHyperlink>();
+  const rangeLinks = [...workbook.localHyperlinks];
+  for (const link of workbook.hyperlinks) {
+    const { range } = link;
+    const address = rangeAddress(range);
+    if (
+      range.firstRow !== range.lastRow ||
+      range.firstColumn !== range.lastColumn ||
+      singleLinks.has(address)
+    ) {
+      rangeLinks.push(range);
+    } else {
+      singleLinks.set(address, link);
+    }
+  }
+  for (const slot of spreadsheetAttachmentSlots(contract)) {
+    const cell = workbook.cells.get(slot.address);
+    const { row, column } = spreadsheetCellPosition(slot.address);
+    const range =
+      "anchor" in slot.field
+        ? contract.locations[slot.field.anchor]
+        : undefined;
+    const cellRange = {
+      firstColumn: column,
+      firstRow: row,
+      lastColumn: column,
+      lastRow: row,
+      sheet: workbook.sheet,
+    };
+    const expectedLink = expectedLinks.get(slot.key) ?? "";
+    const link = singleLinks.get(rangeAddress(cellRange));
+    if (
+      (cell?.value ?? "") !== expectedLink ||
+      cell?.formula ||
+      (link?.target ?? "") !== expectedLink ||
+      rangeLinks.some((item) =>
+        spreadsheetRangesOverlap(item, range ?? cellRange)
+      ) ||
+      (range &&
+        rangeAddress(range) !== rangeAddress(cellRange) &&
+        workbook.hyperlinks.some(
+          (item) => item !== link && spreadsheetRangesOverlap(item.range, range)
+        ))
+    ) {
+      fail(
+        409,
+        "attachment_projection_unproven",
+        `ยืนยันไฟล์แนบในเอกสารที่สร้างเสร็จไม่ได้ (${slot.address})`
+      );
+    }
+  }
+};
+
+const usesManagedValidation = (
+  field: Pick<SpreadsheetField, "computed" | "source" | "placeholder" | "type">
+): boolean =>
+  !field.computed &&
+  !field.source &&
+  (field.placeholder !== null ||
+    (field.type !== "text" && field.type !== "picture"));
+
+const hasManagedValidation = (bindings: SpreadsheetBindings): boolean =>
+  bindings.fields.some(
+    (field) => !field.unbound && usesManagedValidation(field)
+  ) ||
+  Boolean(
+    !bindings.table?.unbound &&
+    bindings.table?.columns.some(usesManagedValidation)
+  );
+
 // oxlint-disable-next-line complexity -- Actions share the trusted-workbook processing boundary.
 export const prepareSpreadsheetOperation = async (
   metadata: OperationMetadata,
@@ -88,9 +176,19 @@ export const prepareSpreadsheetOperation = async (
   }
   const current = readSpreadsheetWorkbook(snapshot);
   if (metadata.action === "save-template" || metadata.action === "publish") {
+    const candidate = metadata.xlsxDraft;
+    if (!candidate || candidate.version !== 1) {
+      fail(
+        409,
+        "xlsx_draft_upgrade_required",
+        "This Excel save predates the atomic draft protocol"
+      );
+    }
     if (
       !form.templateDraft ||
-      form.templateDraft.bindingRevision !== metadata.bindingRevision
+      form.templateDraft.bindingRevision !== candidate.revision ||
+      form.templateDraft.objectKey !== candidate.baseObjectKey ||
+      form.templateDraft.contentHash !== candidate.baseContentHash
     ) {
       fail(
         409,
@@ -98,7 +196,12 @@ export const prepareSpreadsheetOperation = async (
         "Spreadsheet configuration changed while saving"
       );
     }
-    let bindings = await spreadsheetDraftBindings(form.templateDraft.id);
+    const previous = await spreadsheetDraftBindings(form.templateDraft.id);
+    const { bindings, saved } = await validateXlsxDraftCapture(
+      candidate,
+      previous,
+      current
+    );
     if (metadata.spreadsheetAnchors) {
       validateSpreadsheetSaveSnapshot(
         metadata.spreadsheetAnchors,
@@ -106,17 +209,7 @@ export const prepareSpreadsheetOperation = async (
         current
       );
     }
-    try {
-      bindings = reconcileSpreadsheetColumns(bindings, current.names);
-    } catch (error) {
-      fail(
-        422,
-        "invalid_template",
-        error instanceof Error ? error.message : "ตรวจสอบตำแหน่งคอลัมน์ตาราง"
-      );
-    }
-    // A Template Draft may contain unfinished mappings. Saving preserves the
-    // editor snapshot; only publication freezes and validates the contract.
+    // Incomplete business configuration can be saved, but placement must match.
     if (metadata.action === "save-template") {
       if (metadata.preserveEditorSession) {
         validatePreservedSpreadsheetEditorSave(snapshot, bindings, metadata);
@@ -133,9 +226,32 @@ export const prepareSpreadsheetOperation = async (
           "Obsolete attachment buttons require a normal template save before preserving the editor session"
         );
       }
-      return compactSpreadsheetDraftOptions(
-        normalizeSpreadsheetUploadPocAnchors(stripped)
+      validateSpreadsheetAttachmentButtons(stripped, bindings, true);
+      const normalized = normalizeSpreadsheetUploadPocAnchors(stripped);
+      const needsRewrite =
+        hasManagedValidation(bindings) || hasManagedValidation(previous);
+      const fields = bindings.fields.filter((field) => !field.unbound);
+      const table = bindings.table?.unbound ? null : bindings.table;
+      // Keep persisted validation authoritative even if capture omitted a native rule.
+      const validated = needsRewrite
+        ? applySpreadsheetValidation(
+            normalized,
+            { ...bindings, fields, table },
+            { bindings: previous, workbook: saved }
+          )
+        : normalized;
+      const mismatches = mismatchedSpreadsheetDraftValidations(
+        validated === snapshot ? current : readSpreadsheetWorkbook(validated),
+        { ...bindings, fields, table }
       );
+      if (mismatches.length) {
+        fail(
+          422,
+          "invalid_template",
+          "Excel validation conflicts with the saved Field Rules"
+        );
+      }
+      return compactSpreadsheetDraftOptions(validated);
     }
     validateSpreadsheetPublication(bindings);
     validateSpreadsheetAttachmentButtons(snapshot, bindings);
@@ -385,22 +501,28 @@ export const prepareSpreadsheetOperation = async (
           tableBody.lastRow - tableBody.firstRow + 1
         )
       : new Map<number, Record<string, TableAttachment>>();
-  for (const slot of spreadsheetAttachmentSlots(contract)) {
-    const value =
-      slot.rowIndex === null
-        ? attachmentData[slot.field.key]
-        : attachedRows.get(slot.rowIndex)?.[slot.field.key];
-    const link =
-      value && typeof value === "object" && "file_link" in value
-        ? String(value.file_link)
-        : "";
-    values.push({ address: slot.address, value: link });
+  const attachmentWrites = [...spreadsheetAttachmentSlots(contract)].map(
+    (slot) => ({
+      link:
+        (slot.rowIndex === null
+          ? canonicalAttachment(attachmentData[slot.field.key])
+          : attachedRows.get(slot.rowIndex)?.[slot.field.key]
+        )?.file_link ?? "",
+      slot,
+    })
+  );
+  for (const { slot, link } of attachmentWrites) {
+    values.push({
+      address: slot.address,
+      value: link,
+      ...(link ? { hyperlink: { target: link, tooltip: undefined } } : {}),
+    });
   }
   const result = await processSpreadsheet(unprotectSpreadsheet(baseBytes), {
     bindings: storedSpreadsheetBindings(contract),
     clearRanges: [
       ...inputs.map(rangeAddress),
-      ...[...spreadsheetAttachmentSlots(contract)].map((slot) => slot.address),
+      ...attachmentWrites.map(({ slot }) => slot.address),
     ],
     heartbeat,
     values,
@@ -450,6 +572,7 @@ export const prepareSpreadsheetOperation = async (
       "จำนวนแถวเปลี่ยนโดยไม่มีคำสั่งที่รองรับ"
     );
   }
+  const expectedLinks = new Map<string, string>();
   if (hasSpreadsheetAttachments(contract)) {
     validateSpreadsheetAttachmentButtons(
       result.workbook,
@@ -467,6 +590,45 @@ export const prepareSpreadsheetOperation = async (
       }
       return index > rowChange.index ? index - 1 : index;
     });
+    for (const { slot, link } of attachmentWrites) {
+      if (slot.rowIndex === null) {
+        expectedLinks.set(slot.key, link);
+      } else {
+        const nextIndex = rowMapping[slot.rowIndex];
+        if (nextIndex !== null && nextIndex !== undefined) {
+          expectedLinks.set(attachmentSlotKey(slot.field.id, nextIndex), link);
+        }
+      }
+    }
+    const changedRow =
+      tableBody && rowChange
+        ? tableBody.firstRow + rowChange.index
+        : Number.POSITIVE_INFINITY;
+    const shift = rowChange?.action === "delete" ? -1 : 1;
+    for (const field of contract.fields) {
+      if (!field.attachment) {
+        continue;
+      }
+      const before = contract.locations[field.anchor];
+      const after = nextContract.locations[field.anchor];
+      if (
+        !before ||
+        !after ||
+        before.sheet !== after.sheet ||
+        before.firstColumn !== after.firstColumn ||
+        before.lastColumn !== after.lastColumn ||
+        before.firstRow + (before.firstRow >= changedRow ? shift : 0) !==
+          after.firstRow ||
+        before.lastRow + (before.lastRow >= changedRow ? shift : 0) !==
+          after.lastRow
+      ) {
+        fail(
+          409,
+          "attachment_projection_unproven",
+          "ตำแหน่งช่องแนบเปลี่ยนในเอกสารที่สร้างเสร็จ"
+        );
+      }
+    }
     if (tableBody && nextBody && contract.table && nextContract.table) {
       const expected = new Map(
         values.map((value) => [value.address, value.value])
@@ -544,8 +706,13 @@ export const prepareSpreadsheetOperation = async (
     restoreSpreadsheetPictureFrames(pictures, frames),
     { lockPosition: true }
   );
+  const finalBytes = protectSpreadsheet(withPictures, nextContract, locked);
+  const finalWorkbook = readSpreadsheetWorkbook(finalBytes);
+  if (hasSpreadsheetAttachments(contract)) {
+    validateAttachmentProjection(finalWorkbook, nextContract, expectedLinks);
+  }
   const extracted = extractSpreadsheetData(
-    readSpreadsheetWorkbook(withPictures),
+    finalWorkbook,
     nextContract,
     metadata.action === "submit" || metadata.action === "save-correction",
     attachmentData
@@ -562,5 +729,5 @@ export const prepareSpreadsheetOperation = async (
   }
   metadata.data = extracted.data;
   metadata.spreadsheetErrors = extracted.errors;
-  return protectSpreadsheet(withPictures, nextContract, locked);
+  return finalBytes;
 };

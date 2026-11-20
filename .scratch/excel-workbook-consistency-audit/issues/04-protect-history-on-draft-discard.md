@@ -1,6 +1,6 @@
 # 04 — ป้องกัน Submission/Correction สูญหายจาก “ทิ้งฉบับร่าง”
 
-Status: needs-info  
+Status: resolved  
 Type: task  
 Priority: P1  
 Blocked by: ยืนยัน policy การทิ้งร่างหลังเคยส่ง  
@@ -12,11 +12,12 @@ Dashboard ใช้ wording ว่าทิ้งร่าง แต่ owner en
 
 ## เกณฑ์รับงาน
 
-- [ ] ฝั่ง server ป้องกัน history loss แม้เรียก endpoint ตรง; FE แจ้งผลตาม policy ที่อนุมัติและไม่ใช้ข้อความ “ทิ้งร่างแล้ว” เมื่อถูกบล็อก
-- [ ] Fixture owner ที่เคย Submit + Correction แล้วเริ่ม Draft ใหม่: หลังการกระทำตาม policy ที่อนุมัติ ประวัติ, hashes และ attachment refs เดิมยังอยู่. กรณี guard ไม่แตะ storage/provider เลย
-- [ ] ทดสอบร่างที่ไม่เคยส่ง, foreign account, Viewer, Admin confirmed delete และ active operation/lease/unresolved attachment guards; การทิ้งงาน local ใน Fill ไม่มี DELETE/implicit Save
-- [ ] รันเฉพาะข้อมูลสังเคราะห์ใน sandbox และใช้ loopback ถ้าต้องทดสอบ cleanup; ไม่แตะประวัติหรือ DCM จริง
+- [x] ฝั่ง server ป้องกัน history loss แม้เรียก endpoint ตรง; FE แจ้งผลตาม policy ที่อนุมัติและไม่ใช้ข้อความ “ทิ้งร่างแล้ว” เมื่อถูกบล็อก
+- [x] Fixture owner ที่เคย Submit + Correction แล้วเริ่ม Draft ใหม่: หลังการกระทำตาม policy ที่อนุมัติ ประวัติ, hashes และ attachment refs เดิมยังอยู่. กรณี guard ไม่แตะ storage/provider เลย
+- [x] ทดสอบร่างที่ไม่เคยส่ง, foreign account, Viewer, Admin confirmed delete และ active operation/lease/unresolved attachment guards; การทิ้งงาน local ใน Fill ไม่มี DELETE/implicit Save
+- [x] รันเฉพาะข้อมูลสังเคราะห์ใน sandbox และใช้ loopback ถ้าต้องทดสอบ cleanup; ไม่แตะประวัติหรือ DCM จริง
 
 ## Comments
 
 - Audit ยืนยัน destructive scope จาก source ยังไม่รัน DELETE ของกรณีนี้. ต้องอนุมัติ guard หรือ draft-only semantics ก่อนเริ่มแก้
+- เลือก fail-safe guard ตามแผน. `3276c470d8` คืน `409 draft_has_history` เมื่อเจ้าของทิ้ง Draft ที่มี Submission; เก็บ Draft/history และไม่เรียก DELETE. Regression รักษา Submission/Correction, bytes/hash และ attachment refs. ผ่าน 11 HTTP, Dashboard 15 และ Fill local-discard 1

@@ -11,12 +11,14 @@ import {
   XLSX_CONTENT_TYPE,
 } from "../documents/spreadsheets/workbook";
 import { spreadsheetContractForTemplate } from "../forms/spreadsheet-fields";
-import { HttpError, fail } from "../http/errors";
+import { fail } from "../http/errors";
 import { readJsonRecord } from "../http/input";
 import { corsOrigin } from "../http/origins";
 import {
   verifyDocumentAccessToken,
+  verifyEditableSpreadsheetToken,
   verifyOnlyOfficeAuthorization,
+  verifySavedSpreadsheetToken,
   pluginGuid,
   pdmsPopupGuid,
   attachmentCategoryPopupGuid,
@@ -29,7 +31,10 @@ import {
   consumeCallbackClaim,
 } from "../operations/lifecycle";
 import type { CallbackPayload } from "../operations/model";
-import { operationDocumentServerKey } from "../operations/model";
+import {
+  isReportableOperationError,
+  operationDocumentServerKey,
+} from "../operations/model";
 import { cleanupTerminalOperationObjects } from "../operations/object-cleanup";
 import { SpreadsheetValidationError } from "../operations/spreadsheet-document";
 import {
@@ -67,8 +72,18 @@ export function registerOnlyOfficeRoutes(
     .get("/onlyoffice/document/:key", async ({ request, params, query }) => {
       const { key } = params;
       const token = typeof query.token === "string" ? query.token : "";
+      const snapshot =
+        query.readonly === "1" ? verifySavedSpreadsheetToken(token, key) : null;
+      const editableObjectKey =
+        query.editable === "1"
+          ? verifyEditableSpreadsheetToken(token, key)
+          : null;
       if (
-        !verifyDocumentAccessToken(token, key) ||
+        !(query.readonly === "1"
+          ? snapshot
+          : query.editable === "1"
+            ? editableObjectKey
+            : verifyDocumentAccessToken(token, key)) ||
         !verifyOnlyOfficeAuthorization(request.headers.get("authorization"), {
           url: request.url,
         })
@@ -77,6 +92,23 @@ export function registerOnlyOfficeRoutes(
           401,
           "unauthorized",
           "Document access token is invalid or expired"
+        );
+      }
+      if (snapshot) {
+        if (!(await objectExists(snapshot.objectKey))) {
+          fail(404, "not_found", "Document was not found");
+        }
+        return new Response(
+          await responseSpreadsheetExport(
+            await readObject(snapshot.objectKey),
+            snapshot.publishedTemplateId
+          ),
+          {
+            headers: {
+              "Cache-Control": "no-store",
+              "Content-Type": XLSX_CONTENT_TYPE,
+            },
+          }
         );
       }
       const exportSnapshot = spreadsheetExportSnapshot(key);
@@ -88,7 +120,7 @@ export function registerOnlyOfficeRoutes(
           },
         });
       }
-      const objectKey = await operationDocumentKey(key);
+      const objectKey = editableObjectKey ?? (await operationDocumentKey(key));
       if (!objectKey || !(await objectExists(objectKey))) {
         fail(404, "not_found", "Document was not found");
       }
@@ -97,78 +129,47 @@ export function registerOnlyOfficeRoutes(
           headers: { "Content-Type": DOCX_CONTENT_TYPE },
         });
       }
-      if (query.readonly === "1") {
-        const response = await prisma.response.findFirst({
-          select: {
-            form: { select: { documentKind: true } },
-            publishedTemplateId: true,
-          },
-          where: {
-            OR: [
-              { draftDocumentKey: key },
-              { submissions: { some: { documentKey: key } } },
-              { corrections: { some: { documentKey: key } } },
-            ],
-          },
-        });
-        if (response?.form.documentKind === "xlsx") {
-          return new Response(
-            await responseSpreadsheetExport(
-              await readObject(objectKey),
-              response.publishedTemplateId
-            ),
-            {
-              headers: {
-                "Cache-Control": "no-store",
-                "Content-Type": XLSX_CONTENT_TYPE,
-              },
-            }
-          );
-        }
-      }
-      if (query.readonly !== "1") {
-        const workspace = await prisma.editorLease.findFirst({
-          select: { targetId: true },
-          where: { targetType: "correction", workspaceDocumentKey: key },
-        });
-        const response = await prisma.response.findFirst({
-          select: {
-            form: { select: { documentKind: true } },
-            prefillSnapshot: { select: { lockedFields: true } },
-            publishedTemplateId: true,
-          },
-          where: workspace
-            ? { id: workspace.targetId }
-            : { draftDocumentKey: key },
-        });
-        if (response?.form.documentKind === "xlsx") {
-          const bytes = await readObject(objectKey);
-          const contract = await spreadsheetContractForTemplate(
-            response.publishedTemplateId,
-            readSpreadsheetWorkbook(bytes)
-          );
-          const lockedFields = (response.prefillSnapshot?.lockedFields ??
-            {}) as Record<string, unknown>;
-          return new Response(
-            protectSpreadsheet(
-              bytes,
-              contract,
-              new Set(
-                workspace
-                  ? []
-                  : Object.keys(lockedFields).filter(
-                      (field) => lockedFields[field] === true
-                    )
-              )
-            ),
-            {
-              headers: {
-                "Cache-Control": "no-store",
-                "Content-Type": XLSX_CONTENT_TYPE,
-              },
-            }
-          );
-        }
+      const workspace = await prisma.editorLease.findFirst({
+        select: { targetId: true },
+        where: { targetType: "correction", workspaceDocumentKey: key },
+      });
+      const response = await prisma.response.findFirst({
+        select: {
+          form: { select: { documentKind: true } },
+          prefillSnapshot: { select: { lockedFields: true } },
+          publishedTemplateId: true,
+        },
+        where: workspace
+          ? { id: workspace.targetId }
+          : { draftDocumentKey: key },
+      });
+      if (response?.form.documentKind === "xlsx") {
+        const bytes = await readObject(objectKey);
+        const contract = await spreadsheetContractForTemplate(
+          response.publishedTemplateId,
+          readSpreadsheetWorkbook(bytes)
+        );
+        const lockedFields = (response.prefillSnapshot?.lockedFields ??
+          {}) as Record<string, unknown>;
+        return new Response(
+          protectSpreadsheet(
+            bytes,
+            contract,
+            new Set(
+              workspace
+                ? []
+                : Object.keys(lockedFields).filter(
+                    (field) => lockedFields[field] === true
+                  )
+            )
+          ),
+          {
+            headers: {
+              "Cache-Control": "no-store",
+              "Content-Type": XLSX_CONTENT_TYPE,
+            },
+          }
+        );
       }
       return new Response(streamObject(objectKey), {
         headers: {
@@ -405,17 +406,12 @@ export function registerOnlyOfficeRoutes(
           );
           return { error: 0 };
         } catch (error) {
+          const reported = isReportableOperationError(error);
           await updateOperationFailed(
             operation.id,
-            error instanceof HttpError &&
-              (error.code === "invalid_template" ||
-                error.code === "attachment_template_stale")
-              ? error.code
-              : "callback_processing_failed",
+            reported ? error.code : "callback_processing_failed",
             undefined,
-            error instanceof HttpError &&
-              (error.code === "invalid_template" ||
-                error.code === "attachment_template_stale")
+            reported
               ? { errorMessage: error.message }
               : error instanceof SpreadsheetValidationError
                 ? {
@@ -430,8 +426,7 @@ export function registerOnlyOfficeRoutes(
           return {
             error:
               error instanceof SpreadsheetValidationError ||
-              (error instanceof HttpError &&
-                error.code === "attachment_template_stale")
+              (reported && error.code !== "invalid_template")
                 ? 0
                 : 1,
           };

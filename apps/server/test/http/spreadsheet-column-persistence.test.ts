@@ -4,29 +4,56 @@ import { afterAll, beforeAll, expect, test } from "bun:test";
 import { Prisma, prisma } from "@onlyoffice/db";
 
 import { createApp } from "../../src/app";
-import { requireIdentity } from "../../src/auth/identity";
 import {
   spreadsheetColumnAnchor,
   spreadsheetTableColumnsAnchor,
 } from "../../src/documents/spreadsheets/columns";
 import { spreadsheetBindingSchema } from "../../src/documents/spreadsheets/contract";
-import { actionEditorCapability } from "../../src/editor/authorization";
-import { claimEditorLease } from "../../src/editor/leases";
+import type { SpreadsheetBindings } from "../../src/documents/spreadsheets/contract";
+import { XLSX_CONTENT_TYPE } from "../../src/documents/spreadsheets/workbook";
 import {
   spreadsheetBindingsForTemplate,
   spreadsheetDraftBindings,
   spreadsheetDraftFieldData,
 } from "../../src/forms/spreadsheet-fields";
-import type { OperationMetadata } from "../../src/operations/model";
-import {
-  completePublishOperation,
-  completeTemplateOperation,
-} from "../../src/operations/template-completion";
+import { putObject } from "../../src/storage";
 import { bearerFor, createCredentialFixture } from "../fixtures/http";
 import { fixtureWorkbook } from "../spreadsheet-unit/fixture";
 
 const forms: string[] = [];
-const app = createApp({ legacySso: null });
+let snapshot: Uint8Array | null = null;
+let beforeCapture: (() => Promise<void>) | null = null;
+const native = Bun.serve({
+  async fetch() {
+    await beforeCapture?.();
+    return new Response(snapshot);
+  },
+  hostname: "127.0.0.1",
+  port: 0,
+});
+const app = createApp({
+  legacySso: null,
+  onlyOffice: {
+    convertDocxToPdf: () => Promise.resolve(new Uint8Array()),
+    forceSave: () => Promise.resolve({ url: native.url.href }),
+  },
+  onlyOfficeCallbackOrigins: [native.url.origin],
+});
+const builderBase = new URL(
+  process.env.ONLYOFFICE_DOCUMENT_BASE_URL ?? "http://localhost:3000"
+);
+if (
+  !builderBase.port ||
+  builderBase.port === "3000" ||
+  !["localhost", "127.0.0.1", "host.docker.internal"].includes(
+    builderBase.hostname
+  )
+) {
+  throw new Error(
+    "Set ONLYOFFICE_DOCUMENT_BASE_URL to a dedicated local Builder callback port"
+  );
+}
+app.listen({ hostname: "0.0.0.0", port: Number(builderBase.port) });
 let adminId = "";
 let bearer = "";
 beforeAll(async () => {
@@ -65,54 +92,143 @@ const names = {
   [spreadsheetColumnAnchor("folio_gamma")]: "'Form'!$G$4:$G$5",
 };
 const bytes = fixtureWorkbook({ cells: [], merges: [], names });
-const fixture = async (action: "publish" | "save-template") => {
+const editColumn = (
+  candidate: SpreadsheetBindings,
+  id: string,
+  change: Partial<NonNullable<SpreadsheetBindings["table"]>["columns"][number]>
+) => {
+  if (!candidate.table) {
+    throw new Error("Missing fixture table");
+  }
+  return {
+    ...candidate,
+    table: {
+      ...candidate.table,
+      columns: candidate.table.columns.map((column) =>
+        column.id === id ? { ...column, ...change } : column
+      ),
+    },
+  };
+};
+const settled = async (response: Response) => {
+  expect(response.status).toBe(202);
+  const { operationId } = (await response.json()) as { operationId: string };
+  // Builder settles in another process; poll the original receipt.
+  const deadline = performance.now() + 60_000;
+  while (performance.now() < deadline) {
+    const polling = await app.handle(
+      new Request(`http://test.local/api/operations/${operationId}`, {
+        headers: { Authorization: `Bearer ${bearer}` },
+      })
+    );
+    expect(polling.status).toBe(200);
+    const { operation } = (await polling.json()) as {
+      operation: { status: string; error?: string; result?: unknown };
+    };
+    if (operation.status === "completed" || operation.status === "failed") {
+      return operation;
+    }
+    await Bun.sleep(50);
+  }
+  throw new Error(`Operation ${operationId} did not settle`);
+};
+const fixture = async (computed = false) => {
   const id = crypto.randomUUID();
   forms.push(id);
+  const publicId = id.replaceAll("-", "");
   const draftId = crypto.randomUUID();
   const documentKey = `columns-${id}`;
+  const objectKey = `tests/${id}/old.xlsx`;
+  const committed = computed
+    ? editColumn(bindings, "folio_gamma", { computed: true })
+    : bindings;
+  await putObject(
+    objectKey,
+    fixtureWorkbook({
+      cells: [],
+      merges: [],
+      names: {
+        ...names,
+        [spreadsheetColumnAnchor("folio_beta")]: "'Form'!$E$4:$E$5",
+        [spreadsheetColumnAnchor("folio_gamma")]: "'Form'!$F$4:$F$5",
+      },
+    }),
+    XLSX_CONTENT_TYPE
+  );
   await prisma.form.create({
     data: {
       documentKind: "xlsx",
       id,
-      publicId: id.replaceAll("-", ""),
+      publicId,
       templateDraft: {
         create: {
           bindingRevision: 1,
           documentKey,
-          fieldRules: { create: spreadsheetDraftFieldData(bindings) },
+          fieldRules: { create: spreadsheetDraftFieldData(committed) },
           id: draftId,
-          objectKey: `tests/${id}/old.xlsx`,
+          objectKey,
         },
       },
       title: "Column persistence fixture",
     },
   });
-  const metadata: OperationMetadata = {
-    action,
-    bindingRevision: 1,
-    documentKind: "xlsx",
-    finalObjectKey: `tests/${id}/final.xlsx`,
-    formId: id,
-    stagedObjectKey: `tests/${id}/staged.xlsx`,
-    ...(action === "publish"
-      ? { publishedKey: `published-${id}`, publishedVersion: 1 }
-      : { nextDocumentKey: `saved-${id}` }),
+  const request = (path: string, body?: unknown, capability?: string) =>
+    app.handle(
+      new Request(`http://test.local/api/admin/forms/${publicId}/${path}`, {
+        headers: {
+          Authorization: `Bearer ${bearer}`,
+          "Content-Type": "application/json",
+          ...(capability ? { "X-Editor-Capability": capability } : {}),
+        },
+        method: body === undefined ? "GET" : "POST",
+        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+      })
+    );
+  const open = async () => {
+    const response = await request("editor-config");
+    expect(response.status).toBe(200);
+    return (await response.json()) as {
+      bridge: {
+        capabilities: Record<string, string>;
+        documentKey: string;
+        lease: { id: string };
+      };
+    };
   };
-  const operation = await prisma.operation.create({
-    data: {
-      documentKey,
-      formId: id,
-      metadata: metadata as unknown as Prisma.InputJsonValue,
-      status: "processing",
-      targetId: draftId,
-      targetType: "template_draft",
-      type: action === "publish" ? "publish_form" : "save_template_draft",
-    },
+  const { bridge } = await open();
+  const payload = (
+    candidate = committed,
+    spreadsheetAnchors: unknown = Object.entries(names),
+    checkpoint = crypto.randomUUID()
+  ) => ({
+    documentKey,
+    spreadsheetAnchors,
+    xlsxDraft: { bindings: candidate, checkpoint, revision: 1, version: 1 },
   });
-  return { draftId, id, metadata, operation };
+  const save = (body = payload()) =>
+    request("save", body, bridge.capabilities["save-template"]);
+  const recover = (
+    body: unknown,
+    capability = bridge.capabilities["save-template"]
+  ) => request("xlsx-draft/recover", body, capability);
+  return {
+    bridge,
+    committed,
+    documentKey,
+    draftId,
+    id,
+    objectKey,
+    open,
+    payload,
+    recover,
+    request,
+    save,
+  };
 };
 
 afterAll(async () => {
+  await app.stop();
+  await native.stop(true);
   await prisma.operation.deleteMany({ where: { formId: { in: forms } } });
   await prisma.editorLease.deleteMany({ where: { holderUserId: adminId } });
   // Published fixtures are immutable at the database boundary, like the other
@@ -123,32 +239,35 @@ afterAll(async () => {
   await prisma.user.deleteMany({ where: { id: adminId } });
 });
 
-test("saving a Template Draft atomically persists current column offsets without changing stable identities", async () => {
-  const { draftId, metadata, operation } = await fixture("save-template");
-  await completeTemplateOperation(operation, metadata, bytes);
-  const actual = await spreadsheetDraftBindings(draftId);
+test("saving Template Draft atomically persists current column offsets without changing stable identities", async () => {
+  const f = await fixture();
+  snapshot = bytes;
+  expect(await settled(await f.save())).toMatchObject({ status: "completed" });
+  const draft = await prisma.templateDraft.findUniqueOrThrow({
+    where: { id: f.draftId },
+  });
+  expect(draft.bindingRevision).toBe(2);
+  expect(draft.documentKey).not.toBe(f.documentKey);
+  expect(draft.objectKey).not.toBe(f.objectKey);
+  const actual = await spreadsheetDraftBindings(f.draftId);
   expect(actual.table?.columns.map((column) => column.offset)).toEqual([
     0, 2, 3,
   ]);
   expect(actual.table?.columns.map((column) => column.id)).toEqual(
     bindings.table?.columns.map((column) => column.id)
   );
-  expect(
-    await prisma.templateDraft.findUniqueOrThrow({ where: { id: draftId } })
-  ).toMatchObject({
-    documentKey: metadata.nextDocumentKey,
-    objectKey: metadata.finalObjectKey,
-  });
-  expect(
-    await prisma.operation.findUniqueOrThrow({ where: { id: operation.id } })
-  ).toMatchObject({ status: "completed" });
 });
 
 test("publishing directly after a native column insertion freezes reconciled offsets in Manifest Fields", async () => {
-  const { id, metadata, operation } = await fixture("publish");
-  await completePublishOperation(operation, metadata, bytes);
+  const f = await fixture();
+  snapshot = bytes;
+  expect(
+    await settled(
+      await f.request("publish", f.payload(), f.bridge.capabilities.publish)
+    )
+  ).toMatchObject({ status: "completed" });
   const published = await prisma.publishedTemplate.findUniqueOrThrow({
-    where: { formId: id },
+    where: { formId: f.id },
   });
   const actual = await spreadsheetBindingsForTemplate(published.id);
   expect(actual.table?.columns.map((column) => column.offset)).toEqual([
@@ -157,173 +276,74 @@ test("publishing directly after a native column insertion freezes reconciled off
   expect(actual.table?.columns.map((column) => column.id)).toEqual(
     bindings.table?.columns.map((column) => column.id)
   );
-});
+}, 120_000);
 
 test("invalid column identity rolls back the entire Template Draft save", async () => {
-  const { draftId, id, metadata, operation } = await fixture("save-template");
-  const invalid = fixtureWorkbook({
-    cells: [],
-    merges: [],
-    names: {
-      ...names,
-      [spreadsheetColumnAnchor("folio_beta")]: names[
-        spreadsheetColumnAnchor("folio_alpha")
-      ] as string,
-    },
-  });
-  await expect(
-    completeTemplateOperation(operation, metadata, invalid)
-  ).rejects.toThrow("ซ้ำกับคอลัมน์อื่น");
+  const f = await fixture();
+  const invalidNames = {
+    ...names,
+    [spreadsheetColumnAnchor("folio_beta")]: "'Form'!$D$4:$D$5",
+  };
+  snapshot = fixtureWorkbook({ cells: [], merges: [], names: invalidNames });
   expect(
-    await prisma.templateDraft.findUniqueOrThrow({ where: { id: draftId } })
+    await settled(
+      await f.save(f.payload(bindings, Object.entries(invalidNames)))
+    )
+  ).toMatchObject({ status: "failed" });
+  expect(
+    await prisma.templateDraft.findUniqueOrThrow({ where: { id: f.draftId } })
   ).toMatchObject({
-    documentKey: operation.documentKey,
-    objectKey: `tests/${id}/old.xlsx`,
+    bindingRevision: 1,
+    documentKey: f.documentKey,
+    objectKey: f.objectKey,
   });
-  expect(await spreadsheetDraftBindings(draftId)).toEqual(bindings);
-  expect(
-    await prisma.operation.findUniqueOrThrow({ where: { id: operation.id } })
-  ).toMatchObject({ status: "processing" });
+  expect(await spreadsheetDraftBindings(f.draftId)).toEqual(bindings);
 });
 
-const bindingFixture = async (computed = false) => {
-  const current = await fixture("save-template");
-  await prisma.operation.delete({ where: { id: current.operation.id } });
-  if (computed) {
-    await prisma.draftFieldRule.update({
-      data: {
-        binding: {
-          computed: true,
-          id: "folio_gamma",
-          offset: 2,
-          placeholder: null,
-        },
-      },
-      where: {
-        templateDraftId_tag: {
-          tag: "items.gamma",
-          templateDraftId: current.draftId,
-        },
-      },
-    });
-  }
-  const identity = await requireIdentity(
-    new Request("http://test.local", {
-      headers: { Authorization: `Bearer ${bearer}` },
-    })
+test("editing a moved column reconciles complete native placement without trusting client offsets", async () => {
+  const f = await fixture();
+  snapshot = bytes;
+  const edited = editColumn(bindings, "folio_beta", { label: "Edited beta" });
+  const incomplete = Object.entries(names).filter(
+    ([name]) => name !== spreadsheetColumnAnchor("folio_gamma")
   );
-  const lease = await claimEditorLease(
-    identity,
-    "template-draft",
-    current.draftId,
-    current.id
-  );
-  const capability = actionEditorCapability(
-    identity,
-    {
-      documentKey: current.operation.documentKey as string,
-      formId: current.id,
-      targetId: current.draftId,
-      targetType: "template-draft",
-    },
-    "configure-fields",
-    lease
-  );
-  const patch = (body: unknown) =>
-    app.handle(
-      new Request(
-        `http://test.local/api/admin/forms/${current.id.replaceAll("-", "")}/spreadsheet-bindings`,
-        {
-          body: JSON.stringify(body),
-          headers: {
-            "Content-Type": "application/json",
-            "X-Editor-Capability": capability,
-          },
-          method: "PATCH",
-        }
-      )
-    );
-  const get = () =>
-    app.handle(
-      new Request(
-        `http://test.local/api/admin/forms/${current.id.replaceAll("-", "")}/spreadsheet-bindings`,
-        { headers: { "X-Editor-Capability": capability } }
-      )
-    );
-  const recover = (body: unknown, headers?: Record<string, string>) =>
-    app.handle(
-      new Request(
-        `http://test.local/api/admin/forms/${current.id.replaceAll("-", "")}/spreadsheet-bindings/recover`,
-        {
-          body: JSON.stringify(body),
-          headers: {
-            "Content-Type": "application/json",
-            ...(headers ?? { "X-Editor-Capability": capability }),
-          },
-          method: "POST",
-        }
-      )
-    );
-  return { ...current, get, patch, recover };
-};
-
-test("editing a moved column atomically reconciles the complete placement map before checking unique offsets", async () => {
-  const { draftId, operation, patch } = await bindingFixture();
-  const column = bindings.table?.columns[1];
-  if (!column) {
-    throw new Error("Missing test column");
-  }
-  const body = {
-    change: {
-      action: "upsert",
-      kind: "column",
-      value: { ...column, label: "Edited beta", offset: 2 },
-    },
-    documentKey: operation.documentKey,
-    revision: 1,
-  };
-  expect((await patch(body)).status).toBe(400);
-  expect(await spreadsheetDraftBindings(draftId)).toEqual(bindings);
-  const response = await patch({
-    ...body,
-    spreadsheetColumnOffsets: [
-      ["folio_alpha", 0],
-      ["folio_beta", 2],
-      ["folio_gamma", 3],
-    ],
-  });
-  expect(response.status).toBe(200);
-  const actual = await spreadsheetDraftBindings(draftId);
-  expect(actual.table?.columns.map((entry) => entry.offset)).toEqual([0, 2, 3]);
-  expect(actual.table?.columns[1]?.label).toBe("Edited beta");
   expect(
-    await prisma.templateDraft.findUniqueOrThrow({ where: { id: draftId } })
-  ).toMatchObject({ bindingRevision: 2 });
+    await settled(await f.save(f.payload(edited, incomplete)))
+  ).toMatchObject({ error: "invalid_template", status: "failed" });
+  expect(await spreadsheetDraftBindings(f.draftId)).toEqual(bindings);
+  expect(await settled(await f.save(f.payload(edited)))).toMatchObject({
+    status: "completed",
+  });
+  const actual = await spreadsheetDraftBindings(f.draftId);
+  expect(actual.table?.columns.map((column) => column.offset)).toEqual([
+    0, 2, 3,
+  ]);
+  expect(actual.table?.columns[1]?.label).toBe("Edited beta");
 });
 
 test("column reordering retains untouched legacy computed-column metadata", async () => {
-  const { draftId, operation, patch } = await bindingFixture(true);
-  const column = bindings.table?.columns[0];
-  if (!column) {
-    throw new Error("Missing test column");
-  }
-  const response = await patch({
-    change: {
-      action: "upsert",
-      kind: "column",
-      value: { ...column, label: "Edited alpha", offset: 2 },
-    },
-    documentKey: operation.documentKey,
-    revision: 1,
-    spreadsheetColumnOffsets: [
-      ["folio_alpha", 2],
-      ["folio_beta", 1],
-      ["folio_gamma", 0],
-    ],
-  });
-  expect(response.status).toBe(200);
-  const actual = await spreadsheetDraftBindings(draftId);
-  expect(actual.table?.columns.map((entry) => entry.offset)).toEqual([2, 1, 0]);
+  const f = await fixture(true);
+  const reordered = {
+    ...names,
+    [spreadsheetColumnAnchor("folio_alpha")]: "'Form'!$F$4:$F$5",
+    [spreadsheetColumnAnchor("folio_beta")]: "'Form'!$E$4:$E$5",
+    [spreadsheetColumnAnchor("folio_gamma")]: "'Form'!$D$4:$D$5",
+  };
+  snapshot = fixtureWorkbook({ cells: [], merges: [], names: reordered });
+  expect(
+    await settled(
+      await f.save(
+        f.payload(
+          editColumn(f.committed, "folio_alpha", { label: "Edited alpha" }),
+          Object.entries(reordered)
+        )
+      )
+    )
+  ).toMatchObject({ status: "completed" });
+  const actual = await spreadsheetDraftBindings(f.draftId);
+  expect(actual.table?.columns.map((column) => column.offset)).toEqual([
+    2, 1, 0,
+  ]);
   expect(actual.table?.columns[2]).toMatchObject({
     computed: true,
     id: "folio_gamma",
@@ -332,88 +352,60 @@ test("column reordering retains untouched legacy computed-column metadata", asyn
   });
 });
 
-test("incomplete, foreign, duplicate, malformed or mismatched column placement maps leave all metadata unchanged", async () => {
-  const { draftId, operation, patch } = await bindingFixture();
-  const column = bindings.table?.columns[1];
-  if (!column) {
-    throw new Error("Missing test column");
-  }
-  const body = {
-    change: {
-      action: "upsert",
-      kind: "column",
-      value: { ...column, offset: 2 },
-    },
-    documentKey: operation.documentKey,
-    revision: 1,
-  };
-  for (const spreadsheetColumnOffsets of [
+test("incomplete, foreign, duplicate, malformed or mismatched column placement proofs leave Draft unchanged", async () => {
+  const f = await fixture();
+  snapshot = bytes;
+  const entries = Object.entries(names);
+  for (const proof of [
     [],
+    entries.slice(0, -1),
+    [...entries.slice(0, -1), ["folio_foreign", "Form!G4:G5"]],
+    [...entries.slice(0, -1), entries[0]],
     [
-      ["folio_alpha", 0],
-      ["folio_beta", 2],
+      ...entries.slice(0, -1),
+      [spreadsheetColumnAnchor("folio_gamma"), "Form!F4:F5"],
     ],
     [
-      ["folio_alpha", 0],
-      ["folio_beta", 2],
-      ["folio_foreign", 3],
-    ],
-    [
-      ["folio_alpha", 0],
-      ["folio_beta", 2],
-      ["folio_beta", 3],
-    ],
-    [
-      ["folio_alpha", 0],
-      ["folio_beta", 2],
-      ["folio_gamma", 2],
-    ],
-    [
-      ["folio_alpha", -1],
-      ["folio_beta", 2],
-      ["folio_gamma", 3],
-    ],
-    [
-      ["folio_alpha", 0.5],
-      ["folio_beta", 2],
-      ["folio_gamma", 3],
-    ],
-    [
-      ["folio_alpha", 16_384],
-      ["folio_beta", 2],
-      ["folio_gamma", 3],
-    ],
-    [
-      ["folio_alpha", 0],
-      ["folio_beta", 1],
-      ["folio_gamma", 3],
+      ...entries.slice(0, -1),
+      [spreadsheetColumnAnchor("folio_gamma"), "not-a-range"],
     ],
   ]) {
-    expect((await patch({ ...body, spreadsheetColumnOffsets })).status).toBe(
-      400
-    );
+    expect(
+      await settled(await f.save(f.payload(bindings, proof)))
+    ).toMatchObject({ error: "invalid_template", status: "failed" });
   }
+  for (const offset of [-1, 0.5, 16_384]) {
+    expect(
+      (await f.save(f.payload(editColumn(bindings, "folio_alpha", { offset }))))
+        .status
+    ).toBe(400);
+  }
+  if (!bindings.table) {
+    throw new Error("Missing test table");
+  }
+  const removed = {
+    ...bindings,
+    table: {
+      ...bindings.table,
+      columns: bindings.table.columns.filter(
+        (column) => column.id !== "folio_beta"
+      ),
+    },
+  };
+  const removedProof = entries.filter(
+    ([name]) => name !== spreadsheetColumnAnchor("folio_beta")
+  );
   expect(
-    (
-      await patch({
-        ...body,
-        change: { action: "delete", id: "folio_beta", kind: "column" },
-        spreadsheetColumnOffsets: [
-          ["folio_alpha", 0],
-          ["folio_beta", 1],
-          ["folio_gamma", 2],
-        ],
-      })
-    ).status
-  ).toBe(400);
-  expect(await spreadsheetDraftBindings(draftId)).toEqual(bindings);
+    await settled(await f.save(f.payload(removed, removedProof)))
+  ).toMatchObject({ error: "invalid_template", status: "failed" });
+  expect(await spreadsheetDraftBindings(f.draftId)).toEqual(bindings);
   expect(
-    await prisma.templateDraft.findUniqueOrThrow({ where: { id: draftId } })
-  ).toMatchObject({ bindingRevision: 1 });
+    await prisma.templateDraft.findUniqueOrThrow({ where: { id: f.draftId } })
+  ).toMatchObject({ bindingRevision: 1, objectKey: f.objectKey });
 });
 
 test("duplicate scalar, table and column tags return the exact actionable conflict without changing metadata", async () => {
-  const { draftId, operation, patch } = await bindingFixture();
+  const f = await fixture();
   const { fields } = spreadsheetBindingSchema.parse({
     fields: [
       {
@@ -434,97 +426,80 @@ test("duplicate scalar, table and column tags return the exact actionable confli
     table: null,
     version: 1,
   });
-  await prisma.draftFieldRule.createMany({
-    data: spreadsheetDraftFieldData({ fields, table: null, version: 1 }).map(
-      (field) => ({
-        ...field,
-        position: field.position + 4,
-        templateDraftId: draftId,
-      })
-    ),
-  });
-  const previous = await spreadsheetDraftBindings(draftId);
-  const column = bindings.table?.columns[1];
-  if (!fields[0] || !fields[1] || !column || !bindings.table) {
+  if (!bindings.table || !fields[0] || !fields[1]) {
     throw new Error("Missing test configuration");
   }
-  for (const change of [
-    { action: "upsert", kind: "field", value: { ...fields[1], key: "agency" } },
-    { action: "upsert", kind: "field", value: { ...fields[0], key: "items" } },
-    {
-      action: "upsert",
-      kind: "table",
-      value: { ...bindings.table, key: "agency" },
-    },
-    { action: "upsert", kind: "column", value: { ...column, key: "alpha" } },
+  for (const candidate of [
+    { ...bindings, fields: [fields[0], { ...fields[1], key: "agency" }] },
+    { ...bindings, fields: [{ ...fields[0], key: "items" }, fields[1]] },
+    { ...bindings, fields, table: { ...bindings.table, key: "agency" } },
+    editColumn(bindings, "folio_beta", { key: "alpha" }),
   ]) {
-    const response = await patch({
-      change,
-      documentKey: operation.documentKey,
-      revision: 1,
-    });
+    const response = await f.save(f.payload(candidate));
     expect(response.status).toBe(409);
     expect(await response.json()).toEqual({
       error: "duplicate_field_tag",
       message: "tag นี้ซ้ำ กรุณาใช้ tag อื่น",
+      preAdmission: true,
     });
   }
-  expect(await spreadsheetDraftBindings(draftId)).toEqual(previous);
+  expect(await spreadsheetDraftBindings(f.draftId)).toEqual(bindings);
   expect(
-    await prisma.templateDraft.findUniqueOrThrow({ where: { id: draftId } })
+    await prisma.templateDraft.findUniqueOrThrow({ where: { id: f.draftId } })
   ).toMatchObject({ bindingRevision: 1 });
 });
 
 test("other invalid spreadsheet settings return Thai guidance and never report a duplicate tag", async () => {
-  const { draftId, operation, patch } = await bindingFixture();
-  const column = bindings.table?.columns[1];
-  if (!column) {
-    throw new Error("Missing test column");
-  }
-  for (const value of [
-    { ...column, offset: 2 },
-    { ...column, key: "invalid tag" },
-    { ...column, options: [], type: "dropdown" },
-    { ...column, label: "" },
+  const f = await fixture();
+  for (const change of [
+    { offset: 2 },
+    { key: "invalid tag" },
+    { options: [], type: "dropdown" as const },
+    { label: "" },
   ]) {
-    const response = await patch({
-      change: { action: "upsert", kind: "column", value },
-      documentKey: operation.documentKey,
-      revision: 1,
-    });
+    const response = await f.save(
+      f.payload(editColumn(bindings, "folio_beta", change))
+    );
     expect(response.status).toBe(400);
     const body = (await response.json()) as { error: string; message: string };
     expect(body.error).toBe("invalid_field_config");
     expect(body.message).toMatch(/[\u0E00-\u0E7F]/u);
     expect(body.message).not.toBe("tag นี้ซ้ำ กรุณาใช้ tag อื่น");
   }
-  expect(await spreadsheetDraftBindings(draftId)).toEqual(bindings);
+  expect(await spreadsheetDraftBindings(f.draftId)).toEqual(bindings);
 });
 
-test("binding reads and acknowledgements identify the exact editor document", async () => {
-  const { get, operation, patch } = await bindingFixture();
-  const read = await get();
+test("binding reads and Save acknowledgements identify the exact committed editor document", async () => {
+  const f = await fixture();
+  const read = await f.request(
+    "spreadsheet-bindings",
+    undefined,
+    f.bridge.capabilities["configure-fields"]
+  );
   expect(read.status).toBe(200);
   expect(await read.json()).toMatchObject({
-    documentKey: operation.documentKey,
+    documentKey: f.documentKey,
     revision: 1,
   });
-  const column = bindings.table?.columns[0];
-  if (!column) {
-    throw new Error("Missing test column");
-  }
-  const response = await patch({
-    change: {
-      action: "upsert",
-      kind: "column",
-      value: { ...column, label: "Renamed alpha" },
-    },
-    documentKey: operation.documentKey,
-    revision: 1,
+  snapshot = bytes;
+  const completed = await settled(
+    await f.save(
+      f.payload(editColumn(bindings, "folio_alpha", { label: "Renamed alpha" }))
+    )
+  );
+  const { bridge } = await f.open();
+  expect(bridge.documentKey).not.toBe(f.documentKey);
+  expect(completed).toMatchObject({
+    result: { documentKey: bridge.documentKey },
+    status: "completed",
   });
-  expect(response.status).toBe(200);
-  expect(await response.json()).toMatchObject({
-    documentKey: operation.documentKey,
+  const reopened = await f.request(
+    "spreadsheet-bindings",
+    undefined,
+    bridge.capabilities["configure-fields"]
+  );
+  expect(await reopened.json()).toMatchObject({
+    documentKey: bridge.documentKey,
     revision: 2,
   });
 });
@@ -575,176 +550,216 @@ const waitForLockWaiters = async (holder: number, minimum: number) => {
   throw new Error(`Expected ${minimum} requests to wait for the form lock`);
 };
 
-test("a recovery fence invalidates an original PATCH queued behind it", async () => {
-  const { draftId, id, operation, patch, recover } = await bindingFixture();
-  const column = bindings.table?.columns[0];
-  if (!column) {
-    throw new Error("Missing test column");
-  }
-  const lock = await heldForm(id);
+test("a recovery fence invalidates an original Save queued behind it without changing the committed pair", async () => {
+  const f = await fixture();
+  const body = f.payload(
+    editColumn(bindings, "folio_alpha", { label: "Delayed change" })
+  );
+  const lock = await heldForm(f.id);
   let confirmation: Promise<Response> | undefined;
-  let delayedPatch: Promise<Response> | undefined;
+  let delayedSave: Promise<Response> | undefined;
   try {
-    confirmation = recover({ documentKey: operation.documentKey, revision: 1 });
-    await waitForLockWaiters(lock.pid, 1);
-    delayedPatch = patch({
-      change: {
-        action: "upsert",
-        kind: "column",
-        value: { ...column, label: "Delayed change" },
-      },
-      documentKey: operation.documentKey,
-      revision: 1,
+    confirmation = f.recover({
+      checkpoint: body.xlsxDraft.checkpoint,
+      leaseId: f.bridge.lease.id,
     });
+    await waitForLockWaiters(lock.pid, 1);
+    delayedSave = f.save(body);
     await waitForLockWaiters(lock.pid, 2);
   } finally {
     lock.release();
     await lock.done;
   }
-  if (!confirmation || !delayedPatch) {
+  if (!confirmation || !delayedSave) {
     throw new Error("Missing concurrent requests");
   }
-  const settled = await confirmation;
-  expect(settled.status).toBe(200);
-  expect(await settled.json()).toMatchObject({
-    bindings,
-    documentKey: operation.documentKey,
-    recovery: { baseRevision: 1, settled: true },
-    revision: 2,
-  });
-  expect((await delayedPatch).status).toBe(409);
-  expect(await spreadsheetDraftBindings(draftId)).toEqual(bindings);
+  const fenced = await confirmation;
+  expect(fenced.status).toBe(200);
+  expect(await fenced.json()).toEqual({ status: "not-admitted" });
+  expect((await delayedSave).status).toBe(409);
+  expect(await spreadsheetDraftBindings(f.draftId)).toEqual(bindings);
   expect(
-    await prisma.templateDraft.findUniqueOrThrow({ where: { id: draftId } })
+    await prisma.templateDraft.findUniqueOrThrow({ where: { id: f.draftId } })
   ).toMatchObject({
-    bindingRevision: 2,
-    documentKey: operation.documentKey,
-    objectKey: `tests/${id}/old.xlsx`,
+    bindingRevision: 1,
+    documentKey: f.documentKey,
+    objectKey: f.objectKey,
   });
 });
 
-test("recovery preserves a PATCH which obtains the form lock and commits first", async () => {
-  const { draftId, id, operation, patch, recover } = await bindingFixture();
-  const column = bindings.table?.columns[0];
-  if (!column) {
-    throw new Error("Missing test column");
-  }
-  const lock = await heldForm(id);
-  let originalPatch: Promise<Response> | undefined;
+test("recovery returns an original Save admitted ahead of its concurrent fence", async () => {
+  const f = await fixture();
+  snapshot = bytes;
+  const body = f.payload(
+    editColumn(bindings, "folio_alpha", { label: "Committed change" })
+  );
+  const lock = await heldForm(f.id);
+  let original: Promise<Response> | undefined;
   let confirmation: Promise<Response> | undefined;
   try {
-    originalPatch = patch({
-      change: {
-        action: "upsert",
-        kind: "column",
-        value: { ...column, label: "Committed change" },
-      },
-      documentKey: operation.documentKey,
-      revision: 1,
-    });
+    original = f.save(body);
     await waitForLockWaiters(lock.pid, 1);
-    confirmation = recover({ documentKey: operation.documentKey, revision: 1 });
+    confirmation = f.recover({
+      checkpoint: body.xlsxDraft.checkpoint,
+      leaseId: f.bridge.lease.id,
+    });
     await waitForLockWaiters(lock.pid, 2);
   } finally {
     lock.release();
     await lock.done;
   }
-  if (!confirmation || !originalPatch) {
+  if (!confirmation || !original) {
     throw new Error("Missing concurrent requests");
   }
-  expect((await originalPatch).status).toBe(200);
-  const settled = await confirmation;
-  expect(settled.status).toBe(200);
-  expect(await settled.json()).toMatchObject({
-    recovery: { baseRevision: 1, settled: true },
-    revision: 2,
+  const admitted = await original;
+  expect(admitted.status).toBe(202);
+  const { operationId } = (await admitted.clone().json()) as {
+    operationId: string;
+  };
+  const found = await confirmation;
+  expect(found.status).toBe(200);
+  expect(await found.json()).toMatchObject({
+    action: "save-template",
+    operationId,
+  });
+  expect(await settled(admitted)).toMatchObject({ status: "completed" });
+  const recovered = await f.recover({
+    checkpoint: body.xlsxDraft.checkpoint,
+    leaseId: f.bridge.lease.id,
+  });
+  expect(recovered.status).toBe(200);
+  expect(await recovered.json()).toMatchObject({
+    current: { bindingRevision: 2 },
+    operationId,
+    status: "completed",
   });
   expect(
-    (await spreadsheetDraftBindings(draftId)).table?.columns[0]?.label
+    (await spreadsheetDraftBindings(f.draftId)).table?.columns[0]?.label
   ).toBe("Committed change");
-  expect(
-    await prisma.templateDraft.findUniqueOrThrow({ where: { id: draftId } })
-  ).toMatchObject({ bindingRevision: 2 });
 });
 
-test("repeating a recovery whose acknowledgement was lost never advances the fence twice", async () => {
-  const { draftId, operation, recover } = await bindingFixture();
-  const request = { documentKey: operation.documentKey, revision: 1 };
-  const lost = await recover(request);
-  expect(lost.status).toBe(200);
-  const repeated = await recover(request);
+test("repeating recovery after a lost acknowledgement neither advances the committed revision nor fences a new lease", async () => {
+  const f = await fixture();
+  const body = { checkpoint: crypto.randomUUID(), leaseId: f.bridge.lease.id };
+  expect((await f.recover(body)).status).toBe(200);
+  const { bridge } = await f.open();
+  expect(bridge.lease.id).not.toBe(body.leaseId);
+  const repeated = await f.recover(body, bridge.capabilities["save-template"]);
   expect(repeated.status).toBe(200);
-  expect(await repeated.json()).toMatchObject({
-    bindings,
-    documentKey: operation.documentKey,
-    recovery: { baseRevision: 1, settled: true },
-    revision: 2,
-  });
-  expect(await spreadsheetDraftBindings(draftId)).toEqual(bindings);
+  expect(await repeated.json()).toEqual({ status: "not-admitted" });
+  expect((await f.open()).bridge.lease.id).toBe(bridge.lease.id);
+  expect(await spreadsheetDraftBindings(f.draftId)).toEqual(bindings);
   expect(
-    await prisma.templateDraft.findUniqueOrThrow({ where: { id: draftId } })
-  ).toMatchObject({ bindingRevision: 2 });
+    await prisma.templateDraft.findUniqueOrThrow({ where: { id: f.draftId } })
+  ).toMatchObject({ bindingRevision: 1, objectKey: f.objectKey });
 });
 
-test("recovery requires scoped capability, the current document and an active lease, and rejects future base revisions", async () => {
-  const { draftId, operation, recover } = await bindingFixture();
-  const body = { documentKey: operation.documentKey, revision: 1 };
-  expect((await recover(body, {})).status).toBe(401);
+test("recovery requires scoped authority and never fences a different editor lease", async () => {
+  const f = await fixture();
+  const other = await fixture();
+  const body = { checkpoint: crypto.randomUUID(), leaseId: f.bridge.lease.id };
+  const anonymous = await app.handle(
+    new Request(
+      `http://test.local/api/admin/forms/${f.id.replaceAll("-", "")}/xlsx-draft/recover`,
+      {
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }
+    )
+  );
+  expect(anonymous.status).toBe(401);
+  const bearerOnly = await f.recover(body, "");
+  expect(bearerOnly.status).toBe(404);
+  expect(await bearerOnly.json()).toMatchObject({
+    error: "checkpoint_not_found",
+  });
+  expect((await f.recover(body, "invalid")).status).toBe(401);
   expect(
-    (await recover(body, { "X-Editor-Capability": "invalid" })).status
-  ).toBe(401);
+    (await f.recover(body, other.bridge.capabilities["save-template"])).status
+  ).toBe(403);
   expect(
-    (await recover({ ...body, documentKey: "other-document" })).status
+    (await f.recover(body, f.bridge.capabilities["configure-fields"])).status
+  ).toBe(403);
+  expect(
+    (await f.recover({ ...body, leaseId: other.bridge.lease.id })).status
   ).toBe(409);
-  expect((await recover({ ...body, revision: 2 })).status).toBe(409);
-  expect((await recover({ ...body, revision: "1" })).status).toBe(400);
+  expect((await f.recover({ ...body, checkpoint: "invalid" })).status).toBe(
+    400
+  );
   expect(
-    (await recover({ ...body, change: { action: "delete" } })).status
+    (await f.recover({ ...body, change: { action: "delete" } })).status
   ).toBe(400);
-  await prisma.editorLease.deleteMany({ where: { targetId: draftId } });
-  const expired = await recover(body);
-  expect(expired.status).toBe(409);
-  expect(await expired.json()).toMatchObject({
-    error: "editor_lease_inactive",
-  });
+  expect((await f.open()).bridge.lease.id).toBe(body.leaseId);
+  expect((await other.open()).bridge.lease.id).toBe(other.bridge.lease.id);
   expect(
-    await prisma.templateDraft.findUniqueOrThrow({ where: { id: draftId } })
+    (
+      await f.save({
+        ...f.payload(),
+        xlsxDraft: { ...f.payload().xlsxDraft, revision: 2 },
+      })
+    ).status
+  ).toBe(409);
+  expect(
+    await prisma.templateDraft.findUniqueOrThrow({ where: { id: f.draftId } })
   ).toMatchObject({ bindingRevision: 1 });
 });
 
-test("active document operations and published Forms prevent recovery fences", async () => {
-  const { draftId, id, operation, recover } = await bindingFixture();
-  const active = await prisma.operation.create({
-    data: {
-      documentKey: operation.documentKey,
-      formId: id,
-      metadata: {},
-      ownerUserId: adminId,
-      status: "processing",
-      targetId: draftId,
-      targetType: "template_draft",
-      type: "save_template_draft",
-    },
-  });
-  const request = { documentKey: operation.documentKey, revision: 1 };
-  const blocked = await recover(request);
-  expect(blocked.status).toBe(409);
-  expect(await blocked.json()).toMatchObject({
-    error: "operation_in_progress",
-  });
-  await prisma.operation.delete({ where: { id: active.id } });
-  await prisma.form.update({ data: { status: "published" }, where: { id } });
+test("an active Save prevents fencing a different checkpoint and a published Form rejects Save", async () => {
+  const f = await fixture();
+  const entered = Promise.withResolvers<undefined>();
+  const release = Promise.withResolvers<undefined>();
+  snapshot = bytes;
+  beforeCapture = async () => {
+    entered.resolve();
+    await release.promise;
+  };
+  const body = f.payload();
+  const original = await f.save(body);
+  expect(original.status).toBe(202);
   try {
-    const published = await recover(request);
-    expect(published.status).toBe(409);
-    expect(await published.json()).toMatchObject({
-      error: "published_immutable",
+    await entered.promise;
+    const leaseId = f.bridge.lease.id;
+    const blocked = await f.recover({
+      checkpoint: crypto.randomUUID(),
+      leaseId,
     });
+    expect(blocked.status).toBe(409);
+    expect(await blocked.json()).toMatchObject({
+      error: "checkpoint_unresolved",
+    });
+    const found = await f.recover({
+      checkpoint: body.xlsxDraft.checkpoint,
+      leaseId,
+    });
+    expect(found.status).toBe(200);
+    const { status } = (await found.json()) as { status: string };
+    expect(["pending", "processing"]).toContain(status);
   } finally {
-    await prisma.form.update({ data: { status: "draft" }, where: { id } });
+    beforeCapture = null;
+    release.resolve();
   }
+  expect(await settled(original)).toMatchObject({ status: "completed" });
+  const { bridge } = await f.open();
+  const committed = await spreadsheetDraftBindings(f.draftId);
+  const payload = f.payload(committed);
+  const current = {
+    ...payload,
+    documentKey: bridge.documentKey,
+    xlsxDraft: { ...payload.xlsxDraft, revision: 2 },
+  };
   expect(
-    await prisma.templateDraft.findUniqueOrThrow({ where: { id: draftId } })
-  ).toMatchObject({ bindingRevision: 1 });
-  expect(await spreadsheetDraftBindings(draftId)).toEqual(bindings);
+    await settled(
+      await f.request("publish", current, bridge.capabilities.publish)
+    )
+  ).toMatchObject({ status: "completed" });
+  const published = await f.request(
+    "save",
+    current,
+    bridge.capabilities["save-template"]
+  );
+  expect(published.status).toBe(409);
+  expect(await published.json()).toMatchObject({
+    error: "published_immutable",
+  });
 });

@@ -101,6 +101,30 @@ export const attachmentMutationNotice = async (
   return `${slots.join("; ") || "กำลังตรวจผลรอบแนบเดิม"} ข้อมูลคำตอบเดิมยังอ่านได้ แต่ไฟล์ที่ URL เดิมอาจถูกเขียนทับแล้วและยังยืนยันไม่ได้ กรุณาติดต่อผู้ดูแลก่อนบันทึก ส่ง หรือลบคำตอบ ห้ามส่งไฟล์ซ้ำ รหัสติดตาม ${batch.operationId}`;
 };
 
+export const attachmentRoutingPending = async (
+  responseId: string
+): Promise<boolean> => {
+  const [result] = await prisma.$queryRaw<{ pending: boolean }[]>(Prisma.sql`
+    SELECT EXISTS (
+      SELECT 1
+      FROM responses AS response
+      JOIN ecm_attachment_references AS reference
+        ON reference.response_id = response.id
+       AND reference.snapshot_id = response.draft_document_key
+      JOIN ecm_attachment_versions AS version ON version.id = reference.version_id
+      WHERE response.id = ${responseId}::uuid
+        AND response.status = 'draft'
+        AND version.state = 'committed'
+        AND (
+          version.document_number <> COALESCE(response.draft_data->>'docs_number', '')
+          OR (version.storage_mode = 'legacy'
+              AND version.fiscal_year IS DISTINCT FROM COALESCE(response.draft_data->>'fiscal_year', ''))
+        )
+    ) AS pending
+  `);
+  return result?.pending === true;
+};
+
 export const requireAttachmentMutationReady = async (
   responseId: string,
   tx: Prisma.TransactionClient = prisma,

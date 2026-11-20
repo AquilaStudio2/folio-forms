@@ -54,6 +54,17 @@ export function spreadsheetSelectionCommand() {
 }
 export function spreadsheetAnchorCommand() {
   const input = Asc.scope.folioSpreadsheetAnchor;
+  if (input.replace) {
+    let previous;
+    try {
+      previous = Api.GetDefName(input.anchor);
+    } catch {
+      // ONLYOFFICE throws when a defined name does not exist.
+    }
+    if (previous && previous.Delete() !== true) {
+      return false;
+    }
+  }
   return Api.AddDefName(input.anchor, input.reference, false);
 }
 export function spreadsheetTableBordersCommand() {

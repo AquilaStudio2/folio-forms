@@ -26,6 +26,7 @@ export function createApi(options) {
     error.code = code;
     error.httpStatus = status;
     error.detail = message || code;
+    error.preAdmission = isRecord(payload) && payload.preAdmission === true;
     return error;
   }
   function apiUrl(path) {

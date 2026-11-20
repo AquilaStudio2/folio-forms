@@ -535,7 +535,10 @@ export function registerResponseActionRoutes(
           data,
           documentKind: form.documentKind,
           ...(form.documentKind === "xlsx"
-            ? { documentServerKey: requireDocumentServerKey(authorization) }
+            ? {
+                documentServerKey: requireDocumentServerKey(authorization),
+                nativeCaptureLeaseId: authorization.capability.leaseId,
+              }
             : {}),
           finalObjectKey: objectKey(
             "submissions",

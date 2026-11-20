@@ -18,6 +18,7 @@ import {
 import {
   attachmentCleanupWarning,
   attachmentMutationNotice,
+  attachmentRoutingPending,
 } from "../ecm/attachments";
 import { actionEditorCapability } from "../editor/authorization";
 import type {
@@ -543,6 +544,9 @@ export async function userEditorConfig(
   return {
     ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),
     attachmentNotice,
+    attachmentRoutingPending:
+      form.documentKind === "xlsx" &&
+      (await attachmentRoutingPending(response.id)),
     ...editorConfig(
       {
         ...(pdmsProjectCatalog ? { pdmsProjectCatalog } : {}),

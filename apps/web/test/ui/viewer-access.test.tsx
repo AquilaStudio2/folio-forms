@@ -164,7 +164,7 @@ beforeEach(() => {
   localStorage.setItem(SESSION_KEY, "viewer-token");
   fetchMock.mockReset();
   fetchMock.mockImplementation((input, init) => {
-    const { pathname } = new URL(String(input));
+    const { pathname, searchParams } = new URL(String(input));
     if (pathname === "/api/auth/sign-in/email") {
       return Promise.resolve(Response.json({ token: "local-viewer-token" }));
     }
@@ -233,6 +233,7 @@ beforeEach(() => {
             formTitle: "Other owner draft",
             id: responseId,
             latestCorrectionNumber: resultLatestRevision,
+            revision: resultState === "submitted" ? resultLatestRevision : null,
             state: resultState,
             submissionId: "submission",
             updatedAt: "2026-10-27T00:00:00.000Z",
@@ -241,7 +242,7 @@ beforeEach(() => {
         })
       );
     }
-    if (pathname === `/api/responses/${responseId}/corrections`) {
+    if (pathname === "/api/submissions/submission/corrections") {
       if (historyResponse) {
         return historyResponse;
       }
@@ -271,7 +272,16 @@ beforeEach(() => {
     if (pathname === "/api/submissions/submission/data") {
       return Promise.resolve(
         Response.json({
+          data: {
+            name:
+              searchParams.get("revision") === "0"
+                ? "Original value"
+                : "Corrected value",
+          },
+          documentKind: resultDocumentKind,
           fields: [{ label: "Name", options: [], tag: "name", type: "text" }],
+          spreadsheetContract: null,
+          submission: { id: "submission", responseId },
         })
       );
     }
@@ -981,6 +991,62 @@ describe("VIEWER existing results access", () => {
       screen.getByRole("button", { name: "ดาวน์โหลด DOCX" })
     ).toBeDisabled();
     expect(screen.getByRole("button", { name: "ดาวน์โหลด PDF" })).toBeDisabled();
+  });
+
+  it("keeps the Results revision selected when another Correction arrives during loading", async () => {
+    resultState = "submitted";
+    historyResponse = Promise.resolve(
+      Response.json({
+        latestRevision: 2,
+        revisions: [
+          {
+            createdAt: "2026-10-27T00:00:00.000Z",
+            data: { name: "Pinned result value" },
+            document: { available: false },
+            revision: 1,
+          },
+          {
+            createdAt: "2026-10-27T00:00:01.000Z",
+            data: { name: "Newer result value" },
+            document: { available: false },
+            revision: 2,
+          },
+        ],
+      })
+    );
+    await mount(`/admin/results/${responseId}`);
+    const selector = await screen.findByRole("combobox", {
+      name: "เลือก Revision",
+    });
+    await waitFor(() => expect(selector).toBeEnabled());
+    expect(selector).toHaveValue("1");
+    expect(screen.queryByRole("option", { name: "Correction 2" })).toBeNull();
+    await userEvent.click(screen.getByRole("tab", { name: "Fields" }));
+    expect(await screen.findByText("Pinned result value")).toBeVisible();
+    expect(screen.queryByText("Newer result value")).toBeNull();
+  });
+
+  it("downloads the selected XLSX revision from Admin Form History", async () => {
+    sessionRole = "admin";
+    resultDocumentKind = "xlsx";
+    const saved = stubDownloads();
+    await mount("/admin/forms/form/submissions/submission");
+    const selector = await screen.findByRole("combobox", {
+      name: "Select revision",
+    });
+    await waitFor(() => expect(selector).toHaveValue("1"));
+    await userEvent.selectOptions(selector, "0");
+    await userEvent.click(screen.getByRole("tab", { name: "Fields" }));
+    expect(await screen.findByText("Original value")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "XLSX" }));
+    await waitFor(() =>
+      expect(saved).toHaveBeenCalledWith("submission-0.xlsx")
+    );
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).endsWith("/submissions/submission/xlsx?revision=0")
+      )
+    ).toBe(true);
   });
 
   it("blocks duplicate exports while busy and retries a failed PDF without changing the submission", async () => {

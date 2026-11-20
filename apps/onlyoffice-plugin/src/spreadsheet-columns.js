@@ -85,13 +85,6 @@ export function spreadsheetColumnsCommand() {
     let markerName = readName(marker);
     let changed = false;
     if (input.repair) {
-      const expectedWidth =
-        Math.max(-1, ...table.columns.map((column) => column.offset)) + 1;
-      if (!input.initialize || expectedWidth !== body.GetColumnsCount()) {
-        throw new Error(
-          "เลือกช่วงข้อมูลให้มีจำนวนคอลัมน์ตรงกับตารางเดิม โดยไม่รวมหัวตาราง"
-        );
-      }
       for (const name of [...existing, markerName]) {
         if (name && name.Delete() !== true) {
           throw new Error("ล้างตำแหน่งคอลัมน์เดิมไม่สำเร็จ กรุณาลองผูกตำแหน่งใหม่อีกครั้ง");
@@ -103,7 +96,12 @@ export function spreadsheetColumnsCommand() {
     if (!markerName && existing.every((name) => !name)) {
       const expectedWidth =
         Math.max(-1, ...table.columns.map((column) => column.offset)) + 1;
-      if (!input.initialize || expectedWidth !== body.GetColumnsCount()) {
+      if (
+        !input.initialize ||
+        (input.repair
+          ? expectedWidth > body.GetColumnsCount()
+          : expectedWidth !== body.GetColumnsCount())
+      ) {
         throw new Error(
           "โครงสร้างคอลัมน์ตารางเดิมเปลี่ยนไป กรุณาย้อนการแทรกหรือลบคอลัมน์ แล้วเปิดแผงตั้งค่าใหม่ หรือสร้างตารางรายการใหม่"
         );

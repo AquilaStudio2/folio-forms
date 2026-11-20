@@ -38,7 +38,12 @@ export const createHarness = ({
   scopeIdentity,
   selection,
   serializeCommands = false,
+  sessionStorageEntries = [],
   tagAliases,
+  xlsxDraftProtocol = action === "template-edit" && documentKind === "xlsx"
+    ? 1
+    : undefined,
+  xlsxDraftRevision = 0,
 } = {}) => {
   const parentOrigin = "https://web.example.test";
   const bridgeId = "bridge-test-1";
@@ -53,6 +58,7 @@ export const createHarness = ({
   const saveCalls = [];
   const timers = [];
   const queuedCapabilityResponses = [...capabilityResponses];
+  const sessionEntries = new Map(sessionStorageEntries);
   const queuedResponses = [...responses];
   const selectionState = {
     currentControl: selection?.currentControl,
@@ -294,6 +300,9 @@ export const createHarness = ({
         spreadsheetPictureFrames,
         tagAliases,
         targetId: "target-id",
+        xlsxDraftLeaseId: "test-editor-lease",
+        xlsxDraftProtocol,
+        xlsxDraftRevision,
       },
     },
   };
@@ -356,6 +365,11 @@ export const createHarness = ({
           (callback) => callback !== listener
         )
       );
+    },
+    sessionStorage: {
+      getItem: (key) => sessionEntries.get(key) ?? null,
+      removeItem: (key) => sessionEntries.delete(key),
+      setItem: (key, value) => sessionEntries.set(key, value),
     },
     setTimeout(callback, milliseconds) {
       const timer = { callback, cancelled: false, milliseconds };
