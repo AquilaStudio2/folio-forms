@@ -499,6 +499,18 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
   const oldRules = await bindingRequest("GET").then((response) =>
     response.json()
   );
+  const duplicateTag = await action(
+    "save",
+    saveCapability,
+    payload({
+      ...candidate,
+      fields: candidate.fields.map((entry) => ({ ...entry, key: field.key })),
+    })
+  );
+  expect(duplicateTag.status).toBe(409);
+  expect(await duplicateTag.json()).toMatchObject({
+    error: "duplicate_field_tag",
+  });
   const legacy = await action("save", saveCapability, {
     documentKey,
     spreadsheetAnchors: [],
@@ -542,6 +554,21 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
   });
   nativeSnapshotUrl = new URL("/saved.xlsx", nativeServer.url).href;
   try {
+    const invalidPrefill = await action(
+      "save",
+      saveCapability,
+      payload({
+        ...candidate,
+        fields: candidate.fields.map((entry) => ({
+          ...entry,
+          prefillPolicy: "lock_when_available",
+        })),
+      })
+    );
+    expect(await poll(invalidPrefill)).toMatchObject({
+      error: "invalid_field_config",
+      status: "failed",
+    });
     const input = payload(candidate);
     const saved = await action("save", saveCapability, input);
     const recovery = await app.handle(

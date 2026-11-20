@@ -99,6 +99,25 @@ const readTemplateActionInput = async (
     );
   }
   if (!input.success) {
+    const duplicateTag = input.error.issues.find(
+      (issue) =>
+        issue.code === "custom" &&
+        issue.params?.folioCode === "duplicate_field_tag"
+    );
+    if (duplicateTag) {
+      fail(409, "duplicate_field_tag", duplicateTag.message);
+    }
+    if (
+      input.error.issues.some(
+        (issue) => issue.path[0] === "xlsxDraft" && issue.path[1] === "bindings"
+      )
+    ) {
+      fail(
+        400,
+        "invalid_field_config",
+        "การตั้งค่าช่องไม่ถูกต้อง กรุณาตรวจสอบชื่อช่อง tag ชนิดข้อมูล และตัวเลือก แล้วลองอีกครั้ง"
+      );
+    }
     fail(
       400,
       "invalid_request",

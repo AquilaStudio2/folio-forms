@@ -11,7 +11,7 @@ import {
   XLSX_CONTENT_TYPE,
 } from "../documents/spreadsheets/workbook";
 import { spreadsheetContractForTemplate } from "../forms/spreadsheet-fields";
-import { HttpError, fail } from "../http/errors";
+import { fail } from "../http/errors";
 import { readJsonRecord } from "../http/input";
 import { corsOrigin } from "../http/origins";
 import {
@@ -30,7 +30,10 @@ import {
   consumeCallbackClaim,
 } from "../operations/lifecycle";
 import type { CallbackPayload } from "../operations/model";
-import { operationDocumentServerKey } from "../operations/model";
+import {
+  isReportableOperationError,
+  operationDocumentServerKey,
+} from "../operations/model";
 import { cleanupTerminalOperationObjects } from "../operations/object-cleanup";
 import { SpreadsheetValidationError } from "../operations/spreadsheet-document";
 import {
@@ -396,17 +399,12 @@ export function registerOnlyOfficeRoutes(
           );
           return { error: 0 };
         } catch (error) {
+          const reported = isReportableOperationError(error);
           await updateOperationFailed(
             operation.id,
-            error instanceof HttpError &&
-              (error.code === "invalid_template" ||
-                error.code === "attachment_template_stale")
-              ? error.code
-              : "callback_processing_failed",
+            reported ? error.code : "callback_processing_failed",
             undefined,
-            error instanceof HttpError &&
-              (error.code === "invalid_template" ||
-                error.code === "attachment_template_stale")
+            reported
               ? { errorMessage: error.message }
               : error instanceof SpreadsheetValidationError
                 ? {
@@ -421,8 +419,7 @@ export function registerOnlyOfficeRoutes(
           return {
             error:
               error instanceof SpreadsheetValidationError ||
-              (error instanceof HttpError &&
-                error.code === "attachment_template_stale")
+              (reported && error.code !== "invalid_template")
                 ? 0
                 : 1,
           };

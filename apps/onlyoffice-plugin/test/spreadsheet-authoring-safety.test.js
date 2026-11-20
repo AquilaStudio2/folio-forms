@@ -845,6 +845,14 @@ test.each([
   ["advanced revision", { ...bindingProof, revision: 2 }],
   ["malformed revision", { ...bindingProof, revision: null }],
   [
+    "same revision for another document",
+    { ...bindingProof, documentKey: "other" },
+  ],
+  [
+    "same revision with malformed rules",
+    { ...bindingProof, bindings: { ...bindings, table: {} } },
+  ],
+  [
     "stale capability",
     {
       body: {
