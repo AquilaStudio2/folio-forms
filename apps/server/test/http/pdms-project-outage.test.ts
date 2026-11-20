@@ -260,9 +260,15 @@ const fixture = async (
   });
   let fixtureAnchors: Record<string, string> = anchors;
   if (tableMode) {
+    const body = tableMode === "mixed" ? "'Form'!$A$4:$C$6" : "'Form'!$A$4:$B$6";
     fixtureAnchors = {
-      folio_body:
-        tableMode === "mixed" ? "'Form'!$A$4:$C$6" : "'Form'!$A$4:$B$6",
+      folio_body: body,
+      folio_columns_folio_projects: body,
+      folio_column_folio_project: "'Form'!$A$4:$A$6",
+      folio_column_folio_second: "'Form'!$B$4:$B$6",
+      ...(tableMode === "mixed"
+        ? { folio_column_folio_note: "'Form'!$C$4:$C$6" }
+        : {}),
     };
     snapshot = fixtureWorkbook({
       merges: [],

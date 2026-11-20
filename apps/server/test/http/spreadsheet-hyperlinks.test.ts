@@ -53,6 +53,16 @@ const publicId = crypto.randomUUID().replaceAll("-", "");
 const objects = new Set<string>();
 const users: string[] = [];
 const bindings = fixtureBindings();
+const templateNames = {
+  folio_agency: "'Form'!$A$1:$B$1",
+  folio_body: "'Form'!$A$4:$D$8",
+  folio_column_folio_active: "'Form'!$B$4:$B$8",
+  folio_column_folio_note: "'Form'!$C$4:$C$8",
+  folio_column_folio_quantity: "'Form'!$A$4:$A$8",
+  folio_column_folio_total: "'Form'!$D$4:$D$8",
+  folio_columns_folio_table: "'Form'!$A$4:$D$8",
+  folio_date: "'Form'!$D$1",
+};
 const target = "https://example.com/report?a=1&b=2#section";
 let snapshot: Uint8Array | null = null;
 let admin = "";
@@ -216,7 +226,9 @@ describe.skipIf(!enabled)("XLSX hyperlink HTTP lifecycle", () => {
     user = await bearerFor(app, userIdentity.email, password);
     const objectKey = `tests/hyperlinks/${formId}/template.xlsx`;
     objects.add(objectKey);
-    snapshot = cellHyperlinkFixture(fixtureWorkbook(), { target });
+    snapshot = cellHyperlinkFixture(fixtureWorkbook({ names: templateNames }), {
+      target,
+    });
     await putObject(objectKey, snapshot, XLSX_CONTENT_TYPE);
     await prisma.form.create({
       data: {
@@ -293,16 +305,11 @@ describe.skipIf(!enabled)("XLSX hyperlink HTTP lifecycle", () => {
 
   test("save/publish, user draft/resume/submit, downloads, corrections and resubmission retain hyperlinks", async () => {
     const templatePath = `/api/admin/forms/${publicId}/editor-config`;
-    const anchors = [
-      ["folio_agency", "'Form'!$A$1:$B$1"],
-      ["folio_date", "'Form'!$D$1"],
-      ["folio_body", "'Form'!$A$4:$D$8"],
-    ];
-    const wrongAnchors = [
-      anchors[0],
-      ["folio_date", "'Form'!$E$1"],
-      anchors[2],
-    ];
+    const anchors = Object.entries(templateNames);
+    const wrongAnchors = Object.entries({
+      ...templateNames,
+      folio_date: "'Form'!$E$1",
+    });
     const savePath = `/api/admin/forms/${publicId}/save`;
     const publishPath = `/api/admin/forms/${publicId}/publish`;
     let editor = await openEditor(templatePath, admin);
