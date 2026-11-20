@@ -1,6 +1,6 @@
 # 05 — Commit XLSX Template Draft พร้อมกันทั้ง bindings และ workbook
 
-Status: needs-triage  
+Status: claimed  
 Type: task  
 Priority: P1  
 Blocked by: 01, 02  
@@ -21,3 +21,6 @@ Evidence: [A1–A3](../map.md#1-ต้นเหตุและหลักฐา
 
 - ไม่ใช้ auto-save เพิ่มเป็นวิธีแก้หลัก; auto-save ที่มีอยู่ต้องผ่าน commit point เดียวกัน
 - Actual Chromium + ONLYOFFICE 9.4 baseline: เลือก `A1:A2`, Apply ตาราง, reload ก่อน Save แล้วกดเพิ่มช่องแนบ ได้ “ไม่พบตำแหน่งตาราง กรุณาผูกตำแหน่งตารางใหม่ก่อนบันทึก”. Positive controls: ตาราง `A1:A2` ที่ Save แล้วเปิดซ้ำและสร้าง attachment ได้ครบ physical rows `[0,1]`; ปุ่ม `C1` ก่อนตั้งตาราง `A1:C3` ขณะ auto-save ยังไม่เสร็จอ่าน projected rows ได้ `[]` แต่หลังยืนยันว่า Save สำเร็จอ่านได้ `[0,1,2]`. วัดจาก XLSX ฉบับ canonical ใน sandbox; ไม่ใช่ผลหลังแก้ 05
+- Native Chromium on `3eb20b3`: ordinary table and scalar Apply/reopen kept the old canonical pair; allowed Save advanced workbook hash and revision together. Table-first generated `[0,1]`, button-first `[0,1,2]`; reopen and delete saved zero attachment rows. Publish consumed the new `measurement` binding without an earlier Save; Duplicate retained it.
+- Auto-save fault before admission returned 503 and kept revision 0/hash/Rules unchanged. On the recovery follow-up, a genuine 202 reply was intercepted after server admission and replaced by 503 in the browser. The same-tab reload retained **ตรวจผลรอบเดิม**; Publish stayed disabled until recovery and the result was exactly one completed Operation, revision 1.
+- HTTP red/green confirmed that a captured file with the right names but missing list/date validation now gets the Rules' validations in the committed XLSX. Direct and callback failure handling preserves actionable authoring errors.

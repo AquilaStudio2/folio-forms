@@ -369,8 +369,9 @@ flowchart TD
     draft["สร้าง Form และ TemplateDraft"]
     lease["เปิด editor พร้อม lease"]
     design["จัดหน้าและตั้งค่าฟิลด์"]
+    working["XLSX Apply: กฎและ workbook ที่ยังอยู่ใน editor"]
     save["Save Template ผ่าน Operation"]
-    saved["บันทึกต้นแบบที่เปิดต่อได้"]
+    saved["ฉบับบันทึก: กฎและ workbook ของ XLSX commit พร้อมกัน"]
     publish["Publish ผ่าน Operation"]
     validate["ตรวจเอกสารและ field contract"]
     immutable["สร้าง PublishedTemplate และ Manifest"]
@@ -385,9 +386,13 @@ flowchart TD
     kind -->|"docx"| docx --> draft
     kind -->|"xlsx"| xlsx --> draft
     draft --> lease --> design
-    design --> save --> saved
-    saved --> design
-    design --> publish --> validate --> immutable --> share
+    design -->|"XLSX"| working
+    design -->|"DOCX"| save
+    working --> save
+    save --> saved --> design
+    design -->|"DOCX"| publish
+    working --> publish
+    publish --> validate --> immutable --> share
     immutable --> metadata
     immutable --> method
     immutable -->|"เปลี่ยนโครงสร้าง"| duplicate --> draft
@@ -400,6 +405,10 @@ DOCX อัปโหลดได้ไม่เกิน 25 MiB ใช้ conten
 XLSX ไม่รับนำเข้าต้นแบบ ใช้ native editor จัด workbook แล้วผูกเซลล์หรือ merged cell กับ key ผ่าน named ranges ฟิลด์ร่วมกันอยู่ใน `DraftFieldRule` ก่อนเผยแพร่ และ `ManifestField` หลังเผยแพร่ ไม่สร้างตารางข้อมูล Excel อีกชุด
 
 เมื่อช่วงข้อมูลของตารางใหม่ครอบช่องแนบเดิมที่อยู่เซลล์เดียว ระบบย้ายช่องนั้นเข้าคอลัมน์และบันทึก Template Draft อัตโนมัติ ตารางที่ไม่ได้ย้ายช่องแนบยังใช้ปุ่ม **บันทึกแบบร่าง** เดิม
+
+ใน XLSX การใช้ค่าจากแผงตั้งค่ายังอยู่เฉพาะ editor opening และไม่เปลี่ยน `DraftFieldRule` หรือ workbook ที่บันทึก. Save/Publish ส่งชุดกฎและ snapshot ที่ตรวจร่วมกันเข้า Operation ภายใต้ opening, actor/session, lease และ base revision. เมื่อยืนยัน bytes แล้ว Server commit กฎและ pointer/hash ของ workbook พร้อม revision ใน transaction เดียว. จนถึงจุดนั้น การเปิดใหม่และการอ่านฉบับบันทึกใช้คู่เดิม. ถ้าคำตอบของ Save หาย ให้ตรวจ checkpoint ของคำขอเดิม ไม่ส่งใหม่อัตโนมัติ. ตั้งใจยังไม่ผูกตำแหน่งกับตำแหน่งที่สูญหายเป็นคนละสถานะ.
+
+ร่าง XLSX เดิมที่ตำแหน่งไม่ตรงยังเปิดและดาวน์โหลดได้. Admin เห็น diagnosis และเลือกช่วงหรือยืนยันตำแหน่งคอลัมน์ด้วยตนเอง จากนั้นกด Save ผ่าน commit เดียวกัน. การทำสำเนาร่างที่ยืนยัน mapping ไม่ได้จะหยุดและขอให้ตรวจร่าง ไม่เดาตำแหน่งจาก Tag, offset หรือความกว้างตาราง.
 
 Save Template ไม่ใช่ Publish เมื่อ Publish สำเร็จ โครงสร้างและ policy ถูกตรึง Form เดิมไม่ให้แก้โครงสร้างหรือ publish ซ้ำ การ Duplicate คัดลอกเอกสารและกฎไป Form ใหม่พร้อม share ID ใหม่ โดยไม่ย้าย Response หรือ Submission
 
@@ -481,6 +490,8 @@ Prefill ของร่างเดิมเป็น snapshot ตอนเร�
 เมื่อ capability หรือ lease หมดอายุ หน้า fill ขอสิทธิ์ใหม่หนึ่งครั้งภายใต้ session เดิม แล้วใช้กับสำเนาที่จับไว้หากตัวแก้ไขและ document key ยังตรงกัน คำขอปกติใช้สิทธิ์จากการเปิด editor และอ่านสำเนาจาก ONLYOFFICE
 
 Canonical document key ไม่เปลี่ยนเพียงเพราะเปิด Draft เดิมกลับมา และเป็นค่า `bridge.documentKey` ที่ใช้กับ guard, capability, pending attachment และ Operation ส่วน XLSX `config.document.key` เป็น native key แบบ opaque ที่ผูกกับ canonical document, ผู้ใช้, Folio session และ opening UUID ที่ตรวจแล้ว การต่ออายุ capability หรือหมุน lease ภายใน opening เดิมไม่เปลี่ยน native key; การเปิด editor ใหม่ได้ key ใหม่ Read-only viewer ใช้ native cache แยกใหม่โดยยังอ่านไฟล์ canonical เดิม DOCX ไม่เปลี่ยนพฤติกรรม key เดิม
+
+เมื่อ ONLYOFFICE รายงาน `unchanged` หลัง capture ที่ล้มก่อน commit ให้ reuse เฉพาะ bytes ที่ผูกกับ canonical key, native opening, action และ active lease เดิม. ถ้าตรวจหลักฐานไม่ครบหรือ lease เปลี่ยน จะไม่รายงานว่าบันทึกสำเร็จด้วย workbook เก่า. Opening ใหม่ใช้ canonical ที่บันทึกแล้วและไม่ฟื้น capture เก่าจาก opening อื่น.
 
 อ้างอิง [การออกและตรวจ native identity](../../apps/server/src/onlyoffice.ts), [ขอบเขต capability](../../apps/server/src/editor/authorization.ts) และ [native identity ที่เก็บกับ Operation](../../apps/server/src/operations/model.ts)
 

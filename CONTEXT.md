@@ -48,7 +48,7 @@ An XLSX Template Draft may contain unfinished field or table configuration so an
 
 Attachment configuration may remain incomplete in a Template Draft. New publication requires a current Storage Template mapping for every attachment Field or table column, exactly one noncomputed scalar root `docs_number`, and configured existing attachment buttons. Attachments do not impose a `fiscal_year` prerequisite or require User-entered template values. Publication validates the local catalog under transaction locks without a live category-provider recheck; stale choices require explicit reselection without discarding the Draft.
 
-Unapplied field-panel edits remain local drafts and must be resolved before saving or publishing the Template Draft. An uncertain field-settings write blocks further mutations until the current document, revision, and complete bindings establish its outcome. Safe rollback additionally requires settlement of any delayed write and a matching native editor snapshot; dismissing an error notice does not settle the write.
+For XLSX, both unapplied edits and Rules applied in the editor remain local work until Save or Publish commits them with the verified workbook. An intentionally unbound Field or table differs from an established placement that cannot be found. After an uncertain Save or Publish, further edits wait for the outcome of the original Operation; reopening can recover that outcome, not unsaved local work.
 
 ## Published Template
 

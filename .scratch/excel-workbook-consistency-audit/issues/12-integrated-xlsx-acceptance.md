@@ -22,3 +22,6 @@ Separate gate: 11 สำหรับ external/provider claims ไม่บล็
 ## Comments
 
 - ใช้เป็น integration gate แยกจาก review ตั๋วและจาก provider acceptance
+- Native preflight บน runtime `b523bb98`: บัญชี/ฟอร์มสังเคราะห์กับ ONLYOFFICE 9.4 และ loopback provider ทดสอบกรอก `docs_number`, เปิด OLE ของ physical row 0, แนบ TXT, Save Draft, Submit และเปิดรอบใหม่ที่ว่าง. ทั้ง Draft/Submission มี cell C1 และ hyperlink ตรง JSON receipt, refs ตรง physical row และ read-back SHA-256 ตรงกับไฟล์สังเคราะห์. Dashboard แสดงว่าทิ้ง Draft ที่มีประวัติไม่ได้
+- เมื่อพยายาม Save ก่อน picker ยืนยันเสร็จ พบ guard และไม่มี Draft POST. การส่ง event removal ที่เข้า native queue จริงหลัง Correction capture ยังไม่พิสูจน์; ไม่ถือว่า bridge fixture หรือการคลิกหลัง host inert เป็นการจำลอง timing นั้น
+- Actual native live XLSX/PDF: both downloads contained `SYNTHETIC-LIVE-EXPORT` from unsaved D1; saved Draft stayed blank and the derived XLSX did not contain managed attachment objects. This is local browser/ONLYOFFICE proof, not real DCM acceptance.
