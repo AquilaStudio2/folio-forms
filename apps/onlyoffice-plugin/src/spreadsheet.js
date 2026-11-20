@@ -362,6 +362,19 @@ export function initializeSpreadsheet(options, setStatus) {
     getFieldSelection: () => null,
     loadFieldRules: () => Promise.resolve(),
     runAction: (...args) => operations.runAction(...args),
+    onReady: () => {
+      if (options.action === ACTIONS.TEMPLATE_EDIT && pendingDraft()) {
+        bridge.notifyParent(
+          ACTIONS.SAVE_TEMPLATE,
+          "failed",
+          undefined,
+          undefined,
+          "ยังไม่ทราบผลบันทึกรอบเดิม กรุณาตรวจผลรอบเดิมก่อนแก้ไขต่อ",
+          undefined,
+          true
+        );
+      }
+    },
     onPdmsCatalogChanged: (catalog) => pdmsPicker?.updateCatalog(catalog),
     setPanelStatus: setStatus,
     setStatus,
@@ -446,7 +459,7 @@ export function initializeSpreadsheet(options, setStatus) {
         xlsxDraft: {
           version: 1,
           revision,
-          checkpoint: crypto.randomUUID(),
+          checkpoint: window.crypto.randomUUID(),
           bindings,
         },
         ...proof,
@@ -940,25 +953,13 @@ export function initializeSpreadsheet(options, setStatus) {
     revision = result.revision;
   }
   async function readBindings(reconcile = true) {
-    if (options.xlsxDraftProtocol !== 1) {
+    if (options.xlsxDraftProtocol !== 1 || !Number.isSafeInteger(revision)) {
       throw new Error("กรุณาเปิดตัวแก้ไข Excel รุ่นล่าสุดแล้วลองอีกครั้ง");
-    }
-    const result = await fetchBindings();
-    if (result.documentKey && result.documentKey !== options.documentKey) {
-      throw new Error(
-        "ต้นแบบเปลี่ยนเป็นเอกสารอีกฉบับแล้ว กรุณาตรวจสอบต้นแบบล่าสุดก่อนแก้ไขต่อ"
-      );
-    }
-    if (revision !== undefined && revision !== result.revision) {
-      throw new Error("ต้นแบบเปลี่ยนไปแล้ว กรุณาเปิดใหม่ก่อนแก้ไขต่อ");
-    }
-    if (revision === undefined) {
-      applyBindings(result);
     }
     if (reconcile) {
       await synchronizeColumns(false);
     }
-    return result;
+    return { bindings, documentKey: options.documentKey, revision };
   }
   const recoveryMessage = (outcome) => {
     if (outcome === "stale") {

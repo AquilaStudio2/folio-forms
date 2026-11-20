@@ -378,6 +378,7 @@ export function createBridge(options, office, callbacks) {
     if (message.type === BRIDGE_ACK_TYPE) {
       bridgeAcknowledged = true;
       editorSaveSupported = message.editorSaveSupported === true;
+      callbacks.onReady?.();
       if (pendingFieldSelection) {
         const pending = pendingFieldSelection;
         pendingFieldSelection = undefined;

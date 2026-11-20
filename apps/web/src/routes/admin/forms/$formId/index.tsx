@@ -662,6 +662,13 @@ const FormEditorRoute = () => {
 
   const status = formStatusDetails[loadedForm.status];
 
+  const busyDraftActionLabel = editorDraftUnresolved
+    ? "กำลังตรวจผล…"
+    : "กำลังบันทึก…";
+  const draftActionLabel = editorDraftUnresolved
+    ? "ตรวจผลรอบเดิม"
+    : "บันทึกแบบร่าง";
+
   return (
     <div>
       <div className="mb-7 flex flex-wrap items-center justify-between gap-4">
@@ -710,14 +717,14 @@ const FormEditorRoute = () => {
             disabled={!canAct}
           >
             {busy === "save" ? <Spinner /> : <Save size={15} />}
-            {busy === "save" ? "กำลังบันทึก…" : "บันทึกแบบร่าง"}
+            {busy === "save" ? busyDraftActionLabel : draftActionLabel}
           </Button>
           <Button
             id="publish-trigger"
             size="sm"
             type="button"
             onClick={() => requestAction("publish")}
-            disabled={!canAct}
+            disabled={!canAct || editorDraftUnresolved}
           >
             {busy === "publish" ? <Spinner /> : <Send size={15} />}
             {busy === "publish" ? "กำลังเผยแพร่…" : "เผยแพร่"}
