@@ -7,17 +7,25 @@ import { SubmissionResultViewer } from "@/components/submission-result-viewer";
 import { Badge, Card, Notice, Spinner } from "@/components/ui";
 import { apiGet, downloadArtifact, formatDate } from "@/lib/api";
 import type {
+  DocumentKind,
   ReceiptField,
   ResponseRevisionsResponse,
+  SpreadsheetResultContract,
   Submission,
 } from "@/lib/api";
 
-// oxlint-disable-next-line complexity -- The detail route owns read, history, revision, and export state.
-const SubmissionDetailRoute = () => {
-  const { formId, submissionId } = useParams({
-    from: "/admin/forms/$formId/submissions/$submissionId",
-  });
+// oxlint-disable-next-line complexity -- The detail owns read, history, revision, and export state.
+const SubmissionDetailPage = ({
+  formId,
+  submissionId,
+}: {
+  formId: string;
+  submissionId: string;
+}) => {
   const [submission, setSubmission] = useState<Submission | null>(null);
+  const [spreadsheetContract, setSpreadsheetContract] =
+    useState<SpreadsheetResultContract | null>(null);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
   const [data, setData] = useState<Record<string, unknown> | null>(null);
   const [dataRevision, setDataRevision] = useState<number | null>(null);
   const [fields, setFields] = useState<ReceiptField[]>([]);
@@ -51,14 +59,18 @@ const SubmissionDetailRoute = () => {
       setHistoryError(null);
       try {
         const payload = await apiGet<{
-          data: Record<string, unknown>;
-          fields: ReceiptField[];
+          documentKind: DocumentKind;
+          spreadsheetContract: SpreadsheetResultContract | null;
           submission: Submission;
         }>(`/api/submissions/${submissionId}/data?revision=latest`);
         if (cancelled) {
           return;
         }
-        setSubmission(payload.submission);
+        setSubmission({
+          ...payload.submission,
+          documentKind: payload.documentKind,
+        });
+        setSpreadsheetContract(payload.spreadsheetContract);
         void loadHistory();
       } catch (caughtError) {
         if (!cancelled) {
@@ -154,23 +166,22 @@ const SubmissionDetailRoute = () => {
     (revision) => revision.revision === selectedRevision
   );
   const documentKind = submission.documentKind ?? "docx";
-  const downloadDocument = async () => {
-    await downloadArtifact(
-      `/api/submissions/${submissionId}/${documentKind}?revision=${selectedRevision}`,
-      `${submissionId}-${selectedRevision}.${documentKind}`
-    );
-  };
-
-  const downloadPdf = async () => {
-    await downloadArtifact(
-      `/api/submissions/${submissionId}/pdf?revision=${selectedRevision}`,
-      `${submissionId}-${selectedRevision}.pdf`
-    );
+  const download = async (format: DocumentKind | "pdf") => {
+    setDownloadError(null);
+    try {
+      await downloadArtifact(
+        `/api/submissions/${submissionId}/${format}?revision=${selectedRevision}`,
+        `${submissionId}-${selectedRevision}.${format}`
+      );
+    } catch {
+      setDownloadError("Could not download the selected revision.");
+    }
   };
 
   return (
     <div>
       {backLink}
+      {downloadError ? <Notice tone="danger">{downloadError}</Notice> : null}
       {historyError ? (
         <div className="mb-4">
           <Notice tone="danger">{historyError}</Notice>
@@ -214,7 +225,7 @@ const SubmissionDetailRoute = () => {
         <div className="flex gap-2">
           <button
             disabled={!selectedRevisionRecord}
-            onClick={downloadDocument}
+            onClick={() => download(documentKind)}
             className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-[var(--line-strong)] bg-[var(--paper)] px-3 text-sm font-semibold hover:border-[var(--ink)]"
           >
             <FileText size={15} />
@@ -222,7 +233,7 @@ const SubmissionDetailRoute = () => {
           </button>
           <button
             disabled={!selectedRevisionRecord}
-            onClick={downloadPdf}
+            onClick={() => download("pdf")}
             className="inline-flex min-h-10 items-center gap-2 rounded-[10px] border border-[var(--line-strong)] bg-[var(--paper)] px-3 text-sm font-semibold hover:border-[var(--ink)]"
           >
             <Download size={15} />
@@ -234,7 +245,7 @@ const SubmissionDetailRoute = () => {
         <SubmissionResultViewer
           configUrl={
             submission.responseId && selectedRevisionRecord
-              ? `/api/admin/results/${submission.responseId}/viewer-config?revision=${selectedRevision}`
+              ? `/api/admin/results/${submission.responseId}/viewer-config?submissionId=${submissionId}&revision=${selectedRevision}`
               : undefined
           }
           data={dataRevision === selectedRevision ? (data ?? {}) : {}}
@@ -244,9 +255,23 @@ const SubmissionDetailRoute = () => {
           fields={dataRevision === selectedRevision ? fields : []}
           fieldsError={historyError ?? revisionError}
           pictures={selectedRevisionRecord?.pictures ?? null}
+          spreadsheetContract={spreadsheetContract}
         />
       </Card>
     </div>
+  );
+};
+
+const SubmissionDetailRoute = () => {
+  const { formId, submissionId } = useParams({
+    from: "/admin/forms/$formId/submissions/$submissionId",
+  });
+  return (
+    <SubmissionDetailPage
+      key={submissionId}
+      formId={formId}
+      submissionId={submissionId}
+    />
   );
 };
 

@@ -135,6 +135,20 @@ const captureSnapshot = (
   });
   return result;
 };
+it("shows saved attachment routing pending without blocking the editor", async () => {
+  transport.get.mockResolvedValue({
+    ...config(),
+    attachmentRoutingPending: true,
+  });
+
+  render(<OnlyOfficeEditor configUrl="/editor-config" title="Excel" />);
+
+  const notice = await screen.findByText(/ไฟล์แนบที่บันทึกไว้ยังอยู่ที่ปลายทางเดิม/u);
+  expect(notice).toHaveAttribute("role", "status");
+  const office = await screen.findByTitle("Office sandbox");
+  expect(office.closest("[inert]")).toBeNull();
+});
+
 describe("ONLYOFFICE plugin reconnect", () => {
   it("reuses the open workbook and adopts a reacquired lease for later downloads", async () => {
     transport.get

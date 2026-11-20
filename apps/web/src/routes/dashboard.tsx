@@ -42,6 +42,13 @@ const Centered = ({ message }: { message: string }) => (
   </div>
 );
 
+const draftHasHistoryMessage =
+  "ไม่สามารถทิ้งฉบับร่างที่มีประวัติการส่ง เพื่อเก็บคำตอบที่ส่งแล้วและฉบับแก้ไขไว้";
+const canConfirmDiscard = (
+  discardingId: string | null,
+  discardError: string | null
+) => discardingId === null && discardError !== draftHasHistoryMessage;
+
 const DashboardRoute = () => {
   const { user, loading: authLoading, signedOut } = useAuth();
   const [rows, setRows] = useState<Submission[]>([]);
@@ -132,7 +139,7 @@ const DashboardRoute = () => {
     restoreDiscardFocus();
   };
   const discardDraft = async () => {
-    if (!discardCandidateId || discardingId) {
+    if (!discardCandidateId || !canConfirmDiscard(discardingId, discardError)) {
       return;
     }
     const id = discardCandidateId;
@@ -152,6 +159,11 @@ const DashboardRoute = () => {
         setDiscardCandidateId(null);
         setLoading(true);
         setDiscardReload((reload) => reload + 1);
+      } else if (
+        caughtError instanceof ApiError &&
+        caughtError.code === "draft_has_history"
+      ) {
+        setDiscardError(draftHasHistoryMessage);
       } else if (
         caughtError instanceof ApiError &&
         caughtError.code === "attachment_outcome_unresolved"
@@ -265,7 +277,12 @@ const DashboardRoute = () => {
                     ดูประวัติการส่งทั้งหมด
                   </Link>
                 ) : null}
-                {submitted ? null : (
+                {!submitted && hasSubmissionHistory ? (
+                  <span className="text-sm text-[var(--ink-soft)]">
+                    {draftHasHistoryMessage}
+                  </span>
+                ) : null}
+                {submitted || hasSubmissionHistory ? null : (
                   <Button
                     type="button"
                     variant="ghost"
@@ -335,7 +352,7 @@ const DashboardRoute = () => {
               พร้อมเอกสารที่บันทึกไว้และไม่สามารถกู้คืนได้
             </p>
             {discardError ? (
-              <div className="mt-4">
+              <div className="mt-4" role="alert">
                 <Notice tone="danger">{discardError}</Notice>
               </div>
             ) : null}
@@ -353,7 +370,7 @@ const DashboardRoute = () => {
                 type="button"
                 variant="danger"
                 onClick={discardDraft}
-                disabled={discardingId !== null}
+                disabled={!canConfirmDiscard(discardingId, discardError)}
               >
                 {discardingId ? <Spinner /> : null}
                 {discardingId ? "กำลังลบ…" : "ยืนยันการทิ้ง"}
