@@ -20,6 +20,7 @@ import {
   resolveSpreadsheetContract,
   XLSX_CONTENT_TYPE,
 } from "../../src/documents/spreadsheets/workbook";
+import type { SpreadsheetWorkbook } from "../../src/documents/spreadsheets/workbook";
 import {
   spreadsheetXmlTree,
   spreadsheetXmlChildren,
@@ -504,6 +505,40 @@ const app = createApp({
   pdmsProjects: null,
 });
 let nativeTemplate: Uint8Array;
+const scalarTemplateInput = (mergedHidden = false) => {
+  const proofRange = mergedHidden ? "'Form'!$B$3:$C$3" : "'Form'!$B$3";
+  const workbook = fixtureWorkbook({
+    cells: [
+      { address: "B1", value: "2570" },
+      { address: "B2", value: "DOC.42" },
+    ],
+    merges: mergedHidden ? ["B3:C3"] : [],
+    names: {
+      _folio_upload_poc_folio_other: "'Form'!$B$4",
+      _folio_upload_poc_folio_proof: proofRange,
+      folio_notes1: "'Form'!$B$5",
+      folio_notes2: "'Form'!$B$6",
+      folio_notes3: "'Form'!$B$7",
+      folio_number: "'Form'!$B$2",
+      folio_other: "'Form'!$B$4",
+      folio_proof: proofRange,
+      folio_year: "'Form'!$B$1",
+    },
+  });
+  return mergedHidden
+    ? mutatePart(workbook, "xl/worksheets/sheet1.xml", (xml) =>
+        xml
+          .replace(
+            "<sheetData>",
+            '<cols><col min="4" max="4" hidden="1" width="8.43" customWidth="1"/></cols><sheetData>'
+          )
+          .replace(
+            "</sheetData>",
+            '<row r="12" hidden="1" ht="15" customHeight="1"/></sheetData>'
+          )
+      )
+    : workbook;
+};
 beforeAll(async () => {
   const jobBase = new URL(
     process.env.ONLYOFFICE_DOCUMENT_BASE_URL ?? "http://localhost:3000"
@@ -521,25 +556,9 @@ beforeAll(async () => {
     throw new Error("Scalar native Builder requires isolated callback port");
   }
   app.listen({ hostname: "0.0.0.0", port: Number(jobBase.port) });
-  const raw = fixtureWorkbook({
-    cells: [
-      { address: "B1", value: "2570" },
-      { address: "B2", value: "DOC.42" },
-    ],
-    merges: [],
-    names: {
-      _folio_upload_poc_folio_other: "'Form'!$B$4",
-      _folio_upload_poc_folio_proof: "'Form'!$B$3",
-      folio_notes1: "'Form'!$B$5",
-      folio_notes2: "'Form'!$B$6",
-      folio_notes3: "'Form'!$B$7",
-      folio_number: "'Form'!$B$2",
-      folio_other: "'Form'!$B$4",
-      folio_proof: "'Form'!$B$3",
-      folio_year: "'Form'!$B$1",
-    },
+  const builtResult = await processSpreadsheet(scalarTemplateInput(), {
+    bindings,
   });
-  const builtResult = await processSpreadsheet(raw, { bindings });
   const { workbook: built } = builtResult;
   nativeTemplate = protectSpreadsheet(
     built,
@@ -611,6 +630,7 @@ const fixture = async (
     table?: boolean;
     tableAttachments?: boolean;
     tableRows?: number;
+    mergedHidden?: boolean;
     tableTemplateNames?: Record<string, string>;
     tableItemRequired?: boolean;
     project?: boolean;
@@ -704,13 +724,16 @@ const fixture = async (
         label: "ตาราง",
       },
     });
-    const withTable = mutatePart(nativeTemplate, "xl/workbook.xml", (xml) =>
-      xml.replace(
-        "</definedNames>",
-        values.tableAttachments
-          ? `<definedName name="folio_rows">'Form'!$B$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_columns_folio_rows">'Form'!$B$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_item">'Form'!$B$10:$B$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_row_proof">'Form'!$C$10:$C$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_row_other">'Form'!$D$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="_folio_upload_poc_folio_row_proof">'Form'!$C$10:$C$${9 + (values.tableRows ?? 4)}</definedName><definedName name="_folio_upload_poc_folio_row_other">'Form'!$D$10:$D$${9 + (values.tableRows ?? 4)}</definedName></definedNames>`
-          : "<definedName name=\"folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_columns_folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_column_folio_item\">'Form'!$B$10:$B$11</definedName></definedNames>"
-      )
+    const withTable = mutatePart(
+      values.mergedHidden ? scalarTemplateInput(true) : nativeTemplate,
+      "xl/workbook.xml",
+      (xml) =>
+        xml.replace(
+          "</definedNames>",
+          values.tableAttachments
+            ? `<definedName name="folio_rows">'Form'!$B$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_columns_folio_rows">'Form'!$B$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_item">'Form'!$B$10:$B$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_row_proof">'Form'!$C$10:$C$${9 + (values.tableRows ?? 4)}</definedName><definedName name="folio_column_folio_row_other">'Form'!$D$10:$D$${9 + (values.tableRows ?? 4)}</definedName><definedName name="_folio_upload_poc_folio_row_proof">'Form'!$C$10:$C$${9 + (values.tableRows ?? 4)}</definedName><definedName name="_folio_upload_poc_folio_row_other">'Form'!$D$10:$D$${9 + (values.tableRows ?? 4)}</definedName></definedNames>`
+            : "<definedName name=\"folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_columns_folio_rows\">'Form'!$B$10:$B$11</definedName><definedName name=\"folio_column_folio_item\">'Form'!$B$10:$B$11</definedName></definedNames>"
+        )
     );
     const prepared = await processSpreadsheet(unprotectSpreadsheet(withTable), {
       bindings: publishedBindings,
@@ -1048,6 +1071,20 @@ const tableRowsSchema = z.array(
     proof: tableAttachmentSchema.nullable(),
   })
 );
+const expectWorkbookAttachment = (
+  workbook: SpreadsheetWorkbook,
+  address: string,
+  row: number,
+  column: number,
+  fileLink: string
+) => {
+  expect(workbook.cells.get(address)?.value).toBe(fileLink);
+  expect(
+    workbook.hyperlinks.find(
+      ({ range }) => range.firstRow === row && range.firstColumn === column
+    )?.target
+  ).toBe(fileLink);
+};
 const file = (bytes = new Uint8Array([0, 255, 7, 1]), name = "Original.PDF") =>
   new File([bytes], name, { type: "application/x-encrypted-private" });
 interface CorrectionBridgeFixture {
@@ -3098,11 +3135,21 @@ test("HTTP rejects zero- and one-byte scalar and table uploads before dispatch, 
 
 for (const templateMode of [false, true]) {
   test(`${templateMode ? "template " : ""}table attachments retain physical gaps and attachment-only two-byte rows across multiple columns`, async () => {
-    const f = await fixture({ tableAttachments: true, templateMode });
+    const f = await fixture({
+      mergedHidden: true,
+      tableAttachments: true,
+      templateMode,
+    });
+    const typedUrl = "https://example.test/not-a-receipt";
+    snapshots.set(
+      f.documentKey,
+      replaceCell(fixtureValue(snapshots.get(f.documentKey)), "B5", typedUrl)
+    );
     const uploads = received.length;
     const completed = await poll(
       f,
       await send(f, {
+        folio_proof: file(new Uint8Array([3, 254]), "scalar.PDF"),
         [JSON.stringify(["folio_row_proof", 2])]: file(
           new Uint8Array([0, 254]),
           "empty.TXT"
@@ -3119,6 +3166,7 @@ for (const templateMode of [false, true]) {
     );
     expect(completed.status).toBe("completed");
     const saved = await draft(f);
+    expect(saved.notes1).toBe(typedUrl);
     expect(saved.rows).toEqual([
       {
         item: null,
@@ -3150,6 +3198,7 @@ for (const templateMode of [false, true]) {
       },
     ]);
     expect(received.slice(uploads).map((entry) => [...entry.bytes])).toEqual([
+      [3, 254],
       [0, 254],
       [7, 254],
       [9, 254],
@@ -3159,9 +3208,77 @@ for (const templateMode of [false, true]) {
       fixtureValue(snapshots.get(f.documentKey))
     );
     expect(workbook.cells.get("C10")?.value ?? null).toBeNull();
-    expect(workbook.cells.get("C12")?.value).toBe(
-      tableRowsSchema.parse(saved.rows)[0]?.proof?.file_link
+    const rows = tableRowsSchema.parse(saved.rows);
+    expectWorkbookAttachment(
+      workbook,
+      "B3",
+      2,
+      1,
+      attachmentSchema.parse(saved.proof).file_link
     );
+    expectWorkbookAttachment(
+      workbook,
+      "C12",
+      11,
+      2,
+      fixtureValue(rows[0]?.proof).file_link
+    );
+    expectWorkbookAttachment(
+      workbook,
+      "D12",
+      11,
+      3,
+      fixtureValue(rows[0]?.other).file_link
+    );
+    expectWorkbookAttachment(
+      workbook,
+      "D13",
+      12,
+      3,
+      fixtureValue(rows[1]?.other).file_link
+    );
+    expect(workbook.names.get("folio_proof")).toMatchObject({
+      firstColumn: 1,
+      firstRow: 2,
+      lastColumn: 2,
+      lastRow: 2,
+    });
+    expect(workbook.merges).toContainEqual(
+      fixtureValue(workbook.names.get("folio_proof"))
+    );
+    const sheet = spreadsheetXmlTree(
+      strFromU8(fixtureValue(workbook.archive[workbook.sheetPath]))
+    );
+    expect(
+      xmlElements(sheet, "row").find((row) => row.attributes.r === "12")
+        ?.attributes.hidden
+    ).toBe("1");
+    expect(
+      xmlElements(sheet, "col").find((col) => col.attributes.min === "4")
+        ?.attributes.hidden
+    ).toBe("1");
+    expect(xmlElements(sheet, "sheetProtection")).toHaveLength(1);
+    const refs = await prisma.ecmAttachmentReference.findMany({
+      where: { responseId: f.response.id, snapshotId: f.documentKey },
+    });
+    const versions = await prisma.ecmAttachmentVersion.findMany({
+      where: { id: { in: refs.map(({ versionId }) => versionId) } },
+    });
+    expect(refs).toHaveLength(4);
+    for (const [tag, physicalRow, link] of [
+      ["proof", null, attachmentSchema.parse(saved.proof).file_link],
+      ["rows.proof", 2, fixtureValue(rows[0]?.proof).file_link],
+      ["rows.other", 2, fixtureValue(rows[0]?.other).file_link],
+      ["rows.other", 3, fixtureValue(rows[1]?.other).file_link],
+    ] as const) {
+      const version = fixtureValue(
+        versions.find(({ fileLink }) => fileLink === link)
+      );
+      expect(version.tag).toBe(tag);
+      expect(
+        refs.find(({ versionId }) => versionId === version.id)?.rowIndex
+      ).toBe(physicalRow);
+    }
   });
 
   test(`${templateMode ? "template " : ""}table attachment-only selected rows validate other required columns before any upload`, async () => {
@@ -3581,6 +3698,135 @@ for (const templateMode of [false, true]) {
     expect(received.length).toBe(uploads);
   });
 }
+
+test.each(["missing scalar link", "swapped physical links"])(
+  "final Builder output with %s cannot replace the committed Draft",
+  async (fault) => {
+    const f = await fixture({ tableAttachments: true, templateMode: true });
+    const initial = await poll(
+      f,
+      await send(f, {
+        folio_proof: file(),
+        [JSON.stringify(["folio_row_proof", 2])]: file(),
+        [JSON.stringify(["folio_row_other", 3])]: file(),
+      })
+    );
+    expect(initial.status).toBe("completed");
+    await resume(f);
+    const before = await draft(f);
+    const persisted = () =>
+      prisma.response.findUniqueOrThrow({ where: { id: f.response.id } });
+    const beforeResponse = await persisted();
+    const key = fixtureValue(beforeResponse.draftObjectKey);
+    const beforeHash = Bun.CryptoHasher.hash(
+      "sha256",
+      await readObject(key),
+      "hex"
+    );
+    const refs = () =>
+      prisma.ecmAttachmentReference.findMany({
+        orderBy: { versionId: "asc" },
+        where: { responseId: f.response.id, snapshotId: f.documentKey },
+      });
+    const beforeRefs = await refs();
+    expect(beforeRefs).toHaveLength(3);
+    const uploads = received.length;
+    const deletes = deleted.length;
+    const checkpoint = crypto.randomUUID();
+    let faults = 0;
+    const fetchOriginal = globalThis.fetch;
+    const corruptBuilderOutput = async (
+      input: Parameters<typeof fetch>[0],
+      init?: Parameters<typeof fetch>[1]
+    ) => {
+      const response = await fetchOriginal(input, init);
+      if (
+        !response.ok ||
+        !(input instanceof URL) ||
+        !input.pathname.endsWith("/canonical.xlsx")
+      ) {
+        return response;
+      }
+      const workbook = readSpreadsheetWorkbook(
+        new Uint8Array(await response.arrayBuffer())
+      );
+      const { archive, sheetPath } = workbook;
+      const sheet = spreadsheetXmlTree(
+        strFromU8(fixtureValue(archive[sheetPath]))
+      );
+      const links = fixtureValue(
+        spreadsheetXmlChildren(sheet, "hyperlinks")[0]
+      );
+      const at = (address: string) =>
+        fixtureValue(
+          spreadsheetXmlChildren(links, "hyperlink").find(
+            (node) => node.attributes.ref === address
+          )
+        );
+      if (fault === "missing scalar link") {
+        const scalar = at("B3");
+        const relationshipId = fixtureValue(
+          Object.entries(scalar.attributes).find(([name]) =>
+            name.endsWith(":id")
+          )?.[1]
+        );
+        const path = templateRelationshipPartPath(sheetPath);
+        const relationships = spreadsheetXmlTree(
+          strFromU8(fixtureValue(archive[path]))
+        );
+        relationships.children = relationships.children.filter(
+          (node) =>
+            typeof node === "string" || node.attributes.Id !== relationshipId
+        );
+        archive[path] = strToU8(serializeSpreadsheetXml(relationships));
+        links.children = links.children.filter((node) => node !== scalar);
+      } else {
+        const first = at("C12");
+        const second = at("D13");
+        first.attributes.ref = "D13";
+        second.attributes.ref = "C12";
+      }
+      archive[sheetPath] = strToU8(serializeSpreadsheetXml(sheet));
+      faults += 1;
+      return new Response(zipSync(archive));
+    };
+    globalThis.fetch = Object.assign(corruptBuilderOutput, {
+      preconnect: fetchOriginal.preconnect,
+    });
+    try {
+      const failed = await poll(
+        f,
+        await send(f, { folio_proof: file() }, "draft", checkpoint)
+      );
+      expect(faults).toBe(1);
+      expect(failed.status).toBe("failed");
+      expect(failed.result?.errorMessage).toContain(
+        "ยืนยันไฟล์แนบในเอกสารที่สร้างเสร็จไม่ได้"
+      );
+      expect(await draft(f)).toEqual(before);
+      expect(await refs()).toEqual(beforeRefs);
+      const afterResponse = await persisted();
+      expect(afterResponse.draftObjectKey).toBe(key);
+      expect(
+        Bun.CryptoHasher.hash("sha256", await readObject(key), "hex")
+      ).toBe(beforeHash);
+      const receipt = await prisma.ecmAttachmentVersion.findFirstOrThrow({
+        where: { operationId: failed.operationId },
+      });
+      const fileToken = fixtureValue(receipt.fileToken);
+      expect(fileToken).toBe(fixtureValue(received[uploads]).token);
+      const recovered = await recover(f, checkpoint);
+      expect(recovered.status).toBe(200);
+      expect(envelopeSchema.parse(await recovered.json()).operationId).toBe(
+        failed.operationId
+      );
+      expect(received.length).toBe(uploads + 1);
+      expect(deleted.slice(deletes)).toEqual([fileToken]);
+    } finally {
+      globalThis.fetch = fetchOriginal;
+    }
+  }
+);
 
 test.each([false, true])(
   "table multi-column failure leaves the complete old Draft and never sends the next physical slot (template mode: %s)",
@@ -5569,6 +5815,23 @@ test("final Admin Correction replaces scalar and table files while preserving th
   });
   expect(correctedScalar.file_token).not.toBe(scalar.file_token);
   expect(correctedRow.file_token).not.toBe(row.file_token);
+  const correctedWorkbook = readSpreadsheetWorkbook(
+    await readObject(correction.objectKey)
+  );
+  expectWorkbookAttachment(
+    correctedWorkbook,
+    "B3",
+    2,
+    1,
+    correctedScalar.file_link
+  );
+  expectWorkbookAttachment(
+    correctedWorkbook,
+    "C12",
+    11,
+    2,
+    correctedRow.file_link
+  );
   expect(received.slice(uploads).map((upload) => upload.bytes)).toEqual([
     replacementScalar,
     replacementRow,
