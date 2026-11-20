@@ -158,7 +158,7 @@ it("hides attachment routing instructions while the prior provider outcome is he
 
   render(<OnlyOfficeEditor configUrl="/editor-config" title="Excel" />);
 
-  await screen.findByText(/ห้ามส่งซ้ำ/u);
+  await screen.findByText("ยังตรวจผลไฟล์แนบรอบเดิมไม่ได้ ห้ามส่งซ้ำ");
   expect(screen.queryByText(/ไฟล์แนบที่บันทึกไว้ยังอยู่ที่ปลายทางเดิม/u)).toBeNull();
 });
 

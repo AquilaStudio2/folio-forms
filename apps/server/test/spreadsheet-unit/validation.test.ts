@@ -142,7 +142,7 @@ describe("authoritative spreadsheet validation", () => {
           readSpreadsheetWorkbook(bytes),
           bindings
         )
-      ).toEqual([bindings.fields.find((field) => field.type === "date")?.id]);
+      ).toEqual(["folio_date"]);
     }
   });
 

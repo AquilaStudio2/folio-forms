@@ -682,7 +682,11 @@ export function createOperations(
               !Number.isSafeInteger(result.version) ||
               result.version < 1))
         ) {
-          throw new Error("ยังยืนยันผลบันทึกต้นแบบ Excel ไม่ได้");
+          throw new Error(
+            preservedDraftKey
+              ? "ยังยืนยันการบันทึกต้นแบบในตัวแก้ไขเดิมไม่ได้"
+              : "ยังยืนยันผลบันทึกต้นแบบ Excel ไม่ได้"
+          );
         }
         window.sessionStorage.removeItem(draftCheckpointKey);
         draftUnresolved = false;
