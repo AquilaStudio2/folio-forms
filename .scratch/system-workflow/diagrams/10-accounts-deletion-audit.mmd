@@ -11,7 +11,7 @@ flowchart LR
     denied["หยุดและให้ลบข้อมูลก่อน"]
     account["ลบบัญชีและข้อมูลเชื่อมที่เกี่ยวข้อง"]
     response["Admin ยืนยันลบ Response หรือเจ้าของทิ้ง Draft"]
-    check["ตรวจ caller intent, owner/Draft, Operation, lease และ unknown upload"]
+    check{"เจ้าของทิ้ง Draft ที่เคยมี Submission หรือไม่"}
     intents["snapshot ทุก revision/workspace/Operation; owner-bound case และ intents"]
     delete["version fence; retire เฉพาะ refs ของ Response; cascade rows"]
     files["initial ECM DELETE เฉพาะ owned file ที่ไร้ surviving refs"]
@@ -25,7 +25,10 @@ flowchart LR
     users --> erase --> clean
     clean -->|"ไม่ผ่าน"| denied
     clean -->|"ผ่าน"| account
-    response --> check --> intents --> delete --> dbCommit{"initial SERIALIZABLE transaction commit หรือไม่"}
+    response --> check
+    check -->|"ใช่"| preserveHistory["409 draft_has_history; เก็บ Draft และประวัติ; ไม่ส่ง DELETE"]
+    check -->|"ไม่ใช่ หรือเป็น Admin ยืนยันลบทั้ง Response"| scopes["ตรวจ intent, owner/Draft, Operation, lease และ unknown upload"]
+    scopes --> intents --> delete --> dbCommit{"initial SERIALIZABLE transaction commit หรือไม่"}
     dbCommit -->|"commit แล้ว"| files
     dbCommit -->|"verified serialization abort"| dbConflict["409 operation_in_progress; คง Response/refs; ยังไม่ dispatch DELETE"]
     dbConflict --> fresh["User Dashboard / Admin Detail ปิดกล่องเดิม โหลดข้อมูลล่าสุด ให้ผู้ใช้ตรวจและยืนยันใหม่เอง"]

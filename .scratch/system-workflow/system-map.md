@@ -1,5 +1,7 @@
 # Folio Forms: แผนผังการทำงานทั้งระบบ
 
+ทบทวน Excel lifecycle วันที่ 20 พฤศจิกายน 2026 บน `fix/xlsx-workbook-consistency` ที่ `fb4fc7daad` เทียบฐาน `ba895614f1`: Admin Apply เก็บ Rules ใน editor; Save/Publish ใช้ checkpoint เดียวเพื่อ commit Rules และ workbook ที่ตรงกันหรือคงฉบับที่บันทึกไว้ทั้งคู่. Draft ที่ binding หายต้องยืนยันการผูกใหม่หรือนำ Rule ออกก่อน Duplicate/Publish. Saved viewer/export ใช้ artifact ของ Draft หรือ Revision ที่เลือก ไม่อ่าน working copy; การทิ้ง Draft ของ User ไม่ลบประวัติที่เคยส่ง. User และ Correction ตรวจ cell/link ตาม physical row และ receipt ก่อน commit; การเปลี่ยน project ภายในไม่ย้ายไฟล์โดยไม่สั่ง Save. ดู §§05, 06, 09, 10 และ [หลักฐานตามตั๋ว](../excel-workbook-consistency-audit/spec.md); runtime ที่ไม่ได้ตรวจและผลจาก DCM จริงแยกออกจากผล sandbox.
+
 ทบทวน Admin XLSX Template Draft วันที่ 20 พฤศจิกายน 2026 บน `fix/admin-excel-button-before-table` จากฐาน `1071d3c` พร้อม Working Tree: สร้างตารางครอบช่องแนบเดิมจะย้าย binding เข้าคอลัมน์ สร้างปุ่มครบแถวข้อมูล และบันทึกต้นแบบใน editor เดิม ดู §05 และ §08 ขอบเขตไม่รวม Production, DCM จริง หรือการแก้ฟอร์มเดิมอัตโนมัติ
 
 ทบทวน source วันที่ 19 พฤศจิกายน 2026 บน `feat/ecm-attachment-safety-implementation` ต่อจาก `1071d3c` พร้อม Working Tree: แก้ cold initialization/rebuild ของปุ่มใน hidden/zero-width columns และ hidden/zero-height rows ให้คง physical binding และ preview ขนาด 0×0 ไม่ย้ายไปช่องข้างเคียง คง default-height fallback, protection และ invalid-geometry rejection การลบ Response ที่ initial SERIALIZABLE transaction abort ก่อน dispatch คืน conflict 409 ตามสถานะจริง ไม่ retry หรือลด isolation ผลแต่ละ source/runtime และขอบเขตที่ยังไม่ผ่านอยู่ใน [รายงาน continuation](../ecm-attachment-safety-implementation/acceptance-report.md#local-continuation-from-1071d3c--2026-11-19) ผลเดิมของ `c91472d` และ [native supplement N09–N18](../ecm-attachment-safety-implementation/acceptance/06-native-final/report.md) คง provenance เดิม ไม่ relabel เป็นผลรอบใหม่
@@ -373,6 +375,7 @@ flowchart TD
     save["Save Template ผ่าน Operation"]
     saved["ฉบับบันทึก: กฎและ workbook ของ XLSX commit พร้อมกัน"]
     publish["Publish ผ่าน Operation"]
+    recover["ตรวจ checkpoint เดิมโดยไม่ส่งซ้ำ"]
     validate["ตรวจเอกสารและ field contract"]
     immutable["สร้าง PublishedTemplate และ Manifest"]
     share["คัดลอก share link"]
@@ -393,6 +396,8 @@ flowchart TD
     design -->|"DOCX"| publish
     working --> publish
     publish --> validate --> immutable --> share
+    save -.->|"ไม่ได้คำตอบที่ยืนยันผล"| recover
+    publish -.->|"ไม่ได้คำตอบที่ยืนยันผล"| recover
     immutable --> metadata
     immutable --> method
     immutable -->|"เปลี่ยนโครงสร้าง"| duplicate --> draft
@@ -406,7 +411,11 @@ XLSX ไม่รับนำเข้าต้นแบบ ใช้ native edi
 
 เมื่อช่วงข้อมูลของตารางใหม่ครอบช่องแนบเดิมที่อยู่เซลล์เดียว ระบบย้ายช่องนั้นเข้าคอลัมน์และบันทึก Template Draft อัตโนมัติ ตารางที่ไม่ได้ย้ายช่องแนบยังใช้ปุ่ม **บันทึกแบบร่าง** เดิม
 
+การแปลงช่องข้อความเดิมต้องบันทึกหลักฐาน marker และปุ่มตรงตำแหน่งก่อนเปลี่ยน Rules เป็นช่องแนบ. ทั้งรอบตรวจหลักฐานและรอบเปลี่ยน Rules ใช้ commit point เดียวกับ Save; ช่องแนบใหม่ไม่มีขั้นตรวจ marker เก่า.
+
 ใน XLSX การใช้ค่าจากแผงตั้งค่ายังอยู่เฉพาะ editor opening และไม่เปลี่ยน `DraftFieldRule` หรือ workbook ที่บันทึก. Save/Publish ส่งชุดกฎและ snapshot ที่ตรวจร่วมกันเข้า Operation ภายใต้ opening, actor/session, lease และ base revision. เมื่อยืนยัน bytes แล้ว Server commit กฎและ pointer/hash ของ workbook พร้อม revision ใน transaction เดียว. จนถึงจุดนั้น การเปิดใหม่และการอ่านฉบับบันทึกใช้คู่เดิม. ถ้าคำตอบของ Save หาย ให้ตรวจ checkpoint ของคำขอเดิม ไม่ส่งใหม่อัตโนมัติ. ตั้งใจยังไม่ผูกตำแหน่งกับตำแหน่งที่สูญหายเป็นคนละสถานะ.
+
+ถ้า Publish สำเร็จแต่คำตอบหาย หน้า Form ที่เผยแพร่แล้วไม่มี editor ให้เปิดใหม่. Admin คนเดิมกู้ผล Operation เดิมได้จาก checkpoint ที่ตรงกัน แม้ session เปลี่ยน; การอ่านนี้ไม่เปิด lease และไม่อนุญาตให้เริ่ม Publish ซ้ำ. ผลที่ตรวจไม่ครบยังคงสถานะไม่ทราบผล.
 
 ร่าง XLSX เดิมที่ตำแหน่งไม่ตรงยังเปิดและดาวน์โหลดได้. Admin เห็น diagnosis และเลือกช่วงหรือยืนยันตำแหน่งคอลัมน์ด้วยตนเอง จากนั้นกด Save ผ่าน commit เดียวกัน. การทำสำเนาร่างที่ยืนยัน mapping ไม่ได้จะหยุดและขอให้ตรวจร่าง ไม่เดาตำแหน่งจาก Tag, offset หรือความกว้างตาราง.
 
