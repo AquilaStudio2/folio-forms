@@ -260,7 +260,8 @@ const fixture = async (
   });
   let fixtureAnchors: Record<string, string> = anchors;
   if (tableMode) {
-    const body = tableMode === "mixed" ? "'Form'!$A$4:$C$6" : "'Form'!$A$4:$B$6";
+    const body =
+      tableMode === "mixed" ? "'Form'!$A$4:$C$6" : "'Form'!$A$4:$B$6";
     fixtureAnchors = {
       folio_body: body,
       folio_columns_folio_projects: body,
