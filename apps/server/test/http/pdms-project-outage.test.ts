@@ -305,7 +305,7 @@ const fixture = async (
   });
   const author = (await (
     await request(`/api/admin/forms/${publicId}/editor-config`, adminToken)
-  ).json()) as Editor;
+  ).json()) as { bridge: Editor["bridge"] & { xlsxDraftRevision: number } };
   const publication = await complete(
     await request(
       `/api/admin/forms/${publicId}/publish`,
@@ -313,6 +313,12 @@ const fixture = async (
       {
         documentKey: author.bridge.documentKey,
         spreadsheetAnchors: Object.entries(fixtureAnchors),
+        xlsxDraft: {
+          bindings,
+          checkpoint: crypto.randomUUID(),
+          revision: author.bridge.xlsxDraftRevision,
+          version: 1,
+        },
       },
       true
     )

@@ -34,6 +34,7 @@ const editorSchema = z.object({
     capabilities: z.record(z.string(), z.string()),
     documentKey: z.string(),
     lease: z.object({ id: z.string(), releaseUrl: z.string() }),
+    xlsxDraftRevision: z.number().optional(),
   }),
   config: z.object({
     document: z.object({ key: z.string(), url: z.string() }),
@@ -127,7 +128,16 @@ const action = async (
     token,
     {
       documentKey: editor.bridge.documentKey,
-      ...(name === "save-template" || name === "publish" ? {} : { data: {} }),
+      ...(name === "save-template" || name === "publish"
+        ? {
+            xlsxDraft: {
+              bindings,
+              checkpoint: crypto.randomUUID(),
+              revision: z.number().parse(editor.bridge.xlsxDraftRevision),
+              version: 1,
+            },
+          }
+        : { data: {} }),
       ...body,
     },
     true
