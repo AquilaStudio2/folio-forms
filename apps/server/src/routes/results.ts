@@ -704,7 +704,11 @@ export function registerResultRoutes(
             id: identity.id,
             name: identity.name,
           },
-          response.form.documentKind
+          response.form.documentKind,
+          {
+            objectKey: documentObjectKey,
+            publishedTemplateId: response.publishedTemplateId,
+          }
         );
       }
     )

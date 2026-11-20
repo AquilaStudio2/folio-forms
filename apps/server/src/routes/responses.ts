@@ -411,7 +411,11 @@ export function registerResponseRoutes(
           response.draftDocumentKey,
           response.form.publicId,
           { id: identity.id, name: identity.name },
-          response.form.documentKind
+          response.form.documentKind,
+          {
+            objectKey: response.draftObjectKey,
+            publishedTemplateId: response.publishedTemplateId,
+          }
         );
       }
     )
