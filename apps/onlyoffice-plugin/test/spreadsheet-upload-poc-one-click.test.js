@@ -83,7 +83,7 @@ const setup = async ({
       candidate = JSON.parse(init.body).xlsxDraft.bindings;
       return {
         operationCapability: "operation-capability",
-        operationId: "poc-save-operation",
+        operationId: `poc-save-operation-${revision + 1}`,
       };
     }
     if (String(url).endsWith("/xlsx-draft/recover") && init.method === "POST") {
@@ -222,6 +222,14 @@ test("confirmation creates a configured attachment and repeat placement reuses t
     label: "ไฟล์แนบ 1",
     required: false,
     type: "text",
+  });
+  expect(saves(harness)).toHaveLength(1);
+  const [firstSave] = saves(harness);
+  expect(JSON.parse(firstSave.body)).toMatchObject({
+    spreadsheetUploadPocSnapshot: [
+      { bindingId: field.id, rowIndex: null, tag: "attachment_1" },
+    ],
+    xlsxDraft: { bindings: { fields: [field] }, revision: 0, version: 1 },
   });
   expect(harness.spreadsheetNames.get(field.anchor)).toContain("B3");
   expect(input(harness, "Title · ชื่อช่อง").value).toBe(field.label);
@@ -377,33 +385,35 @@ test("existing table column is reused with its metadata and body projection", as
       placeholder: null,
     },
   ]);
-  expect(saves(harness)).toHaveLength(1);
-  const [save] = saves(harness);
-  expect(JSON.parse(save.body)).toMatchObject({
-    preserveEditorSession: true,
-    preserveEditorSessionPurpose: "manual",
-    spreadsheetUploadPocSnapshot: [0, 1, 2].map((rowIndex) => ({
-      bindingId: "folio_proof",
-      rowIndex,
-      tag: "items.proof",
-    })),
-    xlsxDraft: {
-      bindings: {
-        ...bindings,
-        table: {
-          ...bindings.table,
-          columns: [
-            {
-              ...bindings.table.columns[0],
-              attachment: choice("หลักฐาน"),
-            },
-          ],
+  expect(saves(harness)).toHaveLength(2);
+  for (const [revision, request] of saves(harness).entries()) {
+    expect(JSON.parse(request.body)).toMatchObject({
+      preserveEditorSession: true,
+      preserveEditorSessionPurpose: "manual",
+      spreadsheetSaveCheckpoint: expect.any(String),
+      spreadsheetUploadPocSnapshot: [0, 1, 2].map((rowIndex) => ({
+        bindingId: "folio_proof",
+        rowIndex,
+        tag: "items.proof",
+      })),
+      xlsxDraft: {
+        bindings: {
+          ...bindings,
+          table: {
+            ...bindings.table,
+            columns: [
+              {
+                ...bindings.table.columns[0],
+                ...(revision ? { attachment: choice("หลักฐาน") } : {}),
+              },
+            ],
+          },
         },
+        revision,
+        version: 1,
       },
-      revision: 0,
-      version: 1,
-    },
-  });
+    });
+  }
   expect(projections[0][0]).toMatchObject({
     bindingId: "folio_proof",
     bodyAnchor: "items",
@@ -442,7 +452,7 @@ const configuredAttachment = (number) => ({
   type: "text",
 });
 
-test("existing scalar conversion saves the new Rules and native button in one checkpoint", async () => {
+test("existing scalar conversion commits ordinary Rules and native proof before attachment Rules", async () => {
   const original = configuredAttachment(1);
   const { harness } = await setup({
     bindings: { ...empty(), fields: [original] },
@@ -453,22 +463,34 @@ test("existing scalar conversion saves the new Rules and native button in one ch
     },
   });
   await click(harness);
-  expect(saves(harness)).toHaveLength(1);
-  const [save] = saves(harness);
-  expect(JSON.parse(save.body)).toMatchObject({
-    preserveEditorSession: true,
-    preserveEditorSessionPurpose: "manual",
-    spreadsheetSaveCheckpoint: expect.any(String),
-    spreadsheetUploadPocSnapshot: [
-      { bindingId: original.id, rowIndex: null, tag: original.key },
-    ],
-    xlsxDraft: {
-      bindings: { fields: [{ ...original, attachment: choice("หลักฐาน") }] },
-      checkpoint: expect.any(String),
-      revision: 0,
-      version: 1,
-    },
+  expect(saves(harness)).toHaveLength(2);
+  const [proof, conversion] = saves(harness).map(({ body }) =>
+    JSON.parse(body)
+  );
+  for (const [revision, body] of [proof, conversion].entries()) {
+    expect(body).toMatchObject({
+      preserveEditorSession: true,
+      preserveEditorSessionPurpose: "manual",
+      spreadsheetSaveCheckpoint: expect.any(String),
+      spreadsheetUploadPocSnapshot: [
+        { bindingId: original.id, rowIndex: null, tag: original.key },
+      ],
+      xlsxDraft: { checkpoint: expect.any(String), revision, version: 1 },
+    });
+    expect(body.spreadsheetAnchors).toContainEqual([
+      original.anchor,
+      "'Sheet1'!$B$3",
+    ]);
+  }
+  expect(proof.xlsxDraft.bindings).toEqual({ ...empty(), fields: [original] });
+  expect(conversion.xlsxDraft.bindings).toMatchObject({
+    ...empty(),
+    fields: [{ ...original, attachment: choice("หลักฐาน") }],
   });
+  expect(conversion.xlsxDraft.checkpoint).not.toBe(proof.xlsxDraft.checkpoint);
+  expect(conversion.spreadsheetSaveCheckpoint).not.toBe(
+    proof.spreadsheetSaveCheckpoint
+  );
 });
 
 test("real orphan mappings name every missing tag and block new placement until explicitly repaired", async () => {
@@ -669,6 +691,18 @@ test("sequential placements keep the document key and save each new native butto
 
 test.each([
   { documentKey: "other-document", editorSessionPreserved: true },
+  {
+    bindingRevision: undefined,
+    documentKey: "document-key",
+    editorSessionPreserved: true,
+  },
+  {
+    bindings: undefined,
+    documentKey: "document-key",
+    editorSessionPreserved: true,
+  },
+  { documentKey: "document-key" },
+  { editorSessionPreserved: true },
   { documentKey: "document-key", editorSessionPreserved: false },
   {},
 ])(
@@ -694,6 +728,23 @@ test.each([
       "document-key"
     );
     expect(saves(harness)).toHaveLength(1);
+    const [save] = saves(harness);
+    expect(harness.editorRestriction).toBe("readOnly");
+    const stored = harness.window.sessionStorage.getItem(
+      "folio-xlsx-draft:one-click-authoring"
+    );
+    expect(JSON.parse(stored)).toEqual({
+      action: "save-template",
+      checkpoint: JSON.parse(save.body).xlsxDraft.checkpoint,
+      leaseId: "test-editor-lease",
+    });
+    expect(
+      harness.messages.findLast(({ message }) => message.type === "operation")
+        .message
+    ).toMatchObject({
+      attachmentCommitUnresolved: true,
+      status: "failed",
+    });
   }
 );
 
@@ -931,7 +982,7 @@ test("changing a saved category and later editing Title and Tag keep one attachm
 });
 
 test.each(["invalid_template", "attachment_template_stale"])(
-  "rejected scalar conversion keeps the original canonical Rules: %s",
+  "a rejected first proof Save never applies attachment Rules: %s",
   async (code) => {
     const original = { ...configuredAttachment(1), required: true };
     const { harness, state } = await setup({
@@ -948,6 +999,21 @@ test.each(["invalid_template", "attachment_template_stale"])(
     await click(harness);
     expect(state().fields).toEqual([original]);
     expect(saves(harness)).toHaveLength(1);
+    const [proof] = saves(harness);
+    const body = JSON.parse(proof.body);
+    expect(body).toMatchObject({
+      spreadsheetSaveCheckpoint: expect.any(String),
+      spreadsheetUploadPocSnapshot: [
+        { bindingId: original.id, rowIndex: null, tag: original.key },
+      ],
+      xlsxDraft: { revision: 0, version: 1 },
+    });
+    expect(body.xlsxDraft.bindings).toEqual({
+      ...empty(),
+      fields: [original],
+    });
+    const { fields } = await working(harness);
+    expect(fields).toEqual([original]);
     expect(harness.statusElement.textContent).toContain("conversion denied");
     expect(harness.statusElement.dataset.state).not.toBe("success");
   }
@@ -971,7 +1037,7 @@ test("a mapped cell moved while its category dialog is open cannot convert or cr
   expect(harness.spreadsheetNames.get(original.anchor)).toBe("'Sheet1'!$D$3");
 });
 
-test("automatic conversion keeps authoring locked until the atomic operation completes", async () => {
+test("automatic conversion waits for the ordinary proof operation to complete", async () => {
   const original = configuredAttachment(1);
   const completionGate = Promise.withResolvers();
   const { harness, state, projections } = await setup({
@@ -981,6 +1047,9 @@ test("automatic conversion keeps authoring locked until the atomic operation com
   });
   await click(harness);
   expect(state().fields).toEqual([original]);
+  expect(saves(harness)).toHaveLength(1);
+  const { fields } = await working(harness);
+  expect(fields).toEqual([original]);
   const stayedLocked =
     action(harness).disabled && input(harness, "Title · ชื่อช่อง").disabled;
   const pendingChoiceRetained = harness.messages.findLast(
@@ -994,7 +1063,7 @@ test("automatic conversion keeps authoring locked until the atomic operation com
   expect(state().fields[0].attachment).toEqual(choice("หลักฐาน"));
   expect(projections).toHaveLength(1);
   expect(action(harness).disabled).toBe(false);
-  expect(saves(harness)).toHaveLength(1);
+  expect(saves(harness)).toHaveLength(2);
 });
 
 test("category chooser rejects forged, stale and unlisted choices without changing the workbook", async () => {
