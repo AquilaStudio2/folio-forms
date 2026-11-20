@@ -12,9 +12,9 @@ import { z } from "zod";
 import { createFormFailureAudit, createFormAudit } from "../audit/events";
 import { requireIdentity, requireAdmin } from "../auth/identity";
 import { databaseErrorCode } from "../db-errors";
+import { diagnoseXlsxDraft } from "../documents/spreadsheets/draft-diagnosis";
 import { spreadsheetEditorSaveOptions } from "../documents/spreadsheets/editor-save-proof";
 import { spreadsheetAnchorSnapshotSchema } from "../documents/spreadsheets/save-snapshot";
-import { savedSpreadsheetUploadPocButtons } from "../documents/spreadsheets/upload-poc";
 import { validateAttachmentStorageMappings } from "../ecm/categories";
 import {
   actionEditorCapability,
@@ -217,16 +217,17 @@ export function registerFormAuthoringRoutes(
                   const rules = await spreadsheetDraftBindings(current.id, tx);
                   return {
                     bindings: rules,
-                    savedButtons: savedSpreadsheetUploadPocButtons(
+                    ...diagnoseXlsxDraft(
                       await readObject(current.objectKey),
-                      rules
+                      rules,
+                      current.contentHash
                     ),
                   };
                 },
                 { isolationLevel: "RepeatableRead" }
               )
             : undefined;
-        const { bindings, savedButtons } = savedDraft ?? {};
+        const { bindings, issues, savedButtons } = savedDraft ?? {};
         const pdmsProjectCatalog = bindings
           ? await openPdmsProjectCatalog({
               bindings,
@@ -257,6 +258,7 @@ export function registerFormAuthoringRoutes(
               ? {
                   spreadsheetBindings: bindings,
                   uploadPocSavedButtons: savedButtons,
+                  xlsxDraftIssues: issues,
                   xlsxDraftProtocol: 1 as const,
                   xlsxDraftRevision: templateDraft.bindingRevision,
                 }

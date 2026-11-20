@@ -287,6 +287,7 @@ export function initializeSpreadsheet(options, setStatus) {
     "ตารางและปุ่มแนบไฟล์ยังรอบันทึกต้นแบบ กรุณากดบันทึกแบบร่างเพื่อลองอีกครั้งก่อนแก้ไขต่อ";
   let pdmsSourceSaveInFlight = false;
   let uploadPocDeleteNeedsSave = false;
+  let repairRemovalPending = false;
   let pendingTemplateDeletePurpose = "manual";
   const deletedUploadPocBindingIds = new Set();
   const deletedUploadPocTargets = new Map();
@@ -404,6 +405,7 @@ export function initializeSpreadsheet(options, setStatus) {
         }
         pendingUploadPocPromotion = null;
         uploadPocDeleteNeedsSave = false;
+        repairRemovalPending = false;
         pendingUploadPocChanges.clear();
       }
     },
@@ -525,6 +527,7 @@ export function initializeSpreadsheet(options, setStatus) {
     return label(caption, node);
   };
   const buttons = [];
+  const repairButtons = new Set();
   const button = (caption, action, recoveryAction = false) => {
     const node = document.createElement("button");
     node.type = "button";
@@ -546,7 +549,11 @@ export function initializeSpreadsheet(options, setStatus) {
         setStatus(pendingPromotionMessage, "error");
         return;
       }
-      if (uploadPocDeleteNeedsSave && !recoveryAction) {
+      if (
+        uploadPocDeleteNeedsSave &&
+        !recoveryAction &&
+        !(repairRemovalPending && repairButtons.has(node))
+      ) {
         setStatus(
           "การลบปุ่มยังรอบันทึกต้นแบบ กรุณากดบันทึกแบบร่างเพื่อลองอีกครั้งก่อนแก้ไขต่อ",
           "error"
@@ -643,7 +650,8 @@ export function initializeSpreadsheet(options, setStatus) {
   };
   async function captureUploadPocTargets(
     bindingIds,
-    sourceBindings = bindings
+    sourceBindings = bindings,
+    removeUnprovedPlacement = false
   ) {
     window.Asc.scope.folioUploadPocDelete = {
       phase: "capture",
@@ -657,6 +665,11 @@ export function initializeSpreadsheet(options, setStatus) {
       const result = typeof raw === "string" ? JSON.parse(raw) : raw;
       if (!result?.ok || !Array.isArray(result.targets)) {
         throw new Error(result?.error || "อ่านข้อมูลปุ่มแนบไฟล์ก่อนบันทึกไม่ได้");
+      }
+      // Explicit removal can identify the exact native objects by managed binding ID and snapshot,
+      // even when their historical cell is unproved. It never authorizes those objects for use.
+      if (removeUnprovedPlacement) {
+        return result.targets;
       }
       window.Asc.scope.folioSpreadsheetAnchors =
         spreadsheetBindingAnchors(sourceBindings);
@@ -1047,7 +1060,7 @@ export function initializeSpreadsheet(options, setStatus) {
     if (!result?.ok) {
       throw new Error(result?.error || "อ่านตำแหน่งคอลัมน์ไม่ได้ กรุณาเปิดต้นแบบใหม่");
     }
-    if (bindings?.table?.id === table.id) {
+    if (!repair && bindings?.table?.id === table.id) {
       bindings = reconcileSpreadsheetColumns(bindings, result);
     }
     if (result.changed) {
@@ -1401,12 +1414,13 @@ export function initializeSpreadsheet(options, setStatus) {
   }
   const id = () =>
     `folio_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 10)}`;
-  async function anchor(anchorName, requestedSelection) {
+  async function anchor(anchorName, requestedSelection, replace = false) {
     const selected = requestedSelection || (await selection());
     window.Asc.scope = window.Asc.scope || {};
     window.Asc.scope.folioSpreadsheetAnchor = {
       anchor: anchorName,
       reference: `'${selected.sheet.replaceAll("'", "''")}'!${selected.address}`,
+      replace,
     };
     if ((await office.callCommandResult(spreadsheetAnchorCommand)) !== true) {
       throw new Error("สร้างตำแหน่งอ้างอิงไม่ได้ กรุณาเลือกช่วงเซลล์ใหม่");
@@ -1556,6 +1570,45 @@ export function initializeSpreadsheet(options, setStatus) {
       selected?.anchors?.some(
         ([name, reference]) => name === entry.anchor && !reference
       );
+    const issues = [...(options.xlsxDraftIssues || [])];
+    const issueLabels = {
+      unbound: "ยังไม่ได้ผูกตำแหน่ง",
+      missing_or_broken_anchor: "ไม่พบตำแหน่งอ้างอิงที่ใช้ได้",
+      untracked_columns: "ไม่มีข้อมูลยืนยันตำแหน่งแต่ละคอลัมน์",
+      ambiguous_columns: "ตำแหน่งคอลัมน์หายหรือขัดแย้งกัน",
+      placement_mismatch: "ช่วงเซลล์ขัดแย้งกับการตั้งค่า",
+      attachment_mismatch: "ตำแหน่งหรือปุ่มแนบไฟล์ไม่ตรงกับการตั้งค่า",
+      validation_mismatch: "กฎชนิดข้อมูลไม่ตรงกับการตั้งค่า",
+      workbook_unproved: "ยืนยันการตั้งค่าของไฟล์ Excel ที่บันทึกไว้ไม่ได้",
+    };
+    const repairCodes = new Set([
+      "unbound",
+      "missing_or_broken_anchor",
+      "untracked_columns",
+      "ambiguous_columns",
+      "placement_mismatch",
+      "validation_mismatch",
+    ]);
+    const canRebind = (entry) =>
+      Boolean(entry?.anchor) &&
+      (missingAnchor(entry) ||
+        issues.some(
+          ({ bindingId, code }) =>
+            repairCodes.has(code) &&
+            (bindingId === entry.id ||
+              entry.columns?.some((column) => column.id === bindingId))
+        ));
+    const repairColumns = document.createElement("fieldset");
+    const repairLegend = document.createElement("legend");
+    repairLegend.textContent =
+      "ระบุลำดับคอลัมน์ของแต่ละช่อง นับจากซ้ายของช่วงข้อมูล เริ่มที่ 1";
+    repairColumns.append(repairLegend);
+    panel.append(repairColumns);
+    const confirmedColumns = new Map();
+    let repairTableId = null;
+    const diagnostic = document.createElement("p");
+    diagnostic.setAttribute("role", "status");
+    panel.append(diagnostic);
     const drafts = new Map();
     const draftBaselines = new Map();
     const pendingDrafts = new Set();
@@ -1667,7 +1720,36 @@ export function initializeSpreadsheet(options, setStatus) {
         editingKind !== "field" ||
         editing?.type !== "picture" ||
         missingAnchor(editing);
-      repairAnchor.hidden = !missingAnchor(editing);
+      repairAnchor.hidden = !canRebind(editing);
+      repairColumns.hidden =
+        repairAnchor.hidden || !table || !editing?.columns?.length;
+      if ((repairColumns.hidden ? null : editing.id) !== repairTableId) {
+        repairTableId = repairColumns.hidden ? null : editing.id;
+        repairColumns.replaceChildren(repairLegend);
+        confirmedColumns.clear();
+        for (const column of repairTableId ? editing.columns : []) {
+          const columnLabel = document.createElement("label");
+          const position = document.createElement("input");
+          position.type = "number";
+          position.min = "1";
+          position.step = "1";
+          const columnCaption = document.createElement("span");
+          columnCaption.textContent = `${column.label} (${column.key})`;
+          columnLabel.append(columnCaption, position);
+          repairColumns.append(columnLabel);
+          confirmedColumns.set(column.id, position);
+        }
+      }
+      const relevantIssues = issues.filter(
+        ({ bindingId }) =>
+          bindingId === null ||
+          (editing
+            ? bindingId === editing.id
+            : entries.some(([, entry]) => entry.id === bindingId))
+      );
+      diagnostic.textContent = [
+        ...new Set(relevantIssues.map(({ code }) => issueLabels[code])),
+      ].join(" · ");
       save.disabled = editing?.computed === true;
       message.textContent = selected
         ? `${selected.sheet}!${selected.address}`
@@ -2310,7 +2392,7 @@ export function initializeSpreadsheet(options, setStatus) {
         spreadsheetUploadPocHasMarkerCommand
       );
       delete window.Asc.scope.folioSpreadsheetUploadPocMarkerNames;
-      const deletingPoc = Boolean(hasPoc || marked);
+      let deletingPoc = Boolean(hasPoc || marked);
       validatePanelDrafts();
       await checkUploadPocPending(window, options, ACTIONS.SAVE_TEMPLATE);
       await readBindings(false);
@@ -2318,12 +2400,25 @@ export function initializeSpreadsheet(options, setStatus) {
       if (!current) {
         throw new Error("ไม่พบช่องเดิมในการตั้งค่าล่าสุด กรุณาเปิดต้นแบบใหม่");
       }
+      const namesOnly =
+        editingKind !== "column" &&
+        issues.some(
+          ({ bindingId, code }) =>
+            bindingId === current.id &&
+            [
+              "missing_or_broken_anchor",
+              "untracked_columns",
+              "ambiguous_columns",
+              "placement_mismatch",
+            ].includes(code)
+        );
       const target = {
         anchor:
           editingKind === "column"
             ? spreadsheetColumnAnchor(current.id)
             : current.anchor,
         removeAnchor: true,
+        namesOnly,
         clearDateFormat: current.type === "date",
         ...(editingKind === "table"
           ? {
@@ -2344,13 +2439,25 @@ export function initializeSpreadsheet(options, setStatus) {
         deletedKind === "table"
           ? current.columns.map((column) => column.id)
           : [current.id];
+      const removedIds = new Set([current.id, ...deletedIds]);
+      const repairRemoval =
+        repairRemovalPending ||
+        issues.some(
+          ({ bindingId, code }) =>
+            removedIds.has(bindingId) && code !== "unbound"
+        );
       let nativeDeleteTargets = [];
       await mutateBinding(
         { kind: editingKind, action: "delete", id: current.id },
         target,
         async () => {
-          if (deletingPoc) {
-            nativeDeleteTargets = await captureUploadPocTargets(deletedIds);
+          if (deletingPoc || repairRemoval) {
+            nativeDeleteTargets = await captureUploadPocTargets(
+              deletedIds,
+              bindings,
+              repairRemoval
+            );
+            deletingPoc ||= nativeDeleteTargets.length > 0;
           }
           window.Asc.scope.folioSpreadsheetValidation = target;
           if (
@@ -2363,8 +2470,17 @@ export function initializeSpreadsheet(options, setStatus) {
           }
         },
         async () => {
-          uploadPocDeleteNeedsSave = true;
-          pendingTemplateDeletePurpose = deletingPoc ? "delete" : "manual";
+          uploadPocDeleteNeedsSave ||= deletingPoc || !repairRemoval;
+          repairRemovalPending ||= repairRemoval && deletingPoc;
+          pendingTemplateDeletePurpose =
+            deletingPoc || deletedUploadPocBindingIds.size
+              ? "delete"
+              : "manual";
+          for (let index = issues.length - 1; index >= 0; index -= 1) {
+            if (removedIds.has(issues[index].bindingId)) {
+              issues.splice(index, 1);
+            }
+          }
           if (deletingPoc) {
             for (const bindingId of deletedIds) {
               deletedUploadPocBindingIds.add(bindingId);
@@ -2407,6 +2523,14 @@ export function initializeSpreadsheet(options, setStatus) {
           }
         }
       );
+      if (repairRemoval) {
+        renderList();
+        setStatus(
+          "นำการตั้งค่าช่องออกแล้ว กรุณากด “บันทึกแบบร่าง” เพื่อยืนยันกับไฟล์ Excel",
+          "success"
+        );
+        return;
+      }
       {
         uploadPocSaveInFlight = true;
         let saved;
@@ -2445,33 +2569,37 @@ export function initializeSpreadsheet(options, setStatus) {
     });
     restorePicture.className = "secondary-action";
     const repairAnchor = button("ผูกตำแหน่งใหม่กับช่วงที่เลือก", async () => {
-      if (!editing?.anchor) {
+      if (!canRebind(editing)) {
         return;
       }
+      validatePanelDrafts();
       const current = await selection();
-      if (
-        !current.anchors?.some(
-          ([name, reference]) => name === editing.anchor && !reference
-        )
-      ) {
-        throw new Error("ช่องนี้มีตำแหน่งอ้างอิงแล้ว กรุณาเลือกช่องที่ตำแหน่งหาย");
-      }
+      const value = { ...editing };
+      delete value.unbound;
       if (editingKind === "table") {
         const range = tableSelection(current.address);
-        if (
-          editing.columns.length > 0 &&
-          range.width !==
-            Math.max(...editing.columns.map((column) => column.offset)) + 1
-        ) {
-          throw new Error(
-            "เลือกช่วงข้อมูลให้มีจำนวนคอลัมน์ตรงกับตารางเดิม โดยไม่รวมหัวตาราง"
-          );
-        }
+        const offsets = new Set();
+        value.columns = editing.columns.map((column) => {
+          const order = Number(confirmedColumns.get(column.id)?.value);
+          if (
+            !Number.isSafeInteger(order) ||
+            order < 1 ||
+            order > range.width ||
+            offsets.has(order)
+          ) {
+            throw new Error(
+              "ระบุลำดับคอลัมน์ให้ครบและไม่ซ้ำในช่วงข้อมูลที่เลือก โดยไม่รวมหัวตาราง"
+            );
+          }
+          offsets.add(order);
+          return { ...column, offset: order - 1 };
+        });
       }
       const target = {
         anchor: editing.anchor,
         sheet: current.sheet,
         address: current.address,
+        useSelection: true,
         ...(editingKind === "table"
           ? {
               extraAnchorNames: spreadsheetBindingAnchors({
@@ -2481,19 +2609,26 @@ export function initializeSpreadsheet(options, setStatus) {
             }
           : {}),
       };
-      const value = { ...editing };
-      delete value.unbound;
       await mutateBinding(
         { action: "upsert", kind: editingKind, value, repair: true },
         target,
         async () => {
-          await anchor(value.anchor, current);
+          await anchor(value.anchor, current, true);
           if (editingKind === "table") {
             await synchronizeColumns(true, value, true);
-            value.columns = bindings.table.columns;
-            initializationError = null;
-          } else {
-            window.Asc.scope.folioSpreadsheetValidation = value;
+          }
+          const placements =
+            editingKind === "table"
+              ? value.columns.map((column) => ({
+                  ...column,
+                  anchor: value.anchor,
+                }))
+              : [value];
+          for (const placement of placements) {
+            if (placement.computed) {
+              continue;
+            }
+            window.Asc.scope.folioSpreadsheetValidation = placement;
             if (
               (await office.callCommandResult(
                 spreadsheetValidationCommand,
@@ -2503,13 +2638,35 @@ export function initializeSpreadsheet(options, setStatus) {
               throw new Error("ตั้งกฎชนิดข้อมูลไม่ได้ กรุณาลองอีกครั้ง");
             }
           }
+        },
+        () => {
+          const ids = new Set([
+            value.id,
+            ...(value.columns || []).map((column) => column.id),
+          ]);
+          for (let index = issues.length - 1; index >= 0; index -= 1) {
+            const issue = issues[index];
+            if (ids.has(issue.bindingId) && repairCodes.has(issue.code)) {
+              issues.splice(index, 1);
+            }
+          }
+          if (editingKind === "table") {
+            initializationError = null;
+          }
+          loadEntry([editingKind, value]);
+          renderList();
         }
       );
       selected = await selection();
       updateControls();
-      setStatus("ผูกตำแหน่งใหม่แล้ว กรุณาบันทึกการแก้ไขช่องและบันทึกแบบร่าง", "success");
+      setStatus(
+        "ผูกตำแหน่งใหม่แล้ว กรุณากด “บันทึกแบบร่าง” เพื่อยืนยันกับไฟล์ Excel",
+        "success"
+      );
     });
     repairAnchor.className = "secondary-action";
+    repairButtons.add(remove);
+    repairButtons.add(repairAnchor);
     const recoveryControlStates = new Map();
     refreshRecoveryControls = () => {
       recoveryStatus.hidden = !pendingRecovery;
@@ -2539,7 +2696,11 @@ export function initializeSpreadsheet(options, setStatus) {
       }
       if (pendingRecovery || uploadPocDeleteNeedsSave) {
         for (const item of buttons) {
-          item.disabled = !pendingRecovery || item !== retryRecovery || busy;
+          item.disabled =
+            busy ||
+            (pendingRecovery
+              ? item !== retryRecovery
+              : !repairRemovalPending || !repairButtons.has(item));
         }
       } else {
         recoveryControlStates.clear();
@@ -2560,7 +2721,7 @@ export function initializeSpreadsheet(options, setStatus) {
         ["", "เลือกช่องเพื่อแก้ไข"],
         ...entries.map(([entryKind, entry]) => [
           entry.id,
-          `${entryKind === "column" ? "↳ " : ""}${entry.label} (${entry.key})${entry.computed ? " · ช่องสูตรเดิม" : ""}`,
+          `${entryKind === "column" ? "↳ " : ""}${entry.label} (${entry.key})${entry.computed ? " · ช่องสูตรเดิม" : ""}${issues.some(({ bindingId }) => bindingId === entry.id) ? " · ตรวจสอบตำแหน่ง" : ""}`,
         ]),
       ]) {
         const item = document.createElement("option");
@@ -2667,7 +2828,7 @@ export function initializeSpreadsheet(options, setStatus) {
         ? office.freezeEditor()
         : office
             .executeMethodResult("SetEditingRestrictions", ["none"])
-            .then(() => synchronizeColumns(true))
+            .then(() => synchronizeColumns(false))
     )
       .catch((error) => {
         initializationError = error;

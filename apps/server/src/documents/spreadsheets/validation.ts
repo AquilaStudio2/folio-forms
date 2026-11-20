@@ -18,6 +18,7 @@ import {
   readSpreadsheetWorkbook,
   resolveSpreadsheetContract,
 } from "./workbook";
+import type { SpreadsheetWorkbook } from "./workbook";
 import {
   serializeSpreadsheetXml,
   spreadsheetXmlChildren,
@@ -147,6 +148,219 @@ const removeValidationNodes = (
       local(child) !== "dataValidations" ||
       spreadsheetXmlChildren(child, "dataValidation").length > 0
   );
+};
+
+const managedDraftOptionListMatches = (
+  { archive }: SpreadsheetWorkbook,
+  name: string,
+  options: string[]
+): boolean => {
+  if (!/^_folio_options_/iu.test(name)) {
+    return false;
+  }
+  const book = spreadsheetXmlTree(
+    templateArchiveText(archive, "xl/workbook.xml")
+  );
+  const [names] = spreadsheetXmlChildren(book, "definedNames");
+  const [sheets] = spreadsheetXmlChildren(book, "sheets");
+  if (!names || !sheets) {
+    return false;
+  }
+  const definition = spreadsheetXmlChildren(names, "definedName").find(
+    (node) => node.attributes.name?.toLowerCase() === name.toLowerCase()
+  );
+  if (!definition || definition.attributes.localSheetId !== undefined) {
+    return false;
+  }
+  const range = parseSpreadsheetRange(nodeText(definition));
+  if (
+    range.sheet !== helperName ||
+    range.firstColumn !== range.lastColumn ||
+    range.lastRow - range.firstRow + 1 !== options.length
+  ) {
+    return false;
+  }
+  const helper = spreadsheetXmlChildren(sheets, "sheet").find(
+    (node) => node.attributes.name === helperName
+  );
+  const relationships = spreadsheetXmlTree(
+    templateArchiveText(archive, "xl/_rels/workbook.xml.rels")
+  );
+  const path = spreadsheetXmlChildren(relationships, "Relationship").find(
+    (node) => node.attributes.Id === helper?.attributes["r:id"]
+  )?.attributes.Target;
+  if (!path) {
+    return false;
+  }
+  const [sheetData] = spreadsheetXmlChildren(
+    spreadsheetXmlTree(
+      templateArchiveText(
+        archive,
+        path.startsWith("/") ? path.slice(1) : `xl/${path}`
+      )
+    ),
+    "sheetData"
+  );
+  if (!sheetData) {
+    return false;
+  }
+  const shared = archive["xl/sharedStrings.xml"]
+    ? spreadsheetXmlChildren(
+        spreadsheetXmlTree(
+          templateArchiveText(archive, "xl/sharedStrings.xml")
+        ),
+        "si"
+      )
+    : [];
+  const values = new Map<string | undefined, string>();
+  const column = spreadsheetColumnName(range.firstColumn);
+  for (const row of spreadsheetXmlChildren(sheetData, "row")) {
+    for (const cell of spreadsheetXmlChildren(row, "c")) {
+      const address = cell.attributes.r;
+      if (
+        address?.match(/^[A-Z]+/u)?.[0] !== column ||
+        spreadsheetXmlChildren(cell, "f").length
+      ) {
+        continue;
+      }
+      const [value] = spreadsheetXmlChildren(
+        cell,
+        cell.attributes.t === "inlineStr" ? "is" : "v"
+      );
+      if (value) {
+        const text = nodeText(value);
+        const item =
+          cell.attributes.t === "s" ? shared[Number(text)] : undefined;
+        values.set(address, item ? nodeText(item) : text);
+      }
+    }
+  }
+  return options.every(
+    (option, index) =>
+      values.get(`${column}${range.firstRow + index + 1}`) === option
+  );
+};
+
+const managedValidationTypes = {
+  boolean: "list",
+  date: "date",
+  dropdown: "list",
+  number: "custom",
+  picture: "none",
+  text: "none",
+} as const;
+
+/** Check saved ranges without expanding them to individual cells. */
+export const mismatchedSpreadsheetDraftValidations = (
+  workbook: SpreadsheetWorkbook,
+  bindings: SpreadsheetBindings
+): string[] => {
+  const sheet = spreadsheetXmlTree(
+    templateArchiveText(workbook.archive, workbook.sheetPath)
+  );
+  const reference = (address: string) =>
+    parseSpreadsheetRange(
+      `'${workbook.sheet.replaceAll("'", "''")}'!${address}`
+    );
+  const validations: {
+    rule: SpreadsheetXmlNode;
+    ranges: SpreadsheetRange[];
+  }[] = [];
+  const visit = (node: SpreadsheetXmlNode): void => {
+    if (local(node) === "dataValidation") {
+      const [sqref] = spreadsheetXmlChildren(node, "sqref");
+      const addresses = node.attributes.sqref ?? (sqref && nodeText(sqref));
+      if (addresses?.trim()) {
+        validations.push({
+          ranges: addresses.trim().split(/\s+/u).map(reference),
+          rule: node,
+        });
+      }
+    } else if (local(node) !== "sheetData") {
+      for (const child of node.children) {
+        if (typeof child !== "string") {
+          visit(child);
+        }
+      }
+    }
+  };
+  visit(sheet);
+  const body = bindings.table && workbook.names.get(bindings.table.anchor);
+  const fields = [
+    ...bindings.fields.map((field) => ({
+      field,
+      range: workbook.names.get(field.anchor),
+    })),
+    ...(body
+      ? (bindings.table?.columns ?? []).map((field) => ({
+          field,
+          range: {
+            ...body,
+            firstColumn: body.firstColumn + field.offset,
+            lastColumn: body.firstColumn + field.offset,
+          },
+        }))
+      : []),
+  ];
+  const mismatches: string[] = [];
+  for (const { field, range } of fields) {
+    if (!range || field.computed || field.source) {
+      continue;
+    }
+    const expected = managedValidationTypes[field.type];
+    let uncovered = [range];
+    let conflict = false;
+    for (const { rule, ranges } of validations) {
+      const overlaps = ranges.filter((entry) =>
+        spreadsheetRangesOverlap(range, entry)
+      );
+      if (!overlaps.length) {
+        continue;
+      }
+      const formula = (name: string) => {
+        const [node] = spreadsheetXmlChildren(rule, name);
+        if (!node) {
+          return "";
+        }
+        const [child] = spreadsheetXmlChildren(node, "f");
+        return nodeText(child ?? node).replace(/^=/u, "");
+      };
+      const first = formula("formula1");
+      const origin = ranges[0] as SpreadsheetRange;
+      const numberFormula = `ISNUMBER(${spreadsheetColumnName(origin.firstColumn)}${origin.firstRow + 1})`;
+      const list = field.type === "boolean" ? ["TRUE", "FALSE"] : field.options;
+      const inline =
+        expected === "list" &&
+        list.every(
+          (option) =>
+            !/[,;"\r\n]/u.test(option) &&
+            option.trim() === option &&
+            !/^[=']/u.test(option)
+        )
+          ? list.join(",")
+          : null;
+      if (
+        (rule.attributes.type ?? "none") !== expected ||
+        (expected === "custom" && first.toUpperCase() !== numberFormula) ||
+        (expected === "date" &&
+          (first !== "0" ||
+            !["2957003", "2958465"].includes(formula("formula2")))) ||
+        (expected === "list" &&
+          (inline === null || (first !== inline && first !== `"${inline}"`)) &&
+          !managedDraftOptionListMatches(workbook, first, list))
+      ) {
+        conflict = true;
+        break;
+      }
+      for (const overlap of overlaps) {
+        uncovered = uncovered.flatMap((part) => subtractRange(part, overlap));
+      }
+    }
+    if (conflict || (expected !== "none" && uncovered.length > 0)) {
+      mismatches.push(field.id);
+    }
+  }
+  return mismatches;
 };
 
 /** Rebuild every editable field's validation from the versioned server contract. */
