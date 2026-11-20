@@ -52,6 +52,8 @@ const fixtureValue = <T>(value: T | null | undefined): T => {
   }
   return value;
 };
+const sha256 = (bytes: Uint8Array) =>
+  new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
 const xmlElements = (
   node: SpreadsheetXmlNode,
   name: string
@@ -6181,6 +6183,18 @@ test("Results exposes trusted unknown-upload follow-up without allowing an Admin
     error: "attachment_outcome_unresolved",
     message: expect.stringContaining("กรุณาติดต่อผู้ดูแล"),
   });
+  const deletesBefore = deleted.length;
+  const discard = await app.handle(
+    new Request(`http://test.local/api/responses/${f.response.id}`, {
+      headers: { Authorization: `Bearer ${f.bearer}` },
+      method: "DELETE",
+    })
+  );
+  expect(discard.status).toBe(409);
+  expect(await discard.json()).toMatchObject({
+    error: "attachment_outcome_unresolved",
+  });
+  expect(deleted).toHaveLength(deletesBefore);
   const status = await app.handle(
     new Request(
       `http://test.local/api/responses/${f.response.id}/attachment-status`,
@@ -6619,6 +6633,18 @@ test("Admin cancellation before dispatch fences an auth-waiting sender without t
   const original = envelopeSchema.parse(await accepted.clone().json());
   try {
     await entered.promise;
+    const deletesBefore = deleted.length;
+    const discard = await app.handle(
+      new Request(`http://test.local/api/responses/${f.response.id}`, {
+        headers: { Authorization: `Bearer ${f.bearer}` },
+        method: "DELETE",
+      })
+    );
+    expect(discard.status).toBe(409);
+    expect(await discard.json()).toMatchObject({
+      error: "operation_in_progress",
+    });
+    expect(deleted).toHaveLength(deletesBefore);
     const waiting = await followUpFor(admin, original.operationId);
     expect(waiting).toMatchObject({ canFence: true, state: "prepared" });
     expect(waiting.versions).toHaveLength(1);
@@ -6658,6 +6684,87 @@ test("Admin cancellation before dispatch fences an auth-waiting sender without t
     loginBarrier = null;
     nextMode = "ok";
   }
+});
+
+test("owner discard of a reopened Draft preserves Submission and Correction history without deleting files", async () => {
+  const owner = await fixture();
+  const admin = await fixture({ admin: true });
+  const submitted = await poll(
+    owner,
+    await send(owner, { folio_proof: file() }, "submit")
+  );
+  expect(submitted.status).toBe("completed");
+  const bridge = await openCorrection(owner, admin);
+  const corrected = await poll(
+    admin,
+    await postCorrection(owner, admin, bridge, {
+      folio_proof: file(new Uint8Array([4, 3, 2]), "Corrected.PDF"),
+    })
+  );
+  expect(corrected.status).toBe("completed");
+  const reopened = await app.handle(
+    new Request(`http://test.local/api/forms/${owner.form.publicId}/start`, {
+      headers: { Authorization: `Bearer ${owner.bearer}` },
+      method: "POST",
+    })
+  );
+  expect(reopened.status).toBe(200);
+  const where = { responseId: owner.response.id };
+  const responseWhere = { id: owner.response.id };
+  const readResponse = () =>
+    prisma.response.findUniqueOrThrow({ where: responseWhere });
+  const readHistory = () =>
+    Promise.all([
+      prisma.submission.findFirstOrThrow({ where }),
+      prisma.correction.findFirstOrThrow({ where }),
+    ] as const);
+  const readReferences = () =>
+    prisma.ecmAttachmentReference.findMany({
+      orderBy: [{ versionId: "asc" }, { snapshotId: "asc" }],
+      where,
+    });
+  const savedDraft = await readResponse();
+  expect(savedDraft.status).toBe("draft");
+  const history = await readHistory();
+  const references = await readReferences();
+  expect(references).toHaveLength(2);
+  const workbookHashes = () =>
+    Promise.all(
+      history.map(async (entry) => sha256(await readObject(entry.objectKey)))
+    );
+  const fileHashes = () =>
+    history.map((entry) => {
+      const data = z.object({ proof: attachmentSchema }).parse(entry.data);
+      const stored = providerFiles.get(new URL(data.proof.file_link).pathname);
+      return sha256(fixtureValue(stored).bytes);
+    });
+  const workbooksBefore = await workbookHashes();
+  const filesBefore = fileHashes();
+  const deletesBefore = deleted.length;
+  const objectDeletes: string[] = [];
+  const discardApp = createApp({
+    deleteObject: (key) => {
+      objectDeletes.push(key);
+      return Promise.resolve();
+    },
+    legacySso: null,
+    pdmsProjects: null,
+  });
+  const refused = await discardApp.handle(
+    new Request(`http://test.local/api/responses/${owner.response.id}`, {
+      headers: { Authorization: `Bearer ${owner.bearer}` },
+      method: "DELETE",
+    })
+  );
+  expect(refused.status).toBe(409);
+  expect(await refused.json()).toMatchObject({ error: "draft_has_history" });
+  expect(objectDeletes).toEqual([]);
+  expect(deleted).toHaveLength(deletesBefore);
+  expect(await readResponse()).toEqual(savedDraft);
+  expect(await readHistory()).toEqual(history);
+  expect(await readReferences()).toEqual(references);
+  expect(await workbookHashes()).toEqual(workbooksBefore);
+  expect(fileHashes()).toEqual(filesBefore);
 });
 
 test("whole-Response deletion reports a ledger serialization conflict without effects or provider retry", async () => {
@@ -7179,22 +7286,32 @@ test.each(["failed", "unknown"] as const)(
   }
 );
 
-test.each(["other Draft", "other Submission", "own Submission"] as const)(
-  "whole-Response deletion rejects Admin User-route bypass for %s",
+test.each([
+  "other Draft",
+  "other Submission",
+  "own Submission",
+  "foreign User",
+  "Viewer",
+] as const)(
+  "whole-Response deletion rejects owner-route bypass for %s",
   async (scope) => {
     const admin = await fixture({ admin: true });
     const owner = scope === "own Submission" ? admin : await fixture();
-    if (scope !== "other Draft") {
+    if (scope === "other Submission" || scope === "own Submission") {
       const submitted = await poll(
         owner,
         await send(owner, { folio_proof: file() }, "submit")
       );
       expect(submitted.status).toBe("completed");
     }
+    const actor =
+      scope === "foreign User" || scope === "Viewer"
+        ? await fixture({ viewer: scope === "Viewer" })
+        : admin;
     const before = deleted.length;
     const removed = await app.handle(
       new Request(`http://test.local/api/responses/${owner.response.id}`, {
-        headers: { Authorization: `Bearer ${admin.bearer}` },
+        headers: { Authorization: `Bearer ${actor.bearer}` },
         method: "DELETE",
       })
     );
@@ -7257,6 +7374,25 @@ test("whole-Response deletion snapshots Submission, Correction, workspace and Op
     where: { responseId: owner.response.id },
   });
   expect(references.length).toBeGreaterThan(versions.length);
+  const removeAsAdmin = () =>
+    app.handle(
+      new Request(
+        `http://test.local/api/admin/responses/${owner.response.id}`,
+        {
+          body: JSON.stringify({ confirm: true }),
+          headers: {
+            Authorization: `Bearer ${admin.bearer}`,
+            "Content-Type": "application/json",
+          },
+          method: "DELETE",
+        }
+      )
+    );
+  const before = deleted.length;
+  const leased = await removeAsAdmin();
+  expect(leased.status).toBe(409);
+  expect(await leased.json()).toMatchObject({ error: "editor_in_use" });
+  expect(deleted).toHaveLength(before);
   const leases = await prisma.editorLease.findMany({
     where: { targetId: owner.response.id },
   });
@@ -7271,17 +7407,7 @@ test("whole-Response deletion snapshots Submission, Correction, workspace and Op
     );
     expect(released.status).toBe(200);
   }
-  const before = deleted.length;
-  const removed = await app.handle(
-    new Request(`http://test.local/api/admin/responses/${owner.response.id}`, {
-      body: JSON.stringify({ confirm: true }),
-      headers: {
-        Authorization: `Bearer ${admin.bearer}`,
-        "Content-Type": "application/json",
-      },
-      method: "DELETE",
-    })
-  );
+  const removed = await removeAsAdmin();
   expect(removed.status).toBe(200);
   const outcome = z
     .object({
