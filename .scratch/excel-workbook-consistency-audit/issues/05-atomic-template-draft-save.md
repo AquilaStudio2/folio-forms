@@ -20,3 +20,4 @@ Evidence: [A1–A3](../map.md#1-ต้นเหตุและหลักฐา
 ## Comments
 
 - ไม่ใช้ auto-save เพิ่มเป็นวิธีแก้หลัก; auto-save ที่มีอยู่ต้องผ่าน commit point เดียวกัน
+- Actual Chromium + ONLYOFFICE 9.4 baseline: เลือก `A1:A2`, Apply ตาราง, reload ก่อน Save แล้วกดเพิ่มช่องแนบ ได้ “ไม่พบตำแหน่งตาราง กรุณาผูกตำแหน่งตารางใหม่ก่อนบันทึก”. Positive controls: ตาราง `A1:A2` ที่ Save แล้วเปิดซ้ำและสร้าง attachment ได้ครบ physical rows `[0,1]`; ปุ่ม `C1` ก่อนตั้งตาราง `A1:C3` ขณะ auto-save ยังไม่เสร็จอ่าน projected rows ได้ `[]` แต่หลังยืนยันว่า Save สำเร็จอ่านได้ `[0,1,2]`. วัดจาก XLSX ฉบับ canonical ใน sandbox; ไม่ใช่ผลหลังแก้ 05

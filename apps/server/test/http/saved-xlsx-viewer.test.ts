@@ -1,10 +1,11 @@
 import { expect, spyOn, test } from "bun:test";
 
 import { prisma } from "@onlyoffice/db";
-import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
+import { strToU8, unzipSync, zipSync } from "fflate";
 import { z } from "zod";
 
 import { createApp } from "../../src/app";
+import { templateArchiveText } from "../../src/documents/package";
 import { blankSpreadsheet } from "../../src/documents/spreadsheets/blank";
 import {
   createDocumentAccessToken,
@@ -74,7 +75,7 @@ test("saved XLSX viewer pins committed bytes across an active, failed and replac
     const archive = unzipSync(blankSpreadsheet());
     const sheet = "xl/worksheets/sheet1.xml";
     archive[sheet] = strToU8(
-      strFromU8(archive[sheet]).replace(
+      templateArchiveText(archive, sheet).replace(
         "<sheetData/>",
         `<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>${value}</t></is></c></row></sheetData>`
       )
@@ -178,7 +179,7 @@ test("saved XLSX viewer pins committed bytes across an active, failed and replac
     expect(file.status).toBe(200);
     const bytes = new Uint8Array(await file.arrayBuffer());
     const archive = unzipSync(bytes);
-    expect(strFromU8(archive["xl/worksheets/sheet1.xml"])).toContain(
+    expect(templateArchiveText(archive, "xl/worksheets/sheet1.xml")).toContain(
       `<t>${value}</t>`
     );
     return new Bun.CryptoHasher("sha256").update(bytes).digest("hex");

@@ -2603,12 +2603,16 @@ test.each(["before dispatch", "after dispatch"] as const)(
         documentKey: bridge.documentKey,
         leaseId: lease.id,
       });
+      const where = { id: owner.response.id };
+      const { publishedVersion } = await prisma.response.findUniqueOrThrow({
+        select: { publishedVersion: true },
+        where,
+      });
       const started = await app.handle(startRequest(owner));
       expect(started.status).toBe(200);
-      const where = { id: owner.response.id };
       const reopened = await prisma.response.findUniqueOrThrow({ where });
       expect(reopened.draftDocumentKey).not.toBe(bridge.documentKey);
-      expect(reopened.publishedVersion).toBe(owner.response.publishedVersion);
+      expect(reopened.publishedVersion).toBe(publishedVersion);
       expect(deleted.length).toBe(deletes);
       const winner = fixtureValue(reopened.draftObjectKey);
       const winnerBytes = await readObject(winner);
