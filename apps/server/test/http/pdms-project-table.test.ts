@@ -281,8 +281,9 @@ const openTable = async () => {
       },
     },
   });
+  const authorPath = `/api/admin/forms/${publicId}/editor-config?pdmsOpeningId=${crypto.randomUUID()}`;
   const author = (await (
-    await request(`/api/admin/forms/${publicId}/editor-config`, adminToken)
+    await request(authorPath, adminToken)
   ).json()) as Config;
   const sourceColumn = (
     column: typeof bindings.table extends null
@@ -294,31 +295,43 @@ const openTable = async () => {
     type: "dropdown",
     options: [],
   });
-  for (let index = 0; index < 2; index += 1) {
-    const column = bindings.table?.columns[index];
-    if (!column) {
-      throw new Error("Table fixture column is missing");
-    }
-    const changed = await request(
-      `/api/admin/forms/${publicId}/spreadsheet-bindings`,
-      author.bridge.capabilities["configure-fields"] as string,
-      {
-        documentKey: `template-${id}`,
-        revision: index + 1,
-        change: {
-          action: "upsert",
-          kind: "column",
-          value: sourceColumn(column),
-        },
-      },
-      true,
-      "PATCH"
-    );
-    expect(changed.status).toBe(200);
+  if (!bindings.table) {
+    throw new Error("Table fixture is missing");
   }
+  const candidate = {
+    ...bindings,
+    table: {
+      ...bindings.table,
+      columns: bindings.table.columns.map((column, index) =>
+        index < 2 ? sourceColumn(column) : column
+      ),
+    },
+  };
+  expect(
+    await waitFor(
+      await request(
+        `/api/admin/forms/${publicId}/save`,
+        author.bridge.capabilities["save-template"] as string,
+        {
+          documentKey: author.bridge.documentKey,
+          spreadsheetAnchors: Object.entries(names),
+          xlsxDraft: {
+            bindings: candidate,
+            checkpoint: crypto.randomUUID(),
+            revision: 1,
+            version: 1,
+          },
+        },
+        true
+      )
+    )
+  ).toMatchObject({ status: "completed" });
+  const saved = (await (
+    await request(authorPath, adminToken)
+  ).json()) as Config;
   const reopened = await request(
     `/api/admin/forms/${publicId}/spreadsheet-bindings`,
-    author.bridge.capabilities["configure-fields"] as string,
+    saved.bridge.capabilities["configure-fields"] as string,
     undefined,
     true
   );
@@ -349,10 +362,16 @@ const openTable = async () => {
   const published = await waitFor(
     await request(
       `/api/admin/forms/${publicId}/publish`,
-      author.bridge.capabilities.publish as string,
+      saved.bridge.capabilities.publish as string,
       {
-        documentKey: `template-${id}`,
+        documentKey: saved.bridge.documentKey,
         spreadsheetAnchors: Object.entries(names),
+        xlsxDraft: {
+          bindings: candidate,
+          checkpoint: crypto.randomUUID(),
+          revision: 2,
+          version: 1,
+        },
       },
       true
     )

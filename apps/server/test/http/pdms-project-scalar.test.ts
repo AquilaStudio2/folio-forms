@@ -1,23 +1,41 @@
 // oxlint-disable unicorn/no-await-expression-member sort-keys -- HTTP assertions stay next to their authorized request.
-import { beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, test } from "bun:test";
 
 import { prisma } from "@onlyoffice/db";
 
 import { createApp } from "../../src/app";
-import { requireIdentity } from "../../src/auth/identity";
-import { actionEditorCapability } from "../../src/editor/authorization";
-import { claimEditorLease } from "../../src/editor/leases";
-import { bearerFor, createCredentialFixture } from "../fixtures/http";
+import { putObject } from "../../src/storage";
+import {
+  bearerFor,
+  createCredentialFixture,
+  waitForOperation,
+} from "../fixtures/http";
+import { fixtureWorkbook } from "../spreadsheet-unit/fixture";
 
 if (!process.env.DATABASE_URL) {
   throw new Error("An isolated DATABASE_URL is required");
 }
-const app = createApp({ legacySso: null });
+const names = { folio_project: "'Form'!$A$1" };
+let snapshot: Uint8Array | null = null;
+const native = Bun.serve({
+  fetch: () => new Response(snapshot),
+  hostname: "127.0.0.1",
+  port: 0,
+});
+const app = createApp({
+  legacySso: null,
+  onlyOffice: {
+    convertDocxToPdf: () => Promise.resolve(new Uint8Array()),
+    forceSave: () => Promise.resolve({ url: native.url.href }),
+  },
+  onlyOfficeCallbackOrigins: [native.url.origin],
+});
 const formId = crypto.randomUUID();
 const draftId = crypto.randomUUID();
 const publicId = crypto.randomUUID().replaceAll("-", "");
 const documentKey = `pdms-${formId}`;
-let capability = "";
+let bearer = "";
+afterAll(() => native.stop(true));
 beforeAll(async () => {
   const password = `Scalar-fixture-${crypto.randomUUID()}`;
   const admin = await createCredentialFixture({
@@ -26,12 +44,12 @@ beforeAll(async () => {
     password,
     role: "admin",
   });
-  const bearer = await bearerFor(app, admin.email, password);
-  const identity = await requireIdentity(
-    new Request("http://test.local", {
-      headers: { Authorization: `Bearer ${bearer}` },
-    })
+  bearer = await bearerFor(app, admin.email, password);
+  await putObject(
+    `tests/${formId}/draft.xlsx`,
+    fixtureWorkbook({ cells: [], merges: [], names: {} })
   );
+  snapshot = fixtureWorkbook({ cells: [], merges: [], names });
   await prisma.form.create({
     data: {
       documentKind: "xlsx",
@@ -48,32 +66,18 @@ beforeAll(async () => {
       title: "Scalar source fixture",
     },
   });
-  const lease = await claimEditorLease(
-    identity,
-    "template-draft",
-    draftId,
-    formId
-  );
-  capability = actionEditorCapability(
-    identity,
-    { documentKey, formId, targetId: draftId, targetType: "template-draft" },
-    "configure-fields",
-    lease
-  );
 });
-const bindingsRequest = (method: string, body?: unknown) =>
+const authoringRequest = (path: string, body?: unknown, capability?: string) =>
   app.handle(
-    new Request(
-      `http://test.local/api/admin/forms/${publicId}/spreadsheet-bindings`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          "X-Editor-Capability": capability,
-        },
-        method,
-        ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-      }
-    )
+    new Request(`http://test.local/api/admin/forms/${publicId}/${path}`, {
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${bearer}`,
+        ...(capability ? { "X-Editor-Capability": capability } : {}),
+      },
+      method: body === undefined ? "GET" : "POST",
+      ...(body === undefined ? {} : { body: JSON.stringify(body) }),
+    })
   );
 
 test("Admin saves and reopens a scalar PDMS Field with its stable Title and Tag", async () => {
@@ -87,24 +91,50 @@ test("Admin saves and reopens a scalar PDMS Field with its stable Title and Tag"
     source: "pdms-project-name",
     type: "dropdown",
   };
-  const saved = await bindingsRequest("PATCH", {
-    change: { action: "upsert", kind: "field", value: field },
-    documentKey,
-    revision: 1,
+  const open = async () => {
+    const response = await authoringRequest("editor-config");
+    expect(response.status).toBe(200);
+    return (await response.json()) as {
+      bridge: { capabilities: Record<string, string>; documentKey: string };
+    };
+  };
+  const { bridge } = await open();
+  const saved = await authoringRequest(
+    "save",
+    {
+      documentKey,
+      spreadsheetAnchors: Object.entries(names),
+      xlsxDraft: {
+        bindings: { fields: [field], table: null, version: 1 },
+        checkpoint: crypto.randomUUID(),
+        revision: 1,
+        version: 1,
+      },
+    },
+    bridge.capabilities["save-template"]
+  );
+  expect(saved.status).toBe(202);
+  const { operationId } = (await saved.json()) as { operationId: string };
+  const operation = await waitForOperation(app, operationId, {
+    Authorization: `Bearer ${bearer}`,
   });
-  expect(saved.status).toBe(200);
-  const reopened = await bindingsRequest("GET");
+  expect(operation).toMatchObject({ status: "completed" });
+  const current = await open();
+  expect(current.bridge.documentKey).not.toBe(documentKey);
+  const reopened = await authoringRequest(
+    "spreadsheet-bindings",
+    undefined,
+    current.bridge.capabilities["configure-fields"]
+  );
   expect(reopened.status).toBe(200);
   expect(await reopened.json()).toMatchObject({
     bindings: { fields: [field] },
-    documentKey,
+    documentKey: current.bridge.documentKey,
     revision: 2,
   });
 });
 
 test("a fresh authorized editor opening loads usable names once and preserves its snapshot on reconnect", async () => {
-  const { fixtureWorkbook } = await import("../spreadsheet-unit/fixture");
-  const { putObject } = await import("../../src/storage");
   const { spreadsheetManifestFieldData } =
     await import("../../src/forms/spreadsheet-fields");
   const { spreadsheetBindingSchema } =
