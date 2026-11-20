@@ -5,6 +5,10 @@ import { prisma } from "@onlyoffice/db";
 
 import { createApp } from "../../src/app";
 import {
+  spreadsheetColumnAnchor,
+  spreadsheetTableColumnsAnchor,
+} from "../../src/documents/spreadsheets/columns";
+import {
   spreadsheetBindingSchema,
   spreadsheetColumnName,
 } from "../../src/documents/spreadsheets/contract";
@@ -122,6 +126,10 @@ const names = {
   folio_scalar: "'Form'!$A$1:$B$1",
   folio_note: "'Form'!$D$1",
   folio_body: "'Form'!$A$4:$C$6",
+  [spreadsheetTableColumnsAnchor("folio_table")]: "'Form'!$A$4:$C$6",
+  [spreadsheetColumnAnchor("folio_column_1")]: "'Form'!$A$4:$A$6",
+  [spreadsheetColumnAnchor("folio_column_2")]: "'Form'!$B$4:$B$6",
+  [spreadsheetColumnAnchor("folio_note_column")]: "'Form'!$C$4:$C$6",
 };
 const request = (
   path: string,

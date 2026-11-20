@@ -247,22 +247,21 @@ test("Admin creates a merged-cell project dropdown with one button and saves all
   let created;
   const harness = createHarness({
     action: "template-edit",
-    capabilityResponses: ["read", "write", "save"],
+    capabilityResponses: ["save"],
     documentKind: "xlsx",
     holdEditorSave: true,
     pdmsProjectEnabled: true,
     responses: [
-      { bindings: initial, documentKey: "document-key", revision: 0 },
       (_url, request) => {
-        created = JSON.parse(request.body).change.value;
-        return {
-          bindings: { ...initial, fields: [created] },
-          documentKey: "document-key",
-          revision: 1,
-        };
+        [created] = JSON.parse(request.body).xlsxDraft.bindings.fields;
+        return { operationCapability: "poll", operationId: "source-created" };
       },
-      { operationCapability: "poll", operationId: "source-created" },
-      completedOperation({ documentKey: "next-template" }),
+      () =>
+        completedOperation({
+          bindingRevision: 1,
+          bindings: { ...initial, fields: [created] },
+          documentKey: "next-template",
+        }),
     ],
     spreadsheetBindings: initial,
     spreadsheetSelection: { address: "A2:B2", sheet: "Form" },
@@ -288,13 +287,6 @@ test("Admin creates a merged-cell project dropdown with one button and saves all
   create.click();
   await flushPlugin();
   await flushPlugin();
-  expect(created).toMatchObject({
-    key: "field_1",
-    label: "ช่อง A2:B2",
-    options: [],
-    source: "pdms-project-name",
-    type: "dropdown",
-  });
   const arrows = harness.spreadsheetShapes.filter(
     (shape) => !shape.Drawing.removed
   );
@@ -316,6 +308,13 @@ test("Admin creates a merged-cell project dropdown with one button and saves all
     request.url.endsWith("/save")
   );
   expect(saved).toBeDefined();
+  expect(created).toMatchObject({
+    key: "field_1",
+    label: "ช่อง A2:B2",
+    options: [],
+    source: "pdms-project-name",
+    type: "dropdown",
+  });
   expect(JSON.parse(saved.body)).toMatchObject({
     documentKey: "document-key",
     spreadsheetAnchors: [[created.anchor, "'Form'!A2:B2"]],
@@ -347,24 +346,20 @@ test.each([false, true])(
     let persisted;
     const harness = createHarness({
       action: "template-edit",
-      capabilityResponses: ["read", "write", "save"],
+      capabilityResponses: ["save"],
       documentKind: "xlsx",
       pdmsProjectEnabled: true,
       responses: [
-        { bindings: initial, documentKey: "document-key", revision: 0 },
         (_url, request) => {
-          persisted = JSON.parse(request.body).change;
-          return {
-            bindings: {
-              ...initial,
-              table: { ...table, columns: [persisted.value] },
-            },
-            documentKey: "document-key",
-            revision: 1,
-          };
+          persisted = JSON.parse(request.body).xlsxDraft;
+          return { operationCapability: "poll", operationId: "source-created" };
         },
-        { operationCapability: "poll", operationId: "source-created" },
-        completedOperation({ documentKey: "next-template" }),
+        () =>
+          completedOperation({
+            bindingRevision: 1,
+            bindings: persisted.bindings,
+            documentKey: "next-template",
+          }),
       ],
       spreadsheetBindings: initial,
       spreadsheetSelection: {
@@ -397,13 +392,13 @@ test.each([false, true])(
       .click();
     await flushPlugin();
     await flushPlugin();
-    const patches = harness.requests.filter(
-      (request) => request.method === "PATCH"
-    );
-    expect(patches).toHaveLength(1);
-    expect(persisted).toMatchObject({
-      kind: "column",
-      value: {
+    expect(harness.requests.map(({ method }) => method)).toEqual([
+      "POST",
+      "GET",
+    ]);
+    expect(persisted.revision).toBe(0);
+    expect(persisted.bindings.table.columns).toMatchObject([
+      {
         id: "folio_column",
         key: "stable_project",
         label: "Stable project title",
@@ -412,7 +407,7 @@ test.each([false, true])(
         source: "pdms-project-name",
         type: "dropdown",
       },
-    });
+    ]);
     expect(
       harness.requests.some((request) => request.url.endsWith("/save"))
     ).toBe(true);

@@ -3,6 +3,10 @@ import { expect, test } from "bun:test";
 import { runInNewContext } from "node:vm";
 
 import {
+  spreadsheetColumnAnchor,
+  spreadsheetTableColumnsAnchor,
+} from "../src/spreadsheet-columns.js";
+import {
   readSpreadsheetPictureFile,
   spreadsheetPictureCommand,
   spreadsheetPictureReconcileCommand,
@@ -27,6 +31,15 @@ const click = async (harness, caption) => {
   await flushPlugin();
 };
 
+const workingField = async (harness) => {
+  expect(harness.requests).toHaveLength(0);
+  const { bindings } =
+    await harness.window.FormBridge.getSpreadsheetBindings(false);
+  expect(harness.requests).toHaveLength(0);
+  expect(bindings.fields).toHaveLength(1);
+  return bindings.fields[0];
+};
+
 const field = {
   anchor: "photo_anchor",
   computed: false,
@@ -44,12 +57,7 @@ test("changing a scalar to picture saves its identity and clears prefill", async
   const bindings = { fields: [field], table: null, version: 1 };
   const harness = createHarness({
     action: "template-edit",
-    capabilityResponses: ["read", "write"],
     documentKind: "xlsx",
-    responses: [
-      { bindings, revision: 0 },
-      { bindings, revision: 1 },
-    ],
     spreadsheetBindings: bindings,
     spreadsheetSelection: {
       address: "B2",
@@ -65,8 +73,7 @@ test("changing a scalar to picture saves its identity and clears prefill", async
   type.value = "picture";
   type.dispatchEvent({ type: "change" });
   await click(harness, "บันทึกการแก้ไข");
-  const patch = harness.requests.find((request) => request.method === "PATCH");
-  expect(JSON.parse(patch.body).change.value).toMatchObject({
+  expect(await workingField(harness)).toMatchObject({
     anchor: field.anchor,
     id: field.id,
     options: [],
@@ -94,7 +101,11 @@ test("saved table columns cannot select picture type", async () => {
     },
     spreadsheetSelection: {
       address: "A5",
-      names: { rows: "'Sheet1'!$A$5:$A$7" },
+      names: {
+        rows: "'Sheet1'!$A$5:$A$7",
+        [spreadsheetColumnAnchor("column")]: "'Sheet1'!$A$5:$A$7",
+        [spreadsheetTableColumnsAnchor("table")]: "'Sheet1'!$A$5:$A$7",
+      },
     },
   });
   await flushPlugin();
@@ -839,20 +850,11 @@ test.each([
   }
 );
 
-test("admin persists the field before placing its frame and can retry a failed placement", async () => {
+test("admin can retry failed frame placement without reapplying or saving the working field", async () => {
   const bindings = { fields: [field], table: null, version: 1 };
-  const pictureBindings = {
-    ...bindings,
-    fields: [{ ...field, type: "picture" }],
-  };
   const harness = createHarness({
     action: "template-edit",
-    capabilityResponses: ["read", "write"],
     documentKind: "xlsx",
-    responses: [
-      { bindings, revision: 0 },
-      { bindings: pictureBindings, revision: 1 },
-    ],
     spreadsheetBindings: bindings,
     spreadsheetSelection: {
       address: "B2",
@@ -873,9 +875,7 @@ test("admin persists the field before placing its frame and can retry a failed p
       original(command, close, recalculate, done);
       return;
     }
-    expect(harness.requests.some((request) => request.method === "PATCH")).toBe(
-      true
-    );
+    expect(harness.requests).toHaveLength(0);
     expect(harness.window.Asc.scope.folioSpreadsheetPicture).toMatchObject({
       anchor: field.anchor,
       id: field.id,
@@ -890,11 +890,15 @@ test("admin persists the field before placing its frame and can retry a failed p
   await click(harness, "บันทึกการแก้ไข");
   expect(harness.statusElement.textContent).toContain("สร้างกรอบรูปไม่ได้");
   expect(harness.window.Asc.scope.folioSpreadsheetPicture).toBeUndefined();
+  const applied = await workingField(harness);
+  expect(applied).toMatchObject({
+    anchor: field.anchor,
+    id: field.id,
+    type: "picture",
+  });
   await click(harness, "สร้างกรอบรูปอีกครั้ง");
   expect(placements).toBe(2);
-  expect(
-    harness.requests.filter((request) => request.method === "PATCH")
-  ).toHaveLength(1);
+  expect(await workingField(harness)).toEqual(applied);
   expect(harness.statusElement.textContent).toContain("เตรียมกรอบรูปแล้ว");
   expect(harness.window.Asc.scope.folioSpreadsheetPicture).toBeUndefined();
 });
@@ -904,12 +908,7 @@ test("editing picture field metadata preserves its attached image and binding id
   const bindings = { fields: [pictureField], table: null, version: 1 };
   const harness = createHarness({
     action: "template-edit",
-    capabilityResponses: ["read", "write"],
     documentKind: "xlsx",
-    responses: [
-      { bindings, revision: 0 },
-      { bindings, revision: 1 },
-    ],
     spreadsheetBindings: bindings,
     spreadsheetSelection: {
       address: "B2",
@@ -943,8 +942,7 @@ test("editing picture field metadata preserves its attached image and binding id
   control(harness, "Title · ชื่อช่อง").value = "ภาพที่ปรับชื่อ";
   await click(harness, "บันทึกการแก้ไข");
   expect(ensures).toBe(1);
-  const patch = harness.requests.find((request) => request.method === "PATCH");
-  expect(JSON.parse(patch.body).change.value).toMatchObject({
+  expect(await workingField(harness)).toMatchObject({
     anchor: field.anchor,
     id: field.id,
     label: "ภาพที่ปรับชื่อ",

@@ -1996,6 +1996,10 @@ export function initializeSpreadsheet(options, setStatus) {
         selected = await selection();
         loadEntry(existingUploadPocEntry(selected, bindings));
         if (entry && !sameValue(entry[1].attachment, category)) {
+          if (!entry[1].attachment) {
+            // Converting an existing binding requires a button proved in its saved base.
+            await saveAttachmentTemplate();
+          }
           attachmentConfiguration = category;
           panelChanged();
           await saveBinding();
