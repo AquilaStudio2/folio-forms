@@ -18,6 +18,7 @@ import { spreadsheetAnchorSnapshotSchema } from "../documents/spreadsheets/save-
 import { validateAttachmentStorageMappings } from "../ecm/categories";
 import {
   actionEditorCapability,
+  editorAuthorization,
   requireActionEditorAuthorization,
   requireEditorScope,
   operationEditorCapability,
@@ -294,17 +295,19 @@ export function registerFormAuthoringRoutes(
     .post(
       "/api/admin/forms/:publicId/xlsx-draft/recover",
       async ({ request, params }) => {
-        const authorization = await requireActionEditorAuthorization(request);
-        const { actor, capability } = authorization;
+        const { actor, capability } = await editorAuthorization(request);
         requireAdmin(actor);
         const form = await findFormByPublicId(params.publicId);
+        const targetId = form.templateDraft?.id;
         if (
           form.documentKind !== "xlsx" ||
-          capability.targetType !== "template-draft" ||
-          capability.formId !== form.id ||
-          capability.targetId !== form.templateDraft?.id ||
-          !capability.leaseId ||
-          !["save-template", "publish"].includes(capability.action)
+          !targetId ||
+          (capability &&
+            (capability.targetType !== "template-draft" ||
+              capability.formId !== form.id ||
+              capability.targetId !== targetId ||
+              !capability.leaseId ||
+              !["save-template", "publish"].includes(capability.action)))
         ) {
           fail(
             403,
@@ -314,7 +317,7 @@ export function registerFormAuthoringRoutes(
         }
         const input = z
           .object({
-            checkpoint: z.uuid(),
+            checkpoint: z.uuidv4(),
             leaseId: z.uuid(),
           })
           .strict()
@@ -324,14 +327,16 @@ export function registerFormAuthoringRoutes(
         }
         return await prisma.$transaction(async (tx) => {
           await tx.$queryRaw`SELECT id FROM forms WHERE id = ${form.id}::uuid FOR UPDATE`;
-          const lease = await tx.editorLease.findFirst({
-            where: {
-              holderUserId: actor.id,
-              id: capability.leaseId,
-              targetId: capability.targetId,
-              targetType: "template_draft",
-            },
-          });
+          const lease = capability
+            ? await tx.editorLease.findFirst({
+                where: {
+                  holderUserId: actor.id,
+                  id: capability.leaseId,
+                  targetId,
+                  targetType: "template_draft",
+                },
+              })
+            : null;
           const original = await tx.operation.findFirst({
             where: {
               actorId: actor.id,
@@ -340,22 +345,31 @@ export function registerFormAuthoringRoutes(
                 equals: input.data.checkpoint,
                 path: ["xlsxDraft", "checkpoint"],
               },
-              targetId: capability.targetId,
+              targetId,
+              targetType: "template_draft",
             },
           });
           if (original) {
             const metadata = operationMetadata(original.metadata);
             if (
-              !lease ||
-              metadata.xlsxDraft?.sessionId !== lease.holderSessionId ||
               metadata.xlsxDraft?.leaseId !== input.data.leaseId ||
-              !original.documentKey
+              !original.documentKey ||
+              !["save-template", "publish"].includes(metadata.action)
             ) {
-              fail(
-                403,
-                "editor_capability_scope_mismatch",
-                "This checkpoint does not belong to this session"
-              );
+              fail(404, "checkpoint_not_found", "Excel checkpoint not found");
+            }
+            const scope = {
+              documentKey: original.documentKey,
+              formId: form.id,
+              targetId,
+              targetType: "template-draft",
+            } as const;
+            const sameLease =
+              lease?.id === input.data.leaseId &&
+              metadata.xlsxDraft.sessionId === lease.holderSessionId;
+            // Reauthentication proves only the current lease, never ownership of the old editor session.
+            if (capability && !sameLease) {
+              await lockActiveEditorLease(tx, { actor, capability }, scope);
             }
             const current = await tx.templateDraft.findUnique({
               select: {
@@ -363,26 +377,28 @@ export function registerFormAuthoringRoutes(
                 contentHash: true,
                 documentKey: true,
               },
-              where: { id: capability.targetId },
+              where: { id: targetId },
             });
             return {
               action: metadata.action,
               current,
-              operationCapability: operationEditorCapability(
-                actor,
-                {
-                  documentKey: original.documentKey,
-                  formId: form.id,
-                  targetId: capability.targetId,
-                  targetType: "template-draft",
-                },
-                original.id
-              ),
+              ...(capability && sameLease
+                ? {
+                    operationCapability: operationEditorCapability(
+                      actor,
+                      scope,
+                      original.id
+                    ),
+                  }
+                : {}),
               operationId: original.id,
               result:
                 original.status === "completed" ? original.result : undefined,
               status: original.status,
             };
+          }
+          if (!capability) {
+            fail(404, "checkpoint_not_found", "Excel checkpoint not found");
           }
           const originalLease =
             lease?.id === input.data.leaseId

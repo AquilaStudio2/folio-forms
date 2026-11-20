@@ -9,6 +9,7 @@ import {
 } from "react";
 
 import { Button } from "@/components/ui";
+import { rememberXlsxPublishCheckpoint } from "@/features/admin-forms/xlsx-publish-recovery";
 import { recoveredAttachmentLease } from "@/features/onlyoffice/attachment-admission-recovery";
 import { createAttachmentCategoryPopupRelay } from "@/features/onlyoffice/attachment-category-popup-relay";
 import {
@@ -728,6 +729,11 @@ export const OnlyOfficeEditor = ({
     let nativeDocumentDirty: boolean | null = null;
     let nativeSaveError: string | null = null;
     let pendingEditorSaveId: string | null = null;
+    let publishCheckpoint: {
+      key: string;
+      value: string;
+      operationId?: string;
+    } | null = null;
     const pdmsPopupRelay = createPdmsPopupRelay({
       bridgeId,
       getPrimary: () => pinnedSourceRef.current,
@@ -766,6 +772,7 @@ export const OnlyOfficeEditor = ({
         // The plugin may close its frame while native saving is in flight.
       }
     };
+
     const respondToCapabilityRequest = (
       request: CapabilityRequestMessage,
       response:
@@ -804,6 +811,7 @@ export const OnlyOfficeEditor = ({
       }
     };
 
+    // oxlint-disable-next-line complexity -- Grant capabilities only after verifying the opening, lease and any Publish checkpoint together.
     const renewCapability = async (
       request: CapabilityRequestMessage,
       requestedSource: MessageEventSource
@@ -835,10 +843,13 @@ export const OnlyOfficeEditor = ({
           return;
         }
         const freshLease = fresh.bridge?.lease;
+        const scope = config.bridge?.uploadPoc;
         if (
           !freshLease ||
           !requestedLeaseId ||
-          leaseRef.current?.id !== requestedLeaseId
+          leaseRef.current?.id !== requestedLeaseId ||
+          (scope?.action === "template-edit" &&
+            freshLease.id !== requestedLeaseId)
         ) {
           respondToCapabilityRequest(
             request,
@@ -859,6 +870,13 @@ export const OnlyOfficeEditor = ({
             requestedSource
           );
           return;
+        }
+        if (request.draftCheckpoint !== undefined) {
+          publishCheckpoint = rememberXlsxPublishCheckpoint(
+            request,
+            scope,
+            freshLease.id
+          );
         }
         respondToCapabilityRequest(
           request,
@@ -1404,6 +1422,29 @@ export const OnlyOfficeEditor = ({
         setMutationState("saving");
       }
       const result = message.operation?.result;
+      if (
+        message.action === "publish" &&
+        publishCheckpoint &&
+        message.operationId
+      ) {
+        if (message.status === "pending") {
+          publishCheckpoint.operationId ??= message.operationId;
+        } else if (
+          message.status === "completed" &&
+          isNonEmptyString(result?.documentKey) &&
+          publishCheckpoint.operationId === message.operationId
+        ) {
+          const { key, value } = publishCheckpoint;
+          try {
+            if (sessionStorage.getItem(key) === value) {
+              sessionStorage.removeItem(key);
+            }
+          } catch {
+            // An intact checkpoint remains available for read-only verification after reload.
+          }
+          publishCheckpoint = null;
+        }
+      }
       if (result?.editorSessionPreserved === true) {
         const uploadPoc = config.bridge?.uploadPoc;
         const canonicalDocumentKey = config.bridge?.documentKey;

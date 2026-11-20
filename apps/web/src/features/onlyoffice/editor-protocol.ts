@@ -93,6 +93,7 @@ interface BridgeReadyMessage {
 export interface CapabilityRequestMessage {
   action: EditorAction;
   bridgeId: string;
+  draftCheckpoint?: unknown;
   requestId: string;
   source: "form-bridge";
   type: "capability-request";

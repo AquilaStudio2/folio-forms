@@ -1,7 +1,8 @@
 // oxlint-disable unicorn/no-await-expression-member -- Keep sequential HTTP assertions adjacent to their request.
-import { afterAll, beforeAll, expect, test } from "bun:test";
+import { afterAll, beforeAll, expect, spyOn, test } from "bun:test";
 
 import { Prisma, prisma } from "@onlyoffice/db";
+import { env } from "@onlyoffice/env/server";
 import { unzipSync } from "fflate";
 
 import { createApp } from "../../src/app";
@@ -979,6 +980,218 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
   } finally {
     nativeSnapshotUrl = null;
     nativeSnapshot = null;
+  }
+});
+
+test("XLSX recovery reads the original after reauthentication and after Publish closes the editor", async () => {
+  const id = crypto.randomUUID();
+  const slug = id.replaceAll("-", "");
+  const draftId = crypto.randomUUID();
+  const objectKey = `tests/${fixtureId}/${id}.xlsx`;
+  const bytes = fixtureWorkbook({ names: { [field.anchor]: "Form!E5" } });
+  const bindings = { ...emptySpreadsheetBindings(), fields: [field] };
+  const password = "Spreadsheet-fixture-password-2026!";
+  const other = await createCredentialFixture({
+    email: `xlsx-other-${id}@example.test`,
+    name: "Other Excel Admin",
+    password,
+    role: "admin",
+  });
+  const otherBearer = await bearerFor(app, other.email, password);
+  const newBearer = await bearerFor(
+    app,
+    `xlsx-admin-${fixtureId}@example.test`,
+    password
+  );
+  await putObject(objectKey, bytes, XLSX_CONTENT_TYPE);
+  storedObjects.push(objectKey);
+  await prisma.form.create({
+    data: {
+      createdBy: adminId,
+      documentKind: "xlsx",
+      id,
+      publicId: slug,
+      templateDraft: {
+        create: {
+          contentHash: contentHash(bytes),
+          documentKey: `xlsx-recovery-${id}`,
+          fieldRules: {
+            createMany: { data: spreadsheetDraftFieldData(bindings) },
+          },
+          id: draftId,
+          objectKey,
+        },
+      },
+      title: "Recover exact Excel operation",
+    },
+  });
+  const path = `/api/admin/forms/${slug}`;
+  const post = (url: string, body: unknown, headers: Record<string, string>) =>
+    app.handle(
+      new Request(`http://test.local${url}`, {
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json", ...headers },
+        method: "POST",
+      })
+    );
+  const editor = async (token: string) => {
+    const response = await request(`${path}/editor-config`, token);
+    expect(response.status).toBe(200);
+    const config = (await response.json()) as {
+      bridge: {
+        capabilities: Record<"save-template" | "publish", string>;
+        documentKey: string;
+        lease: { id: string };
+      };
+    };
+    return config.bridge;
+  };
+  const payload = (key: string, revision: number, checkpoint: string) => ({
+    documentKey: key,
+    spreadsheetAnchors: [[field.anchor, "'Form'!$E$5"]],
+    xlsxDraft: { bindings, checkpoint, revision, version: 1 },
+  });
+  nativeSnapshot = bytes;
+  const { fetch } = globalThis;
+  const builder = env.ONLYOFFICE_INTERNAL_URL.replace(/\/+$/u, "");
+  const builderOutput = `${builder}/test-checkpoint-canonical.xlsx`;
+  // The status contract uses the real Publish route and transaction, not a live Office builder.
+  const engineFetch = (
+    input: Parameters<typeof fetch>[0],
+    options: Parameters<typeof fetch>[1]
+  ) => {
+    if (input === `${builder}/docbuilder`) {
+      return Promise.resolve(
+        Response.json({
+          end: true,
+          urls: { "canonical.xlsx": builderOutput },
+        })
+      );
+    }
+    if (input instanceof URL && input.href === builderOutput) {
+      return Promise.resolve(new Response(bytes));
+    }
+    return fetch(input, options);
+  };
+  const engine = spyOn(globalThis, "fetch").mockImplementation(
+    Object.assign(engineFetch, { preconnect: fetch.preconnect })
+  );
+  nativeSnapshotUrl = new URL("/recovery.xlsx", nativeServer.url).href;
+  try {
+    const before = await editor(bearer);
+    const saveProof = {
+      checkpoint: crypto.randomUUID(),
+      leaseId: before.lease.id,
+    };
+    const saved = await post(
+      `${path}/save`,
+      payload(before.documentKey, 0, saveProof.checkpoint),
+      { "X-Editor-Capability": before.capabilities["save-template"] }
+    );
+    const { operationId: saveId } = (await saved.clone().json()) as {
+      operationId: string;
+    };
+    const savedOutcome = await poll(saved);
+    expect(savedOutcome.status).toBe("completed");
+    const savedDraft = await prisma.templateDraft.findUniqueOrThrow({
+      where: { id: draftId },
+    });
+    storedObjects.push(savedDraft.objectKey);
+    const released = await app.handle(
+      new Request(`http://test.local/api/editor-leases/${before.lease.id}`, {
+        headers: { Authorization: `Bearer ${bearer}` },
+        method: "DELETE",
+      })
+    );
+    expect(released.status).toBe(200);
+    const after = await editor(newBearer);
+    expect(after.lease.id).not.toBe(before.lease.id);
+    const read = (
+      proof: typeof saveProof,
+      headers: Record<string, string>,
+      base = path
+    ) => post(`${base}/xlsx-draft/recover`, proof, headers);
+    const reauthenticated = await read(saveProof, {
+      Authorization: `Bearer ${newBearer}`,
+      "X-Editor-Capability": after.capabilities["save-template"],
+    });
+    const hostAuth = { Authorization: `Bearer ${newBearer}` };
+    const missing = await read(
+      { checkpoint: crypto.randomUUID(), leaseId: after.lease.id },
+      hostAuth
+    );
+
+    const publishProof = {
+      checkpoint: crypto.randomUUID(),
+      leaseId: after.lease.id,
+    };
+    const published = await post(
+      `${path}/publish`,
+      payload(after.documentKey, 1, publishProof.checkpoint),
+      { "X-Editor-Capability": after.capabilities.publish }
+    );
+    const { operationId: publishId } = (await published.clone().json()) as {
+      operationId: string;
+    };
+    const publishOutcome = await poll(published);
+    expect(publishOutcome.status).toBe("completed");
+    expect((await request(`${path}/editor-config`, newBearer)).status).toBe(
+      409
+    );
+    const recovered = await read(publishProof, hostAuth);
+    expect([reauthenticated.status, recovered.status]).toEqual([200, 200]);
+    const recoveredSave = await reauthenticated.json();
+    expect(recoveredSave).toMatchObject({
+      action: "save-template",
+      current: { bindingRevision: 1, documentKey: after.documentKey },
+      operationId: saveId,
+      result: savedOutcome.result,
+      status: "completed",
+    });
+    expect(recoveredSave).not.toHaveProperty("operationCapability");
+    const recoveredPublish = await recovered.json();
+    expect(recoveredPublish).toMatchObject({
+      action: "publish",
+      current: { bindingRevision: 1, documentKey: after.documentKey },
+      operationId: publishId,
+      result: publishOutcome.result,
+      status: "completed",
+    });
+    expect(recoveredPublish).not.toHaveProperty("operationCapability");
+    expect(missing.status).toBe(404);
+    expect(
+      (await read({ ...saveProof, leaseId: after.lease.id }, hostAuth)).status
+    ).toBe(404);
+    expect(
+      (await read(saveProof, hostAuth, `/api/admin/forms/${publicId}`)).status
+    ).toBe(404);
+    expect(
+      (await read(saveProof, { Authorization: `Bearer ${otherBearer}` })).status
+    ).toBe(404);
+    expect(
+      (await read(saveProof, { Authorization: `Bearer ${userBearer}` })).status
+    ).toBe(403);
+    expect(
+      (await read(publishProof, { Authorization: `Bearer ${otherBearer}` }))
+        .status
+    ).toBe(404);
+  } finally {
+    nativeSnapshotUrl = null;
+    engine.mockRestore();
+    nativeSnapshot = null;
+    const published = await prisma.publishedTemplate.findUnique({
+      where: { formId: id },
+    });
+    if (published) {
+      storedObjects.push(published.objectKey);
+    }
+    await prisma.operation.deleteMany({ where: { formId: id } });
+    await prisma.editorLease.deleteMany({ where: { targetId: draftId } });
+    // Published rows are immutable; leave them to the disposable database.
+    if (!published) {
+      await prisma.form.delete({ where: { id } });
+    }
+    await prisma.user.delete({ where: { id: other.id } });
   }
 });
 
