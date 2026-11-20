@@ -15,6 +15,9 @@ export function spreadsheetCaptureValidationCommand() {
   const names = [input.anchor, ...(input.extraAnchorNames || [])].map(
     (anchor) => ({ anchor, reference: lookup(anchor)?.GetRefersTo() ?? null })
   );
+  if (input.namesOnly) {
+    return JSON.stringify({ names, range: null, rules: [], formats: [] });
+  }
   const name = lookup(input.anchor);
   let range;
   try {
@@ -24,7 +27,7 @@ export function spreadsheetCaptureValidationCommand() {
   } catch {
     range = null;
   }
-  if (!range && input.sheet && input.address) {
+  if ((!range || input.useSelection) && input.sheet && input.address) {
     range = Api.GetSheet(input.sheet).GetRange(input.address);
   }
   if (!range) {
@@ -258,7 +261,7 @@ export function spreadsheetClearValidationCommand() {
       return null;
     }
   };
-  const name = lookup(input.anchor);
+  const name = input.namesOnly ? null : lookup(input.anchor);
   let range;
   try {
     range = name?.GetRefersToRange();

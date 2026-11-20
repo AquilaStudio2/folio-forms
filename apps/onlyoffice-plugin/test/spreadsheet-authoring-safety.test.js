@@ -156,6 +156,61 @@ const observeCommands = (harness) => {
   return calls;
 };
 
+test("repairing a missing table anchor requires explicit column choices and stays local until Save", async () => {
+  const first = {
+    computed: false,
+    id: "folio_left",
+    key: "left",
+    label: "Left",
+    offset: 0,
+    options: [],
+    required: false,
+    type: "text",
+  };
+  const table = {
+    anchor: "folio_table_anchor",
+    columns: [
+      first,
+      { ...first, id: "folio_right", key: "right", label: "Right", offset: 1 },
+    ],
+    id: "folio_table",
+    key: "rows",
+    label: "Rows",
+  };
+  const harness = templateHarness({
+    spreadsheetBindings: { fields: [], table, version: 1 },
+    spreadsheetSelection: { address: "A1:B2", names: {} },
+  });
+  acknowledgeBridge(harness);
+  await flushPlugin();
+  const existing = control(harness, "ช่องที่บันทึกแล้ว");
+  existing.value = table.id;
+  existing.dispatchEvent({ type: "change" });
+  control(harness, "Left (left)").value = "2";
+  await click(harness, "ผูกตำแหน่งใหม่กับช่วงที่เลือก");
+  expect(harness.spreadsheetNames.size).toBe(0);
+  expect(harness.statusElement.textContent).toContain("ระบุลำดับคอลัมน์ให้ครบ");
+
+  // Leaving the panel choice cancels it without touching the native workbook.
+  existing.value = "";
+  existing.dispatchEvent({ type: "change" });
+  expect(harness.spreadsheetNames.size).toBe(0);
+  existing.value = table.id;
+  existing.dispatchEvent({ type: "change" });
+  expect(control(harness, "Left (left)").value).toBe("");
+  control(harness, "Left (left)").value = "2";
+  control(harness, "Right (right)").value = "1";
+  await click(harness, "ผูกตำแหน่งใหม่กับช่วงที่เลือก");
+  expect(harness.spreadsheetNames.get(table.anchor)).toBe("'Sheet1'!A1:B2");
+  expect(harness.spreadsheetNames.get(spreadsheetColumnAnchor(first.id))).toBe(
+    "'Sheet1'!$B$1:$B$2"
+  );
+  expect(
+    harness.spreadsheetNames.get(spreadsheetColumnAnchor("folio_right"))
+  ).toBe("'Sheet1'!$A$1:$A$2");
+  expect(harness.requests).toHaveLength(0);
+});
+
 test.each(["save-template", "publish"])(
   "%s blocks pending field settings before any native save or API request",
   async (action) => {

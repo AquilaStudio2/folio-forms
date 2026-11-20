@@ -29,6 +29,7 @@ import {
   attachmentCategoryPopupGuid,
   documentUrl,
   editorConfig,
+  pluginGuid,
   readOnlyViewerConfig,
   xlsxEditorOpening,
 } from "../../src/onlyoffice";
@@ -440,6 +441,366 @@ test("saved Excel templates export XLSX and PDF with admin authorization and act
   ).toBe(documentKey);
 });
 
+const poll = async (response: Response) => {
+  expect(response.status).toBe(202);
+  const { operationId } = (await response.json()) as { operationId: string };
+  for (let attempt = 0; attempt < 100; attempt += 1) {
+    // oxlint-disable-next-line no-await-in-loop -- Poll the original admission, never resend it.
+    const status = await request(`/api/operations/${operationId}`, bearer);
+    // oxlint-disable-next-line no-await-in-loop -- Check the terminal response before retrying.
+    const { operation } = (await status.json()) as {
+      operation: { status: string; result?: unknown };
+    };
+    if (["failed", "completed"].includes(operation.status)) {
+      return operation;
+    }
+    // oxlint-disable-next-line no-await-in-loop -- Bound polling and avoid a busy loop.
+    await Bun.sleep(10);
+  }
+  throw new Error("Test operation did not finish");
+};
+test("a split draft stays readable; verified rebind commits, stale and failed repairs do not", async () => {
+  const id = crypto.randomUUID();
+  const slug = id.replaceAll("-", "");
+  const objectKey = `tests/${fixtureId}/${id}.xlsx`;
+  const bytes = fixtureWorkbook({
+    cells: [],
+    merges: [],
+    names: { [field.anchor]: "#REF!" },
+  });
+  await putObject(objectKey, bytes, XLSX_CONTENT_TYPE);
+  storedObjects.push(objectKey);
+  const form = await prisma.form.create({
+    data: {
+      createdBy: adminId,
+      documentKind: "xlsx",
+      publicId: slug,
+      templateDraft: {
+        create: {
+          contentHash: contentHash(bytes),
+          documentKey: `xlsx-repair-${id}`,
+          fieldRules: {
+            createMany: {
+              data: spreadsheetDraftFieldData({
+                ...emptySpreadsheetBindings(),
+                fields: [field],
+              }),
+            },
+          },
+          objectKey,
+        },
+      },
+      title: "Split Excel draft",
+    },
+  });
+  const path = `/api/admin/forms/${slug}`;
+  try {
+    const config = await request(`${path}/editor-config`, bearer);
+    expect(config.status).toBe(200);
+    const configBody = (await config.json()) as {
+      bridge: {
+        documentKey: string;
+        capabilities: { "save-template": string };
+      };
+      config: {
+        editorConfig: { plugins: { options: Record<string, unknown> } };
+      };
+    };
+    const {
+      bridge,
+      config: { editorConfig: nativeConfig },
+    } = configBody;
+    expect(nativeConfig.plugins.options[pluginGuid]).toMatchObject({
+      xlsxDraftIssues: [
+        { bindingId: field.id, code: "missing_or_broken_anchor" },
+      ],
+    });
+    const duplicate = await app.handle(
+      new Request(`http://test.local${path}/duplicate`, {
+        body: "{}",
+        headers: {
+          Authorization: `Bearer ${bearer}`,
+          "Content-Type": "application/json",
+        },
+        method: "POST",
+      })
+    );
+    expect(duplicate.status).toBe(422);
+    expect(await duplicate.json()).toMatchObject({
+      error: "xlsx_draft_needs_repair",
+    });
+    const download = await request(`${path}/template/xlsx`, bearer);
+    expect(download.status).toBe(200);
+    expect(contentHash(new Uint8Array(await download.arrayBuffer()))).toBe(
+      contentHash(bytes)
+    );
+    const candidate: SpreadsheetBindings = {
+      ...emptySpreadsheetBindings(),
+      fields: [field],
+    };
+    const repair = (draftKey: string, saveToken: string, address: string) =>
+      app.handle(
+        new Request(`http://test.local${path}/save`, {
+          body: JSON.stringify({
+            documentKey: draftKey,
+            spreadsheetAnchors: [[field.anchor, `Form!${address}`]],
+            xlsxDraft: {
+              bindings: candidate,
+              checkpoint: crypto.randomUUID(),
+              revision: 0,
+              version: 1,
+            },
+          }),
+          headers: {
+            "Content-Type": "application/json",
+            "X-Editor-Capability": saveToken,
+          },
+          method: "POST",
+        })
+      );
+    nativeSnapshot = fixtureWorkbook({ cells: [], merges: [], names: {} });
+    nativeSnapshotUrl = new URL("/repair.xlsx", nativeServer.url).href;
+    expect(
+      await poll(
+        await repair(
+          bridge.documentKey,
+          bridge.capabilities["save-template"],
+          "E5"
+        )
+      )
+    ).toMatchObject({
+      status: "failed",
+    });
+    const savedDownload = await request(`${path}/template/xlsx`, bearer);
+    expect(contentHash(new Uint8Array(await savedDownload.arrayBuffer()))).toBe(
+      contentHash(bytes)
+    );
+    nativeSnapshot = fixtureWorkbook({
+      cells: [],
+      merges: [],
+      names: { [field.anchor]: "Form!E5" },
+    });
+    expect(
+      await poll(
+        await repair(
+          bridge.documentKey,
+          bridge.capabilities["save-template"],
+          "E5"
+        )
+      )
+    ).toMatchObject({
+      result: { bindingRevision: 1, bindings: candidate },
+      status: "completed",
+    });
+    const repaired = await request(`${path}/editor-config`, bearer);
+    const current = (await repaired.json()) as typeof configBody;
+    expect(
+      current.config.editorConfig.plugins.options[pluginGuid]
+    ).toMatchObject({ xlsxDraftIssues: [] });
+    const stale = await repair(
+      current.bridge.documentKey,
+      current.bridge.capabilities["save-template"],
+      "E6"
+    );
+    expect(stale.status).toBe(409);
+    expect(await stale.json()).toMatchObject({ error: "stale_document" });
+    const repairedDownload = await request(`${path}/template/xlsx`, bearer);
+    expect(
+      readSpreadsheetWorkbook(
+        new Uint8Array(await repairedDownload.arrayBuffer())
+      ).names.get(field.anchor)
+    ).toMatchObject({
+      firstColumn: 4,
+      firstRow: 4,
+    });
+    const draft = await prisma.templateDraft.findUniqueOrThrow({
+      where: { formId: form.id },
+    });
+    storedObjects.push(draft.objectKey);
+  } finally {
+    nativeSnapshotUrl = null;
+    nativeSnapshot = null;
+    await prisma.operation.deleteMany({ where: { formId: form.id } });
+    await prisma.form.delete({ where: { id: form.id } });
+  }
+});
+
+const table: NonNullable<SpreadsheetBindings["table"]> = {
+  anchor: "folio_rows_anchor",
+  columns: [
+    {
+      computed: false,
+      id: "folio_left",
+      key: "left",
+      label: "Left",
+      offset: 0,
+      options: [],
+      placeholder: null,
+      required: false,
+      type: "text",
+    },
+    {
+      computed: false,
+      id: "folio_right",
+      key: "right",
+      label: "Right",
+      offset: 1,
+      options: [],
+      placeholder: null,
+      required: false,
+      type: "text",
+    },
+  ],
+  id: "folio_rows",
+  key: "rows",
+  label: "Rows",
+};
+
+test.each(
+  [
+    {
+      label: "valid tracked draft",
+      names: {
+        folio_column_folio_left: "Form!A1:A2",
+        folio_column_folio_right: "Form!B1:B2",
+        folio_columns_folio_rows: "Form!A1:B2",
+        folio_rows_anchor: "Form!A1:B2",
+      },
+      table,
+    },
+    {
+      bindingId: table.id,
+      code: "unbound",
+      label: "intentionally unbound table",
+      names: {},
+      table: { ...table, unbound: true as const },
+    },
+    {
+      bindingId: table.id,
+      code: "missing_or_broken_anchor",
+      label: "missing table anchor",
+      names: {},
+      table,
+    },
+    {
+      bindingId: table.id,
+      code: "untracked_columns",
+      label: "same-width legacy table",
+      names: { folio_rows_anchor: "Form!B1:C2" },
+      table,
+    },
+    {
+      bindingId: table.id,
+      code: "ambiguous_columns",
+      label: "two column names at the same slot",
+      names: {
+        folio_column_folio_left: "Form!A1:A2",
+        folio_column_folio_right: "Form!A1:A2",
+        folio_columns_folio_rows: "Form!A1:B2",
+        folio_rows_anchor: "Form!A1:B2",
+      },
+      table,
+    },
+    {
+      bindingId: field.id,
+      code: "attachment_mismatch",
+      fields: [field],
+      label: "button marker at the wrong slot",
+      names: {
+        [field.anchor]: "Form!A1",
+        [`_folio_upload_poc_${field.id}`]: "Form!B1",
+      },
+    },
+    {
+      bindingId: field.id,
+      code: "validation_mismatch",
+      fields: [{ ...field, type: "number" as const }],
+      label: "missing number validation",
+      names: { [field.anchor]: "Form!A1" },
+    },
+  ].map(({ bindingId, code, label, fields, names, table: fixtureTable }) => ({
+    bindings: {
+      ...emptySpreadsheetBindings(),
+      fields: fields ?? [],
+      table: fixtureTable ?? null,
+    },
+    duplicable: !code || code === "unbound",
+    expected: code ? [{ bindingId, code }] : [],
+    label,
+    names: names as Record<string, string>,
+  }))
+)(
+  "draft classification: $label",
+  async ({ bindings, expected, names, duplicable }) => {
+    const id = crypto.randomUUID();
+    const slug = id.replaceAll("-", "");
+    const objectKey = `tests/${fixtureId}/${id}.xlsx`;
+    const bytes = fixtureWorkbook({ cells: [], merges: [], names });
+    await putObject(objectKey, bytes, XLSX_CONTENT_TYPE);
+    storedObjects.push(objectKey);
+    const form = await prisma.form.create({
+      data: {
+        createdBy: adminId,
+        documentKind: "xlsx",
+        publicId: slug,
+        templateDraft: {
+          create: {
+            contentHash: contentHash(bytes),
+            documentKey: `xlsx-classification-${id}`,
+            fieldRules: {
+              createMany: { data: spreadsheetDraftFieldData(bindings) },
+            },
+            objectKey,
+          },
+        },
+        title: "Classify Excel draft",
+      },
+    });
+    try {
+      const path = `/api/admin/forms/${slug}`;
+      const config = await request(`${path}/editor-config`, bearer);
+      expect(config.status).toBe(200);
+      const {
+        config: { editorConfig: nativeConfig },
+      } = (await config.json()) as {
+        config: {
+          editorConfig: {
+            plugins: { options: Record<string, { xlsxDraftIssues: unknown }> };
+          };
+        };
+      };
+      expect(nativeConfig.plugins.options[pluginGuid]?.xlsxDraftIssues).toEqual(
+        expected
+      );
+      const duplicate = await app.handle(
+        new Request(`http://test.local${path}/duplicate`, {
+          body: "{}",
+          headers: {
+            Authorization: `Bearer ${bearer}`,
+            "Content-Type": "application/json",
+          },
+          method: "POST",
+        })
+      );
+      expect(duplicate.status).toBe(duplicable ? 200 : 422);
+      if (duplicable) {
+        const result = (await duplicate.json()) as {
+          form: { publicId: string };
+        };
+        const copy = await prisma.form.delete({
+          include: { templateDraft: true },
+          where: { publicId: result.form.publicId },
+        });
+        if (copy.templateDraft) {
+          storedObjects.push(copy.templateDraft.objectKey);
+        }
+      }
+    } finally {
+      await prisma.form.delete({ where: { id: form.id } });
+    }
+  }
+);
+
 test("frozen Excel draft commits a new workbook and rules together; lost capture leaves the old pair", async () => {
   const templatePath = `/api/admin/forms/${publicId}/template/xlsx`;
   const readSaved = async () => {
@@ -511,25 +872,6 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
   expect(denied.status).toBe(422);
   expect(await denied.json()).toMatchObject({ error: "invalid_template" });
 
-  // oxlint-disable-next-line unicorn/consistent-function-scoping -- The operation poll belongs to this isolated authoring scenario.
-  const poll = async (response: Response) => {
-    expect(response.status).toBe(202);
-    const { operationId } = (await response.json()) as { operationId: string };
-    for (let attempt = 0; attempt < 100; attempt += 1) {
-      // oxlint-disable-next-line no-await-in-loop -- Poll the original admission, never resend it.
-      const status = await request(`/api/operations/${operationId}`, bearer);
-      // oxlint-disable-next-line no-await-in-loop -- Check the terminal response before retrying.
-      const { operation } = (await status.json()) as {
-        operation: { status: string; result?: unknown };
-      };
-      if (["failed", "completed"].includes(operation.status)) {
-        return operation;
-      }
-      // oxlint-disable-next-line no-await-in-loop -- Bound polling and avoid a busy loop.
-      await Bun.sleep(10);
-    }
-    throw new Error("Test operation did not finish");
-  };
   const rejected = await action("save", saveCapability, payload(candidate));
   expect(await poll(rejected)).toMatchObject({ status: "failed" });
   expect(
@@ -561,7 +903,7 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
       )
     );
     expect(recovery.status).toBe(200);
-    const admitted = await saved.clone().json();
+    const admitted = (await saved.clone().json()) as { operationId: string };
     expect(await recovery.json()).toMatchObject({
       action: "save-template",
       operationId: admitted.operationId,
