@@ -689,7 +689,7 @@ export const applySpreadsheetValidation = (
           if (!range || !generatesValidation(field)) {
             return [];
           }
-          const {label} = field;
+          const { label } = field;
           const type = managedValidationTypes[field.type];
           const moved = fields.find(
             (entry) => entry.field.id === field.id

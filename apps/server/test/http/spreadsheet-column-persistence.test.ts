@@ -440,6 +440,7 @@ test("duplicate scalar, table and column tags return the exact actionable confli
     expect(await response.json()).toEqual({
       error: "duplicate_field_tag",
       message: "tag นี้ซ้ำ กรุณาใช้ tag อื่น",
+      preAdmission: true,
     });
   }
   expect(await spreadsheetDraftBindings(f.draftId)).toEqual(bindings);
@@ -657,7 +658,22 @@ test("recovery requires scoped authority and never fences a different editor lea
   const f = await fixture();
   const other = await fixture();
   const body = { checkpoint: crypto.randomUUID(), leaseId: f.bridge.lease.id };
-  expect((await f.recover(body, "")).status).toBe(401);
+  const anonymous = await app.handle(
+    new Request(
+      `http://test.local/api/admin/forms/${f.id.replaceAll("-", "")}/xlsx-draft/recover`,
+      {
+        body: JSON.stringify(body),
+        headers: { "Content-Type": "application/json" },
+        method: "POST",
+      }
+    )
+  );
+  expect(anonymous.status).toBe(401);
+  const bearerOnly = await f.recover(body, "");
+  expect(bearerOnly.status).toBe(404);
+  expect(await bearerOnly.json()).toMatchObject({
+    error: "checkpoint_not_found",
+  });
   expect((await f.recover(body, "invalid")).status).toBe(401);
   expect(
     (await f.recover(body, other.bridge.capabilities["save-template"])).status

@@ -2,6 +2,10 @@
 import { mock } from "bun:test";
 import assert from "node:assert/strict";
 
+import {
+  spreadsheetColumnAnchor,
+  spreadsheetTableColumnsAnchor,
+} from "../../src/documents/spreadsheets/columns";
 import { spreadsheetBindingSchema } from "../../src/documents/spreadsheets/contract";
 import {
   overlaySpreadsheetPictures,
@@ -40,7 +44,12 @@ let workerOptions: Record<string, unknown> = {};
 let lockAgency = false;
 const form = {
   documentKind: "xlsx",
-  templateDraft: { bindingRevision: 2, id: "draft" },
+  templateDraft: {
+    bindingRevision: 2,
+    contentHash: null,
+    id: "draft",
+    objectKey: "trusted.xlsx",
+  },
 };
 let draftRows: ReturnType<typeof DraftFieldData> = [];
 let manifestRows: ReturnType<typeof ManifestFieldData> = [];
@@ -86,18 +95,17 @@ mock.module("@onlyoffice/db", () => ({
     },
   },
 }));
-mock.module("../../src/operations/object-cleanup", () => ({
-  drainObjectCleanupIntents: () => {
-    throw new Error("Unexpected initialization cleanup");
-  },
-  objectCleanupIntentGraceMs: 900_000,
-}));
 mock.module("../../src/responses/data", () => ({
   jsonValue: (value: unknown) => value,
 }));
 mock.module("../../src/storage", () => ({
+  DOCX_CONTENT_TYPE:
+    "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
   deleteObject: () => {
     throw new Error("Unexpected storage delete");
+  },
+  objectExists: () => {
+    throw new Error("Unexpected storage existence check");
   },
   objectKey: () => {
     throw new Error("Unexpected object allocation");
@@ -111,6 +119,9 @@ mock.module("../../src/storage", () => ({
     }
     assert.equal(key, "trusted.xlsx");
     return Promise.resolve(savedBase);
+  },
+  streamObject: () => {
+    throw new Error("Unexpected storage stream");
   },
 }));
 mock.module("../../src/documents/spreadsheets/engine", () => ({
@@ -142,6 +153,39 @@ const metadata = (action: OperationMetadata["action"]): OperationMetadata => ({
       }
     : {}),
 });
+const templateMetadata = (
+  action: "save-template" | "publish",
+  candidate = bindings,
+  revision = 2
+): OperationMetadata => ({
+  ...metadata(action),
+  xlsxDraft: {
+    baseContentHash: null,
+    baseObjectKey: form.templateDraft.objectKey,
+    bindings: candidate,
+    checkpoint: crypto.randomUUID(),
+    revision,
+    version: 1,
+  },
+});
+const trackedTemplateCapture = (bytes: Uint8Array) =>
+  mutatePart(bytes, "xl/workbook.xml", (xml) =>
+    xml.replace(
+      "</definedNames>",
+      `${[
+        [spreadsheetTableColumnsAnchor("folio_table"), "$A$4:$D$8"],
+        [spreadsheetColumnAnchor("folio_quantity"), "$A$4:$A$8"],
+        [spreadsheetColumnAnchor("folio_active"), "$B$4:$B$8"],
+        [spreadsheetColumnAnchor("folio_note"), "$C$4:$C$8"],
+        [spreadsheetColumnAnchor("folio_total"), "$D$4:$D$8"],
+      ]
+        .map(
+          ([name, address]) =>
+            `<definedName name="${name}">'Form'!${address}</definedName>`
+        )
+        .join("")}</definedNames>`
+    )
+  );
 const heartbeat = () => Promise.resolve();
 
 // Altered styles are discarded because the server worker receives its trusted base.
@@ -278,13 +322,19 @@ const oldColumns = table.columns;
 table.columns = [];
 draftRows = spreadsheetDraftFieldData(bindings);
 const callsBeforeSave = calls;
-assert.deepEqual(
-  await prepareSpreadsheetOperation(metadata("save-template"), raw, heartbeat),
-  raw
+const incompleteDraft = readSpreadsheetWorkbook(
+  await prepareSpreadsheetOperation(
+    templateMetadata("save-template"),
+    raw,
+    heartbeat
+  )
 );
+const originalDraft = readSpreadsheetWorkbook(raw);
+assert.deepEqual(incompleteDraft.cells, originalDraft.cells);
+assert.deepEqual(incompleteDraft.names, originalDraft.names);
 assert.equal(calls, callsBeforeSave);
 await assert.rejects(
-  prepareSpreadsheetOperation(metadata("publish"), raw, heartbeat),
+  prepareSpreadsheetOperation(templateMetadata("publish"), raw, heartbeat),
   /คอลัมน์/u
 );
 table.columns = oldColumns;
@@ -293,20 +343,19 @@ const missing = mutatePart(raw, "xl/workbook.xml", (xml) =>
   xml.replace('name="folio_body"', 'name="other_body"')
 );
 await assert.rejects(
-  prepareSpreadsheetOperation(metadata("publish"), missing, heartbeat),
+  prepareSpreadsheetOperation(templateMetadata("publish"), missing, heartbeat),
   /Missing field binding/u
 );
 
-const stale = metadata("publish");
-stale.bindingRevision = 1;
+const stale = templateMetadata("publish", bindings, 1);
 await assert.rejects(
   prepareSpreadsheetOperation(stale, base, heartbeat),
   /configuration changed/u
 );
-const published = metadata("publish");
+const published = templateMetadata("publish");
 const publishedBytes = await prepareSpreadsheetOperation(
   published,
-  base,
+  trackedTemplateCapture(base),
   heartbeat
 );
 assert.equal(
@@ -467,8 +516,8 @@ assert.equal(
 // Publication provides frames for old mappings and never accepts admin photos as answers.
 draftRows = spreadsheetDraftFieldData(pictureBindings);
 const framedPublication = await prepareSpreadsheetOperation(
-  metadata("publish"),
-  trustedPictures,
+  templateMetadata("publish", pictureBindings),
+  trackedTemplateCapture(trustedPictures),
   heartbeat
 );
 assert.equal(
@@ -533,8 +582,8 @@ await prepareSpreadsheetOperation(
 );
 output = pictureRaw;
 const legacyPublication = await prepareSpreadsheetOperation(
-  metadata("publish"),
-  pictureRaw,
+  templateMetadata("publish", pictureBindings),
+  trackedTemplateCapture(pictureRaw),
   heartbeat
 );
 assert.equal(
@@ -573,8 +622,8 @@ const adminMoved = mutatePart(adminLayout, adminDrawingPath, (xml) =>
 );
 output = synchronizeSpreadsheetPictureAnchors(adminMoved, pictureBindings);
 const publishedMoved = await prepareSpreadsheetOperation(
-  metadata("publish"),
-  adminMoved,
+  templateMetadata("publish", pictureBindings),
+  trackedTemplateCapture(adminMoved),
   heartbeat
 );
 assert.ok(workerInput);
@@ -685,7 +734,11 @@ const adminOverlap = mutatePart(adminMoved, adminDrawingPath, (xml) =>
     .replace("<xdr:col>6</xdr:col>", "<xdr:col>0</xdr:col>")
 );
 await assert.rejects(
-  prepareSpreadsheetOperation(metadata("publish"), adminOverlap, heartbeat),
+  prepareSpreadsheetOperation(
+    templateMetadata("publish", pictureBindings),
+    trackedTemplateCapture(adminOverlap),
+    heartbeat
+  ),
   (error: unknown) =>
     error instanceof Error &&
     "code" in error &&

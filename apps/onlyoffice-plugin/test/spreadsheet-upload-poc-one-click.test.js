@@ -737,6 +737,8 @@ test.each([
       action: "save-template",
       checkpoint: JSON.parse(save.body).xlsxDraft.checkpoint,
       leaseId: "test-editor-lease",
+      preservedDocumentKey: "document-key",
+      revision: JSON.parse(save.body).xlsxDraft.revision,
     });
     expect(
       harness.messages.findLast(({ message }) => message.type === "operation")
