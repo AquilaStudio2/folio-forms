@@ -649,6 +649,13 @@ const table = {
   label: "Items",
 };
 
+const trackedTableNames = {
+  rows: "'Sheet1'!$B$3:$C$4",
+  [spreadsheetTableColumnsAnchor(table.id)]: "'Sheet1'!$B$3:$C$4",
+  [spreadsheetColumnAnchor("first")]: "'Sheet1'!$B$3:$B$4",
+  [spreadsheetColumnAnchor("second")]: "'Sheet1'!$C$3:$C$4",
+};
+
 test("deleting a table removes all tracking names while preserving outside cells and names", async () => {
   const initial = { fields: [field], table, version: 1 };
   const saved = { ...initial, table: null };
@@ -659,7 +666,7 @@ test("deleting a table removes all tracking names while preserving outside cells
     spreadsheetSelection: {
       address: "B3:C4",
       names: {
-        rows: "'Sheet1'!$B$3:$C$4",
+        ...trackedTableNames,
         saved_choice: "'Sheet1'!$A$1",
         unrelated: "'Sheet1'!$F$6",
       },
@@ -702,7 +709,7 @@ test("deleting one column clears only its validation and tracking name", async (
     spreadsheetBindings: initial,
     spreadsheetSelection: {
       address: "B3",
-      names: { rows: "'Sheet1'!$B$3:$C$4" },
+      names: trackedTableNames,
       validations: {
         "B3:B4": { formula1: "0", type: "decimal" },
         "C3:C4": { formula1: '"one,two"', type: "list" },
@@ -1090,7 +1097,7 @@ test("moving a column before the freeze acknowledgement still edits its stable i
     spreadsheetBindings: initial,
     spreadsheetSelection: {
       address: "C3",
-      names: { rows: "'Sheet1'!$B$3:$C$4" },
+      names: trackedTableNames,
     },
   });
   acknowledgeBridge(harness);
