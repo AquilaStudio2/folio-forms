@@ -1,6 +1,6 @@
 # 02 — Saved viewer ต้องอ่านเฉพาะ workbook ที่ commit
 
-Status: needs-triage  
+Status: resolved  
 Type: task  
 Priority: P1  
 Blocked by: —  
@@ -12,11 +12,12 @@ Evidence: [R2](../map.md#3-ปัญหาและความเสี่ย�
 
 ## เกณฑ์รับงาน
 
-- [ ] ใช้ fixture ที่ committed workbook กับ staged workbook ต่าง hash. ตอน active Operation, คำขอ saved viewer ได้ bytes ของ committed revision เดิมเท่านั้น; หลัง Operation fail ยังได้ฉบับเดิม
-- [ ] ถ้า canonical pointer ขยับระหว่าง config กับ download ให้ได้ snapshot ที่ pin ไว้หรือ error ของ snapshot นั้น ไม่คืน bytes ของ revision ใหม่แทน
-- [ ] ยืนยัน existing auth, role/ownership, expiry, native opening, read-only protection และ attachment projection ต่อเนื่อง. Builder และ editable workspace ยังใช้ snapshot ที่ workflow อนุญาต
-- [ ] ทดสอบ sandbox HTTP และ browser saved viewer อย่างน้อย Draft + historical revision. วัด hash/ค่าเซลล์ ไม่ใช้ `200` อย่างเดียว
+- [x] ใช้ fixture ที่ committed workbook กับ staged workbook ต่าง hash. ตอน active Operation, คำขอ saved viewer ได้ bytes ของ committed revision เดิมเท่านั้น; หลัง Operation fail ยังได้ฉบับเดิม
+- [x] ถ้า canonical pointer ขยับระหว่าง config กับ download ให้ได้ snapshot ที่ pin ไว้หรือ error ของ snapshot นั้น ไม่คืน bytes ของ revision ใหม่แทน
+- [x] ยืนยัน existing auth, role/ownership, expiry, native opening, read-only protection และ attachment projection ต่อเนื่อง. Builder และ editable workspace ยังใช้ snapshot ที่ workflow อนุญาต
+- [x] ทดสอบ sandbox HTTP และ browser saved viewer อย่างน้อย Draft + historical revision. วัด hash/ค่าเซลล์ ไม่ใช้ `200` อย่างเดียว
 
 ## Comments
 
 - Audit ยืนยัน `viewer bytes: staged; committed pointer unchanged: true` บน synthetic non-ECM active Operation
+- แก้ใน `dccb5b9422`. Regression ยืนยันว่า saved delivery ตรวจ snapshot ที่เซ็นสิทธิ์โดยไม่อ่าน staged files. ใน Chromium + ONLYOFFICE 9.4 บน integration: Draft แสดง A1 `replacement`; Original ของ Submission แสดง A1 `committed`. ทั้งคู่เป็น view mode ไม่มี Home edit toolbar; config ห้าม edit/download ใน native frame

@@ -1,6 +1,6 @@
 # 10 — ตรวจ crash ตอนเริ่มรอบ และ User reopen ชน Admin Correction
 
-Status: needs-triage  
+Status: resolved  
 Type: task  
 Priority: P2  
 Blocked by: —  
@@ -23,3 +23,4 @@ Evidence: [R10](../map.md#3-ปัญหาและความเสี่ย�
 - **Guard เดิม — Correction:** หลัง 202 ให้ loopback หยุดที่ login ก่อน dispatch (`prepared`) หรือเก็บ bytes แล้วแต่ยังไม่ส่ง receipt (`started`). ตรวจว่า batch ใช้ Correction workspace document key และ lease เดิม; Start ใช้ Draft document key ใหม่และ `publishedVersion` เดิม. Correction จบเป็น `failed` ทั้งสองกรณี. ก่อน dispatch ไม่มี `sentAt` หรือ POST; หลัง dispatch มี POST เดียว ไม่มี DELETE ระหว่างรอ receipt และบันทึก late receipt พร้อม cleanup intent ใต้ Operation เดิม. ไม่ลบไฟล์ประวัติหรือเปลี่ยน Submission / Draft ใหม่
 - **Next-opening failure ไม่ใช่ Submit failure:** หลัง Submit `completed` ทำให้เฉพาะ Published Template object ไม่พร้อมชั่วคราว; Start ตอบ 409 `document_unavailable`, สถานะและ bytes ของ Submission ไม่เปลี่ยน. คืน fixture ก่อนเริ่ม crash probe
 - **การตรวจ:** `bun --no-env-file test --timeout 45000 test/http/ecm-scalar-save-submit.test.ts -t 'Start crash|User Start .* dispatch'` ผ่าน 3 เคส บน PostgreSQL/RustFS แยกและ loopback DCM. ไม่ได้ทดสอบการตอบสนองของ DCM จริงหรือยืนยันพฤติกรรม Production
+- รวม implementation `a2c19863ff` บน integration; ไม่เปลี่ยน Correction dispatch guard ที่ probes ยืนยันว่าป้องกันได้
