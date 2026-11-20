@@ -169,6 +169,35 @@ it("paginates My responses without changing global statistics and returns to the
   expect(within(nav).getByRole("button", { name: "หน้าถัดไป" })).toBeDisabled();
 });
 
+it("explains why a reopened Draft cannot be discarded and keeps its history link", async () => {
+  rows = [{ ...response(0), submissionId: "submission-1" }];
+  await mount("/dashboard");
+  await screen.findByText("Response 1");
+  expect(screen.getByRole("link", { name: "ดูประวัติการส่งทั้งหมด" })).toBeVisible();
+  expect(screen.getByText(/ไม่สามารถทิ้งฉบับร่างที่มีประวัติการส่ง/u)).toBeVisible();
+  expect(
+    screen.queryByRole("button", { name: "ทิ้งฉบับร่าง" })
+  ).not.toBeInTheDocument();
+  expect(deleteRequests()).toHaveLength(0);
+});
+
+it("keeps the Draft and explains a concurrent history rejection without reporting success", async () => {
+  rows = [response(0)];
+  discardResponse = () =>
+    Response.json({ error: "draft_has_history" }, { status: 409 });
+  await mount("/dashboard");
+  await screen.findByText("Response 1");
+  await userEvent.click(screen.getByRole("button", { name: "ทิ้งฉบับร่าง" }));
+  await userEvent.click(screen.getByRole("button", { name: "ยืนยันการทิ้ง" }));
+  expect(
+    await screen.findByText(/ไม่สามารถทิ้งฉบับร่างที่มีประวัติการส่ง/u)
+  ).toBeVisible();
+  expect(screen.getByText("Response 1")).toBeVisible();
+  expect(screen.queryByText("ทิ้งฉบับร่างแล้ว")).not.toBeInTheDocument();
+  expect(screen.getByRole("button", { name: "ยืนยันการทิ้ง" })).toBeDisabled();
+  expect(deleteRequests()).toHaveLength(1);
+});
+
 it.each([true, false])(
   "closes stale discard confirmation and requires fresh data (%s)",
   async (refreshSucceeds) => {

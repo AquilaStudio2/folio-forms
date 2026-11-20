@@ -206,6 +206,13 @@ export async function deleteResponseData({
       if (!confirmedAdminDelete && response.status !== ResponseStatus.draft) {
         fail(409, "draft_unavailable", "Only a Draft can be discarded");
       }
+      if (!confirmedAdminDelete && response.submissions.length > 0) {
+        fail(
+          409,
+          "draft_has_history",
+          "A Draft with Submission history cannot be discarded"
+        );
+      }
       const operations = await tx.operation.findMany({
         select: {
           documentKey: true,
