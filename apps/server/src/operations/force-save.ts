@@ -198,12 +198,14 @@ export function launchForceSave(
           return;
         }
         let snapshot: Uint8Array | undefined;
+        let recoveredNativeSnapshot = false;
         if (saveResult === false) {
-          const catalogSessionId = (
-            operation.metadata as { pdmsCatalogSessionId?: unknown } | null
-          )?.pdmsCatalogSessionId;
+          const metadata = operationMetadata(operation.metadata);
+          const { nativeCaptureLeaseId, pdmsCatalogSessionId } = metadata;
+          const plainXlsx =
+            metadata.documentKind === "xlsx" && !pdmsCatalogSessionId;
           const previous =
-            typeof catalogSessionId === "string"
+            plainXlsx || pdmsCatalogSessionId
               ? await prisma.operation.findFirst({
                   orderBy: [{ createdAt: "desc" }, { id: "desc" }],
                   where: {
@@ -229,8 +231,34 @@ export function launchForceSave(
               : null;
           const failed =
             previous?.status === OperationStatus.failed ? previous : null;
-          const recoveredCaptureKey = failed ? nativeCaptureKey(failed) : null;
-          if (failed && !recoveredCaptureKey) {
+          const failedMetadata = failed && operationMetadata(failed.metadata);
+          const samePlainScope =
+            plainXlsx &&
+            failed &&
+            failedMetadata &&
+            failed.actorId === operation.actorId &&
+            failedMetadata.documentKind === "xlsx" &&
+            !failedMetadata.pdmsCatalogSessionId &&
+            failedMetadata.action === metadata.action &&
+            failedMetadata.bindingRevision === metadata.bindingRevision &&
+            nativeCaptureLeaseId &&
+            failedMetadata.nativeCaptureLeaseId === nativeCaptureLeaseId &&
+            (await prisma.editorLease.findFirst({
+              select: { id: true },
+              where: {
+                expiresAt: { gt: new Date() },
+                holderSession: { expiresAt: { gt: new Date() } },
+                holderUserId: operation.actorId,
+                id: nativeCaptureLeaseId,
+                targetId: operation.targetId,
+                targetType: operation.targetType,
+              },
+            }));
+          const recoveredCaptureKey =
+            failed && (pdmsCatalogSessionId || samePlainScope)
+              ? nativeCaptureKey(failed)
+              : null;
+          if (failed && pdmsCatalogSessionId && !recoveredCaptureKey) {
             snapshot =
               (await pickerOnlyCanonicalSnapshot(operation)) ?? undefined;
           }
@@ -257,6 +285,7 @@ export function launchForceSave(
             );
           }
           if (!snapshot) {
+            recoveredNativeSnapshot = recoveredCaptureKey !== null;
             try {
               snapshot = await readObject(currentObjectKey);
             } catch {
@@ -278,7 +307,10 @@ export function launchForceSave(
             ...(saveResult === false ? {} : { url: saveResult.url }),
           },
           snapshot,
-          allowedCallbackOrigins
+          allowedCallbackOrigins,
+          undefined,
+          undefined,
+          recoveredNativeSnapshot
         );
       }
     } catch (error) {

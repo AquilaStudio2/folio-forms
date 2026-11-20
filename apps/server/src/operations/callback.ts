@@ -33,6 +33,7 @@ import {
   cleanupNativeCaptures,
   deleteObjects,
   deleteObjectUnlessCanonical,
+  nativeCaptureCandidateKey,
 } from "./object-cleanup";
 import {
   completeDraftOperation,
@@ -159,7 +160,8 @@ export async function finalizeCallback(
   snapshot: Uint8Array | undefined,
   allowedCallbackOrigins: ReadonlySet<string>,
   maximumBytes = maxCallbackDocumentBytes,
-  prepareAttachments?: PrepareAttachments
+  prepareAttachments?: PrepareAttachments,
+  recoveredNativeSnapshot = false
 ): Promise<void> {
   const operation = await prisma.operation.findUnique({
     where: { id: operationId },
@@ -220,11 +222,13 @@ export async function finalizeCallback(
     }
     metadata.documentKind = form.documentKind;
     if (form.documentKind === "xlsx") {
-      if (metadata.pdmsCatalogSessionId) {
-        // Retain the raw native values before picker overlays, Builder or required validation.
-        // A no-change retry can then recover these values without trusting an old canonical file.
+      const captureKey =
+        metadata.pdmsCatalogSessionId || !snapshot || recoveredNativeSnapshot
+          ? nativeCaptureCandidateKey(operation)
+          : null;
+      if (captureKey) {
+        // Retain the proven native bytes before any overlays or validation.
         readSpreadsheetWorkbook(bytes);
-        const captureKey = `${metadata.stagedObjectKey}.native`;
         try {
           await putObject(captureKey, bytes, XLSX_CONTENT_TYPE);
           metadata.nativeCaptureObjectKey = captureKey;

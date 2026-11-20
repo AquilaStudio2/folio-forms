@@ -162,6 +162,9 @@ export async function createOperation(input: {
           lockedForm.documentKind === "xlsx"
             ? requireDocumentServerKey(input.authorization)
             : undefined,
+        ...(lockedForm.documentKind === "xlsx" && !input.attachmentCheckpoint
+          ? { nativeCaptureLeaseId: input.authorization.capability.leaseId }
+          : {}),
       };
       const operation = await tx.operation.create({
         data: {

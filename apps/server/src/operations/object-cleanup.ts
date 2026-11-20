@@ -13,7 +13,8 @@ export function nativeCaptureCandidateKey(
 ): string | null {
   const metadata = operationMetadata(operation.metadata);
   return operation.stagingObjectKey &&
-    typeof metadata.pdmsCatalogSessionId === "string"
+    (typeof metadata.pdmsCatalogSessionId === "string" ||
+      (metadata.documentKind === "xlsx" && metadata.nativeCaptureLeaseId))
     ? `${operation.stagingObjectKey}.native`
     : null;
 }

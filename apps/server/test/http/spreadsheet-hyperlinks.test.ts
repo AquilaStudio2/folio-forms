@@ -33,6 +33,7 @@ const editorSchema = z.object({
   bridge: z.object({
     capabilities: z.record(z.string(), z.string()),
     documentKey: z.string(),
+    lease: z.object({ id: z.string(), releaseUrl: z.string() }),
   }),
   config: z.object({
     document: z.object({ key: z.string(), url: z.string() }),
@@ -46,6 +47,7 @@ const operationSchema = z.object({
     status: z.string(),
   }),
 });
+let forceSaveUnchanged = false;
 const formId = crypto.randomUUID();
 const publicId = crypto.randomUUID().replaceAll("-", "");
 const objects = new Set<string>();
@@ -68,7 +70,10 @@ const app = createApp({
   onlyOffice: {
     convertDocxToPdf: () =>
       Promise.resolve(new TextEncoder().encode("%PDF-fixture")),
-    forceSave: () => Promise.resolve(native ? { url: native.url.href } : false),
+    forceSave: () =>
+      Promise.resolve(
+        native && !forceSaveUnchanged ? { url: native.url.href } : false
+      ),
   },
   onlyOfficeCallbackOrigins: native ? [native.url.origin] : [],
   pdmsProjects: null,
@@ -273,7 +278,41 @@ describe.skipIf(!enabled)("XLSX hyperlink HTTP lifecycle", () => {
       ["folio_date", "'Form'!$D$1"],
       ["folio_body", "'Form'!$A$4:$D$8"],
     ];
+    const wrongAnchors = [
+      anchors[0],
+      ["folio_date", "'Form'!$E$1"],
+      anchors[2],
+    ];
+    const savePath = `/api/admin/forms/${publicId}/save`;
+    const publishPath = `/api/admin/forms/${publicId}/publish`;
     let editor = await openEditor(templatePath, admin);
+    snapshot = mutatePart(
+      await editorBytes(editor),
+      "xl/worksheets/sheet1.xml",
+      (xml) =>
+        xml.replace(
+          '<c r="D1"',
+          '<c r="C1" t="inlineStr"><is><t>native-save-marker</t></is></c><c r="D1"'
+        )
+    );
+    expect(
+      await action(editor, savePath, "save-template", {
+        spreadsheetAnchors: wrongAnchors,
+      })
+    ).toMatchObject({ error: "invalid_template", status: "failed" });
+    forceSaveUnchanged = true;
+    expect(
+      await action(editor, publishPath, "publish", {
+        spreadsheetAnchors: anchors,
+      })
+    ).toMatchObject({ error: "document_save_failed", status: "failed" });
+    forceSaveUnchanged = false;
+    expect(
+      await action(editor, savePath, "save-template", {
+        spreadsheetAnchors: wrongAnchors,
+      })
+    ).toMatchObject({ error: "invalid_template", status: "failed" });
+    forceSaveUnchanged = true;
     expect(
       await action(
         editor,
@@ -285,11 +324,33 @@ describe.skipIf(!enabled)("XLSX hyperlink HTTP lifecycle", () => {
     editor = await openEditor(templatePath, admin);
     snapshot = await editorBytes(editor);
     expectLink(snapshot);
+    expect(readSpreadsheetWorkbook(snapshot).cells.get("C1")?.value).toBe(
+      "native-save-marker"
+    );
+    snapshot = mutatePart(snapshot, "xl/worksheets/sheet1.xml", (xml) =>
+      xml.replace("native-save-marker", "native-publish-marker")
+    );
+    forceSaveUnchanged = false;
+    expect(
+      await action(editor, publishPath, "publish", {
+        spreadsheetAnchors: wrongAnchors,
+      })
+    ).toMatchObject({ error: "invalid_template", status: "failed" });
+    forceSaveUnchanged = true;
     expect(
       await action(editor, `/api/admin/forms/${publicId}/publish`, "publish", {
         spreadsheetAnchors: anchors,
       })
     ).toMatchObject({ status: "completed" });
+    forceSaveUnchanged = false;
+    const published = await prisma.publishedTemplate.findUniqueOrThrow({
+      where: { formId },
+    });
+    expect(
+      readSpreadsheetWorkbook(await readObject(published.objectKey)).cells.get(
+        "C1"
+      )?.value
+    ).toBe("native-publish-marker");
 
     const start = await request(`/api/forms/${publicId}/start`, user, {});
     expect(start.status).toBe(200);
@@ -297,7 +358,8 @@ describe.skipIf(!enabled)("XLSX hyperlink HTTP lifecycle", () => {
       .object({ response: z.object({ id: z.string() }) })
       .parse(await start.json()).response.id;
     const userPath = `/api/forms/${publicId}/editor-config?responseId=${responseId}`;
-    editor = await openEditor(userPath, user);
+    const fixedOpeningPath = `${userPath}&pdmsOpeningId=${crypto.randomUUID()}`;
+    editor = await openEditor(fixedOpeningPath, user);
     const initialized = await editorBytes(editor);
     const input = await processSpreadsheet(unprotectSpreadsheet(initialized), {
       bindings,
@@ -319,11 +381,92 @@ describe.skipIf(!enabled)("XLSX hyperlink HTTP lifecycle", () => {
         readSpreadsheetWorkbook(input.workbook)
       )
     );
+    const nativeEdit = snapshot;
+    const draftPath = `/api/forms/${publicId}/draft`;
+    const rejectCommit = async (from: Editor) => {
+      const beforeFailure = await prisma.response.findUniqueOrThrow({
+        where: { id: responseId },
+      });
+      forceSaveUnchanged = false;
+      await prisma.$executeRaw`
+        ALTER TABLE responses ADD CONSTRAINT retry_fixture_reject_edit
+        CHECK (draft_data->>'agency' IS DISTINCT FROM 'https://example.com/report?a=1&b=2#section')
+        NOT VALID
+      `;
+      try {
+        expect(
+          await action(from, draftPath, "save-draft", { responseId })
+        ).toMatchObject({ status: "failed" });
+        expect(
+          await prisma.response.findUniqueOrThrow({ where: { id: responseId } })
+        ).toMatchObject({
+          draftData: beforeFailure.draftData,
+          draftObjectKey: beforeFailure.draftObjectKey,
+        });
+      } finally {
+        await prisma.$executeRaw`
+          ALTER TABLE responses DROP CONSTRAINT retry_fixture_reject_edit
+        `;
+      }
+      forceSaveUnchanged = true;
+    };
+    expectLink(snapshot);
+    await rejectCommit(editor);
+    expect(
+      await action(editor, `/api/forms/${publicId}/submit`, "submit", {
+        responseId,
+      })
+    ).toMatchObject({ error: "document_save_failed", status: "failed" });
+    await rejectCommit(editor);
+    const { lease } = editor.bridge;
+    expect(
+      (
+        await app.handle(
+          new Request(`http://test.local${lease.releaseUrl}`, {
+            headers: { Authorization: `Bearer ${user}` },
+            method: "DELETE",
+          })
+        )
+      ).ok
+    ).toBe(true);
+    const rotatedLease = await openEditor(fixedOpeningPath, user);
+    expect(rotatedLease.bridge.lease.id).not.toBe(lease.id);
+    expect(rotatedLease.config.document.key).toBe(editor.config.document.key);
+    expect(
+      await action(rotatedLease, draftPath, "save-draft", { responseId })
+    ).toMatchObject({ error: "document_save_failed", status: "failed" });
+
+    await rejectCommit(rotatedLease);
+    const freshEditor = await openEditor(userPath, user);
+    expect(freshEditor.config.document.key).not.toBe(
+      editor.config.document.key
+    );
+    expect(
+      await action(freshEditor, draftPath, "save-draft", { responseId })
+    ).toMatchObject({ status: "completed" });
+    const freshDraft = await prisma.response.findUniqueOrThrow({
+      where: { id: responseId },
+    });
+    expect(freshDraft.draftData).toMatchObject({ agency: "Agency" });
+    if (!freshDraft.draftObjectKey) {
+      throw new Error("Missing saved draft");
+    }
+    expect(
+      readSpreadsheetWorkbook(
+        await readObject(freshDraft.draftObjectKey)
+      ).cells.get("A1")?.value
+    ).toBe("Agency");
+    editor = await openEditor(userPath, user);
+    await rejectCommit(editor);
+    expect(readSpreadsheetWorkbook(nativeEdit).cells.get("A1")?.value).toBe(
+      target
+    );
     expect(
       await action(editor, `/api/forms/${publicId}/draft`, "save-draft", {
         responseId,
       })
     ).toMatchObject({ status: "completed" });
+    forceSaveUnchanged = false;
     const saved = await prisma.response.findUniqueOrThrow({
       where: { id: responseId },
     });
@@ -332,7 +475,11 @@ describe.skipIf(!enabled)("XLSX hyperlink HTTP lifecycle", () => {
       throw new Error("Missing saved draft");
     }
     objects.add(saved.draftObjectKey);
-    expectLink(await readObject(saved.draftObjectKey));
+    const savedBytes = await readObject(saved.draftObjectKey);
+    expectLink(savedBytes);
+    expect(readSpreadsheetWorkbook(savedBytes).cells.get("A1")?.value).toBe(
+      target
+    );
 
     editor = await openEditor(userPath, user);
     snapshot = await editorBytes(editor);
@@ -350,6 +497,11 @@ describe.skipIf(!enabled)("XLSX hyperlink HTTP lifecycle", () => {
       errorMessage: "External document resources are not allowed",
       status: "failed",
     });
+    forceSaveUnchanged = true;
+    expect(
+      await action(editor, draftPath, "save-draft", { responseId })
+    ).toMatchObject({ error: "document_save_failed", status: "failed" });
+    forceSaveUnchanged = false;
     const afterRejectedSave = await prisma.response.findUniqueOrThrow({
       where: { id: responseId },
     });

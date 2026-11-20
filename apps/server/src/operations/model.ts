@@ -57,6 +57,7 @@ export interface OperationMetadata extends JsonRecord {
   finalObjectKey: string;
   formId: string;
   nativeDocumentStaged?: boolean;
+  nativeCaptureLeaseId?: string;
   nativeCaptureObjectKey?: string;
   nextDocumentKey?: string;
   preserveEditorSession?: true;
@@ -140,6 +141,10 @@ export function operationMetadata(value: unknown): OperationMetadata {
     (metadata.workspaceLeaseId !== undefined &&
       !pdmsSelectionSchema.shape.leaseId.safeParse(metadata.workspaceLeaseId)
         .success) ||
+    (metadata.nativeCaptureLeaseId !== undefined &&
+      !pdmsSelectionSchema.shape.leaseId.safeParse(
+        metadata.nativeCaptureLeaseId
+      ).success) ||
     (workspaceDocumentKey !== undefined &&
       typeof workspaceDocumentKey !== "string") ||
     (workspaceObjectKey !== undefined &&
