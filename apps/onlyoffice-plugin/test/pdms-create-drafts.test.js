@@ -88,11 +88,16 @@ test.each(["type", "metadata"])(
     await flushPlugin();
     expect(changes).toHaveLength(1);
     expect(changes[0]).toMatchObject({
-        key: pending === "metadata" ? "selected_project" : "field_1",
-        label: pending === "metadata" ? "โครงการที่ดำเนินการ" : "ช่อง E10",
-        source: "pdms-project-name",
-        type: "dropdown",
-        ...(pending === "metadata" ? { placeholder: "เลือกโครงการ" } : {}),
+      bindings: {
+        fields: [
+          {
+            key: pending === "metadata" ? "selected_project" : "field_1",
+            label: pending === "metadata" ? "โครงการที่ดำเนินการ" : "ช่อง E10",
+            source: "pdms-project-name",
+            type: "dropdown",
+            ...(pending === "metadata" ? { placeholder: "เลือกโครงการ" } : {}),
+          },
+        ],
       },
       revision: 0,
     });

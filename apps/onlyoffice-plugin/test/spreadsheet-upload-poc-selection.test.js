@@ -151,7 +151,15 @@ const setup = async (drawings, { failSave = false, saveFailures = 0 } = {}) => {
   };
   acknowledgeBridge(harness);
   await flushPlugin();
-  return { harness, selected, state: () => state };
+  return {
+    harness,
+    selected,
+    working: async () => {
+      const { bindings: candidate } =
+        await harness.window.FormBridge.getSpreadsheetBindings(false);
+      return candidate;
+    },
+  };
 };
 const refresh = async (harness) => {
   harness.emitEditorEvent("onTargetPositionChanged");
@@ -232,7 +240,9 @@ test.each([false, true])(
     expect(harness.spreadsheetNames.has("_folio_upload_poc_folio_first")).toBe(
       true
     );
-    expect(state().fields.find((item) => item.id === first.id)).toEqual(first);
+    expect(await working()).toMatchObject({
+      fields: column ? [first, second] : [first],
+    });
   }
 );
 
@@ -294,7 +304,7 @@ test("definitive save failure retries deletion without touching foreign objects"
     saveFailures: 1,
   });
   await remove(harness);
-  expect(state().fields.some((item) => item.id === second.id)).toBe(false);
+  expect(await working()).toMatchObject({ fields: [first] });
   expect(
     selected.oleObjects.find((item) => item.GetData().includes(second.id))
       .Drawing.removed
@@ -351,7 +361,7 @@ test("native cleanup failure stays retryable after local Apply and blocks new au
     throw new Error("native delete unavailable");
   };
   await remove(harness);
-  expect(state().fields.some((item) => item.id === second.id)).toBe(false);
+  expect(await working()).toMatchObject({ fields: [first] });
   expect(target.Drawing.removed).not.toBe(true);
   expect(
     harness.requests.filter((request) => request.method === "POST")

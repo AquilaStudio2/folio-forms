@@ -176,6 +176,17 @@ test.each([
         },
       },
     });
+    if (!accepted) {
+      const { plugin } = harness.window.Asc;
+      const { callCommand } = plugin;
+      plugin.callCommand = (command, ...args) => {
+        if (command.name === "spreadsheetUploadPocCleanupCommand") {
+          const done = args.at(-1);
+          args[args.length - 1] = () => done(false);
+        }
+        return callCommand(command, ...args);
+      };
+    }
     acknowledgeBridge(harness);
     await flushPlugin();
     if (action === "type") {
