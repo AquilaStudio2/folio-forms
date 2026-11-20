@@ -777,6 +777,8 @@ Initial Correction workspace clone ยังไม่มี attachment reference
 
 Existing append และ delete-selected ยังคงพฤติกรรมของ ordinary tables เดิม สำหรับ attachment-aware transition server ตรวจ native snapshot เทียบ canonical workbook, ใช้ command ที่รองรับกับ Builder แล้ว resolve contract/output ใหม่ ตรวจ actual body count/column offsets และทุก surviving input cell ตาม old/new physical mapping ก่อน commit Canonical table objects เปลี่ยนเฉพาะ current `row_index`; `EcmAttachmentVersion.rowIndex` เก็บ immutable original upload position และไม่ถูก rewrite การเลื่อนแถวไม่ upload ใหม่ Reference lookup ใช้ nested table column data และ paired receipt เดิม ไม่ index root ด้วย dotted Tag
 
+ก่อน commit Draft/Submit/internal transition/Correction ที่เปลี่ยน attachment projections ระบบอ่านค่าของเซลล์และปลายทาง hyperlink จาก XLSX ผลลัพธ์ วัดกับ paired receipt และ physical row ที่เชื่อถือได้; ช่องที่เอาไฟล์ออกต้องว่างและไม่มีลิงก์. ถ้าตรวจไม่ผ่าน canonical เดิมยังอ่านได้ และคำขอ provider ที่ส่งไปแล้วต้องติดตามด้วย Operation เดิม ไม่ส่งซ้ำ.
+
 `EcmAttachmentReference.rowIndex` เก็บ **ตำแหน่ง physical row ปัจจุบันของ snapshot นั้น** แยกจาก original attempt position; ไม่ใช่ stable row ID และไม่เพิ่ม Tag/filename suffix หรือ answer JSON Field ใหม่ New upload เลือก own-operation attempt ที่ row ตรงกัน Saved slot เลือกเฉพาะ current canonical refs ที่ row ตรงกัน แล้ว remap ผ่าน trusted workbook `attachmentTransition` ใน Draft/workspace commit เท่านั้น Submit/final Correction คงตำแหน่งเดิมใน final snapshot ที่ใช้ document key ใหม่ คง shared destination/identity/reference/delete fences เดิม ชื่อ template ซ้ำได้โดยไม่กลายเป็น row identity
 
 คอลัมน์ metadata ใหม่นี้ nullable และไม่เดา backfill แถวเก่า การรักษา aliases แบบหยาบเพียงอย่างเดียวไม่พอ: rows0/2 อาจมี receipt/name/size เดียวกันแต่ bytes ต่างกัน เมื่อลบ A ผ่าน verified row command แล้ว B เลื่อนเหลือ1 การเปลี่ยนเลขต้องใช้ digest ของ current B เพื่ออ่าน original B ได้ ไม่เอา A มาทำให้เกิด false HOLD และไม่เลือก attempt ด้วย timestamp สำหรับ refs เก่าที่พิสูจน์ current position ไม่ได้ยังรักษาหลักฐานร่วมแบบ conservative; original reuse ที่มี digest ขาด/ขัดกันหยุดก่อนเขียน ไม่สร้าง independent-byte guarantee จาก provider URL เดียว Native และ HTTP proof ของตั๋ว05แยกจาก live-provider/release acceptance ตาม [บันทึกตั๋ว05](../ecm-storage-templates/issues/05-table-template-attachment-lifecycle.md)
@@ -869,6 +871,8 @@ flowchart TD
 Results เป็นรายการสถานะปัจจุบันของ Response ไม่ใช่หนึ่งแถวต่อ Submission ทุกครั้ง ถ้า User ส่งแล้วหน้า fill เปิด Draft รอบใหม่ Results จะจัด Response นั้นเป็น draft อีกครั้ง แต่ประวัติ Submission เดิมยังอ่านได้ด้วย `submissionId` จนกว่าจะมีการลบ Response
 
 ผล submitted ใช้ข้อมูลของ Submission ล่าสุดและ Correction ล่าสุดของ Submission นั้นตาม revision ที่เลือก จังหวัด เดือน และปีงบประมาณอ่านจาก scalar tags `province`, `month`, `fiscal_year` ไม่ใช่ profile ของผู้ใช้ การแสดงผลเก็บค่าตามที่บันทึก ส่วน filtering ยอมรับรูปแบบที่กำหนดแยกจากการแสดง
+
+เมื่อโหลดรายละเอียดแล้ว หน้า Results และหน้า Admin Form History ส่ง `submissionId` และ revision เดียวกันสำหรับ viewer, Fields และดาวน์โหลด. ถ้า Response เปิดร่างหรือส่งรอบใหม่ระหว่างคำขอ การเปิดประวัติยังใช้ Submission ที่เลือก; ID ผิด Response หรือ revision ไม่พบให้แจ้งข้อผิดพลาด ไม่สลับ latest เงียบ ๆ. หน้า list ยังเลือก current Response ตาม ADR 0004.
 
 Correction เริ่มจากเอกสาร revision ปัจจุบันใน workspace แยก การบันทึก workspace ระหว่างเลือกโครงการยังไม่สร้าง Correction ที่เผยแพร่จริง การบันทึก Correction ต้องมีเหตุผลและผ่านการตรวจ Response ยัง submitted, Submission ยังเป็นล่าสุด และ base revision ไม่เปลี่ยน
 
