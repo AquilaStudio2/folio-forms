@@ -136,6 +136,8 @@ export interface CallbackClaimInput {
 export interface EditorOptions {
   documentKind?: "docx" | "xlsx";
   spreadsheetBindings?: unknown;
+  xlsxDraftProtocol?: 1;
+  xlsxDraftRevision?: number;
   attachmentSavedData?: unknown;
   attachmentCleanupWarning?: string | null;
   attachmentMutationNotice?: string | null;
@@ -706,6 +708,9 @@ export function editorConfig(
           ...(uploadPocOptions ? { [uploadPocGuid]: uploadPocOptions } : {}),
           [pluginGuid]: {
             ...pluginOptions,
+            ...(options.xlsxDraftProtocol === 1
+              ? { xlsxDraftLeaseId: options.lease.id, xlsxDraftProtocol: 1 }
+              : {}),
             ...(attachmentCategoryPopup
               ? {
                   attachmentCategoryPopupChannelId:

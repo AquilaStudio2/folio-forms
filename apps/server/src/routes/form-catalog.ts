@@ -253,18 +253,22 @@ export function registerFormCatalogRoutes(
           if (!publicIdPattern.test(params.publicId)) {
             fail(404, "not_found", "Form was not found");
           }
-          const source = await prisma.form.findUnique({
-            include: {
-              publishedTemplate: {
+          const source = await prisma.$transaction(
+            (tx) =>
+              tx.form.findUnique({
                 include: {
-                  manifest: { include: { fields: true } },
-                  prefillConfiguration: { include: { fields: true } },
+                  publishedTemplate: {
+                    include: {
+                      manifest: { include: { fields: true } },
+                      prefillConfiguration: { include: { fields: true } },
+                    },
+                  },
+                  templateDraft: { include: { fieldRules: true } },
                 },
-              },
-              templateDraft: { include: { fieldRules: true } },
-            },
-            where: { publicId: params.publicId },
-          });
+                where: { publicId: params.publicId },
+              }),
+            { isolationLevel: "RepeatableRead" }
+          );
           if (!source) {
             fail(404, "not_found", "Form was not found");
           }

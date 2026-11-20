@@ -169,6 +169,7 @@ const FormEditorRoute = () => {
   const [editorRevision, setEditorRevision] = useState(0);
   const [commandReady, setCommandReady] = useState(false);
   const [editorDirty, setEditorDirty] = useState(false);
+  const [editorDraftUnresolved, setEditorDraftUnresolved] = useState(false);
   const [saveRequest, setSaveRequest] = useState(0);
   const [saveAction, setSaveAction] = useState<"save-template" | "publish">(
     "save-template"
@@ -180,6 +181,7 @@ const FormEditorRoute = () => {
   const restorePublishFocusRef = useRef(false);
   useReauthenticationGuard(
     editorDirty ||
+      editorDraftUnresolved ||
       busy !== null ||
       metadataBusy !== null ||
       operationStatus === "pending" ||
@@ -587,6 +589,9 @@ const FormEditorRoute = () => {
     ) {
       return;
     }
+    if (loadedForm.documentKind === "xlsx" && message.status !== "pending") {
+      setEditorDraftUnresolved(message.attachmentCommitUnresolved === true);
+    }
     setOperationStatus(
       message.status === "pending" ? "pending" : message.status
     );
@@ -620,11 +625,15 @@ const FormEditorRoute = () => {
     setOperationStatus("completed");
     setEditorDirty(false);
     setError(null);
-    setNotice(
-      message.action === "publish"
-        ? "เผยแพร่แบบฟอร์มแล้ว คำตอบใหม่จะใช้เอกสารฉบับนี้"
-        : "บันทึกแบบร่างเรียบร้อยแล้ว"
-    );
+    if (message.requestedAction) {
+      setNotice("ตรวจผลคำขอบันทึกหรือเผยแพร่รอบเดิมแล้ว ยังไม่ได้เริ่มคำขอใหม่");
+    } else {
+      setNotice(
+        message.action === "publish"
+          ? "เผยแพร่แบบฟอร์มแล้ว คำตอบใหม่จะใช้เอกสารฉบับนี้"
+          : "บันทึกแบบร่างเรียบร้อยแล้ว"
+      );
+    }
     await refreshFormAfterOperation(
       message.action === "publish" ? "publish" : "save"
     );

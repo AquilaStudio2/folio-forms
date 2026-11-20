@@ -54,7 +54,8 @@ import { createOperation } from "../operations/create";
 import { launchForceSave } from "../operations/force-save";
 import { activeOperationForForm } from "../operations/lifecycle";
 import type { OperationMetadata } from "../operations/model";
-import { operationTypeForAction } from "../operations/model";
+import { operationMetadata, operationTypeForAction } from "../operations/model";
+import { xlsxDraftCandidateSchema } from "../operations/xlsx-draft";
 import {
   openPdmsProjectCatalog,
   requirePdmsCatalogSession,
@@ -76,6 +77,7 @@ const readTemplateActionInput = async (
     .object({
       documentKey: z.string().trim().min(1),
       spreadsheetAnchors: spreadsheetAnchorSnapshotSchema,
+      xlsxDraft: xlsxDraftCandidateSchema.optional(),
       ...(allowPreserveEditorSession
         ? {
             deletedUploadPocBindingIds: z.unknown().optional(),
@@ -89,6 +91,13 @@ const readTemplateActionInput = async (
     })
     .strict()
     .safeParse(await readJsonRecord(request, 256 * 1024));
+  if (input.success && !input.data.xlsxDraft) {
+    fail(
+      409,
+      "xlsx_draft_upgrade_required",
+      "กรุณาเปิดตัวแก้ไข Excel รุ่นล่าสุดแล้วลองอีกครั้ง"
+    );
+  }
   if (!input.success) {
     fail(
       400,
@@ -99,6 +108,7 @@ const readTemplateActionInput = async (
   const result = {
     documentKey: input.data.documentKey,
     spreadsheetAnchors: input.data.spreadsheetAnchors,
+    xlsxDraft: input.data.xlsxDraft,
   };
   try {
     return { ...result, ...spreadsheetEditorSaveOptions(input.data) };
@@ -164,16 +174,40 @@ export function registerFormAuthoringRoutes(
                 query.pdmsOpeningId
               )
             : null;
-        const bindings =
+        const savedDraft =
           form.documentKind === "xlsx"
-            ? await spreadsheetDraftBindings(templateDraft.id)
+            ? await prisma.$transaction(
+                async (tx) => {
+                  const current = await tx.templateDraft.findUnique({
+                    include: { form: { include: { publishedTemplate: true } } },
+                    where: { id: templateDraft.id },
+                  });
+                  if (
+                    !current ||
+                    current.documentKey !== templateDraft.documentKey ||
+                    current.bindingRevision !== templateDraft.bindingRevision ||
+                    current.form.status === "published" ||
+                    current.form.publishedTemplate
+                  ) {
+                    fail(
+                      409,
+                      "stale_document",
+                      "The saved Excel draft changed; reopen the editor"
+                    );
+                  }
+                  const rules = await spreadsheetDraftBindings(current.id, tx);
+                  return {
+                    bindings: rules,
+                    savedButtons: savedSpreadsheetUploadPocButtons(
+                      await readObject(current.objectKey),
+                      rules
+                    ),
+                  };
+                },
+                { isolationLevel: "RepeatableRead" }
+              )
             : undefined;
-        const savedButtons = bindings
-          ? savedSpreadsheetUploadPocButtons(
-              await readObject(templateDraft.objectKey),
-              bindings
-            )
-          : undefined;
+        const { bindings, savedButtons } = savedDraft ?? {};
         const pdmsProjectCatalog = bindings
           ? await openPdmsProjectCatalog({
               bindings,
@@ -204,6 +238,8 @@ export function registerFormAuthoringRoutes(
               ? {
                   spreadsheetBindings: bindings,
                   uploadPocSavedButtons: savedButtons,
+                  xlsxDraftProtocol: 1 as const,
+                  xlsxDraftRevision: templateDraft.bindingRevision,
                 }
               : {}),
             capabilities: {
@@ -233,6 +269,141 @@ export function registerFormAuthoringRoutes(
           identity
         );
       }
+    )
+    .post(
+      "/api/admin/forms/:publicId/xlsx-draft/recover",
+      async ({ request, params }) => {
+        const authorization = await requireActionEditorAuthorization(request);
+        const { actor, capability } = authorization;
+        requireAdmin(actor);
+        const form = await findFormByPublicId(params.publicId);
+        if (
+          form.documentKind !== "xlsx" ||
+          capability.targetType !== "template-draft" ||
+          capability.formId !== form.id ||
+          capability.targetId !== form.templateDraft?.id ||
+          !capability.leaseId ||
+          !["save-template", "publish"].includes(capability.action)
+        ) {
+          fail(
+            403,
+            "editor_capability_scope_mismatch",
+            "This checkpoint does not belong to this editor"
+          );
+        }
+        const input = z
+          .object({
+            checkpoint: z.uuid(),
+            leaseId: z.uuid(),
+          })
+          .strict()
+          .safeParse(await readJsonRecord(request, 4096));
+        if (!input.success) {
+          fail(400, "invalid_request", "Invalid Excel save checkpoint");
+        }
+        return await prisma.$transaction(async (tx) => {
+          await tx.$queryRaw`SELECT id FROM forms WHERE id = ${form.id}::uuid FOR UPDATE`;
+          const lease = await tx.editorLease.findFirst({
+            where: {
+              holderUserId: actor.id,
+              id: capability.leaseId,
+              targetId: capability.targetId,
+              targetType: "template_draft",
+            },
+          });
+          const original = await tx.operation.findFirst({
+            where: {
+              actorId: actor.id,
+              formId: form.id,
+              metadata: {
+                equals: input.data.checkpoint,
+                path: ["xlsxDraft", "checkpoint"],
+              },
+              targetId: capability.targetId,
+            },
+          });
+          if (original) {
+            const metadata = operationMetadata(original.metadata);
+            if (
+              !lease ||
+              metadata.xlsxDraft?.sessionId !== lease.holderSessionId ||
+              metadata.xlsxDraft?.leaseId !== input.data.leaseId ||
+              !original.documentKey
+            ) {
+              fail(
+                403,
+                "editor_capability_scope_mismatch",
+                "This checkpoint does not belong to this session"
+              );
+            }
+            const current = await tx.templateDraft.findUnique({
+              select: {
+                bindingRevision: true,
+                contentHash: true,
+                documentKey: true,
+              },
+              where: { id: capability.targetId },
+            });
+            return {
+              action: metadata.action,
+              current,
+              operationCapability: operationEditorCapability(
+                actor,
+                {
+                  documentKey: original.documentKey,
+                  formId: form.id,
+                  targetId: capability.targetId,
+                  targetType: "template-draft",
+                },
+                original.id
+              ),
+              operationId: original.id,
+              result:
+                original.status === "completed" ? original.result : undefined,
+              status: original.status,
+            };
+          }
+          const originalLease =
+            lease?.id === input.data.leaseId
+              ? lease
+              : await tx.editorLease.findUnique({
+                  where: { id: input.data.leaseId },
+                });
+          if (
+            !originalLease &&
+            (lease || capability.leaseId === input.data.leaseId)
+          ) {
+            // Lease IDs never return after replacement, so a previously fenced retry is settled.
+            return { status: "not-admitted" };
+          }
+          if (!lease || originalLease?.id !== lease.id) {
+            fail(
+              409,
+              "checkpoint_unresolved",
+              "The original Excel admission lease could not be verified"
+            );
+          }
+          if (
+            await tx.operation.findFirst({
+              select: { id: true },
+              where: {
+                status: { in: ["pending", "processing"] },
+                targetId: capability.targetId,
+                targetType: "template_draft",
+              },
+            })
+          ) {
+            fail(
+              409,
+              "checkpoint_unresolved",
+              "Another Excel operation is active on this lease"
+            );
+          }
+          await tx.editorLease.deleteMany({ where: { id: lease.id } });
+          return { status: "not-admitted" };
+        });
+      },
+      { parse: "none" }
     )
     .get(
       "/api/admin/forms/:publicId/schema",
@@ -630,8 +801,8 @@ export function registerFormAuthoringRoutes(
               "A publish operation is already in progress"
             );
           }
-          if (form.documentKind === "xlsx") {
-            const bindings = await spreadsheetDraftBindings(templateDraft.id);
+          if ("xlsxDraft" in snapshot && snapshot.xlsxDraft) {
+            const { bindings } = snapshot.xlsxDraft;
             validateSpreadsheetPublication(bindings);
             await prisma.$transaction((tx) =>
               validateAttachmentStorageMappings(tx, bindings)

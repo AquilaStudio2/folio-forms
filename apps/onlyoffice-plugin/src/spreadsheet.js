@@ -17,9 +17,6 @@ import { createOperations } from "./operations.js";
 import { createPdmsProjectPicker } from "./pdms-project-picker.js";
 import {
   spreadsheetBindingAttempt,
-  spreadsheetBindingOutcome,
-  spreadsheetBindingNeedsFence,
-  sameSpreadsheetBindings,
   sameSpreadsheetNativeState,
 } from "./spreadsheet-binding-recovery.js";
 import {
@@ -269,8 +266,11 @@ export function initializeSpreadsheet(options, setStatus) {
   const office = createOffice(options);
   const api = createApi(options);
   let bindings = options.spreadsheetBindings;
-  let metadataBindings = bindings;
-  let revision;
+  let revision = options.xlsxDraftRevision;
+  const pendingDraft = () =>
+    options.xlsxDraftProtocol === 1 &&
+    options.scopeIdentity &&
+    window.sessionStorage.getItem(`folio-xlsx-draft:${options.scopeIdentity}`);
   let editing = null;
   let busy = false;
   let authoringActionInFlight = false;
@@ -378,11 +378,17 @@ export function initializeSpreadsheet(options, setStatus) {
             deletedUploadPocBindingIds: [...deletedUploadPocBindingIds],
           }
         : { preserveEditorSessionPurpose: "manual" },
-    onTemplateSaveCompleted: (action, context) => {
+    onTemplateSaveCompleted: (action, context, result) => {
       if (
         action === ACTIONS.SAVE_TEMPLATE &&
         context?.preserveEditorSession === true
       ) {
+        if (Number.isSafeInteger(result?.bindingRevision)) {
+          applyBindings({
+            bindings: result.bindings,
+            revision: result.bindingRevision,
+          });
+        }
         pendingUploadPocPromotion = null;
         uploadPocDeleteNeedsSave = false;
         pendingUploadPocChanges.clear();
@@ -427,12 +433,24 @@ export function initializeSpreadsheet(options, setStatus) {
         ["manual", "delete"].includes(context.preserveEditorSessionPurpose)
           ? await preparePreservedTemplateSave(context)
           : {};
+      await readBindings(false);
+      window.Asc.scope.folioSpreadsheetAnchors =
+        spreadsheetBindingAnchors(bindings);
       const raw = await office.callCommandResult(spreadsheetSelectionCommand);
       const snapshot = typeof raw === "string" ? JSON.parse(raw) : raw;
       if (!Array.isArray(snapshot?.anchors)) {
         throw new TypeError("อ่านตำแหน่งช่องก่อนบันทึกไม่ได้ กรุณาลองใหม่");
       }
-      return { spreadsheetAnchors: snapshot.anchors, ...proof };
+      return {
+        spreadsheetAnchors: snapshot.anchors,
+        xlsxDraft: {
+          version: 1,
+          revision,
+          checkpoint: crypto.randomUUID(),
+          bindings,
+        },
+        ...proof,
+      };
     },
     setStatus,
   });
@@ -502,6 +520,13 @@ export function initializeSpreadsheet(options, setStatus) {
     panel.append(node);
     node.addEventListener("click", () => {
       if (busy || node.disabled) {
+        return;
+      }
+      if (
+        options.action === ACTIONS.TEMPLATE_EDIT &&
+        (options.xlsxDraftProtocol !== 1 || pendingDraft())
+      ) {
+        setStatus("กรุณาตรวจผลบันทึกเดิมหรือเปิดตัวแก้ไข Excel รุ่นล่าสุดก่อนแก้ไข", "error");
         return;
       }
       if (pendingUploadPocPromotion && !recoveryAction) {
@@ -903,7 +928,6 @@ export function initializeSpreadsheet(options, setStatus) {
   }
   function applyBindings(result) {
     bindings = result.bindings;
-    metadataBindings = result.bindings;
     options.spreadsheetBindings = result.bindings;
     if (
       ![...bindings.fields, ...(bindings.table?.columns || [])].some(
@@ -916,13 +940,21 @@ export function initializeSpreadsheet(options, setStatus) {
     revision = result.revision;
   }
   async function readBindings(reconcile = true) {
+    if (options.xlsxDraftProtocol !== 1) {
+      throw new Error("กรุณาเปิดตัวแก้ไข Excel รุ่นล่าสุดแล้วลองอีกครั้ง");
+    }
     const result = await fetchBindings();
     if (result.documentKey && result.documentKey !== options.documentKey) {
       throw new Error(
         "ต้นแบบเปลี่ยนเป็นเอกสารอีกฉบับแล้ว กรุณาตรวจสอบต้นแบบล่าสุดก่อนแก้ไขต่อ"
       );
     }
-    applyBindings(result);
+    if (revision !== undefined && revision !== result.revision) {
+      throw new Error("ต้นแบบเปลี่ยนไปแล้ว กรุณาเปิดใหม่ก่อนแก้ไขต่อ");
+    }
+    if (revision === undefined) {
+      applyBindings(result);
+    }
     if (reconcile) {
       await synchronizeColumns(false);
     }
@@ -987,6 +1019,9 @@ export function initializeSpreadsheet(options, setStatus) {
     }
     await restoreNativeState(native.before);
     native.checkpoint = await captureNativeState(native.target);
+    if (!sameSpreadsheetNativeState(native.checkpoint, native.before)) {
+      throw new Error("คืนกฎเดิมของช่องไม่ได้ กรุณากด ลองยืนยันอีกครั้ง");
+    }
   }
   async function synchronizeColumns(
     initialize,
@@ -996,7 +1031,7 @@ export function initializeSpreadsheet(options, setStatus) {
     window.Asc.scope = window.Asc.scope || {};
     window.Asc.scope.folioSpreadsheetAnchors =
       spreadsheetBindingAnchors(bindings);
-    if (!table?.columns?.length) {
+    if (!table?.columns?.length || (table.unbound && !repair)) {
       return;
     }
     window.Asc.scope.folioSpreadsheetColumns = { table, initialize, repair };
@@ -1045,6 +1080,9 @@ export function initializeSpreadsheet(options, setStatus) {
     return left === right;
   };
   async function changeBinding(change, native = null) {
+    if (options.xlsxDraftProtocol !== 1 || pendingDraft()) {
+      throw new Error("กรุณาตรวจผลบันทึกเดิมหรือเปิดตัวแก้ไข Excel รุ่นล่าสุดก่อนแก้ไข");
+    }
     if (authoringMismatch) {
       throw new Error(
         pendingRecovery
@@ -1052,105 +1090,21 @@ export function initializeSpreadsheet(options, setStatus) {
           : "การตั้งค่าช่องกับเอกสารยังไม่ตรงกัน กรุณาตรวจสอบต้นแบบล่าสุดก่อนบันทึก"
       );
     }
-    let capability;
-    try {
-      if (revision === undefined) {
-        await readBindings(change.action !== "delete");
-      }
-      capability = await bridge.requestActionCapability(
-        ACTIONS.CONFIGURE_FIELDS
-      );
-    } catch (error) {
-      error.bindingUnchanged = true;
-      throw error;
+    if (revision === undefined) {
+      await readBindings(change.action !== "delete");
     }
-    const columnOffsets =
-      change.kind === "column" && change.action === "upsert"
-        ? bindings.table.columns.map((column) => [column.id, column.offset])
-        : null;
     const attempt = spreadsheetBindingAttempt({
-      bindings: metadataBindings,
+      bindings,
       change,
-      columnOffsets,
       documentKey: options.documentKey,
       revision,
     });
     if (native) {
       native.attempt = attempt;
     }
-    try {
-      const result = await api.requestJson(
-        api.adminFormPath("spreadsheet-bindings"),
-        {
-          method: "PATCH",
-          body: JSON.stringify({
-            documentKey: options.documentKey,
-            revision,
-            change,
-            ...(columnOffsets
-              ? { spreadsheetColumnOffsets: columnOffsets }
-              : {}),
-          }),
-        },
-        capability
-      );
-      if (
-        !Array.isArray(result?.bindings?.fields) ||
-        !Number.isSafeInteger(result?.revision)
-      ) {
-        throw new TypeError("ยืนยันผลบันทึกการตั้งค่าช่องไม่ได้");
-      }
-      if (result.documentKey && result.documentKey !== attempt.documentKey) {
-        throw new Error("ผลบันทึกเป็นของต้นแบบอีกฉบับ");
-      }
-      applyBindings(result);
-    } catch (error) {
-      attempt.requiresFence = !(
-        Number.isInteger(error.httpStatus) &&
-        error.httpStatus >= 400 &&
-        error.httpStatus < 500 &&
-        error.httpStatus !== 408
-      );
-      let result;
-      let outcome = "unverified";
-      try {
-        result = await fetchBindings();
-        outcome = spreadsheetBindingOutcome(attempt, result);
-      } catch (verificationError) {
-        if (
-          [
-            "stale_document",
-            "editor_capability_scope_mismatch",
-            "document_unavailable",
-            "editor_lease_inactive",
-            "published_immutable",
-          ].includes(verificationError.code)
-        ) {
-          outcome = "stale";
-        }
-      }
-      if (outcome !== "committed") {
-        if (outcome === "unchanged" && !attempt.requiresFence) {
-          applyBindings(result);
-          const failure = new Error(error.message || "บันทึกการตั้งค่าไม่สำเร็จ", {
-            cause: error,
-          });
-          failure.bindingUnchanged = true;
-          failure.bindingAttempt = attempt;
-          throw failure;
-        }
-        const recoveryOutcome =
-          outcome === "unchanged" ? "unverified" : outcome;
-        beginRecovery(attempt, native, recoveryOutcome);
-        throw new Error(recoveryMessage(recoveryOutcome), { cause: error });
-      }
-      applyBindings(result);
-      if (change.action !== "delete") {
-        await synchronizeColumns(false);
-      }
-    }
+    applyBindings({ bindings: attempt.expected, revision });
     bridge.setDirtyState(true);
-    setStatus("บันทึกการตั้งค่าช่องแล้ว กรุณาบันทึกต้นแบบ", "success");
+    setStatus("ตั้งค่าช่องแล้ว รอบันทึกต้นแบบ", "success");
     renderList();
   }
   async function mutateBinding(change, requestedTarget, mutate, onCommitted) {
@@ -1192,6 +1146,7 @@ export function initializeSpreadsheet(options, setStatus) {
       native.lockConfirmed = true;
       if (
         change.action === "upsert" &&
+        !change.repair &&
         bindings?.table &&
         ["column", "table"].includes(change.kind)
       ) {
@@ -1268,7 +1223,7 @@ export function initializeSpreadsheet(options, setStatus) {
         } catch (unlockError) {
           native.noMutation = true;
           const attempt = spreadsheetBindingAttempt({
-            bindings: metadataBindings,
+            bindings,
             change,
             columnOffsets: null,
             documentKey: options.documentKey,
@@ -1290,7 +1245,7 @@ export function initializeSpreadsheet(options, setStatus) {
           error.bindingAttempt ||
           native.attempt ||
           spreadsheetBindingAttempt({
-            bindings: metadataBindings,
+            bindings,
             change,
             columnOffsets: null,
             documentKey: options.documentKey,
@@ -1315,7 +1270,7 @@ export function initializeSpreadsheet(options, setStatus) {
           error.bindingAttempt ||
           native.attempt ||
           spreadsheetBindingAttempt({
-            bindings: metadataBindings,
+            bindings,
             change,
             columnOffsets: null,
             documentKey: options.documentKey,
@@ -1376,58 +1331,11 @@ export function initializeSpreadsheet(options, setStatus) {
       refreshRecoveryControls();
       throw new Error(recoveryMessage(recovery.outcome), { cause: error });
     }
-    if (spreadsheetBindingNeedsFence(recovery.attempt, result)) {
-      try {
-        const capability = await bridge.requestActionCapability(
-          ACTIONS.CONFIGURE_FIELDS
-        );
-        result = await api.requestJson(
-          api.adminFormPath("spreadsheet-bindings/recover"),
-          {
-            method: "POST",
-            body: JSON.stringify({
-              documentKey: recovery.attempt.documentKey,
-              revision: recovery.attempt.revision,
-            }),
-          },
-          capability
-        );
-      } catch (error) {
-        if (
-          [
-            "stale_document",
-            "editor_capability_scope_mismatch",
-            "document_unavailable",
-            "editor_lease_inactive",
-            "published_immutable",
-          ].includes(error.code)
-        ) {
-          recovery.outcome = "stale";
-        }
-        throw new Error(recoveryMessage(recovery.outcome), { cause: error });
-      }
+    const outcome = recovery.provenOutcome;
+    if (!outcome || result.revision !== revision) {
+      recovery.outcome = "stale";
+      throw new Error(recoveryMessage(recovery.outcome));
     }
-    const outcome = spreadsheetBindingOutcome(recovery.attempt, result);
-    recovery.outcome = outcome;
-    if (
-      !["committed", "unchanged"].includes(outcome) ||
-      (outcome === "unchanged" &&
-        recovery.attempt.requiresFence &&
-        !(
-          result.recovery?.settled === true &&
-          result.recovery.baseRevision === recovery.attempt.revision &&
-          result.revision === recovery.attempt.revision + 1
-        ))
-    ) {
-      refreshRecoveryControls();
-      throw new Error(recoveryMessage(outcome));
-    }
-    if (recovery.provenOutcome && recovery.provenOutcome !== outcome) {
-      recovery.outcome = "conflict";
-      refreshRecoveryControls();
-      throw new Error(recoveryMessage("conflict"));
-    }
-    recovery.provenOutcome = outcome;
     const native = recovery.native;
     if (native && !native.noMutation) {
       if (!native.lockConfirmed) {
@@ -1467,18 +1375,6 @@ export function initializeSpreadsheet(options, setStatus) {
         recovery.phase = "restored";
       }
     }
-    applyBindings(result);
-    if (outcome === "committed") {
-      await synchronizeColumns(false);
-      if (
-        recovery.attempt.enforceColumnOffsets &&
-        !sameSpreadsheetBindings(result.bindings, bindings)
-      ) {
-        recovery.outcome = "native-conflict";
-        refreshRecoveryControls();
-        throw new Error(recoveryMessage(recovery.outcome));
-      }
-    }
     await releaseNativeLock(native);
     pendingRecovery = null;
     authoringMismatch = false;
@@ -1486,7 +1382,7 @@ export function initializeSpreadsheet(options, setStatus) {
     refreshRecoveryControls();
     if (outcome === "committed") {
       await native?.onCommitted?.();
-      setStatus("ยืนยันว่าบันทึกการตั้งค่าช่องแล้ว กรุณาบันทึกต้นแบบ", "success");
+      setStatus("ยืนยันการตั้งค่าช่องแล้ว รอบันทึกต้นแบบ", "success");
     } else {
       setStatus(
         "ยืนยันว่าการตั้งค่ายังไม่ได้บันทึก คืนกฎเดิมแล้ว การแก้ไขของคุณยังอยู่ กรุณาแก้ไขแล้วบันทึกอีกครั้ง",
@@ -2576,40 +2472,30 @@ export function initializeSpreadsheet(options, setStatus) {
             }
           : {}),
       };
-      window.Asc.scope.folioSpreadsheetValidation = target;
-      const snapshot = await office.callCommandResult(
-        spreadsheetCaptureValidationCommand
-      );
-      if (!snapshot) {
-        throw new Error("สำรองตำแหน่งช่องเดิมไม่ได้ กรุณาลองอีกครั้ง");
-      }
-      try {
-        await anchor(editing.anchor, current);
-        if (editingKind === "table") {
-          await synchronizeColumns(true, editing, true);
-          initializationError = null;
-        }
-      } catch (error) {
-        window.Asc.scope.folioSpreadsheetValidationSnapshot = snapshot;
-        try {
-          if (
-            (await office.callCommandResult(
-              spreadsheetRestoreValidationCommand,
-              true
-            )) !== true
-          ) {
-            throw new Error("คืนตำแหน่งเดิมไม่ได้", { cause: error });
+      const value = { ...editing };
+      delete value.unbound;
+      await mutateBinding(
+        { action: "upsert", kind: editingKind, value, repair: true },
+        target,
+        async () => {
+          await anchor(value.anchor, current);
+          if (editingKind === "table") {
+            await synchronizeColumns(true, value, true);
+            value.columns = bindings.table.columns;
+            initializationError = null;
+          } else {
+            window.Asc.scope.folioSpreadsheetValidation = value;
+            if (
+              (await office.callCommandResult(
+                spreadsheetValidationCommand,
+                true
+              )) !== true
+            ) {
+              throw new Error("ตั้งกฎชนิดข้อมูลไม่ได้ กรุณาลองอีกครั้ง");
+            }
           }
-        } catch {
-          authoringMismatch = true;
-          throw new Error("คืนตำแหน่งเดิมไม่ได้ กรุณาเปิดต้นแบบใหม่ก่อนบันทึก", {
-            cause: error,
-          });
-        } finally {
-          delete window.Asc.scope.folioSpreadsheetValidationSnapshot;
         }
-        throw error;
-      }
+      );
       selected = await selection();
       updateControls();
       setStatus("ผูกตำแหน่งใหม่แล้ว กรุณาบันทึกการแก้ไขช่องและบันทึกแบบร่าง", "success");
@@ -2767,9 +2653,13 @@ export function initializeSpreadsheet(options, setStatus) {
     for (const item of buttons) {
       item.disabled = true;
     }
-    const columnsReady = office
-      .executeMethodResult("SetEditingRestrictions", ["none"])
-      .then(() => synchronizeColumns(true))
+    const columnsReady = (
+      options.xlsxDraftProtocol !== 1 || pendingDraft()
+        ? office.freezeEditor()
+        : office
+            .executeMethodResult("SetEditingRestrictions", ["none"])
+            .then(() => synchronizeColumns(true))
+    )
       .catch((error) => {
         initializationError = error;
         setStatus(error.message, "error");
