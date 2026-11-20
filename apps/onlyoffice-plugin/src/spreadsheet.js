@@ -933,6 +933,9 @@ export function initializeSpreadsheet(options, setStatus) {
     );
     if (
       !Array.isArray(result?.bindings?.fields) ||
+      result.bindings.version !== 1 ||
+      (result.bindings.table !== null &&
+        !Array.isArray(result.bindings.table?.columns)) ||
       !Number.isSafeInteger(result?.revision)
     ) {
       throw new TypeError("อ่านผลการตั้งค่าช่องไม่ได้ กรุณาลองใหม่");
@@ -1333,8 +1336,13 @@ export function initializeSpreadsheet(options, setStatus) {
       throw new Error(recoveryMessage(recovery.outcome), { cause: error });
     }
     const outcome = recovery.provenOutcome;
-    if (!outcome || result.revision !== revision) {
+    if (
+      !outcome ||
+      result.documentKey !== options.documentKey ||
+      result.revision !== revision
+    ) {
       recovery.outcome = "stale";
+      refreshRecoveryControls();
       throw new Error(recoveryMessage(recovery.outcome));
     }
     const native = recovery.native;

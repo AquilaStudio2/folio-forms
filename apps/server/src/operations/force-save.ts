@@ -10,7 +10,7 @@ import {
   spreadsheetXmlTree,
 } from "../documents/spreadsheets/xml";
 import { spreadsheetContractForTemplate } from "../forms/spreadsheet-fields";
-import { fail, HttpError } from "../http/errors";
+import { fail } from "../http/errors";
 // oxlint-disable func-style prefer-destructuring no-await-in-loop no-use-before-define no-nested-ternary complexity no-shadow -- Route modules keep declaration order and sequential persistence invariants.
 import type { Operation } from "../model-types";
 import type { OnlyOfficeClient } from "../onlyoffice";
@@ -23,7 +23,11 @@ import {
   updateOperationFailed,
   operationDocumentKey,
 } from "./lifecycle";
-import { operationMetadata, operationDocumentServerKey } from "./model";
+import {
+  isReportableOperationError,
+  operationMetadata,
+  operationDocumentServerKey,
+} from "./model";
 import { nativeCaptureKey } from "./object-cleanup";
 import { SpreadsheetValidationError } from "./spreadsheet-document";
 
@@ -316,17 +320,12 @@ export function launchForceSave(
         );
       }
     } catch (error) {
+      const reported = isReportableOperationError(error);
       await updateOperationFailed(
         operation.id,
-        error instanceof HttpError &&
-          (error.code === "invalid_template" ||
-            error.code === "attachment_template_stale")
-          ? error.code
-          : "force_save_failed",
+        reported ? error.code : "force_save_failed",
         undefined,
-        error instanceof HttpError &&
-          (error.code === "invalid_template" ||
-            error.code === "attachment_template_stale")
+        reported
           ? { errorMessage: error.message }
           : error instanceof SpreadsheetValidationError
             ? {

@@ -1,12 +1,13 @@
 import { prisma } from "@onlyoffice/db";
 
-import { reconcileSpreadsheetColumns } from "../documents/spreadsheets/columns";
 import {
   spreadsheetCellPosition,
   spreadsheetColumnName,
   spreadsheetRangesOverlap,
 } from "../documents/spreadsheets/contract";
 import type {
+  SpreadsheetBindings,
+  SpreadsheetField,
   SpreadsheetRange,
   SpreadsheetContract,
 } from "../documents/spreadsheets/contract";
@@ -34,6 +35,7 @@ import {
   stripSpreadsheetUploadPoc,
   validateSpreadsheetAttachmentButtons,
 } from "../documents/spreadsheets/upload-poc";
+import { applySpreadsheetValidation } from "../documents/spreadsheets/validation";
 import type { SpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
 import {
   extractSpreadsheetData,
@@ -138,6 +140,23 @@ const validateAttachmentProjection = (
   }
 };
 
+const usesManagedValidation = (
+  field: Pick<SpreadsheetField, "computed" | "source" | "placeholder" | "type">
+): boolean =>
+  !field.computed &&
+  !field.source &&
+  (field.placeholder !== null ||
+    (field.type !== "text" && field.type !== "picture"));
+
+const hasManagedValidation = (bindings: SpreadsheetBindings): boolean =>
+  bindings.fields.some(
+    (field) => !field.unbound && usesManagedValidation(field)
+  ) ||
+  Boolean(
+    !bindings.table?.unbound &&
+    bindings.table?.columns.some(usesManagedValidation)
+  );
+
 // oxlint-disable-next-line complexity -- Actions share the trusted-workbook processing boundary.
 export const prepareSpreadsheetOperation = async (
   metadata: OperationMetadata,
@@ -205,9 +224,22 @@ export const prepareSpreadsheetOperation = async (
         );
       }
       validateSpreadsheetAttachmentButtons(stripped, bindings, true);
-      return compactSpreadsheetDraftOptions(
-        normalizeSpreadsheetUploadPocAnchors(stripped)
-      );
+      const normalized = normalizeSpreadsheetUploadPocAnchors(stripped);
+      if (!hasManagedValidation(bindings) && !hasManagedValidation(previous)) {
+        return compactSpreadsheetDraftOptions(normalized);
+      }
+      const fields = bindings.fields.filter((field) => !field.unbound);
+      const table = bindings.table?.unbound ? null : bindings.table;
+      // Keep persisted validation authoritative even if capture omitted a native rule.
+      const validated =
+        fields.length || table?.columns.length
+          ? applySpreadsheetValidation(normalized, {
+              ...bindings,
+              fields,
+              table,
+            })
+          : normalized;
+      return compactSpreadsheetDraftOptions(validated);
     }
     validateSpreadsheetPublication(bindings);
     validateSpreadsheetAttachmentButtons(snapshot, bindings);

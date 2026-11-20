@@ -7,6 +7,7 @@ import { unzipSync } from "fflate";
 import { createApp } from "../../src/app";
 import { requireIdentity } from "../../src/auth/identity";
 import { contentHash } from "../../src/digests";
+import { templateArchiveText } from "../../src/documents/package";
 import { blankSpreadsheet } from "../../src/documents/spreadsheets/blank";
 import type { SpreadsheetBindings } from "../../src/documents/spreadsheets/contract";
 import { emptySpreadsheetBindings } from "../../src/documents/spreadsheets/contract";
@@ -457,9 +458,20 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
         method: "POST",
       })
     );
+  const dateField = {
+    ...field,
+    anchor: "folio_date_anchor",
+    id: "folio_date_anchor",
+    key: "event_date",
+    label: "Event date",
+    type: "date" as const,
+  };
   const candidate: SpreadsheetBindings = {
     ...emptySpreadsheetBindings(),
-    fields: [field],
+    fields: [
+      { ...field, options: ["Updated choice"], type: "dropdown" },
+      dateField,
+    ],
     table: {
       anchor: "folio_unfinished",
       columns: [],
@@ -473,6 +485,7 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
     documentKey,
     spreadsheetAnchors: [
       [field.anchor, "'Form'!$E$5"],
+      [dateField.anchor, "'Form'!$F$5"],
       [candidate.table?.anchor, null],
     ],
     xlsxDraft: {
@@ -486,6 +499,18 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
   const oldRules = await bindingRequest("GET").then((response) =>
     response.json()
   );
+  const duplicateTag = await action(
+    "save",
+    saveCapability,
+    payload({
+      ...candidate,
+      fields: candidate.fields.map((entry) => ({ ...entry, key: field.key })),
+    })
+  );
+  expect(duplicateTag.status).toBe(409);
+  expect(await duplicateTag.json()).toMatchObject({
+    error: "duplicate_field_tag",
+  });
   const legacy = await action("save", saveCapability, {
     documentKey,
     spreadsheetAnchors: [],
@@ -525,10 +550,25 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
   expect(contentHash(await readSaved())).toBe(contentHash(oldBytes));
 
   nativeSnapshot = fixtureWorkbook({
-    names: { folio_name_anchor: "Form!E5" },
+    names: { folio_date_anchor: "Form!F5", folio_name_anchor: "Form!E5" },
   });
   nativeSnapshotUrl = new URL("/saved.xlsx", nativeServer.url).href;
   try {
+    const invalidPrefill = await action(
+      "save",
+      saveCapability,
+      payload({
+        ...candidate,
+        fields: candidate.fields.map((entry) => ({
+          ...entry,
+          prefillPolicy: "lock_when_available",
+        })),
+      })
+    );
+    expect(await poll(invalidPrefill)).toMatchObject({
+      error: "invalid_field_config",
+      status: "failed",
+    });
     const input = payload(candidate);
     const saved = await action("save", saveCapability, input);
     const recovery = await app.handle(
@@ -574,6 +614,15 @@ test("frozen Excel draft commits a new workbook and rules together; lost capture
       sheet: "Form",
     });
     expect(workbook.names.has("folio_unfinished")).toBe(false);
+    const validations = templateArchiveText(
+      workbook.archive,
+      workbook.sheetPath
+    );
+    expect(validations).toContain('sqref="E5:E5" type="list"');
+    expect(validations).toContain('sqref="F5:F5" type="date"');
+    expect(
+      templateArchiveText(workbook.archive, "xl/worksheets/folio-options.xml")
+    ).toContain("Updated choice");
   } finally {
     nativeSnapshotUrl = null;
     nativeSnapshot = null;
