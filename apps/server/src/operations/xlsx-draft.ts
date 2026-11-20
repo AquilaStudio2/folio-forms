@@ -8,6 +8,7 @@ import { contentHash } from "../digests";
 import {
   reconcileSpreadsheetColumns,
   spreadsheetBindingAnchors,
+  spreadsheetTableColumnsAnchor,
 } from "../documents/spreadsheets/columns";
 import { spreadsheetBindingSchema } from "../documents/spreadsheets/contract";
 import type { SpreadsheetBindings } from "../documents/spreadsheets/contract";
@@ -72,12 +73,20 @@ export async function validateXlsxDraftCapture(
   ) {
     fail(409, "stale_document", "The saved Excel base could not be verified");
   }
-  const saved = readSpreadsheetWorkbook(base);
+  const rejectedSavedNames = new Set<string>();
+  const saved = readSpreadsheetWorkbook(base, rejectedSavedNames);
   for (const root of unbound) {
     const prior = previousRoots.find((entry) => entry.id === root.id);
+    const names =
+      "columns" in root
+        ? spreadsheetBindingAnchors({ ...bindings, fields: [], table: root })
+        : [root.anchor];
     if (
-      workbook.names.has(root.anchor) ||
-      (prior && (!prior.unbound || saved.names.has(prior.anchor)))
+      names.some((name) => workbook.names.has(name)) ||
+      (prior &&
+        (!prior.unbound ||
+          saved.names.has(prior.anchor) ||
+          rejectedSavedNames.has(prior.anchor)))
     ) {
       fail(
         422,
@@ -86,7 +95,7 @@ export async function validateXlsxDraftCapture(
       );
     }
   }
-  resolveSpreadsheetContract(
+  const placed = resolveSpreadsheetContract(
     {
       ...bindings,
       fields: bindings.fields.filter((root) => !root.unbound),
@@ -94,6 +103,22 @@ export async function validateXlsxDraftCapture(
     },
     workbook
   );
+  if (placed.table?.columns.length) {
+    const marker = workbook.names.get(
+      spreadsheetTableColumnsAnchor(placed.table.id)
+    );
+    if (
+      !marker ||
+      JSON.stringify(marker) !==
+        JSON.stringify(placed.locations[placed.table.anchor])
+    ) {
+      fail(
+        422,
+        "invalid_template",
+        "Confirm every table column placement before saving"
+      );
+    }
+  }
   const retainedNames = new Set(spreadsheetBindingAnchors(bindings));
   for (const name of spreadsheetBindingAnchors(previous)) {
     if (!retainedNames.has(name) && workbook.names.has(name)) {

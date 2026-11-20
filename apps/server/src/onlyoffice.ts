@@ -5,6 +5,7 @@ import { isDeepStrictEqual } from "node:util";
 import { env } from "@onlyoffice/env/server";
 import { z } from "zod";
 
+import type { XlsxDraftIssue } from "./documents/spreadsheets/draft-diagnosis";
 import { uploadPocGuid } from "./documents/spreadsheets/upload-poc-preview";
 import { fail } from "./http/errors";
 import type { PdmsProjectCatalog } from "./pdms/catalog";
@@ -138,6 +139,7 @@ export interface EditorOptions {
   spreadsheetBindings?: unknown;
   xlsxDraftProtocol?: 1;
   xlsxDraftRevision?: number;
+  xlsxDraftIssues?: XlsxDraftIssue[];
   attachmentSavedData?: unknown;
   attachmentCleanupWarning?: string | null;
   attachmentMutationNotice?: string | null;
