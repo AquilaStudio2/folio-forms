@@ -260,9 +260,16 @@ const fixture = async (
   });
   let fixtureAnchors: Record<string, string> = anchors;
   if (tableMode) {
+    const body =
+      tableMode === "mixed" ? "'Form'!$A$4:$C$6" : "'Form'!$A$4:$B$6";
     fixtureAnchors = {
-      folio_body:
-        tableMode === "mixed" ? "'Form'!$A$4:$C$6" : "'Form'!$A$4:$B$6",
+      folio_body: body,
+      folio_columns_folio_projects: body,
+      folio_column_folio_project: "'Form'!$A$4:$A$6",
+      folio_column_folio_second: "'Form'!$B$4:$B$6",
+      ...(tableMode === "mixed"
+        ? { folio_column_folio_note: "'Form'!$C$4:$C$6" }
+        : {}),
     };
     snapshot = fixtureWorkbook({
       merges: [],
@@ -306,6 +313,14 @@ const fixture = async (
   const author = (await (
     await request(`/api/admin/forms/${publicId}/editor-config`, adminToken)
   ).json()) as Editor;
+  const rules = await request(
+    `/api/admin/forms/${publicId}/spreadsheet-bindings`,
+    author.bridge.capabilities["configure-fields"] as string,
+    undefined,
+    true
+  );
+  expect(rules.status).toBe(200);
+  const { revision } = (await rules.json()) as { revision: number };
   const publication = await complete(
     await request(
       `/api/admin/forms/${publicId}/publish`,
@@ -313,6 +328,12 @@ const fixture = async (
       {
         documentKey: author.bridge.documentKey,
         spreadsheetAnchors: Object.entries(fixtureAnchors),
+        xlsxDraft: {
+          bindings,
+          checkpoint: crypto.randomUUID(),
+          revision,
+          version: 1,
+        },
       },
       true
     )

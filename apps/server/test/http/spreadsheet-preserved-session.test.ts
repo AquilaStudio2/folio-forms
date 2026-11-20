@@ -251,6 +251,12 @@ const deliverCallback = async (value: { key: string; userdata: string }) => {
   expect(response.status).toBe(200);
   return response.json();
 };
+const candidate = (revision: number, draftBindings = bindings) => ({
+  bindings: draftBindings,
+  checkpoint: crypto.randomUUID(),
+  revision,
+  version: 1,
+});
 const startSave = async (
   preserve: boolean,
   bytes: Uint8Array,
@@ -261,6 +267,7 @@ const startSave = async (
   const response = await post("save", {
     documentKey,
     spreadsheetAnchors: anchors,
+    xlsxDraft: candidate((await current()).bindingRevision),
     ...(preserve
       ? { preserveEditorSession: true, uploadPocBindingId: bindingId }
       : {}),
@@ -296,12 +303,14 @@ const terminal = async (id: string) => {
 };
 
 test("preserved placement saves validate input, commit twice under one key, ignore replay, and normal deletion rotates", async () => {
+  const initialCandidate = candidate((await current()).bindingRevision);
   for (const invalid of [false, "true", 1]) {
     expect(
       (
         await post("save", {
           documentKey,
           spreadsheetAnchors: anchors,
+          xlsxDraft: initialCandidate,
           preserveEditorSession: invalid,
         })
       ).status
@@ -315,6 +324,7 @@ test("preserved placement saves validate input, commit twice under one key, igno
           documentKey,
           preserveEditorSession: true,
           spreadsheetAnchors: anchors,
+          xlsxDraft: initialCandidate,
         },
         publishCapability
       )
@@ -385,7 +395,9 @@ test("preserved placement saves validate input, commit twice under one key, igno
       uploadPocBindingId: "not-a-binding",
     },
   ]) {
-    expect((await post("save", body)).status).toBe(400);
+    expect(
+      (await post("save", { ...body, xlsxDraft: initialCandidate })).status
+    ).toBe(400);
   }
   // No canonical POC proof: operation fails and leaves the saved artifact unchanged.
   const rejected = await startSave(
@@ -403,6 +415,7 @@ test("preserved placement saves validate input, commit twice under one key, igno
   });
   const savedOne = await current();
   expect(savedOne.documentKey).toBe(documentKey);
+  expect(savedOne.bindingRevision).toBe(initialCandidate.revision + 1);
   expect(savedOne.objectKey).not.toBe(initialObjectKey);
   // Existing B's native anchor is unchanged, but the old canonical artifact only
   // contains A. Force-save(false) must not ACK B by merely counting A's button.
@@ -410,6 +423,7 @@ test("preserved placement saves validate input, commit twice under one key, igno
   const staleResponse = await post("save", {
     documentKey,
     spreadsheetAnchors: anchors,
+    xlsxDraft: candidate(savedOne.bindingRevision),
     preserveEditorSession: true,
     uploadPocBindingId: "folio_second",
   });
@@ -432,6 +446,7 @@ test("preserved placement saves validate input, commit twice under one key, igno
   });
   const savedTwo = await current();
   expect(savedTwo.documentKey).toBe(documentKey);
+  expect(savedTwo.bindingRevision).toBe(savedOne.bindingRevision + 1);
   expect(savedTwo.objectKey).not.toBe(savedOne.objectKey);
   expect(savedTwo.contentHash).not.toBe(savedOne.contentHash);
   expect(
@@ -696,6 +711,10 @@ builder.CloseFile();`);
         spreadsheetAnchors: spreadsheetBindingAnchors(
           fixtureItem(states, index)
         ).map((anchor) => [anchor, xml.names[anchor] ?? null]),
+        xlsxDraft: candidate(
+          (await get()).bindingRevision,
+          fixtureItem(states, index)
+        ),
         preserveEditorSession: true,
         preserveEditorSessionPurpose: deleted.length ? "delete" : "manual",
         spreadsheetSaveCheckpoint:
@@ -768,6 +787,7 @@ builder.CloseFile();`);
           workbookXml(fixtureItem(snapshots, 1)).names[anchor] ?? null,
         ]
       ),
+      xlsxDraft: candidate(savedEdited.bindingRevision, fixtureItem(states, 1)),
       preserveEditorSession: true,
       preserveEditorSessionPurpose: "manual",
       spreadsheetSaveCheckpoint: nonces.edited,
@@ -786,21 +806,6 @@ builder.CloseFile();`);
   };
   let previous = savedEdited;
   for (let step = 2; step < labels.length; step += 1) {
-    await prisma.$transaction(async (tx) => {
-      await tx.draftFieldRule.deleteMany({
-        where: { templateDraftId: targetId },
-      });
-      const rows = spreadsheetDraftFieldData(fixtureItem(states, step));
-      if (rows.length) {
-        await tx.draftFieldRule.createMany({
-          data: rows.map((row) => ({ ...row, templateDraftId: targetId })),
-        });
-      }
-      await tx.templateDraft.update({
-        where: { id: targetId },
-        data: { bindingRevision: { increment: 1 } },
-      });
-    });
     const saved = await send(step, deletedByStep[step] ?? []);
     expect(saved.result).toMatchObject({
       status: "completed",
@@ -808,6 +813,7 @@ builder.CloseFile();`);
     });
     const updatedDraft = await get();
     expect(updatedDraft.documentKey).toBe(key);
+    expect(updatedDraft.bindingRevision).toBe(previous.bindingRevision + 1);
     expect(updatedDraft.objectKey).not.toBe(previous.objectKey);
     expect(updatedDraft.contentHash).not.toBe(previous.contentHash);
     expect(
@@ -819,6 +825,9 @@ builder.CloseFile();`);
     previous = updatedDraft;
   }
   const final = await get();
+  expect(
+    await prisma.draftFieldRule.count({ where: { templateDraftId: targetId } })
+  ).toBe(0);
   await runtime.write(
     "manual-final-storage.xlsx",
     await readObject(final.objectKey)

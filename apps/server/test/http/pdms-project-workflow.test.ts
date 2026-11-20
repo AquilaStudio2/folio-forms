@@ -180,14 +180,31 @@ workflowTest(
     const config = (await (
       await request(`/api/admin/forms/${publicId}/editor-config`, adminToken)
     ).json()) as {
-      bridge: { documentKey: string; capabilities: Record<string, string> };
+      bridge: {
+        capabilities: Record<string, string>;
+        documentKey: string;
+      };
     };
+    const rules = await request(
+      `/api/admin/forms/${publicId}/spreadsheet-bindings`,
+      config.bridge.capabilities["configure-fields"] as string,
+      undefined,
+      true
+    );
+    expect(rules.status).toBe(200);
+    const { revision } = (await rules.json()) as { revision: number };
     const published = await request(
       `/api/admin/forms/${publicId}/publish`,
       config.bridge.capabilities.publish as string,
       {
-        documentKey: `template-${fixtureId}`,
+        documentKey: config.bridge.documentKey,
         spreadsheetAnchors: Object.entries(names),
+        xlsxDraft: {
+          bindings,
+          checkpoint: crypto.randomUUID(),
+          revision,
+          version: 1,
+        },
       },
       true
     );
