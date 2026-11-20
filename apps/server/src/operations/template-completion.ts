@@ -16,7 +16,6 @@ import { validatePreservedSpreadsheetEditorSave } from "../documents/spreadsheet
 import { validateSpreadsheetAttachmentButtons } from "../documents/spreadsheets/upload-poc";
 import { readSpreadsheetWorkbook } from "../documents/spreadsheets/workbook";
 import { validateAttachmentStorageMappings } from "../ecm/categories";
-import { excelBindingSchema } from "../forms/excel-binding";
 import { validateFieldRulePointer } from "../forms/field-rules";
 import {
   spreadsheetDraftBindings,
@@ -31,6 +30,8 @@ import { advancePdmsCatalogSession } from "../pdms/catalog";
 import { jsonValue } from "../responses/data";
 import { markOperationCompleted } from "./lifecycle";
 import type { OperationMetadata, OperationCompletion } from "./model";
+import { objectCleanupIntentGraceMs } from "./object-cleanup";
+import { lockXlsxDraftCommit, replaceXlsxDraftBindings } from "./xlsx-draft";
 
 export async function completeTemplateOperation(
   operation: Operation,
@@ -63,6 +64,20 @@ export async function completeTemplateOperation(
       "The template changed while this operation was running"
     );
   }
+  const candidate = metadata.xlsxDraft;
+  if (form.documentKind === "xlsx" && !candidate) {
+    fail(
+      409,
+      "xlsx_draft_upgrade_required",
+      "This Excel save predates the atomic draft protocol"
+    );
+  }
+  const bindings = candidate
+    ? reconcileSpreadsheetColumns(
+        candidate.bindings,
+        readSpreadsheetWorkbook(bytes).names
+      )
+    : null;
   if (metadata.preserveEditorSession) {
     if (
       form.documentKind !== "xlsx" ||
@@ -76,7 +91,7 @@ export async function completeTemplateOperation(
     }
     validatePreservedSpreadsheetEditorSave(
       bytes,
-      await spreadsheetDraftBindings(templateDraft.id),
+      bindings ?? (await spreadsheetDraftBindings(templateDraft.id)),
       metadata
     );
   }
@@ -84,14 +99,28 @@ export async function completeTemplateOperation(
   const result = {
     documentKey: nextDocumentKey,
     publicId: form.publicId,
+    ...(candidate
+      ? {
+          bindingRevision: candidate.revision + 1,
+          bindings,
+          contentHash: contentHash(bytes),
+        }
+      : {}),
     ...(metadata.preserveEditorSession ? { editorSessionPreserved: true } : {}),
   };
-  const cleanupObjectKeys = [metadata.stagedObjectKey, templateDraft.objectKey];
+  const cleanupObjectKeys = [
+    metadata.stagedObjectKey,
+    ...(candidate ? [] : [templateDraft.objectKey]),
+  ];
   await prisma.$transaction(
     async (tx) => {
+      if (candidate) {
+        await lockXlsxDraftCommit(tx, operation, candidate);
+      }
       const updated = await tx.templateDraft.updateMany({
         data: {
           contentHash: contentHash(bytes),
+          ...(candidate ? { bindingRevision: { increment: 1 } } : {}),
           documentKey: nextDocumentKey,
           objectKey: metadata.finalObjectKey,
           updatedAt: new Date(),
@@ -99,8 +128,12 @@ export async function completeTemplateOperation(
         where: {
           documentKey,
           id: templateDraft.id,
-          ...(form.documentKind === "xlsx"
-            ? { bindingRevision: metadata.bindingRevision }
+          ...(candidate
+            ? {
+                bindingRevision: candidate.revision,
+                contentHash: candidate.baseContentHash,
+                objectKey: candidate.baseObjectKey,
+              }
             : {}),
         },
       });
@@ -117,42 +150,18 @@ export async function completeTemplateOperation(
         documentKey,
         nextDocumentKey
       );
-      if (form.documentKind === "xlsx") {
-        const previous = await spreadsheetDraftBindings(templateDraft.id, tx);
-        const reconciled = reconcileSpreadsheetColumns(
-          previous,
-          readSpreadsheetWorkbook(bytes).names
-        );
-        for (const column of reconciled.table?.columns ?? []) {
-          if (
-            column.offset ===
-            previous.table?.columns.find((entry) => entry.id === column.id)
-              ?.offset
-          ) {
-            continue;
-          }
-          const result = await tx.draftFieldRule.updateMany({
-            data: {
-              binding: excelBindingSchema.parse({
-                computed: column.computed,
-                id: column.id,
-                offset: column.offset,
-                placeholder: column.placeholder,
-              }),
-            },
-            where: {
-              tag: `${reconciled.table?.key}.${column.key}`,
-              templateDraftId: templateDraft.id,
-            },
-          });
-          if (result.count !== 1) {
-            fail(
-              409,
-              "stale_operation",
-              "การตั้งค่าคอลัมน์เปลี่ยนระหว่างบันทึก กรุณาลองอีกครั้ง"
-            );
-          }
-        }
+      if (bindings) {
+        await replaceXlsxDraftBindings(tx, templateDraft.id, bindings);
+        await tx.objectCleanupIntent.upsert({
+          create: {
+            cleanupAfter: new Date(Date.now() + objectCleanupIntentGraceMs),
+            objectKey: templateDraft.objectKey,
+          },
+          update: {
+            cleanupAfter: new Date(Date.now() + objectCleanupIntentGraceMs),
+          },
+          where: { objectKey: templateDraft.objectKey },
+        });
       }
       const formUpdated = await tx.form.updateMany({
         data: { updatedAt: new Date() },
@@ -296,6 +305,14 @@ export async function completePublishOperation(
   if (!form.templateDraft || form.templateDraft.documentKey !== documentKey) {
     fail(409, "stale_operation", "The template changed while publishing");
   }
+  const candidate = metadata.xlsxDraft;
+  if (form.documentKind === "xlsx" && !candidate) {
+    fail(
+      409,
+      "xlsx_draft_upgrade_required",
+      "This Excel publish predates the atomic draft protocol"
+    );
+  }
   const { publishedVersion, publishedKey } = metadata;
   if (
     typeof publishedVersion !== "number" ||
@@ -325,6 +342,9 @@ export async function completePublishOperation(
       if (!lockedForm) {
         fail(404, "not_found", "Form was not found");
       }
+      if (candidate) {
+        await lockXlsxDraftCommit(tx, operation, candidate, false);
+      }
       const currentForm = await tx.form.findUnique({
         include: { publishedTemplate: true, templateDraft: true },
         where: { id: form.id },
@@ -346,19 +366,20 @@ export async function completePublishOperation(
         currentForm.version !== form.version ||
         !currentForm.templateDraft ||
         currentForm.templateDraft.documentKey !== documentKey ||
-        (form.documentKind === "xlsx" &&
-          currentForm.templateDraft.bindingRevision !==
-            metadata.bindingRevision)
+        (candidate &&
+          (currentForm.templateDraft.bindingRevision !== candidate.revision ||
+            currentForm.templateDraft.objectKey !== candidate.baseObjectKey ||
+            currentForm.templateDraft.contentHash !==
+              candidate.baseContentHash))
       ) {
         fail(409, "stale_operation", "The form changed while publishing");
       }
-      const bindings =
-        form.documentKind === "xlsx"
-          ? reconcileSpreadsheetColumns(
-              await spreadsheetDraftBindings(currentForm.templateDraft.id, tx),
-              readSpreadsheetWorkbook(bytes).names
-            )
-          : null;
+      const bindings = candidate
+        ? reconcileSpreadsheetColumns(
+            candidate.bindings,
+            readSpreadsheetWorkbook(bytes).names
+          )
+        : null;
       const controls = bindings
         ? spreadsheetScalarManifestFields(bindings)
         : docxControls;

@@ -19,6 +19,7 @@ import { fail } from "../http/errors";
 import type { Operation } from "../model-types";
 import { jsonValue } from "../responses/data";
 import type { OperationMetadata } from "./model";
+import { objectCleanupIntentGraceMs } from "./object-cleanup";
 
 export async function createOperation(input: {
   actorId: string;
@@ -67,6 +68,60 @@ export async function createOperation(input: {
         input.authorization,
         input.capabilityScope
       );
+      const candidate = input.metadata.xlsxDraft;
+      if (candidate) {
+        const draft = await tx.templateDraft.findFirst({
+          where: {
+            bindingRevision: candidate.revision,
+            documentKey: input.documentKey,
+            form: { publishedTemplate: null, status: { not: "published" } },
+            formId: input.formId,
+            id: input.targetId,
+          },
+        });
+        if (!draft) {
+          fail(
+            409,
+            "stale_document",
+            "The saved Excel draft changed; reopen before saving"
+          );
+        }
+        if (
+          await tx.operation.findFirst({
+            select: { id: true },
+            where: {
+              formId: input.formId,
+              metadata: {
+                equals: candidate.checkpoint,
+                path: ["xlsxDraft", "checkpoint"],
+              },
+            },
+          })
+        ) {
+          fail(
+            409,
+            "checkpoint_reused",
+            "This Excel save checkpoint was already admitted"
+          );
+        }
+        candidate.baseObjectKey = draft.objectKey;
+        candidate.baseContentHash = draft.contentHash;
+        candidate.leaseId = input.authorization.capability.leaseId;
+        const lease = await tx.editorLease.findUniqueOrThrow({
+          select: { holderSessionId: true },
+          where: { id: candidate.leaseId },
+        });
+        candidate.sessionId = lease.holderSessionId;
+        input.metadata.bindingRevision = draft.bindingRevision;
+        await tx.objectCleanupIntent.createMany({
+          data: [input.stagingObjectKey, input.metadata.finalObjectKey].map(
+            (objectKey) => ({
+              cleanupAfter: new Date(Date.now() + objectCleanupIntentGraceMs),
+              objectKey,
+            })
+          ),
+        });
+      }
       if (
         input.metadata.action === "save-correction" ||
         input.metadata.action === "save-correction-workspace"

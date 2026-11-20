@@ -10,6 +10,7 @@ import type { JsonRecord } from "../model-types";
 import { isDocumentServerKey } from "../onlyoffice";
 import type { PdmsSelection } from "../pdms/catalog";
 import { pdmsSelectionSchema } from "../pdms/selection";
+import type { XlsxDraftCandidate } from "./xlsx-draft";
 
 type OperationAction =
   | "save-template"
@@ -47,6 +48,7 @@ export interface OperationMetadata extends JsonRecord {
   documentKind?: "docx" | "xlsx";
   documentServerKey?: string;
   bindingRevision?: number;
+  xlsxDraft?: XlsxDraftCandidate;
   action: OperationAction;
   baseDocumentKey?: string;
   baseRevision?: number;

@@ -1,6 +1,5 @@
 import { prisma } from "@onlyoffice/db";
 
-import { reconcileSpreadsheetColumns } from "../documents/spreadsheets/columns";
 import { spreadsheetColumnName } from "../documents/spreadsheets/contract";
 import type {
   SpreadsheetRange,
@@ -53,6 +52,7 @@ import {
 import type { TableAttachment } from "../responses/attachment-data";
 import { readObject } from "../storage";
 import type { OperationMetadata } from "./model";
+import { validateXlsxDraftCapture } from "./xlsx-draft";
 
 export class SpreadsheetValidationError extends Error {
   readonly errors: { address: string; message: string }[];
@@ -88,9 +88,19 @@ export const prepareSpreadsheetOperation = async (
   }
   const current = readSpreadsheetWorkbook(snapshot);
   if (metadata.action === "save-template" || metadata.action === "publish") {
+    const candidate = metadata.xlsxDraft;
+    if (!candidate || candidate.version !== 1) {
+      fail(
+        409,
+        "xlsx_draft_upgrade_required",
+        "This Excel save predates the atomic draft protocol"
+      );
+    }
     if (
       !form.templateDraft ||
-      form.templateDraft.bindingRevision !== metadata.bindingRevision
+      form.templateDraft.bindingRevision !== candidate.revision ||
+      form.templateDraft.objectKey !== candidate.baseObjectKey ||
+      form.templateDraft.contentHash !== candidate.baseContentHash
     ) {
       fail(
         409,
@@ -98,7 +108,12 @@ export const prepareSpreadsheetOperation = async (
         "Spreadsheet configuration changed while saving"
       );
     }
-    let bindings = await spreadsheetDraftBindings(form.templateDraft.id);
+    const previous = await spreadsheetDraftBindings(form.templateDraft.id);
+    const bindings = await validateXlsxDraftCapture(
+      candidate,
+      previous,
+      snapshot
+    );
     if (metadata.spreadsheetAnchors) {
       validateSpreadsheetSaveSnapshot(
         metadata.spreadsheetAnchors,
@@ -106,17 +121,7 @@ export const prepareSpreadsheetOperation = async (
         current
       );
     }
-    try {
-      bindings = reconcileSpreadsheetColumns(bindings, current.names);
-    } catch (error) {
-      fail(
-        422,
-        "invalid_template",
-        error instanceof Error ? error.message : "ตรวจสอบตำแหน่งคอลัมน์ตาราง"
-      );
-    }
-    // A Template Draft may contain unfinished mappings. Saving preserves the
-    // editor snapshot; only publication freezes and validates the contract.
+    // Incomplete business configuration can be saved, but placement must match.
     if (metadata.action === "save-template") {
       if (metadata.preserveEditorSession) {
         validatePreservedSpreadsheetEditorSave(snapshot, bindings, metadata);
@@ -133,6 +138,7 @@ export const prepareSpreadsheetOperation = async (
           "Obsolete attachment buttons require a normal template save before preserving the editor session"
         );
       }
+      validateSpreadsheetAttachmentButtons(stripped, bindings, true);
       return compactSpreadsheetDraftOptions(
         normalizeSpreadsheetUploadPocAnchors(stripped)
       );

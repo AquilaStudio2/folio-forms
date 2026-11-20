@@ -38,6 +38,12 @@ export const storedSpreadsheetBindings = (
 export const validateSpreadsheetPublication = (
   bindings: SpreadsheetBindings
 ): void => {
+  if (
+    bindings.fields.some((field) => field.unbound) ||
+    bindings.table?.unbound
+  ) {
+    fail(422, "invalid_template", "กรุณาผูกตำแหน่งช่อง Excel ให้ครบก่อนเผยแพร่");
+  }
   const attachments = [
     ...bindings.fields,
     ...(bindings.table?.columns ?? []),
@@ -282,6 +288,7 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
       computed: field.computed,
       id: field.id,
       placeholder: field.placeholder,
+      ...(field.unbound ? { unbound: true } : {}),
     } satisfies ExcelScalarBinding),
     label: field.label,
     options:
@@ -306,6 +313,7 @@ const sharedSpreadsheetRows = (input: SpreadsheetBindings) => {
       binding: excelBindingSchema.parse({
         anchor: bindings.table.anchor,
         id: bindings.table.id,
+        ...(bindings.table.unbound ? { unbound: true } : {}),
       } satisfies ExcelTableBinding),
       label: bindings.table.label,
       options: Prisma.DbNull,

@@ -101,6 +101,9 @@ function normalizeRuntimeOptions() {
     spreadsheetBindings: isRecord(options.spreadsheetBindings)
       ? options.spreadsheetBindings
       : {},
+    xlsxDraftProtocol: options.xlsxDraftProtocol,
+    xlsxDraftLeaseId: firstString(options.xlsxDraftLeaseId),
+    xlsxDraftRevision: options.xlsxDraftRevision,
     spreadsheetPictureFrames: Array.isArray(options.spreadsheetPictureFrames)
       ? options.spreadsheetPictureFrames
       : [],

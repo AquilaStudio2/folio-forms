@@ -66,6 +66,7 @@ export const spreadsheetBindingSchema = z
             "boolean",
             "picture",
           ]),
+          unbound: z.literal(true).optional(),
         })
         .strict()
     ),
@@ -82,6 +83,7 @@ export const spreadsheetBindingSchema = z
         id: z.string().regex(/^folio_[A-Za-z0-9_]+$/u),
         key: keySchema,
         label: z.string().trim().min(1).max(200),
+        unbound: z.literal(true).optional(),
       })
       .strict()
       .nullable(),

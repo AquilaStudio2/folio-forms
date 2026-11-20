@@ -87,6 +87,7 @@ let userId = "";
 let capability = "";
 let saveCapability = "";
 let publishCapability = "";
+let draftLeaseId = "";
 let bearer = "";
 let userBearer = "";
 const field = {
@@ -98,9 +99,9 @@ const field = {
   options: [],
   placeholder: null,
   prefillPointer: null,
-  prefillPolicy: "editable",
+  prefillPolicy: "editable" as const,
   required: false,
-  type: "text",
+  type: "text" as const,
 };
 
 const bindingRequest = (
@@ -121,13 +122,6 @@ const bindingRequest = (
       }
     )
   );
-const bindingBody = (
-  response: Response
-): Promise<{ bindings: SpreadsheetBindings; revision: number }> =>
-  response.json() as Promise<{
-    bindings: SpreadsheetBindings;
-    revision: number;
-  }>;
 
 const update = (revision: number, change: unknown, key = documentKey) =>
   bindingRequest("PATCH", { change, documentKey: key, revision });
@@ -138,18 +132,6 @@ const request = (path: string, token = userBearer) =>
       headers: { Authorization: `Bearer ${token}` },
     })
   );
-const replaceDraftFields = (bindings: SpreadsheetBindings) =>
-  prisma.$transaction(async (tx) => {
-    await tx.draftFieldRule.deleteMany({
-      where: { templateDraftId: templateId },
-    });
-    await tx.draftFieldRule.createMany({
-      data: spreadsheetDraftFieldData(bindings).map((row) => ({
-        ...row,
-        templateDraftId: templateId,
-      })),
-    });
-  });
 beforeAll(async () => {
   const password = "Spreadsheet-fixture-password-2026!";
   const admin = await createCredentialFixture({
@@ -194,6 +176,7 @@ beforeAll(async () => {
     templateId,
     formId
   );
+  draftLeaseId = lease.id;
   const scope = {
     documentKey,
     documentServerKey: xlsxEditorOpening(documentKey, identity.sessionId)
@@ -296,258 +279,21 @@ test("spreadsheet binding API requires scoped capability and preserves revision 
     })
   ).toBe(0);
 
-  const created = await update(0, {
+  const rejected = await update(0, {
     action: "upsert",
     kind: "field",
     value: field,
   });
-  expect(created.status).toBe(200);
-  expect((await bindingBody(created)).revision).toBe(1);
-  const sharedField = await prisma.draftFieldRule.findUniqueOrThrow({
-    where: {
-      templateDraftId_tag: { tag: field.key, templateDraftId: templateId },
-    },
-  });
-  expect(sharedField).toMatchObject({
-    binding: {
-      anchor: field.anchor,
-      computed: false,
-      id: field.id,
-      placeholder: null,
-    },
-    label: field.label,
-    options: null,
-    required: field.required,
-    type: "text",
-  });
-  expect(Object.keys(sharedField.binding as object).toSorted()).toEqual([
-    "anchor",
-    "computed",
-    "id",
-    "placeholder",
-  ]);
-  expect(
-    (await update(0, { action: "upsert", kind: "field", value: field })).status
-  ).toBe(409);
-  expect(
-    (
-      await update(
-        1,
-        { action: "delete", id: field.id, kind: "field" },
-        "old-document"
-      )
-    ).status
-  ).toBe(409);
-  expect(
-    (
-      await update(1, {
-        action: "upsert",
-        kind: "field",
-        value: { ...field, anchor: "folio_second_anchor", id: "folio_second" },
-      })
-    ).status
-  ).toBe(409);
-  expect(
-    (
-      await update(1, {
-        action: "upsert",
-        kind: "field",
-        value: { ...field, key: "__proto__" },
-      })
-    ).status
-  ).toBe(400);
-  expect(
-    (
-      await update(1, {
-        action: "upsert",
-        kind: "field",
-        value: { ...field, prefillPolicy: "lock_when_available" },
-      })
-    ).status
-  ).toBe(400);
-  expect((await bindingRequest("GET").then(bindingBody)).revision).toBe(1);
-  const computed = await update(1, {
-    action: "upsert",
-    kind: "field",
-    value: { ...field, computed: true },
-  });
-  expect(computed.status).toBe(400);
-  expect((await bindingRequest("GET").then(bindingBody)).revision).toBe(1);
-});
-
-test("table columns retain stable keys through edits and delete; active operations block binding changes", async () => {
-  const table = {
-    anchor: "folio_rows_anchor",
-    id: "folio_rows",
-    key: "rows",
-    label: "Rows",
-  };
-  const column = {
-    computed: false,
-    id: "folio_amount",
-    key: "amount",
-    label: "Amount",
-    offset: 1,
-    options: [],
-    placeholder: null,
-    required: true,
-    type: "number" as const,
-  };
-  expect(
-    (
-      await update(1, {
-        action: "upsert",
-        kind: "table",
-        value: {
-          ...table,
-          columns: [column, { ...column, id: "folio_duplicate" }],
-        },
-      })
-    ).status
-  ).toBe(409);
-  expect(
-    (
-      await update(1, {
-        action: "upsert",
-        kind: "table",
-        value: { ...table, columns: [{ ...column, computed: true }] },
-      })
-    ).status
-  ).toBe(400);
-  const createdTable = await update(1, {
-    action: "upsert",
-    kind: "table",
-    value: { ...table, columns: [column] },
-  });
-  expect(createdTable.status).toBe(200);
-  expect((await bindingBody(createdTable)).bindings.table?.columns).toEqual([
-    column,
-  ]);
-  expect(
-    await prisma.draftFieldRule.findMany({
-      orderBy: { position: "asc" },
-      select: {
-        binding: true,
-        label: true,
-        required: true,
-        tag: true,
-        type: true,
-      },
-      where: { templateDraftId: templateId },
-    })
-  ).toEqual([
-    {
-      binding: {
-        anchor: field.anchor,
-        computed: false,
-        id: field.id,
-        placeholder: null,
-      },
-      label: field.label,
-      required: false,
-      tag: field.key,
-      type: "text",
-    },
-    {
-      binding: { anchor: table.anchor, id: table.id },
-      label: table.label,
-      required: false,
-      tag: table.key,
-      type: "table",
-    },
-    {
-      binding: {
-        computed: false,
-        id: column.id,
-        offset: column.offset,
-        placeholder: null,
-      },
-      label: column.label,
-      required: true,
-      tag: "rows.amount",
-      type: "number",
-    },
-  ]);
-  expect(
-    (await update(2, { action: "upsert", kind: "column", value: column }))
-      .status
-  ).toBe(200);
-  expect(
-    (
-      await update(3, {
-        action: "upsert",
-        kind: "table",
-        value: { ...table, label: "Updated rows" },
-      })
-    ).status
-  ).toBe(200);
-  const current = await bindingRequest("GET").then(bindingBody);
-  expect(current.bindings.table?.columns).toEqual([column]);
-  expect(
-    (
-      await update(4, {
-        action: "upsert",
-        kind: "column",
-        value: { ...column, id: "folio_other", key: "other" },
-      })
-    ).status
-  ).toBe(400);
-  const operation = await prisma.operation.create({
-    data: {
-      actorId: adminId,
-      documentKey,
-      formId,
-      metadata: {},
-      ownerUserId: adminId,
-      status: "pending",
-      targetId: templateId,
-      targetType: "template_draft",
-      type: "save_template_draft",
-    },
+  expect(rejected.status).toBe(409);
+  expect(await rejected.json()).toMatchObject({
+    error: "xlsx_draft_upgrade_required",
   });
   expect(
-    (await update(4, { action: "delete", id: column.id, kind: "column" }))
-      .status
-  ).toBe(409);
-  await prisma.operation.update({
-    data: {
-      metadata: {
-        action: "save-template",
-        finalObjectKey: `tests/${fixtureId}/stale-final.xlsx`,
-        formId,
-        publicId,
-        stagedObjectKey: `tests/${fixtureId}/stale-stage.xlsx`,
-      },
-      updatedAt: new Date(0),
-    },
-    where: { id: operation.id },
-  });
-  expect(
-    (await update(4, { action: "delete", id: column.id, kind: "column" }))
-      .status
-  ).toBe(200);
-  expect(
-    (await prisma.operation.findUniqueOrThrow({ where: { id: operation.id } }))
-      .status
-  ).toBe("failed");
-  await prisma.operation.delete({ where: { id: operation.id } });
-  const deleted = await update(5, {
-    action: "delete",
-    id: table.id,
-    kind: "table",
-  });
-  expect(deleted.status).toBe(200);
-  expect((await bindingBody(deleted)).bindings.table).toBeNull();
-  await prisma.form.update({
-    data: { status: "published" },
-    where: { id: formId },
-  });
-  expect(
-    (await update(6, { action: "delete", id: field.id, kind: "field" })).status
-  ).toBe(409);
-  await prisma.form.update({
-    data: { status: "draft" },
-    where: { id: formId },
+    await bindingRequest("GET").then((response) => response.json())
+  ).toEqual({
+    bindings: emptySpreadsheetBindings(),
+    documentKey,
+    revision: 0,
   });
 });
 
@@ -693,33 +439,17 @@ test("saved Excel templates export XLSX and PDF with admin authorization and act
   ).toBe(documentKey);
 });
 
-test("incomplete Excel drafts save without a builder; publishing reports immediate or actionable errors", async () => {
-  const bindings = await spreadsheetDraftBindings(templateId);
-  const incomplete = {
-    ...bindings,
-    table: {
-      anchor: "folio_unfinished",
-      columns: [],
-      id: "folio_unfinished",
-      key: "rows",
-      label: "Rows",
-    },
+test("frozen Excel draft commits a new workbook and rules together; lost capture leaves the old pair", async () => {
+  const templatePath = `/api/admin/forms/${publicId}/template/xlsx`;
+  const readSaved = async () => {
+    const response = await request(templatePath, bearer);
+    expect(response.status).toBe(200);
+    return new Uint8Array(await response.arrayBuffer());
   };
-  await replaceDraftFields(incomplete);
-  // oxlint-disable-next-line unicorn/consistent-function-scoping -- Keep the action fixture beside its assertions.
-  const action = async (
-    name: string,
-    token: string,
-    liveReference: string | null = null
-  ) => {
-    const current = await spreadsheetDraftBindings(templateId);
-    const spreadsheetAnchors = [
-      ...current.fields.map((entry) => [entry.anchor, liveReference]),
-      ...(current.table ? [[current.table.anchor, null]] : []),
-    ];
-    return app.handle(
+  const action = (name: "save" | "publish", token: string, body: unknown) =>
+    app.handle(
       new Request(`http://test.local/api/admin/forms/${publicId}/${name}`, {
-        body: JSON.stringify({ documentKey, spreadsheetAnchors }),
+        body: JSON.stringify(body),
         headers: {
           "Content-Type": "application/json",
           "X-Editor-Capability": token,
@@ -727,91 +457,123 @@ test("incomplete Excel drafts save without a builder; publishing reports immedia
         method: "POST",
       })
     );
+  const candidate: SpreadsheetBindings = {
+    ...emptySpreadsheetBindings(),
+    fields: [field],
+    table: {
+      anchor: "folio_unfinished",
+      columns: [],
+      id: "folio_unfinished",
+      key: "rows",
+      label: "Rows",
+      unbound: true,
+    },
   };
-  const denied = await action("publish", publishCapability);
-  expect(denied.status).toBe(422);
-  expect(await denied.json()).toMatchObject({
-    error: "invalid_template",
+  const payload = (bindings: SpreadsheetBindings) => ({
+    documentKey,
+    spreadsheetAnchors: [
+      [field.anchor, "'Form'!$E$5"],
+      [candidate.table?.anchor, null],
+    ],
+    xlsxDraft: {
+      bindings,
+      checkpoint: crypto.randomUUID(),
+      revision: 0,
+      version: 1,
+    },
   });
-  expect(await prisma.operation.count({ where: { formId } })).toBe(0);
-  await replaceDraftFields(bindings);
-  // oxlint-disable-next-line unicorn/consistent-function-scoping -- This polling helper belongs to the operation scenario.
-  const poll = async (id: string) => {
+  const oldBytes = await readSaved();
+  const oldRules = await bindingRequest("GET").then((response) =>
+    response.json()
+  );
+  const legacy = await action("save", saveCapability, {
+    documentKey,
+    spreadsheetAnchors: [],
+  });
+  expect(legacy.status).toBe(409);
+  expect(await legacy.json()).toMatchObject({
+    error: "xlsx_draft_upgrade_required",
+  });
+  const denied = await action("publish", publishCapability, payload(candidate));
+  expect(denied.status).toBe(422);
+  expect(await denied.json()).toMatchObject({ error: "invalid_template" });
+
+  // oxlint-disable-next-line unicorn/consistent-function-scoping -- The operation poll belongs to this isolated authoring scenario.
+  const poll = async (response: Response) => {
+    expect(response.status).toBe(202);
+    const { operationId } = (await response.json()) as { operationId: string };
     for (let attempt = 0; attempt < 100; attempt += 1) {
-      // oxlint-disable-next-line no-await-in-loop -- Poll the previous operation state before retrying.
-      const response = await request(`/api/operations/${id}`, bearer);
-      // oxlint-disable-next-line no-await-in-loop -- Decode this poll before deciding whether to retry.
-      const body = (await response.json()) as {
-        operation: { status: string; error: string; errorMessage: string };
+      // oxlint-disable-next-line no-await-in-loop -- Poll the original admission, never resend it.
+      const status = await request(`/api/operations/${operationId}`, bearer);
+      // oxlint-disable-next-line no-await-in-loop -- Check the terminal response before retrying.
+      const { operation } = (await status.json()) as {
+        operation: { status: string; result?: unknown };
       };
-      if (
-        body.operation.status === "failed" ||
-        body.operation.status === "completed"
-      ) {
-        return body.operation;
+      if (["failed", "completed"].includes(operation.status)) {
+        return operation;
       }
       // oxlint-disable-next-line no-await-in-loop -- Bound polling and avoid a busy loop.
       await Bun.sleep(10);
     }
     throw new Error("Test operation did not finish");
   };
-  const publish = await action("publish", publishCapability);
-  expect(publish.status).toBe(202);
-  const publishId = ((await publish.json()) as { operationId: string })
-    .operationId;
-  expect(await poll(publishId)).toMatchObject({
-    error: "invalid_template",
-    errorMessage: "Missing field binding: folio_name_anchor",
-    status: "failed",
-  });
-  const publishOperation = await prisma.operation.findUniqueOrThrow({
-    where: { id: publishId },
-  });
+  const rejected = await action("save", saveCapability, payload(candidate));
+  expect(await poll(rejected)).toMatchObject({ status: "failed" });
   expect(
-    Object.hasOwn(publishOperation.metadata as object, "spreadsheetState")
-  ).toBe(false);
-  const beforeStaleSave = await prisma.templateDraft.findUniqueOrThrow({
-    where: { id: templateId },
-  });
-  const stale = await action("save", saveCapability, "'Form'!$E$5");
-  expect(stale.status).toBe(202);
-  const staleId = ((await stale.json()) as { operationId: string }).operationId;
-  expect(await poll(staleId)).toMatchObject({
-    error: "invalid_template",
-    errorMessage:
-      "ไฟล์ Excel ที่ได้รับยังไม่ตรงกับตำแหน่งช่องล่าสุด กรุณาเก็บหน้านี้ไว้แล้วลองบันทึกอีกครั้ง",
-    status: "failed",
-  });
-  const afterStaleSave = await prisma.templateDraft.findUniqueOrThrow({
-    where: { id: templateId },
-  });
-  expect(afterStaleSave.documentKey).toBe(beforeStaleSave.documentKey);
-  expect(afterStaleSave.objectKey).toBe(beforeStaleSave.objectKey);
-  expect(await spreadsheetDraftBindings(templateId)).toEqual(bindings);
-  await replaceDraftFields(incomplete);
+    await bindingRequest("GET").then((response) => response.json())
+  ).toEqual(oldRules);
+  expect(contentHash(await readSaved())).toBe(contentHash(oldBytes));
+
   nativeSnapshot = fixtureWorkbook({
     names: { folio_name_anchor: "Form!E5" },
   });
   nativeSnapshotUrl = new URL("/saved.xlsx", nativeServer.url).href;
   try {
-    const saved = await action("save", saveCapability, "'Form'!$E$5");
-    expect(saved.status).toBe(202);
-    const saveId = ((await saved.json()) as { operationId: string })
-      .operationId;
-    expect(await poll(saveId)).toMatchObject({ status: "completed" });
+    const input = payload(candidate);
+    const saved = await action("save", saveCapability, input);
+    const recovery = await app.handle(
+      new Request(
+        `http://test.local/api/admin/forms/${publicId}/xlsx-draft/recover`,
+        {
+          body: JSON.stringify({
+            checkpoint: input.xlsxDraft.checkpoint,
+            leaseId: draftLeaseId,
+          }),
+          headers: {
+            "Content-Type": "application/json",
+            "X-Editor-Capability": saveCapability,
+          },
+          method: "POST",
+        }
+      )
+    );
+    expect(recovery.status).toBe(200);
+    const admitted = await saved.clone().json();
+    expect(await recovery.json()).toMatchObject({
+      action: "save-template",
+      operationId: admitted.operationId,
+    });
+    const completion = await poll(saved);
+    expect(completion).toMatchObject({
+      result: { bindingRevision: 1, bindings: candidate },
+      status: "completed",
+    });
     const draft = await prisma.templateDraft.findUniqueOrThrow({
       where: { id: templateId },
     });
     storedObjects.push(draft.objectKey);
-    expect(draft.documentKey).not.toBe(documentKey);
-    expect(await spreadsheetDraftBindings(templateId)).toEqual(incomplete);
-    const reopened = readSpreadsheetWorkbook(await readObject(draft.objectKey));
-    expect(reopened.names.get("folio_name_anchor")).toMatchObject({
+    expect(await spreadsheetDraftBindings(templateId)).toEqual(candidate);
+    const savedBytes = await readSaved();
+    expect(completion).toMatchObject({
+      result: { contentHash: contentHash(savedBytes) },
+    });
+    const workbook = readSpreadsheetWorkbook(savedBytes);
+    expect(workbook.names.get(field.anchor)).toMatchObject({
       firstColumn: 4,
       firstRow: 4,
       sheet: "Form",
     });
-    expect(reopened.names.has("folio_unfinished")).toBe(false);
+    expect(workbook.names.has("folio_unfinished")).toBe(false);
   } finally {
     nativeSnapshotUrl = null;
     nativeSnapshot = null;
@@ -1180,6 +942,17 @@ test("publication freezes shared Excel fields, preserves scoped keys and Prefill
       title: "Shared publication fixture",
     },
   });
+  const identity = await requireIdentity(
+    new Request("http://test.local", {
+      headers: { Authorization: `Bearer ${bearer}` },
+    })
+  );
+  const lease = await claimEditorLease(
+    identity,
+    "template-draft",
+    draftId,
+    publishFormId
+  );
   const metadata: OperationMetadata = {
     action: "publish",
     bindingRevision: 1,
@@ -1189,6 +962,16 @@ test("publication freezes shared Excel fields, preserves scoped keys and Prefill
     publishedKey: `published-${publishFormId}`,
     publishedVersion: 1,
     stagedObjectKey: `tests/${fixtureId}/${publishFormId}/staged.xlsx`,
+    xlsxDraft: {
+      baseContentHash: null,
+      baseObjectKey: `tests/${fixtureId}/${publishFormId}/draft.xlsx`,
+      bindings,
+      checkpoint: crypto.randomUUID(),
+      leaseId: lease.id,
+      revision: 1,
+      sessionId: identity.sessionId,
+      version: 1,
+    },
   };
   const operation = await prisma.operation.create({
     data: {
@@ -1216,7 +999,10 @@ test("publication freezes shared Excel fields, preserves scoped keys and Prefill
   expect(
     await prisma.publishedTemplate.count({ where: { formId: publishFormId } })
   ).toBe(0);
-  metadata.bindingRevision = 2;
+  if (!metadata.xlsxDraft) {
+    throw new Error("Missing XLSX publish fixture");
+  }
+  metadata.xlsxDraft.revision = 2;
   await completePublishOperation(operation, metadata, workbook);
   const published = await prisma.publishedTemplate.findUniqueOrThrow({
     include: {
@@ -1319,7 +1105,10 @@ test("attachment category background scope is XLSX authoring-only and coexists w
       }
     }
   }
-  const viewer = readOnlyViewerConfig(documentKey, publicId, user, "xlsx") as {
+  const viewer = readOnlyViewerConfig(documentKey, publicId, user, "xlsx", {
+    objectKey: `tests/${fixtureId}/read-only.xlsx`,
+    publishedTemplateId: templateId,
+  }) as {
     bridge?: { attachmentCategoryPopup?: unknown };
     config: { editorConfig: { plugins?: { autostart?: string[] } } };
   };
