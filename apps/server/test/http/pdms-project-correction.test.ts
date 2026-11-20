@@ -2,6 +2,7 @@
 import { afterAll, expect, test } from "bun:test";
 
 import { prisma } from "@onlyoffice/db";
+import { unzipSync } from "fflate";
 
 import { createApp } from "../../src/app";
 import {
@@ -720,7 +721,7 @@ correctionTest(
     for (const typedName of ["Removed record A", "Current row"]) {
       snapshot = callbackBytes(baseline, { A4: typedName });
       expect((await waitFor(await f.action(editor))).status).toBe("failed");
-      expect(await f.bytes(editor)).toEqual(baseline);
+      expect(unzipSync(await f.bytes(editor))).toEqual(unzipSync(baseline));
     }
     snapshot = callbackBytes(baseline, { A1: "Current scalar" });
     expect(
@@ -730,7 +731,7 @@ correctionTest(
         )
       ).status
     ).toBe("failed");
-    expect(await f.bytes(editor)).toEqual(baseline);
+    expect(unzipSync(await f.bytes(editor))).toEqual(unzipSync(baseline));
     editor = await f.pick(editor, "folio_project", "Current row", 0);
     expect(
       (await f.action(oldEditor, { pdmsSelection: selection(oldEditor, 1) }))

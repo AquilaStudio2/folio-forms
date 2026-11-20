@@ -321,8 +321,9 @@ export async function completeCorrectionWorkspaceOperation(
         !current ||
         current.formId !== operation.formId ||
         operation.submissionId !== submission?.id ||
-        (metadata.correctionStartSnapshotId !== undefined &&
-          metadata.correctionStartSnapshotId !==
+        (metadata.correctionStartSnapshotId === undefined
+          ? current.status !== ResponseStatus.submitted
+          : metadata.correctionStartSnapshotId !==
             (current.prefillSnapshot?.id ?? null)) ||
         !submission ||
         submission.responseId !== current.id ||

@@ -292,7 +292,7 @@ export function registerResultRoutes(
         ...pdmsContext,
         action,
         baseDocumentKey,
-        ...(hasSpreadsheetAttachments(attachmentBindings)
+        ...(workspaceOnly || hasSpreadsheetAttachments(attachmentBindings)
           ? { correctionStartSnapshotId: response.prefillSnapshot?.id ?? null }
           : {}),
         baseRevision,
