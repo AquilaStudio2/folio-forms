@@ -1129,7 +1129,7 @@ it("requires the current Submission revision before reconfirming a conflicted de
   fetchMock.mockImplementation(async (input, init) => {
     if (
       new URL(String(input)).pathname ===
-      `/api/responses/${result().id}/corrections`
+      "/api/submissions/submission/corrections"
     ) {
       return revision.promise;
     }

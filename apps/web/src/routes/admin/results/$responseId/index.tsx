@@ -80,6 +80,11 @@ const RevisionSelector = ({
       onChange={(event) => setViewRevision(Number(event.currentTarget.value))}
       value={viewRevision}
     >
+      {history.some((revision) => revision.revision === viewRevision) ? null : (
+        <option value={viewRevision} disabled>
+          {historyLoading ? "กำลังโหลด Revision…" : "ไม่พบ Revision ที่เลือก"}
+        </option>
+      )}
       {history.map((revision) => (
         <option key={revision.revision} value={revision.revision}>
           {revision.revision === 0
@@ -103,11 +108,10 @@ const deletionErrorMessage = (caughtError: unknown) => {
   }
   return "ลบคำตอบไม่สำเร็จ กรุณาลองใหม่อีกครั้ง";
 };
-// oxlint-disable-next-line complexity -- The detail route owns read, history, export, and deletion states.
-const AdminResultDetailRoute = () => {
+// oxlint-disable-next-line complexity -- The detail owns read, history, export, and deletion states.
+const AdminResultDetailPage = ({ responseId }: { responseId: string }) => {
   const { user } = useAuth();
   const canManage = user?.role === "admin";
-  const { responseId } = useParams({ from: "/admin/results/$responseId/" });
   const [result, setResult] = useState<AdminResultDetail | null>(null);
   const [viewRevision, setViewRevision] = useState<number | null>(null);
   const [history, setHistory] = useState<
@@ -135,6 +139,7 @@ const AdminResultDetailRoute = () => {
   const deleteWarningRef = useRef<HTMLDivElement | null>(null);
   const deleteTriggerRef = useRef<HTMLButtonElement | null>(null);
   const deleteFeedbackRef = useRef<HTMLDivElement | null>(null);
+  const selectedRevision = viewRevision ?? result?.revision ?? 0;
   useEffect(() => {
     let cancelled = false;
     const loadResult = async () => {
@@ -169,6 +174,7 @@ const AdminResultDetailRoute = () => {
     if (!result || result.state !== "submitted" || !result.submissionId) {
       return;
     }
+    const { submissionId, revision } = result;
     let cancelled = false;
     setHistoryLoading(true);
     setHistoryError(null);
@@ -176,11 +182,14 @@ const AdminResultDetailRoute = () => {
     const loadHistory = async () => {
       try {
         const historyResult = await apiGet<ResponseRevisionsResponse>(
-          `/api/responses/${responseId}/corrections`
+          `/api/submissions/${submissionId}/corrections`
         );
         if (!cancelled) {
-          setHistory(historyResult.revisions);
-          setViewRevision(historyResult.latestRevision);
+          setHistory(
+            historyResult.revisions.filter(
+              (entry) => entry.revision <= (revision ?? 0)
+            )
+          );
         }
       } catch {
         if (!cancelled) {
@@ -197,12 +206,11 @@ const AdminResultDetailRoute = () => {
     return () => {
       cancelled = true;
     };
-  }, [responseId, result]);
+  }, [result]);
   useEffect(() => {
     if (!result || result.state !== "submitted" || !result.submissionId) {
       return;
     }
-    const selectedRevision = viewRevision ?? result.latestCorrectionNumber ?? 0;
     let cancelled = false;
     setFields([]);
     setFieldsRevision(null);
@@ -226,7 +234,7 @@ const AdminResultDetailRoute = () => {
     return () => {
       cancelled = true;
     };
-  }, [result, viewRevision]);
+  }, [result, selectedRevision]);
   useEffect(() => {
     if (deleteConfirmation) {
       document
@@ -375,17 +383,15 @@ const AdminResultDetailRoute = () => {
   }
   const isSubmitted = result.state === "submitted";
   const isDraft = !isSubmitted;
-  const latestRevision =
-    history.at(-1)?.revision ?? result.latestCorrectionNumber ?? 0;
-  const selectedRevision = viewRevision ?? latestRevision;
   const selectedRevisionRecord = history.find(
     (revision) => revision.revision === selectedRevision
   );
   let viewerConfigUrl: string | undefined;
-  if (isSubmitted && selectedRevisionRecord) {
-    viewerConfigUrl = `/api/admin/results/${responseId}/viewer-config?revision=${selectedRevision}`;
+  const viewerPath = `/api/admin/results/${responseId}/viewer-config`;
+  if (isSubmitted && result.submissionId && selectedRevisionRecord) {
+    viewerConfigUrl = `${viewerPath}?submissionId=${result.submissionId}&revision=${selectedRevision}`;
   } else if (isDraft && result.document.available) {
-    viewerConfigUrl = `/api/admin/results/${responseId}/viewer-config`;
+    viewerConfigUrl = `${viewerPath}?draftUpdatedAt=${encodeURIComponent(result.updatedAt)}`;
   }
   let submittedDataLabel = "ข้อมูลต้นฉบับของ Submission";
   if (selectedRevision > 0) {
@@ -591,6 +597,11 @@ const AdminResultDetailRoute = () => {
       </div>
     </>
   );
+};
+
+const AdminResultDetailRoute = () => {
+  const { responseId } = useParams({ from: "/admin/results/$responseId/" });
+  return <AdminResultDetailPage key={responseId} responseId={responseId} />;
 };
 
 export const Route = createFileRoute("/admin/results/$responseId/")({
