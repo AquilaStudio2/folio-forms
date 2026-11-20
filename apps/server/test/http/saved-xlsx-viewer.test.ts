@@ -1,4 +1,4 @@
-import { expect, test } from "bun:test";
+import { expect, spyOn, test } from "bun:test";
 
 import { prisma } from "@onlyoffice/db";
 import { strFromU8, strToU8, unzipSync, zipSync } from "fflate";
@@ -217,6 +217,14 @@ test("saved XLSX viewer pins committed bytes across an active, failed and replac
     where: { id: response.id },
   });
   await cellIs(pinned, "committed");
+  const afterExpiry = Date.now() + 5 * 60_000;
+  const clock = spyOn(Date, "now").mockReturnValue(afterExpiry);
+  try {
+    const expired = await download(pinned);
+    expect(expired.status).toBe(401);
+  } finally {
+    clock.mockRestore();
+  }
   await cellIs(await configUrl(draftPath, ownerToken), "replacement");
 
   const history = await prisma.response.create({

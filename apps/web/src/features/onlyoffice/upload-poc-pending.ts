@@ -172,6 +172,7 @@ export class UploadPocPendingFiles {
     const status = await apiGet<{
       mutationNotice: string | null;
       cleanupWarning: string | null;
+      attachmentRoutingPending: boolean;
     }>(`/api/responses/${options.responseId}/attachment-status`);
     this.requireScope(options);
     this.mutationNotice = status.mutationNotice;

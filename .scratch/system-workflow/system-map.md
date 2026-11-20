@@ -443,6 +443,7 @@ flowchart TD
     current -->|"submitted"| reopen --> kind
     kind -->|"docx"| docx --> config
     kind -->|"xlsx"| xlsx --> config
+    xlsx -.-> owned["จอง object key และบันทึก cleanup intent ก่อนเขียน workbook"]
     config --> method
     method -->|"onlyoffice"| office
     office -->|"ดาวน์โหลดในหน้ากรอก XLSX"| capture --> file
@@ -466,6 +467,8 @@ flowchart TD
 หน้า fill ปัจจุบันเปิด Draft รอบถัดไปให้หลังส่งสำเร็จ ถ้าเป็น DOCX จะเริ่มจากข้อมูลและไฟล์ของ Submission ล่าสุด ถ้าเป็น XLSX จะเริ่มจาก PublishedTemplate เพื่อกรอกชุดใหม่ สำหรับ DOCX เส้นทางนี้อ่าน `Submission.data` และ `Submission.objectKey` โดยตรง ไม่ได้เลือกไฟล์ Correction ล่าสุดมาเป็นต้นร่าง
 
 XLSX เป็นข้อยกเว้นที่ตั้งใจจาก generic seeded Response: ไม่คัดคำตอบ ordinary, `fiscal_year`, `docs_number`, URLs หรือ file references จาก Submission/Correction รอบก่อนเข้ารอบใหม่ แต่ Resume Draft ที่บันทึกแล้วใช้ canonical เดิม หน้า fill ยังคงเรียก start หลัง Submit ตามปกติ ไม่เปลี่ยนเป็น receipt navigation เพื่อให้เพิ่ม Correction ได้ ประวัติเดิมยังอ่านแยกด้วย submission/revision ที่เลือก
+
+ก่อนสร้างไฟล์ของรอบใหม่ XLSX ระบบบันทึก cleanup intent สำหรับ object key ที่จะเขียน. ถ้า process หยุดก่อน commit รอบใหม่ bootstrap recovery เก็บเฉพาะ object ที่ไร้เจ้าของ; ถ้า commit แล้ว intent ไม่กระทบ workbook ที่ canonical pointer อ้างอยู่. การเปิดรอบต่อไปล้มเหลวไม่ย้อนผล Submit เดิม.
 
 Prefill ของร่างเดิมเป็น snapshot ตอนเริ่ม Resume ไม่ดึงข้อมูลต้นทางมาเติมซ้ำ Handoff ของ Response ที่ submitted อยู่แล้วพาไป receipt แทนการเปิดรอบใหม่
 
@@ -766,6 +769,8 @@ Draft ใช้ `attachmentRemovals: [{bindingId, rowIndex}]` ใน `payload` �
 
 Legacy mode เมื่อปีหรือเลขเปลี่ยน server ใช้ paired owned committed receipt อ่าน original ตาม exact-origin/no-redirect/size policy เดิม New mode ไม่ GET/upload/login เมื่อปีเปลี่ยนอย่างเดียว; เมื่อเลขเปลี่ยนและไม่มี replacement ตรวจ committed attempt ที่ current canonical snapshot อ้างอยู่ พร้อม Response/binding/receipt/account/origin ก่อนเรียก public `GET /api/beeecm/public/file?token=<trusted file_token>` ผ่าน shared auth ตรวจ actual bounded stream, exact expected size และ SHA-256 ของ original upload attempt ก่อนเริ่ม upload ใด ๆ จึงปฏิเสธ same-size viewer/error/converted bytes โดยไม่ห้าม legitimate HTML เก็บเฉพาะ nullable digest metadata ใน ledger ไม่เก็บ bytes/answer JSON เพิ่ม และไม่ fake-backfill hash จาก mutable URL ของ legacy/intermediate attempts ที่ไม่มี hash Pending replacement ชนะ refetch และ removal ไม่ refetch ช่องนั้น หลักฐาน live ของ parent ยืนยันเพียง PDF 629 bytes/hash เดิม; all-type/HTML/zero/10MB/encrypted matrix เป็น provider-double proof เท่านั้น ไม่ใช่ live provider guarantee
 
+ถ้า internal row/project save เก็บ routing answers ใหม่ทั้งที่ Draft ยังอ้าง receipt ปลายทางเดิม หน้า Fill แจ้งว่าการย้ายไฟล์ยังรอ Save Draft หรือ Submit. ข้อความยังแสดงเมื่อเปิดร่างที่บันทึกแล้วและหายเมื่อ explicit Save แก้ mismatch; internal action ไม่ส่งไฟล์และไม่ลบไฟล์เดิม.
+
 Initial Correction workspace clone ยังไม่มี attachment references ของ document key ใหม่: original planning และ canonical completion ใช้ captured Operation เดียวกันตรวจ enabled Admin, Response, lease, workspace/object key, base key/revision และ latest Submission/Correction ผ่าน shared workspace validation ก่อนใช้ references ของ base ที่ตรวจแล้วเท่านั้น หาก current snapshot มี references อยู่แล้วต้องใช้ current snapshot; receipt mismatch ไม่ย้อนหา history และ workspace ที่เคย save แล้วแต่ไม่มี references ไม่ย้อนคืนไฟล์จาก base Internal workspace save ยังคงไม่ fetch/upload/delete ECM
 
 ทุก canonical Draft transition รวม implicit row/project save ย้าย references ไป document key ใหม่ใน transaction เดียว ไม่อาศัย reference ของ Draft เก่าที่ไม่ใช่ canonical แล้ว การ retire refs ไม่แตะ snapshot ที่ Submission/Correction/workspace/eligible Operation หรือ Draft อื่นยังใช้ และนับ surviving refs ทั่วระบบ การ acquire ref กับ deletion claim lock version row เดียวกัน จึง acquire ไปยัง deleting/deletion-unknown version ไม่ได้ Internal workspace/Correction completion รักษา canonical receipt ของ base revision และ references โดยไม่เริ่ม attachment writes
@@ -883,6 +888,8 @@ Final Save Correction ล้างเฉพาะ pending snapshot ที่ร�
 
 Read-only Results/Draft/receipt/history และ saved XLSX/PDF ใช้ URL จาก selected revision และตัดเฉพาะ declared managed attachment OLE/VML/native preview ในสำเนาที่ derive ผ่าน helper เดิม `stripSpreadsheetUploadPoc` รูป ordinary, legacy controls และ protection คงอยู่ ไม่เปลี่ยน editable canonical, Template Draft หรือ published ordinary contracts PDF conversion ใช้ private immutable `withSpreadsheetExportSnapshot`; saved links ไม่ต้อง login ECM เพื่ออ่าน ไม่มี attachment preview/decryption หรือ proxy และ main Form viewer เดิมไม่ถูกแทนที่
 
+Results/Draft viewer ของ XLSX เซ็นสิทธิ์อ่าน object ที่ commit แล้วพร้อมบริบทของ Published Template. `/onlyoffice/document` ส่งฉบับที่ตรึงไว้หรือแจ้งว่าไม่พบ; ไม่อ่านไฟล์ staged ของ Operation หรือแทนด้วย canonical pointer ล่าสุด. Builder, editable workspace และ live download ใช้ resolver ของงานเดิม.
+
 Excel Fill Download ยังคง capture workbook ปัจจุบัน รวม ordinary unsaved edits/active cell ก่อน Enter แล้วจึง derive URL-only copy ไม่เปลี่ยนเป็น saved-only Pending attachments ต้อง explicit Save/Submit ก่อน export; export ไม่ upload และไม่สร้าง filename/blob/fake URL Credentials/file-token metadata ไม่อยู่ใน workbook/export ทุก part ลิงก์ ECM ยังคง public/nonexpiring: ผู้ได้ URL อาจเปิดโดยไม่ login Folio และ Folio permissions ไม่ทำให้ origin เป็น private
 
 ADR 0003 ยังรักษาคำตอบ project-name ไม่ใช่ project identity จึงไม่อนุมาน docs_number จากชื่อ ส่วน ADR 0004 ยังคงกรอง current Response จาก scalar tags/latest Correction; การอ่าน/export historical revision ไม่เปลี่ยนตัวกรองให้ใช้ฉบับเก่า การทบทวนนี้ไม่เปลี่ยนข้อสรุปของ ADR ทั้งสอง
@@ -923,7 +930,7 @@ flowchart LR
     denied["หยุดและให้ลบข้อมูลก่อน"]
     account["ลบบัญชีและข้อมูลเชื่อมที่เกี่ยวข้อง"]
     response["Admin ยืนยันลบ Response หรือเจ้าของทิ้ง Draft"]
-    check["ตรวจ caller intent, owner/Draft, Operation, lease และ unknown upload"]
+    check{"เจ้าของทิ้ง Draft ที่เคยมี Submission หรือไม่"}
     intents["snapshot ทุก revision/workspace/Operation; owner-bound case และ intents"]
     delete["version fence; retire เฉพาะ refs ของ Response; cascade rows"]
     files["initial ECM DELETE เฉพาะ owned file ที่ไร้ surviving refs"]
@@ -937,7 +944,10 @@ flowchart LR
     users --> erase --> clean
     clean -->|"ไม่ผ่าน"| denied
     clean -->|"ผ่าน"| account
-    response --> check --> intents --> delete --> dbCommit{"initial SERIALIZABLE transaction commit หรือไม่"}
+    response --> check
+    check -->|"ใช่"| preserveHistory["409 draft_has_history; เก็บ Draft และประวัติ; ไม่ส่ง DELETE"]
+    check -->|"ไม่ใช่ หรือเป็น Admin ยืนยันลบทั้ง Response"| scopes["ตรวจ intent, owner/Draft, Operation, lease และ unknown upload"]
+    scopes --> intents --> delete --> dbCommit{"initial SERIALIZABLE transaction commit หรือไม่"}
     dbCommit -->|"commit แล้ว"| files
     dbCommit -->|"verified serialization abort"| dbConflict["409 operation_in_progress; คง Response/refs; ยังไม่ dispatch DELETE"]
     dbConflict --> fresh["User Dashboard / Admin Detail ปิดกล่องเดิม โหลดข้อมูลล่าสุด ให้ผู้ใช้ตรวจและยืนยันใหม่เอง"]
@@ -955,9 +965,7 @@ Admin ทุกบัญชีมีอำนาจจัดการบัญ�
 
 การลบ account ไม่ได้ลบ Response ให้เอง ต้องลบ Responses และรอ RustFS/ECM cleanup ที่ผูกกับ owner จริงให้ครบ แม้ Response rows หายแล้ว Tombstone เก็บ owner จาก live Response ก่อน cascade ไม่อนุมาน owner จาก Admin/upload actor และไม่ backfill owner ของ legacy tombstone โดยเดา เส้นทาง Admin ต้อง `{confirm:true}`, ปฏิเสธ editor lease และเพิกถอน sessions ของเจ้าของ ส่วน User discard ตรวจ owner และ Draft ภายใน transaction แม้ผู้เรียกเป็น Admin จึงใช้ทางนี้ลบ Submission/ของคนอื่นหรือเลี่ยง Admin confirmation ไม่ได้ Admin ยังทิ้ง Draft ของตนพร้อม lease ได้ตามเดิม Active Operations และ unknown/unsettled uploads ยังคงห้ามลบ
 
-พฤติกรรมที่ต้องทราบจากโค้ดปัจจุบัน: ปุ่มทิ้งร่างเรียก `deleteResponseData` ซึ่งลบทั้ง Response รวม Submissions และ Corrections ที่ผูกอยู่ด้วย ไม่มี guard ว่าร่างนั้นเคยมี Submission มาก่อนหรือไม่ ดังนั้นการทิ้งร่างที่เกิดจากการส่งรอบก่อนอาจลบประวัติรอบก่อนด้วย แผนผังแสดงพฤติกรรมนี้ตาม source และงานสำรวจนี้ไม่ได้เปลี่ยนพฤติกรรมดังกล่าว
-
-ถ้าต้องการให้ “ทิ้งร่างรอบปัจจุบัน” รักษาประวัติ ต้องออกแบบเส้นทาง discard แยกจาก erase ระดับ Response แล้วเปลี่ยน caller ของ Dashboard และ fill ให้เรียกเส้นทางใหม่ จุดแก้หลักคือ `responses/deletion.ts`, `routes/responses.ts` และหน้า Dashboard/fill
+เมื่อเจ้าของกดทิ้ง Draft และ Response นั้นมี Submission เดิม (รวมเคยส่งแล้วเริ่ม XLSX รอบถัดไป) Server ตอบ `409 draft_has_history` ก่อนสร้างคำสั่งลบหรือแตะ storage/provider. Dashboard อธิบายว่าเก็บทั้งร่างและประวัติไว้; เจ้าของยังเปิดอ่านประวัติได้. ไม่เพิ่มการทิ้งร่างเฉพาะรอบ และไม่เปลี่ยนการยืนยันลบทั้ง Response ของ Admin.
 
 ก่อน cascade shared helper เก็บ reference identities ของทุก snapshot, owned versions, batch generation, workspace document/object keys และ eligible Operation identities ลง durable case โดยไม่เก็บ answer JSON ซ้ำ ล็อก Form ก่อน Response ตาม admission fence และล็อก batch/version ร่วมกับ lifecycle เดิม ลบเฉพาะ refs ที่มี responseId ตรงกัน ไม่ลบไฟล์ที่ยังมี global refs จาก Response อื่น การสร้าง reference เข้า deleting/unknown-deletion version ยังถูกปฏิเสธ Late sender/callback ไม่มี Response/Operation/lease ให้คืน canonical เดิม
 
