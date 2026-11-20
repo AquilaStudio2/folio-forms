@@ -164,7 +164,7 @@ beforeEach(() => {
   localStorage.setItem(SESSION_KEY, "viewer-token");
   fetchMock.mockReset();
   fetchMock.mockImplementation((input, init) => {
-    const { pathname } = new URL(String(input));
+    const { pathname, searchParams } = new URL(String(input));
     if (pathname === "/api/auth/sign-in/email") {
       return Promise.resolve(Response.json({ token: "local-viewer-token" }));
     }
@@ -272,7 +272,16 @@ beforeEach(() => {
     if (pathname === "/api/submissions/submission/data") {
       return Promise.resolve(
         Response.json({
+          data: {
+            name:
+              searchParams.get("revision") === "0"
+                ? "Original value"
+                : "Corrected value",
+          },
+          documentKind: resultDocumentKind,
           fields: [{ label: "Name", options: [], tag: "name", type: "text" }],
+          spreadsheetContract: null,
+          submission: { id: "submission", responseId },
         })
       );
     }
@@ -1015,6 +1024,29 @@ describe("VIEWER existing results access", () => {
     await userEvent.click(screen.getByRole("tab", { name: "Fields" }));
     expect(await screen.findByText("Pinned result value")).toBeVisible();
     expect(screen.queryByText("Newer result value")).toBeNull();
+  });
+
+  it("downloads the selected XLSX revision from Admin Form History", async () => {
+    sessionRole = "admin";
+    resultDocumentKind = "xlsx";
+    const saved = stubDownloads();
+    await mount("/admin/forms/form/submissions/submission");
+    const selector = await screen.findByRole("combobox", {
+      name: "Select revision",
+    });
+    await waitFor(() => expect(selector).toHaveValue("1"));
+    await userEvent.selectOptions(selector, "0");
+    await userEvent.click(screen.getByRole("tab", { name: "Fields" }));
+    expect(await screen.findByText("Original value")).toBeVisible();
+    await userEvent.click(screen.getByRole("button", { name: "XLSX" }));
+    await waitFor(() =>
+      expect(saved).toHaveBeenCalledWith("submission-0.xlsx")
+    );
+    expect(
+      fetchMock.mock.calls.some(([input]) =>
+        String(input).endsWith("/submissions/submission/xlsx?revision=0")
+      )
+    ).toBe(true);
   });
 
   it("blocks duplicate exports while busy and retries a failed PDF without changing the submission", async () => {
