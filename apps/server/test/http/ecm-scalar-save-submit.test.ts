@@ -1,7 +1,9 @@
 // oxlint-disable no-await-in-loop complexity -- Exercise real isolated HTTP, PostgreSQL, storage and native Builder; poll public Operations across process boundaries.
 import { afterAll, beforeAll, expect, test } from "bun:test";
+import { fileURLToPath } from "node:url";
 
-import { prisma } from "@onlyoffice/db";
+import { Prisma, prisma } from "@onlyoffice/db";
+import { env } from "@onlyoffice/env/server";
 import { unzipSync, zipSync, strFromU8, strToU8 } from "fflate";
 import { z } from "zod";
 
@@ -37,12 +39,18 @@ import {
   createOnlyOfficeAuthorization,
   createCallbackUserdata,
 } from "../../src/onlyoffice";
+import { drainObjectCleanupIntents } from "../../src/operations/object-cleanup";
 import {
   attachmentSchema,
   tableAttachmentSchema,
 } from "../../src/responses/attachment-data";
 import { jsonValue } from "../../src/responses/data";
-import { putObject, readObject } from "../../src/storage";
+import {
+  deleteObject,
+  objectExists,
+  putObject,
+  readObject,
+} from "../../src/storage";
 import { bearerFor, createCredentialFixture, signIn } from "../fixtures/http";
 import { fixtureWorkbook, mutatePart } from "../spreadsheet-unit/fixture";
 
@@ -2342,6 +2350,262 @@ test("initial Correction rejects a changed captured workspace base before origin
     released.resolve();
   }
 });
+
+const startRequest = (owner: Fixture) =>
+  new Request(`http://test.local/api/forms/${owner.form.publicId}/start`, {
+    headers: { Authorization: `Bearer ${owner.bearer}` },
+    method: "POST",
+  });
+
+test("XLSX Start crash retires only its uncommitted workbook after a successful Submit", async () => {
+  const owner = await fixture({ templateMode: true });
+  const submitted = await poll(
+    owner,
+    await send(owner, { folio_proof: file() }, "submit")
+  );
+  expect(submitted.status).toBe("completed");
+  const where = { id: owner.response.id };
+  const before = await prisma.response.findUniqueOrThrow({ where });
+  const history = await prisma.submission.findFirstOrThrow({
+    where: { responseId: before.id },
+  });
+  const submissionBytes = await readObject(history.objectKey);
+  const template = await prisma.publishedTemplate.findUniqueOrThrow({
+    where: { id: before.publishedTemplateId },
+  });
+  const publishedKey = fixtureValue(template.objectKey);
+  expect(publishedKey).not.toBe(history.objectKey);
+  const publishedBytes = await readObject(publishedKey);
+  await deleteObject(publishedKey);
+  try {
+    const failed = await app.handle(startRequest(owner));
+    expect(failed.status).toBe(409);
+    expect(await failed.json()).toMatchObject({
+      error: "document_unavailable",
+    });
+    expect(await prisma.response.findUniqueOrThrow({ where })).toEqual(before);
+    expect(await readObject(history.objectKey)).toEqual(submissionBytes);
+  } finally {
+    await putObject(publishedKey, publishedBytes, XLSX_CONTENT_TYPE);
+  }
+  const storage = new Bun.S3Client({
+    accessKeyId: env.RUSTFS_ACCESS_KEY_ID,
+    bucket: env.RUSTFS_BUCKET,
+    endpoint: env.RUSTFS_ENDPOINT,
+    region: env.RUSTFS_REGION,
+    secretAccessKey: env.RUSTFS_SECRET_ACCESS_KEY,
+  });
+  const prefix = `responses/${before.id}/draft/`;
+  const listing = await storage.list({ prefix });
+  const baseline = new Set(listing.contents?.map(({ key }) => key));
+  const request = startRequest(owner);
+  const script = `
+    import { createApp } from "./src/app";
+    const [url, authorization] = JSON.parse(await Bun.stdin.text());
+    await createApp({ legacySso: null, pdmsProjects: null }).handle(
+      new Request(url, { headers: { authorization }, method: "POST" })
+    );
+  `;
+  const orphan = await prisma.$transaction(
+    async (tx) => {
+      await tx.$queryRaw(Prisma.sql`
+      SELECT "id" FROM "forms" WHERE "id" = ${owner.form.id}::uuid FOR UPDATE
+    `);
+      const child = Bun.spawn(
+        [process.execPath, "--no-env-file", "-e", script],
+        {
+          cwd: fileURLToPath(new URL("../..", import.meta.url)),
+          stderr: "inherit",
+          stdin: new Blob([
+            JSON.stringify([request.url, request.headers.get("Authorization")]),
+          ]),
+          stdout: "ignore",
+        }
+      );
+      try {
+        const deadline = Date.now() + 10_000;
+        while (Date.now() < deadline && child.exitCode === null) {
+          const { contents } = await storage.list({ prefix });
+          const written = contents?.find(({ key }) => !baseline.has(key));
+          if (written) {
+            child.kill("SIGKILL");
+            await child.exited;
+            expect(child.signalCode).toBe("SIGKILL");
+            return written.key;
+          }
+        }
+        throw new Error(
+          "Start stopped before writing the candidate under the form lock"
+        );
+      } finally {
+        if (child.signalCode === null && child.exitCode === null) {
+          child.kill("SIGKILL");
+          await child.exited;
+        }
+      }
+    },
+    { timeout: 15_000 }
+  );
+  try {
+    expect(await prisma.response.findUniqueOrThrow({ where })).toEqual(before);
+    const openings = await Promise.all([
+      app.handle(startRequest(owner)),
+      app.handle(startRequest(owner)),
+    ]);
+    expect(openings.map(({ status }) => status)).toEqual([200, 200]);
+    const reopened = await prisma.response.findUniqueOrThrow({ where });
+    const winner = fixtureValue(reopened.draftObjectKey);
+    expect(winner).not.toBe(orphan);
+    expect(reopened).toMatchObject({
+      draftData: null,
+      publishedVersion: before.publishedVersion,
+      status: "draft",
+    });
+    expect(reopened.draftDocumentKey).not.toBe(history.documentKey);
+    expect(await readObject(winner)).toEqual(publishedBytes);
+    expect(
+      await prisma.objectCleanupIntent.findUnique({
+        where: { objectKey: winner },
+      })
+    ).toBeNull();
+    await prisma.objectCleanupIntent.update({
+      data: { cleanupAfter: new Date(0) },
+      where: { objectKey: orphan },
+    });
+    await drainObjectCleanupIntents([orphan]);
+    expect(await objectExists(orphan)).toBe(false);
+    expect(await objectExists(winner)).toBe(true);
+    expect(await readObject(history.objectKey)).toEqual(submissionBytes);
+  } finally {
+    await deleteObject(orphan);
+  }
+});
+
+test.each(["before dispatch", "after dispatch"] as const)(
+  "User Start %s fences stale Correction without replacing the Submission",
+  async (phase) => {
+    const owner = await fixture({ templateMode: true });
+    const admin = await fixture({ admin: true });
+    const submitted = await poll(
+      owner,
+      await send(owner, { folio_proof: file() }, "submit")
+    );
+    expect(submitted.status).toBe("completed");
+    const submission = await prisma.submission.findFirstOrThrow({
+      where: { responseId: owner.response.id },
+    });
+    const original = await readObject(submission.objectKey);
+    const proof = attachmentSchema.parse(
+      z.object({ proof: z.unknown() }).parse(submission.data).proof
+    );
+    const bridge = await openCorrection(owner, admin);
+    const lease = await prisma.editorLease.findFirstOrThrow({
+      where: { targetId: owner.response.id, targetType: "correction" },
+    });
+    expect(lease.workspaceDocumentKey).toBe(bridge.documentKey);
+    const dispatched = phase === "after dispatch";
+    if (!dispatched) {
+      // Invalidate the shared auth generation through a real loopback rejection.
+      const other = await fixture();
+      nextMode = "unauthorized";
+      const unauthorized = await poll(
+        other,
+        await send(other, { folio_proof: file() })
+      );
+      expect(unauthorized.status).toBe("failed");
+    }
+    const entered = Promise.withResolvers<undefined>();
+    const released = Promise.withResolvers<undefined>();
+    const barrier = {
+      enter: () => entered.resolve(),
+      release: released.promise,
+    };
+    if (dispatched) {
+      receiptBarrier = barrier;
+    } else {
+      loginBarrier = barrier;
+    }
+    const uploads = received.length;
+    const deletes = deleted.length;
+    try {
+      const accepted = await postCorrection(owner, admin, bridge, {
+        folio_proof: file(new Uint8Array([7, 6]), "Correction.PDF"),
+      });
+      expect(accepted.status).toBe(202);
+      const { operationId } = envelopeSchema.parse(
+        await accepted.clone().json()
+      );
+      await entered.promise;
+      expect(received.length).toBe(uploads + Number(dispatched));
+      const versions = await prisma.ecmAttachmentVersion.findMany({
+        where: { operationId },
+      });
+      expect(versions).toHaveLength(1);
+      expect(versions[0]).toMatchObject({
+        fileToken: null,
+        state: dispatched ? "started" : "prepared",
+      });
+      const batch = await prisma.ecmAttachmentBatch.findUniqueOrThrow({
+        where: { operationId },
+      });
+      expect(batch).toMatchObject({
+        documentKey: bridge.documentKey,
+        leaseId: lease.id,
+      });
+      const started = await app.handle(startRequest(owner));
+      expect(started.status).toBe(200);
+      const where = { id: owner.response.id };
+      const reopened = await prisma.response.findUniqueOrThrow({ where });
+      expect(reopened.draftDocumentKey).not.toBe(bridge.documentKey);
+      expect(reopened.publishedVersion).toBe(owner.response.publishedVersion);
+      expect(deleted.length).toBe(deletes);
+      const winner = fixtureValue(reopened.draftObjectKey);
+      const winnerBytes = await readObject(winner);
+      released.resolve();
+      const final = await poll(admin, accepted);
+      expect(final.status).toBe("failed");
+      if (dispatched) {
+        const delivered = fixtureValue(received.at(-1));
+        const receipt = await prisma.ecmAttachmentVersion.findFirstOrThrow({
+          where: { fileToken: delivered.token, operationId },
+        });
+        expect(receipt.state).not.toBe("committed");
+        expect(receipt.fileLink).toBeTruthy();
+        expect(
+          await prisma.ecmAttachmentCleanup.findFirst({
+            where: { operationId, versionId: receipt.id },
+          })
+        ).not.toBeNull();
+        expect(
+          deleted.slice(deletes).every((token) => token === delivered.token)
+        ).toBe(true);
+        expect(providerFiles.has(new URL(proof.file_link).pathname)).toBe(true);
+      } else {
+        expect(
+          await prisma.ecmAttachmentVersion.findFirst({
+            where: { operationId, sentAt: { not: null } },
+          })
+        ).toBeNull();
+        expect(deleted.length).toBe(deletes);
+      }
+      expect(received.length).toBe(uploads + Number(dispatched));
+      expect(await prisma.response.findUniqueOrThrow({ where })).toEqual(
+        reopened
+      );
+      expect(await readObject(winner)).toEqual(winnerBytes);
+      expect(await readObject(submission.objectKey)).toEqual(original);
+      expect(
+        await prisma.correction.count({
+          where: { submissionId: submission.id },
+        })
+      ).toBe(0);
+    } finally {
+      loginBarrier = null;
+      receiptBarrier = null;
+      released.resolve();
+    }
+  }
+);
 
 test("template Correction freezes catalog routing and preserves history while reusing scalar/table originals at distinct destinations", async () => {
   const templateNameSuffix = `-${crypto.randomUUID()}`;
