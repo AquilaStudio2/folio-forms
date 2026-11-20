@@ -469,29 +469,26 @@ const save = async (
 
 type Field = SpreadsheetBindings["fields"][number];
 type Table = NonNullable<SpreadsheetBindings["table"]>;
+type Column = Table["columns"][number];
 const replace = <T extends { id: string }>(items: T[], item: T) => [
   ...items.filter(({ id }) => id !== item.id),
   item,
 ];
 
-const upsert = async <T extends { id: string }>(
-  value: T,
-  kind = "field",
-  target = app
-) => {
+const upsert = async (value: Field | Table | Column, target = app) => {
   const state = await bindingState();
   const bindings = { ...state.bindings };
-  if (kind === "field") {
-    bindings.fields = replace(bindings.fields, value as Field);
-  } else if (kind === "table") {
-    bindings.table = value as Table;
-  } else if (bindings.table) {
+  if ("columns" in value) {
+    bindings.table = value;
+  } else if ("anchor" in value) {
+    bindings.fields = replace(bindings.fields, value);
+  } else {
+    if (!bindings.table) {
+      throw new Error("Cannot update a column without a test table");
+    }
     bindings.table = {
       ...bindings.table,
-      columns: replace(
-        bindings.table.columns,
-        value as Table["columns"][number]
-      ),
+      columns: replace(bindings.table.columns, value),
     };
   }
   return save(state, bindings, target);
@@ -715,12 +712,16 @@ test.each(["rename", "delete"] as const)(
       template_name: template.template_name,
     };
     const scalar = { ...proof, attachment: choice };
-    const column = {
+    const column: Column = {
       attachment: choice,
+      computed: false,
       id: "folio_repair_column",
       key: "evidence",
       label: "หลักฐานรายแถว",
       offset: 0,
+      options: [],
+      placeholder: null,
+      required: false,
       type: "text",
     };
     const table = {
@@ -731,7 +732,7 @@ test.each(["rename", "delete"] as const)(
       label: "รายการ",
     };
     expect(await upsert(scalar)).toMatchObject({ status: "completed" });
-    expect(await upsert(table, "table")).toMatchObject({ status: "completed" });
+    expect(await upsert(table)).toMatchObject({ status: "completed" });
     expect(
       (
         await catalogRequest(
@@ -779,7 +780,7 @@ test.each(["rename", "delete"] as const)(
       error: "attachment_template_stale",
     });
     expect(
-      await upsert({ ...column, attachment: templateChoice }, "column")
+      await upsert({ ...column, attachment: templateChoice })
     ).toMatchObject({ status: "completed" });
     const payload = await bindingState();
     expect(payload.bindings.fields).toEqual(
@@ -877,15 +878,12 @@ test("ordinary Field authoring remains usable with ECM unset and attachments can
       )
     ).status
   ).toBe(503);
+  expect(await upsert({ ...proof, type: "number" }, ordinary)).toMatchObject({
+    error: "invalid_field_config",
+    httpStatus: 400,
+  });
   expect(
-    await upsert({ ...proof, type: "number" }, "field", ordinary)
-  ).toMatchObject({ error: "invalid_field_config", httpStatus: 400 });
-  expect(
-    await upsert(
-      { ...proof, prefillPointer: "/person/name" },
-      "field",
-      ordinary
-    )
+    await upsert({ ...proof, prefillPointer: "/person/name" }, ordinary)
   ).toMatchObject({ error: "invalid_field_config", httpStatus: 400 });
   expect(
     await upsert(
@@ -896,7 +894,6 @@ test("ordinary Field authoring remains usable with ECM unset and attachments can
         id: "folio_plain",
         key: "plain",
       },
-      "field",
       ordinary
     )
   ).toMatchObject({ status: "completed" });
@@ -909,7 +906,6 @@ test("ordinary Field authoring remains usable with ECM unset and attachments can
         id: "folio_collision",
         key: "plain",
       },
-      "field",
       ordinary
     )
   ).toMatchObject({ error: "duplicate_field_tag", httpStatus: 409 });
@@ -919,7 +915,7 @@ test("attachment column settings share one category across rows and retain colum
   categoryStatus = 200;
   categoryNames = ["เอกสารประกอบ", "หมวดคอลัมน์"];
   expect((await authoringRequest("attachment-categories")).status).toBe(200);
-  const table = {
+  const table: Table = {
     anchor: "folio_items",
     columns: [
       {
@@ -939,10 +935,14 @@ test("attachment column settings share one category across rows and retain colum
     key: "items",
     label: "รายการ",
   };
-  expect(await upsert(table, "table")).toMatchObject({ status: "completed" });
+  expect(await upsert(table)).toMatchObject({ status: "completed" });
   categoryStatus = 503;
-  const column = { ...table.columns[0], key: "documents", required: true };
-  expect(await upsert(column, "column")).toMatchObject({ status: "completed" });
+  const [initialColumn] = table.columns;
+  if (!initialColumn) {
+    throw new Error("The attachment table fixture requires its column");
+  }
+  const column = { ...initialColumn, key: "documents", required: true };
+  expect(await upsert(column)).toMatchObject({ status: "completed" });
   expect((await bindingState()).bindings.table?.columns).toEqual([column]);
   expect(await remove(table.id, "table")).toMatchObject({
     status: "completed",
@@ -1426,9 +1426,10 @@ test("duplicates keep independent links and frozen new choices; legacy duplicate
     const copied = Object.values(
       config.config.editorConfig.plugins.options
     ).find((entry) => entry.spreadsheetBindings)?.spreadsheetBindings;
-    expect(
-      copied?.fields.find((field) => field.attachment)?.attachment
-    ).toEqual(
+    if (!copied) {
+      throw new Error("The copied draft did not expose its field rules");
+    }
+    expect(copied.fields.find((field) => field.attachment)?.attachment).toEqual(
       sourcePublicId === publicId
         ? templateChoice
         : {
