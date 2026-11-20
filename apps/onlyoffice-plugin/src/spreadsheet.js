@@ -1495,24 +1495,19 @@ export function initializeSpreadsheet(options, setStatus) {
       );
       return result;
     };
-    const saveAttachmentTemplate = async (bindingId) => {
+    const saveAttachmentTemplate = async (promotion = false) => {
       uploadPocSaveInFlight = true;
       let saved;
       try {
         saved = await operations.runAction(ACTIONS.SAVE_TEMPLATE, "", null, {
           preserveEditorSession: true,
-          ...(bindingId
-            ? {
-                preserveEditorSessionPurpose: "placement",
-                uploadPocBindingId: bindingId,
-              }
-            : { preserveEditorSessionPurpose: "manual" }),
+          preserveEditorSessionPurpose: "manual",
         });
       } finally {
         uploadPocSaveInFlight = false;
       }
       if (!saved?.ok) {
-        if (!bindingId) {
+        if (promotion) {
           throw new Error(
             `${pendingPromotionMessage}: ${saved?.error || "ยังยืนยันผลไม่ได้"}`
           );
@@ -1552,7 +1547,7 @@ export function initializeSpreadsheet(options, setStatus) {
       attachmentConfiguration = category;
       panelChanged();
       await saveBinding();
-      await saveAttachmentTemplate(field.id);
+      await saveAttachmentTemplate();
       setStatus("บันทึกหมวดหมู่จัดเก็บเอกสารและต้นแบบแล้ว", "success");
     });
     const placeholder = input("คำแนะนำในเซลล์ · Placeholder (ไม่บังคับ)");
@@ -1954,7 +1949,7 @@ export function initializeSpreadsheet(options, setStatus) {
           }
         );
       }
-      // Bindings must be committed before a marker or drawing can be created.
+      // Native projection uses the working binding, not the saved Draft.
       window.Asc.scope.folioSpreadsheetAnchors =
         spreadsheetBindingAnchors(bindings);
       const targetSelection = await selection();
@@ -2001,15 +1996,11 @@ export function initializeSpreadsheet(options, setStatus) {
         selected = await selection();
         loadEntry(existingUploadPocEntry(selected, bindings));
         if (entry && !sameValue(entry[1].attachment, category)) {
-          if (!entry[1].attachment) {
-            // Prove the saved button before converting an existing text mapping.
-            await saveAttachmentTemplate(target.bindingId);
-          }
           attachmentConfiguration = category;
           panelChanged();
           await saveBinding();
         }
-        await saveAttachmentTemplate(target.bindingId);
+        await saveAttachmentTemplate();
         setStatus(
           "เพิ่มช่องแนบไฟล์และบันทึกต้นแบบแล้ว เผยแพร่ฟอร์มเพื่อให้ผู้ใช้แนบไฟล์ได้ ไฟล์จะอัปโหลดเมื่อผู้ใช้บันทึกร่างหรือส่งคำตอบ",
           "success"
@@ -2335,7 +2326,7 @@ export function initializeSpreadsheet(options, setStatus) {
         }
       );
       if (promotions.length) {
-        await saveAttachmentTemplate();
+        await saveAttachmentTemplate(true);
         setStatus("บันทึกตารางและปุ่มแนบไฟล์ทุกแถวแล้ว", "success");
       }
     };
