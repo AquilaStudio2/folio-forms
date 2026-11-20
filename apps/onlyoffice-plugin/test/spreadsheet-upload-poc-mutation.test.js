@@ -69,39 +69,31 @@ const setup = async ({
     }),
   };
   let revision = 0;
+  let draft;
   let remainingSaveFailures = saveFailures;
   let remainingProjectionFailures = projectionFailures;
   const response = (url, init) => {
-    if (String(url).includes("/operations/")) {
-      return {
-        operation: {
-          status: "completed",
-          result: { documentKey: "document-key", editorSessionPreserved: true },
+    if (String(url).endsWith("/save")) {
+      draft = JSON.parse(init.body).xlsxDraft;
+      return { operationCapability: "cap", operationId: "mutation-save" };
+    }
+    expect(String(url)).toContain("/operations/");
+    if (remainingSaveFailures > 0) {
+      remainingSaveFailures -= 1;
+      return { operation: { status: "failed" } };
+    }
+    revision += 1;
+    return {
+      operation: {
+        status: "completed",
+        result: {
+          bindingRevision: revision,
+          bindings: draft.bindings,
+          documentKey: "document-key",
+          editorSessionPreserved: true,
         },
-      };
-    }
-    if (init.method === "POST") {
-      if (remainingSaveFailures > 0) {
-        remainingSaveFailures -= 1;
-        return { httpStatus: 503, body: { error: "save unavailable" } };
-      }
-      return { operationCapability: "cap", operationId: "save" };
-    }
-    if (init.method === "PATCH") {
-      if (reject) {
-        return { httpStatus: 409, body: { error: "rejected" } };
-      }
-      const { change } = JSON.parse(init.body);
-      if (change.kind === "table") {
-        state.table = change.value;
-      } else if (table) {
-        state.table.columns = [change.value];
-      } else {
-        state.fields = [change.value];
-      }
-      revision += 1;
-    }
-    return { bindings: state, documentKey: "document-key", revision };
+      },
+    };
   };
   const selected = {
     address: "B3",
@@ -123,6 +115,7 @@ const setup = async ({
     capabilityResponses: Array.from({ length: 40 }, () => "cap"),
     documentKind: "xlsx",
     responses: Array.from({ length: 40 }, () => response),
+    scopeIdentity: "mutation-template",
     serializeCommands: true,
     spreadsheetBindings: state,
     spreadsheetSelection: selected,
@@ -159,11 +152,12 @@ const setup = async ({
 };
 
 test.each(["number", "date"])(
-  "changing managed text to %s stages cleanup only after commit and manually saves zero controls",
+  "changing managed text to %s applies Rules locally and removes its control at manual Save",
   async (type) => {
     const { harness, object } = await setup();
     control(harness, "ชนิดข้อมูล").value = type;
     await click(harness);
+    expect(harness.requests).toHaveLength(0);
     expect(
       harness.requests.filter((request) => request.method === "PATCH")
     ).toHaveLength(1);
@@ -180,7 +174,7 @@ test.each(["number", "date"])(
   }
 );
 
-test("metadata rejection restores marker and never removes or reprojects control", async () => {
+test("native cleanup rejection restores marker and never removes or reprojects control", async () => {
   const { harness, object, projections } = await setup({ reject: true });
   control(harness, "ชนิดข้อมูล").value = "number";
   await click(harness);
@@ -213,7 +207,7 @@ test.each([false, true])(
   }
 );
 
-test("failed storage save retries cleanup without a second metadata write", async () => {
+test("definitive save failure retries the same working Rules and cleanup", async () => {
   const { harness, object } = await setup({ saveFailures: 1 });
   control(harness, "ชนิดข้อมูล").value = "number";
   await click(harness);

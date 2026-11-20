@@ -45,32 +45,22 @@ const draftHarness = async ({
   const changes = [];
   const harness = createHarness({
     action: "template-edit",
-    capabilityResponses: ["read", "write", "save"],
+    capabilityResponses: ["save"],
     documentKind: "xlsx",
     holdEditorSave: true,
     pdmsProjectEnabled: true,
     responses: [
-      { bindings, documentKey: "document-key", revision: 0 },
-      (_url, request) => {
-        const mutation = JSON.parse(request.body).change;
-        changes.push(mutation);
-        return {
-          bindings:
-            mutation.kind === "column"
-              ? {
-                  ...bindings,
-                  table: {
-                    ...bindings.table,
-                    columns: [mutation.value],
-                  },
-                }
-              : { ...bindings, fields: [mutation.value] },
-          documentKey: "document-key",
-          revision: 1,
-        };
+      (url, request) => {
+        expect(String(url).endsWith("/save")).toBe(true);
+        changes.push(JSON.parse(request.body).xlsxDraft);
+        return { operationCapability: "poll", operationId: "source-created" };
       },
-      { operationCapability: "poll", operationId: "source-created" },
-      completedOperation({ documentKey: "next-template" }),
+      () =>
+        completedOperation({
+          bindingRevision: 1,
+          bindings: changes[0].bindings,
+          documentKey: "next-template",
+        }),
     ],
     spreadsheetBindings: bindings,
     spreadsheetSelection: selection,
@@ -91,23 +81,21 @@ test.each(["type", "metadata"])(
       change(harness, "คำแนะนำในเซลล์ · Placeholder (ไม่บังคับ)", "เลือกโครงการ");
     }
     await create(harness);
+    expect(changes).toHaveLength(0);
+    expect(harness.requests).toHaveLength(0);
+    harness.finishEditorSave();
+    await flushPlugin();
+    await flushPlugin();
     expect(changes).toHaveLength(1);
     expect(changes[0]).toMatchObject({
-      kind: "field",
-      value: {
         key: pending === "metadata" ? "selected_project" : "field_1",
         label: pending === "metadata" ? "โครงการที่ดำเนินการ" : "ช่อง E10",
         source: "pdms-project-name",
         type: "dropdown",
         ...(pending === "metadata" ? { placeholder: "เลือกโครงการ" } : {}),
       },
+      revision: 0,
     });
-    expect(
-      harness.requests.some((request) => request.url.endsWith("/save"))
-    ).toBe(false);
-    harness.finishEditorSave();
-    await flushPlugin();
-    await flushPlugin();
     expect(
       harness.requests.some((request) => request.url.endsWith("/save"))
     ).toBe(true);
@@ -153,20 +141,24 @@ test.each(["field", "column"])(
     });
     change(harness, "Title · ชื่อช่อง", "แก้ไขชื่อช่องโครงการ");
     await create(harness);
+    expect(changes).toHaveLength(0);
+    expect(harness.requests).toHaveLength(0);
+    harness.finishEditorSave();
+    await flushPlugin();
+    await flushPlugin();
     expect(changes).toHaveLength(1);
-    expect(changes[0]).toMatchObject({
-      kind,
-      value: {
+    const candidate = changes[0].bindings;
+    expect(
+      kind === "field" ? candidate.fields : candidate.table.columns
+    ).toMatchObject([
+      {
         id: source.id,
         key: source.key,
         label: "แก้ไขชื่อช่องโครงการ",
         source: source.source,
         type: source.type,
       },
-    });
-    harness.finishEditorSave();
-    await flushPlugin();
-    await flushPlugin();
+    ]);
     expect(
       harness.requests.some((request) => request.url.endsWith("/save"))
     ).toBe(true);
@@ -223,12 +215,16 @@ test("the main save button keeps ordinary Field setup without forcing a project 
   const { changes, harness } = await draftHarness();
   change(harness, "Title · ชื่อช่อง", "ช่องข้อความทั่วไป");
   await create(harness);
-  expect(changes).toHaveLength(1);
-  expect(changes[0].value).toMatchObject({
+  expect(changes).toHaveLength(0);
+  expect(harness.requests).toHaveLength(0);
+  const { bindings } =
+    await harness.window.FormBridge.getSpreadsheetBindings(false);
+  expect(bindings.fields).toHaveLength(1);
+  expect(bindings.fields[0]).toMatchObject({
     label: "ช่องข้อความทั่วไป",
     type: "text",
   });
-  expect(changes[0].value.source).toBeUndefined();
+  expect(bindings.fields[0].source).toBeUndefined();
   expect(
     harness.requests.some((request) => request.url.endsWith("/save"))
   ).toBe(false);

@@ -85,11 +85,8 @@ test("POC placement refuses unapplied panel changes before sending a server requ
 test("invalid multi-cell POC selection creates no workbook marker and makes no mutation request", async () => {
   const harness = createHarness({
     action: "template-edit",
-    capabilityResponses: ["configure-fields-capability"],
     documentKind: "xlsx",
-    responses: [
-      { bindings: { fields: [], table: null, version: 1 }, revision: 0 },
-    ],
+    spreadsheetBindings: { fields: [], table: null, version: 1 },
     spreadsheetSelection: { address: "A1:B2" },
   });
   acknowledgeBridge(harness);
@@ -98,8 +95,7 @@ test("invalid multi-cell POC selection creates no workbook marker and makes no m
   await flushPlugin();
   expect(harness.statusElement.textContent).toContain("หนึ่งเซลล์");
   expect([...harness.spreadsheetNames.keys()]).toHaveLength(0);
-  expect(harness.requests).toHaveLength(1);
-  expect(harness.requests[0].method).toBe("GET");
+  expect(harness.requests).toHaveLength(0);
 });
 
 test("POC scalar target keeps configured identity and leaves required rules unchanged", () => {
@@ -167,28 +163,9 @@ test.each([
       table: null,
       version: 1,
     };
-    const changed = {
-      ...initial,
-      fields:
-        action === "delete" ? [] : [{ ...initial.fields[0], type: "number" }],
-    };
     const harness = createHarness({
       action: "template-edit",
-      capabilityResponses: ["read", "write", "verify"],
       documentKind: "xlsx",
-      responses: [
-        { bindings: initial, revision: 0 },
-        ...(accepted
-          ? [{ bindings: changed, revision: 1 }]
-          : [
-              { body: { error: "Conflicting deletion" }, httpStatus: 409 },
-              { bindings: initial, revision: 0 },
-            ]),
-      ].map((response) =>
-        response.bindings
-          ? { documentKey: "document-key", ...response }
-          : response
-      ),
       spreadsheetBindings: initial,
       spreadsheetSelection: {
         address: "B2",
@@ -224,6 +201,7 @@ test.each([
     expect(harness.spreadsheetNames.has("folio_receipt")).toBe(
       action === "type" || !accepted
     );
+    expect(harness.requests).toHaveLength(0);
     expect(harness.spreadsheetNames.get("unrelated")).toBe("'Sheet1'!$E$1");
   }
 );
